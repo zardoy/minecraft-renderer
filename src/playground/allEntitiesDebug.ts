@@ -1,4 +1,4 @@
-import { EntityMesh, rendererSpecialHandled, EntityDebugFlags } from '@/three/entity/EntityMesh'
+import { EntityMesh, rendererSpecialHandled, EntityDebugFlags } from '../three/entity/EntityMesh'
 
 export const displayEntitiesDebugList = (version: string) => {
   // Create results container

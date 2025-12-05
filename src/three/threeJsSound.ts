@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { WorldRendererThree } from './worldRendererThree'
-import { SoundSystem } from '@/graphicsBackend/types'
+import { SoundSystem } from '../graphicsBackend/types'
 
 export class ThreeJsSound implements SoundSystem {
   audioListener: THREE.AudioListener | undefined

@@ -11,11 +11,11 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 // eslint-disable-next-line import/no-named-as-default
 import GUI from 'lil-gui'
 import _ from 'lodash'
-import { defaultWorldRendererConfig, WorldRendererConfig } from '@/lib/worldrendererCommon'
+import { defaultWorldRendererConfig, WorldRendererConfig } from '../lib/worldrendererCommon'
 import { getSyncWorld } from './shared'
-import { AppViewer, getInitialPlayerState } from '@/graphicsBackend'
-import { WorldView } from '@/worldView'
-import { createGraphicsBackend } from '@/three'
+import { AppViewer, getInitialPlayerState } from '../graphicsBackend'
+import { WorldView } from '../worldView'
+import { createGraphicsBackend } from '../three'
 
 window.THREE = THREE
 

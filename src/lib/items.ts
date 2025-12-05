@@ -1,11 +1,11 @@
 import mojangson from 'mojangson'
 import nbt from 'prismarine-nbt'
 import { fromFormattedString } from '@xmcl/text-component'
-import { getItemSelector } from '@/playerState/playerState'
+import { getItemSelector } from '../playerState/playerState'
 import { getItemDefinition } from 'mc-assets/dist/itemDefinitions'
-import { ResourcesManagerCommon } from '@/resourcesManager'
-import { ItemSpecificContextProperties } from '@/playerState/types'
-import { PlayerStateRenderer } from '@/playerState/playerState'
+import { ResourcesManagerCommon } from '../resourcesManager'
+import { ItemSpecificContextProperties } from '../playerState/types'
+import { PlayerStateRenderer } from '../playerState/playerState'
 
 type RenderSlotComponent = {
   type: string,

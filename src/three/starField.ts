@@ -1,7 +1,7 @@
 /**
  * StarField - Re-export from modules system for backwards compatibility.
  *
- * @deprecated Import from '@/modules/starfield' instead.
+ * @deprecated Import from '../modules/starfield' instead.
  */
 
 export {

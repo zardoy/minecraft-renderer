@@ -26,11 +26,6 @@
         "useUnknownInCatchVariables": false,
         "allowUnreachableCode": true,
         "jsx": "react-jsx",
-        "paths": {
-            "@/*": [
-                "./src/*"
-            ]
-        },
         "allowJs": true,
         "maxNodeModuleJsDepth": 1
     },

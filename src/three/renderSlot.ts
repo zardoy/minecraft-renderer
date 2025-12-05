@@ -1,7 +1,7 @@
 import { getRenamedData } from 'mineflayer-mouse/dist/blockRenames'
 import { BlockModel } from 'mc-assets'
 import { versionToNumber } from 'mc-assets/dist/utils'
-import type { ResourcesManagerCommon } from '@/resourcesManager'
+import type { ResourcesManagerCommon } from '../resourcesManager'
 
 export type ResolvedItemModelRender = {
   modelName: string,

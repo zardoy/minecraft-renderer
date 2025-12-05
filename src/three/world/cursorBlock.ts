@@ -13,7 +13,7 @@ import destroyStage6 from '../../assets/destroy_stage_6.png'
 import destroyStage7 from '../../assets/destroy_stage_7.png'
 import destroyStage8 from '../../assets/destroy_stage_8.png'
 import destroyStage9 from '../../assets/destroy_stage_9.png'
-import { BlockShape, BlocksShapes } from '@/playerState/types'
+import { BlockShape, BlocksShapes } from '../../playerState/types'
 
 export class CursorBlock {
   _cursorLinesHidden = false

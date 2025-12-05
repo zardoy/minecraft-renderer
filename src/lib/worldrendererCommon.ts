@@ -18,7 +18,7 @@ type PlayerStateUtils = ReturnType<typeof getPlayerStateUtils>
 import { MesherLogReader } from './mesherlogReader'
 import { setSkinsConfig } from './utils/skins'
 import { generateSpiralMatrix, WorldViewWorker } from '../worldView'
-import { PlayerStateReactive } from '@/playerState/playerState'
+import { PlayerStateReactive } from '../playerState/playerState'
 
 function mod(x, n) {
   return ((x % n) + n) % n

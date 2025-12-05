@@ -24,8 +24,8 @@ import { WorldView, WorldProvider, WorldViewWorker } from '../worldView'
 import { getInitialPlayerState } from './playerState'
 import { defaultWorldRendererConfig, defaultGraphicsBackendConfig, getDefaultRendererState } from './config'
 import type { WorldRendererConfig } from '../lib/worldrendererCommon'
-import { PlayerStateReactive } from '@/playerState/playerState'
-import { ResourcesManager, ResourcesManagerTransferred } from '@/resourcesManager'
+import { PlayerStateReactive } from '../playerState/playerState'
+import { ResourcesManager, ResourcesManagerTransferred } from '../resourcesManager'
 
 export interface AppViewerOptions {
   config?: Partial<GraphicsBackendConfig>

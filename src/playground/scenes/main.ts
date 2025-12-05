@@ -2,8 +2,8 @@
 import GUI, { Controller } from 'lil-gui'
 import * as THREE from 'three'
 import { BasePlaygroundScene } from '../baseScene'
-import { TWEEN_DURATION } from '@/three/entities'
-import { EntityMesh } from '@/three/entity/EntityMesh'
+import { TWEEN_DURATION } from '../../three/entities'
+import { EntityMesh } from '../../three/entity/EntityMesh'
 
 const includedVersions = globalThis.includedVersions
 

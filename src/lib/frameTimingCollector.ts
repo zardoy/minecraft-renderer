@@ -5,7 +5,7 @@
  * This runs in the worker context and updates the shared state
  */
 
-import { NonReactiveState } from '@/graphicsBackend'
+import { NonReactiveState } from '../graphicsBackend'
 
 
 export interface FrameTimingEvent {

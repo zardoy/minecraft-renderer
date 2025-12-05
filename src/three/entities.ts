@@ -26,7 +26,7 @@ import { disposeObject, loadTexture, loadThreeJsTextureFromUrl } from './threeJs
 import { armorModel, armorTextures, elytraTexture } from './entity/armorModels'
 import { WorldRendererThree } from './worldRendererThree'
 import { IndexedData } from 'minecraft-data'
-import { ItemSpecificContextProperties } from '@/playerState/types'
+import { ItemSpecificContextProperties } from '../playerState/types'
 
 // Type for entity metadata - simplified version
 type EntityMetadataVersions = {

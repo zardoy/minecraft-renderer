@@ -10,9 +10,9 @@ import { WorldRendererConfig } from '../lib/worldrendererCommon'
 import { getMyHand } from './hand'
 import { WorldRendererThree } from './worldRendererThree'
 import { disposeObject } from './threeJsUtils'
-import { HandItemBlock, MovementState } from '@/playerState/types'
-import { PlayerStateRenderer } from '@/playerState/playerState'
-import { getThreeBlockModelGroup } from '@/mesher/standaloneRenderer'
+import { HandItemBlock, MovementState } from '../playerState/types'
+import { PlayerStateRenderer } from '../playerState/playerState'
+import { getThreeBlockModelGroup } from '../mesher/standaloneRenderer'
 
 const rotationPositionData = {
   itemRight: {

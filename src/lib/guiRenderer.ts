@@ -7,7 +7,7 @@ import { getLoadedBlockstatesStore, getLoadedModelsStore } from 'mc-assets/dist/
 import { makeTextureAtlas } from 'mc-assets/dist/atlasCreator'
 import { proxy, ref } from 'valtio'
 import { getItemDefinition } from 'mc-assets/dist/itemDefinitions'
-import { AppViewer } from '@/graphicsBackend/appViewer'
+import { AppViewer } from '../graphicsBackend/appViewer'
 
 export const getNonFullBlocksModels = (appViewer: AppViewer) => {
   let version = appViewer.resourcesManager.currentResources!.version ?? 'latest'

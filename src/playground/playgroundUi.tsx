@@ -1,5 +1,5 @@
-import { isMobile } from '@/lib/simpleUtils'
-import useLongPress from '@/playground/reactUtils'
+import { isMobile } from '../lib/simpleUtils'
+import useLongPress from './reactUtils'
 import { renderToDom } from '@zardoy/react-util'
 import { useEffect, useState } from 'react'
 import { proxy, useSnapshot } from 'valtio'
@@ -68,6 +68,7 @@ function SceneSelector () {
       left: 0,
       display: 'flex',
       alignItems: 'flex-start',
+      zIndex: 1
     }} {...longPressEvents}>
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       {scenes.map(scene => <div
