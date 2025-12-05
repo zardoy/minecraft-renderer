@@ -72,7 +72,7 @@ export * from './modules'
 // Three.js Backend (re-exported for convenience)
 // ============================================================================
 export {
-  createGraphicsBackend,
+  default as createGraphicsBackend,
   createGraphicsBackendBase
 } from './three/graphicsBackend'
 
