@@ -40,6 +40,9 @@ export interface AppViewerOptions {
 export class AppViewer {
   waitBackendLoadPromises: Promise<void>[] = []
 
+  onWorldStart?: () => void
+  onBeforeWorldStart?: () => void
+
   // World view
   worldView?: WorldView
 
@@ -170,6 +173,7 @@ export class AppViewer {
       nonReactiveState: this.nonReactiveState
     }
 
+    this.onBeforeWorldStart?.()
     let promise: Promise<void> | undefined
     if (this.backend) {
       const result = this.backend.startWorld(displayWorldOptions)
@@ -182,6 +186,7 @@ export class AppViewer {
 
     await promise
     this.resolveWorldReady()
+    this.onWorldStart?.()
     return !!promise
   }
 
