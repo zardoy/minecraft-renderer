@@ -17,6 +17,7 @@ import { getSyncWorld } from './shared'
 import { AppViewer, getInitialPlayerState } from '../graphicsBackend'
 import { WorldView } from '../worldView'
 import { createGraphicsBackend } from '../three'
+import { createGraphicsBackendOffThread } from '../three/graphicsBackendOffThread'
 
 window.THREE = THREE
 
@@ -32,7 +33,8 @@ export interface PlaygroundSceneConfig {
 }
 
 const appGraphicBackends = [
-  createGraphicsBackend,
+  // createGraphicsBackend,
+  createGraphicsBackendOffThread
 ]
 
 const includedVersions = globalThis.includedVersions

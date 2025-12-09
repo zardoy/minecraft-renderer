@@ -10,12 +10,17 @@ const rootDir = path.join(__dirname, '..')
 
 const watch = process.argv.includes('-w')
 
-// Mesher worker mc-data files
-const mesherMcData = [...Object.keys(dynamicMcDataFiles), 'version']
+// Three worker needs itemsArray and entitiesArray in addition to dynamicMcDataFiles
+const threeWorkerMcData = [
+  ...Object.keys(dynamicMcDataFiles),
+  'itemsArray',
+  'entitiesArray',
+  'version'
+]
 
 const buildOptions = createWorkerBuildOptions({
-  entryPoint: path.join(rootDir, './src/mesher/mesher.ts'),
-  bundleMcData: mesherMcData,
+  entryPoint: path.join(rootDir, './src/three/threeWorker.ts'),
+  bundleMcData: threeWorkerMcData,
   watch
 })
 

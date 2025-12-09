@@ -72,7 +72,6 @@ const softCleanup = () => {
   globalThis.world = world
 }
 
-let sideControl = false
 const handleMessage = data => {
   const globalVar: any = globalThis
 
@@ -80,8 +79,6 @@ const handleMessage = data => {
     globalVar.mcData = data.mcData
     globalVar.loadedData = data.mcData
   }
-
-  if (sideControl) return
 
   if (data.config) {
     if (data.type === 'mesherData' && world) {
@@ -97,17 +94,6 @@ const handleMessage = data => {
   }
 
   switch (data.type) {
-    case 'sideControl': {
-      if (data.value === 'graphicsBackendThree') {
-        sideControl = true
-        void import('../three/graphicsBackend').then(module => {
-          const graphicsBackend = module.createGraphicsBackendBase()
-          graphicsBackend.workerProxy()
-          global.postMessage({ type: 'sideControlTookOver' })
-        })
-      }
-      break
-    }
     case 'mesherData': {
       setMesherData(data.blockstatesModels, data.blocksAtlas, data.config.outputFormat === 'webgpu')
       allDataReady = true

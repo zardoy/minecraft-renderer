@@ -1,23 +1,34 @@
 import * as THREE from 'three'
 import { GraphicsBackend, GraphicsBackendLoader } from '../graphicsBackend'
 import { useWorkerProxy, deepPrepareForTransfer, findProblemTransfer } from '../lib/workerProxy'
-import { initMesherWorker, meshersSendMcData } from '../lib/worldrendererCommon'
+import { meshersSendMcData } from '../lib/worldrendererCommon'
 import { dynamicMcDataFiles } from '../lib/buildSharedConfig.mjs'
 import { addNewStat } from '../lib/ui/newStats'
 import { createGraphicsBackendBase, type ThreeJsBackendMethods } from './graphicsBackend'
 import { addCanvasForWorker } from './documentRenderer'
 
+function initThreeWorker(onGotMessage: (data: any) => void) {
+  // Node environment needs an absolute path, but browser needs the url of the file
+  const workerName = 'threeWorker.js'
+
+  let worker: any
+  if (process.env.SINGLE_FILE_BUILD) {
+    const workerCode = document.getElementById('three-worker-code')!.textContent!
+    const blob = new Blob([workerCode], { type: 'text/javascript' })
+    worker = new Worker(window.URL.createObjectURL(blob))
+  } else {
+    worker = new Worker(workerName)
+  }
+
+  worker.onmessage = ({ data }) => {
+    onGotMessage(data)
+  }
+  if (worker.on) worker.on('message', (data) => { worker.onmessage({ data }) })
+  return worker
+}
+
 export const createGraphicsBackendOffThread: GraphicsBackendLoader = async (initOptions) => {
-  const worker = initMesherWorker(() => { })
-  const promise = new Promise(resolve => {
-    worker.onmessage = ({ data }) => {
-      if (data.type === 'sideControlTookOver') {
-        resolve(data)
-      }
-    }
-  })
-  worker.postMessage({ type: 'sideControl', value: 'graphicsBackendThree' })
-  await promise
+  const worker = initThreeWorker(() => { })
   type WorkerType = ReturnType<ReturnType<typeof createGraphicsBackendBase>['workerProxy']>
 
   const proxy = useWorkerProxy<WorkerType>(worker)
@@ -49,7 +60,13 @@ export const createGraphicsBackendOffThread: GraphicsBackendLoader = async (init
     // startPanorama: proxy.startPanorama,
     async startPanorama() { },
     async startWorld(options) {
-      meshersSendMcData([worker], options.version, [...dynamicMcDataFiles, 'items', 'itemsArray', 'entitiesByName', 'blocksByStateId'], initOptions.resourcesManager.currentResources.mcData)
+      const workerThreeSendData = {
+        ...dynamicMcDataFiles,
+        items: 'itemsArray',
+        entities: 'entitiesArray',
+      }
+      meshersSendMcData([worker], options.version, workerThreeSendData, initOptions.resourcesManager.currentResources.mcData)
+      console.log('mc data sent to three worker')
 
       options.inWorldRenderingConfig['__syncToWorker'] = true
 

@@ -37,7 +37,11 @@ export default defineConfig({
   dev: {
     progressBar: true,
     writeToDisk: true,
-    watchFiles: []
+    watchFiles: [
+      {
+        paths: ['dist/mesher.js'],
+      },
+    ]
   },
   server: {
     port: 3001,

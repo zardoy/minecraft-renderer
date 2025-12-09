@@ -19,9 +19,11 @@
         "watch:lib": "node scripts/buildLib.mjs -w",
         "build:mesher": "node scripts/buildMesherWorker.mjs",
         "watch:mesher": "pnpm build:mesher -w",
+        "build:threeworker": "node scripts/buildThreeWorker.mjs",
+        "watch:threeworker": "pnpm build:threeworker -w",
         "build:playground": "rsbuild build --config rsbuild.config.ts",
         "unit-test": "vitest",
-        "dev": "run-p watch:mesher dev:playground",
+        "dev": "run-p watch:mesher watch:threeworker dev:playground",
         "dev:playground": "rsbuild dev --config rsbuild.config.ts",
         "typecheck": "tsc --noEmit"
     },

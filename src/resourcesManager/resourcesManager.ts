@@ -54,6 +54,7 @@ export class LoadedResourcesTransferrable {
   constructor(data?: any) {
     if (data) {
       Object.assign(this, data)
+      this.mcData = MinecraftData(this.version)
       // this.itemsRenderer = new ItemsRenderer(
       //   this.version,
       //   this.blockstatesModels,
@@ -64,10 +65,17 @@ export class LoadedResourcesTransferrable {
   }
 
   prepareForTransfer() {
-    delete this.itemsRenderer
-    delete this.worldBlockProvider
-    this.customTextures = {}
-    return this
+    const cloned: any = {}
+    for (const key in this) {
+      if (key === 'itemsRenderer' || key === 'worldBlockProvider' || key === 'mcData') {
+        // Skip these fields
+        continue
+      }
+      cloned[key] = this[key as keyof this]
+    }
+
+    cloned.customTextures = {}
+    return cloned as LoadedResourcesTransferrable
   }
 
 }
