@@ -27,6 +27,22 @@
         "dev:playground": "rsbuild dev --config rsbuild.config.ts",
         "typecheck": "tsc --noEmit"
     },
+    "browserslist": {
+        "production": [
+            "iOS >= 14",
+            "Android >= 13",
+            "Chrome >= 103",
+            "not dead",
+            "not ie <= 11",
+            "not op_mini all",
+            "> 0.5%"
+        ],
+        "development": [
+            "last 1 chrome version",
+            "last 1 firefox version",
+            "last 1 safari version"
+        ]
+    },
     "keywords": [
         "minecraft",
         "renderer",

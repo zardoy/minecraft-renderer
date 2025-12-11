@@ -16,9 +16,9 @@ import { defaultWorldRendererConfig, WorldRendererConfig } from '../lib/worldren
 import { getSyncWorld } from './shared'
 import { AppViewer, getInitialPlayerState } from '../graphicsBackend'
 import { WorldView } from '../worldView'
-import { createGraphicsBackend } from '../three'
 import { createGraphicsBackendOffThread } from '../three/graphicsBackendOffThread'
 import { WorldRendererThree } from '../three/worldRendererThree'
+import createGraphicsBackendSingleThread from '../three/graphicsBackendSingleThread'
 
 window.THREE = THREE
 
@@ -34,7 +34,7 @@ export interface PlaygroundSceneConfig {
 }
 
 const appGraphicBackends = [
-  // createGraphicsBackend,
+  // createGraphicsBackendSingleThread,
   createGraphicsBackendOffThread
 ]
 

@@ -67,6 +67,8 @@ export class LoadedResourcesTransferrable {
   prepareForTransfer() {
     const cloned: any = {}
     for (const key in this) {
+      if (!Object.prototype.hasOwnProperty.call(this, key)) continue
+      if (typeof this[key] === 'function') continue
       if (key === 'itemsRenderer' || key === 'worldBlockProvider' || key === 'mcData') {
         // Skip these fields
         continue

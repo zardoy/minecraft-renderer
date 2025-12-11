@@ -23,7 +23,7 @@ const buildOptions = createWorkerBuildOptions({
   bundleMcData: threeWorkerMcData,
   watch,
   esbuildOptions: {
-    sourcemap: false,
+    sourcemap: watch,
     plugins: [
       {
         name: 'empty-mc-assets',

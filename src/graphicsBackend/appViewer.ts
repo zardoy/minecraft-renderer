@@ -163,6 +163,7 @@ export class AppViewer {
     this.worldView = new WorldView(world, renderDistance, finalStartPosition)
     this.worldView.isPlayground = this.inWorldRenderingConfig.isPlayground
 
+    // this.inWorldRenderingConfig.futuristicReveal = true
     const displayWorldOptions: DisplayWorldOptions = {
       version: this.resourcesManager?.currentConfig?.version ?? '1.20.4',
       worldView: this.worldView as unknown as WorldViewWorker,
