@@ -19,7 +19,7 @@ const createGraphicsBackendSingleThread: GraphicsBackendLoader = (initOptions: G
 
 createGraphicsBackendSingleThread.id = 'threejs'
 createGraphicsBackendSingleThread.displayName = 'three.js Blocking'
-createGraphicsBackendSingleThread.description = 'Simple, old and stable main thread graphics backend providing balanced performance.'
+createGraphicsBackendSingleThread.description = 'Simple, old and stable main thread graphics backend providing balanced performance on top of WebGL2.'
 
 export default createGraphicsBackendSingleThread
 export { createGraphicsBackendSingleThread }

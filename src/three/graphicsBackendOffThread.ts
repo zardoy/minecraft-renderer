@@ -119,9 +119,9 @@ export const createGraphicsBackendOffThread: GraphicsBackendLoader = async (init
 createGraphicsBackendOffThread.id = 'threejs-off-thread'
 createGraphicsBackendOffThread.displayName = 'three.js Multi-thread'
 createGraphicsBackendOffThread.description = [
-  'Uses a dedicated thread for graphics.',
+  'Edge-cutting technology that uses a dedicated thread for graphics.',
   'Slightly higher power and RAM usage.',
-  'More stable FPS (mid-range devices), but possible lag if TPS is low.',
+  'More stable FPS (mid-range devices), but possible inputlag if TPS is low.',
   'On low-end devices it might result in device throttling and stuttering.'
 ].join(' ')
 
