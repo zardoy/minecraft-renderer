@@ -66,9 +66,11 @@ export {
 // Three.js Backend (re-exported for convenience)
 // ============================================================================
 export {
-  default as createGraphicsBackend,
-  createGraphicsBackendBase
-} from './three/graphicsBackend'
+  createGraphicsBackendSingleThread
+} from './three/graphicsBackendSingleThread'
+export {
+  createGraphicsBackendOffThread
+} from './three/graphicsBackendOffThread'
 
 export {
   DocumentRenderer,
