@@ -1,0 +1,2 @@
+- no fps drops on chunks (geometry load, test with mesher spam)
+- chunk culling, check castle
