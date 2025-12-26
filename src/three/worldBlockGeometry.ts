@@ -61,11 +61,8 @@ export class WorldBlockGeometry {
     geometry.setAttribute('uv', uvAttr)
     geometry.index = indexAttr
 
-    // Track memory usage for this section (before disposing CPU arrays)
+    // Track memory usage for this section
     this.addSectionMemoryUsage(geometry)
-
-    // Force GPU upload and then dispose CPU arrays to free RAM
-    this.disposeCpuArraysAfterGpuUpload(geometry)
 
     const mesh = new THREE.Mesh(geometry, this.material)
     mesh.position.set(data.geometry.sx, data.geometry.sy, data.geometry.sz)
@@ -158,56 +155,6 @@ export class WorldBlockGeometry {
     delete this.waitingChunksToDisplay[chunkKey]
   }
 
-  /**
-   * Dispose CPU arrays after GPU upload to reduce RAM usage
-   */
-  private disposeCpuArraysAfterGpuUpload(geometry: THREE.BufferGeometry): void {
-    // Set up callbacks to dispose CPU arrays after GPU upload
-    // Three.js will automatically upload to GPU on first render
-    const { attributes } = geometry
-    for (const attributeName of Object.keys(attributes)) {
-      const attribute = attributes[attributeName]
-      if (attribute instanceof THREE.InterleavedBufferAttribute) continue
-      if (attribute.onUploadCallback) {
-        // If there's already a callback, chain it
-        const existingCallback = attribute.onUploadCallback
-        attribute.onUploadCallback = () => {
-          existingCallback()
-          this.disposeCpuArray(attribute)
-        }
-      } else {
-        attribute.onUploadCallback = () => this.disposeCpuArray(attribute)
-      }
-      // Force the upload callback by marking as needing update
-      attribute.needsUpdate = true
-    }
-
-    // Handle index attribute
-    if (geometry.index) {
-      if (geometry.index.onUploadCallback) {
-        const existingCallback = geometry.index.onUploadCallback
-        geometry.index.onUploadCallback = () => {
-          existingCallback()
-          this.disposeCpuArray(geometry.index!)
-        }
-      } else {
-        geometry.index.onUploadCallback = () => this.disposeCpuArray(geometry.index!)
-      }
-      geometry.index.needsUpdate = true
-    }
-  }
-
-  /**
-   * Dispose CPU array data from buffer attribute
-   */
-  private disposeCpuArray(attribute: THREE.BufferAttribute): void {
-    // Clear the CPU array reference to free memory
-    // Note: This makes the attribute read-only from CPU side
-    if (attribute.array) {
-      // Clear the array reference
-      ; (attribute as any).array = null
-    }
-  }
 
   /**
    * Estimate memory usage of BufferGeometry attributes
@@ -302,4 +249,3 @@ export class WorldBlockGeometry {
     }
   }
 }
-
