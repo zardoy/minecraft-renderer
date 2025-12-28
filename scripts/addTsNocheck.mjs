@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Script to add //@ts-nocheck to all TypeScript files in src/
- * 
+ *
  * Usage: node scripts/addTsNocheck.mjs
  */
 
@@ -25,7 +25,7 @@ async function findTsFiles(dir) {
 
   for (const entry of entries) {
     const fullPath = join(dir, entry.name)
-    
+
     if (entry.isDirectory()) {
       // Skip node_modules and other common directories
       if (entry.name === 'node_modules' || entry.name === '.git') {
@@ -55,7 +55,7 @@ function hasTsNocheck(content) {
 function addTsNocheck(filePath) {
   try {
     const content = readFileSync(filePath, 'utf-8')
-    
+
     if (hasTsNocheck(content)) {
       console.log(`✓ Already has @ts-nocheck: ${filePath}`)
       return false
@@ -78,7 +78,7 @@ function addTsNocheck(filePath) {
 async function main() {
   console.log('Finding all TypeScript files in src/...')
   const tsFiles = await findTsFiles(srcDir)
-  
+
   console.log(`Found ${tsFiles.length} TypeScript files`)
   console.log('')
 
@@ -109,6 +109,3 @@ main().catch(error => {
   console.error('Fatal error:', error)
   process.exit(1)
 })
-
-
-
