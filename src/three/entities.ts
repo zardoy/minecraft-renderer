@@ -1,4 +1,3 @@
-//@ts-check
 import { UnionToIntersection } from 'type-fest'
 import nbt from 'prismarine-nbt'
 import * as TWEEN from '@tweenjs/tween.js'
