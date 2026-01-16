@@ -8,22 +8,22 @@ import type {
   RendererReactiveState,
   NonReactiveState
 } from './types'
-import { WorldRendererConfig } from '../lib/worldrendererCommon'
 
 /**
  * Default world renderer configuration.
  * These settings control rendering behavior and visual options.
  */
-export const defaultWorldRendererConfig: WorldRendererConfig = {
+export const defaultWorldRendererConfig = {
   paused: false,
 
   // Debug settings
   showChunkBorders: false,
   enableDebugOverlay: false,
   debugModelVariant: undefined,
+  futuristicReveal: false,
 
   // Performance settings
-  mesherWorkers: 4,
+  mesherWorkers: 1,
   addChunksBatchWaitTime: 200,
   _experimentalSmoothChunkLoading: true,
   _renderByChunks: false,
@@ -59,6 +59,8 @@ export const defaultWorldRendererConfig: WorldRendererConfig = {
   isPlayground: false,
   instantCameraUpdate: false
 }
+
+export type WorldRendererConfig = typeof defaultWorldRendererConfig
 
 /**
  * Default graphics backend configuration.

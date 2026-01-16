@@ -20,63 +20,11 @@ import { WorldViewWorker } from '../worldView'
 import { generateSpiralMatrix } from './spiral'
 import { PlayerStateReactive } from '../playerState/playerState'
 import { IndexedData } from 'minecraft-data'
+import { WorldRendererConfig } from '../graphicsBackend/config'
 
 function mod(x, n) {
   return ((x % n) + n) % n
 }
-
-const toMajorVersion = version => {
-  const [a, b] = (String(version)).split('.')
-  return `${a}.${b}`
-}
-
-export const defaultWorldRendererConfig = {
-  paused: false,
-  // Debug settings
-  showChunkBorders: false,
-  enableDebugOverlay: false,
-  debugModelVariant: undefined as undefined | number[],
-
-  // Performance settings
-  mesherWorkers: 4,
-  addChunksBatchWaitTime: 200,
-  _experimentalSmoothChunkLoading: true,
-  _renderByChunks: false,
-
-  // Rendering engine settings
-  dayCycle: true,
-  smoothLighting: true,
-  enableLighting: true,
-  starfield: true,
-  futuristicReveal: false,
-  defaultSkybox: true,
-  renderEntities: true,
-  extraBlockRenderers: true,
-  foreground: true,
-  fov: 75,
-  volume: 1,
-
-  // Camera visual related settings
-  showHand: false,
-  viewBobbing: false,
-  renderEars: true,
-  highlightBlockColor: 'blue',
-
-  // Player models
-  fetchPlayerSkins: true,
-  skinTexturesProxy: undefined as string | undefined,
-
-  // VR settings
-  vrSupport: true,
-  vrPageGameRendering: true,
-
-  // World settings
-  clipWorldBelowY: undefined as number | undefined,
-  isPlayground: false,
-  instantCameraUpdate: false
-}
-
-export type WorldRendererConfig = typeof defaultWorldRendererConfig
 
 export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any> {
   worldReadyResolvers = Promise.withResolvers<void>()

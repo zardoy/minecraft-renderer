@@ -65,7 +65,7 @@ export class SciFiWorldRevealModule implements RendererModuleController {
   private configEnabled = true
 
   constructor(private readonly worldRenderer: WorldRendererThree) {
-    this.configEnabled = this.worldRenderer.worldRendererConfig.futuristicReveal !== false
+    this.configEnabled = this.worldRenderer.worldRendererConfig.futuristicReveal === true
 
     this.wireframeMaterial = new THREE.LineBasicMaterial({
       color: SCI_FI_CYAN,

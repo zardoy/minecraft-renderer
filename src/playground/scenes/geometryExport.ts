@@ -21,11 +21,13 @@ export default class extends BasePlaygroundScene {
   params = {
     exportGeometry: () => this.exportGeometry(),
     exportWithTexture: () => this.exportGeometry(true),
+    showDebugMesh: true,
   }
 
   // Loaded geometry data (when loading from URL)
   private loadedGeometry: ExportedWorldGeometry | null = null
   private readonly geometryUrl: string | null
+  private debugHelpers: THREE.BoxHelper[] = []
 
   constructor() {
     const qs = new URLSearchParams(window.location.search)
@@ -48,6 +50,12 @@ export default class extends BasePlaygroundScene {
     // Now camera and worldRenderer are ready - load geometry if URL provided
     if (this.geometryUrl) {
       await this.loadFromUrl(this.geometryUrl)
+    }
+
+    // Setup param update handler for debug mesh toggle
+    this.onParamUpdate.showDebugMesh = () => {
+      this.updateDebugMeshVisibility()
+      this.requestRender()
     }
   }
 
@@ -102,10 +110,53 @@ export default class extends BasePlaygroundScene {
 
       const importedCount = await backendMethods.loadGeometryExport(geometryData)
       console.log(`Loaded ${importedCount} sections from geometry file`)
+
+      // Add debug mesh helpers for all imported geometry
+      this.addDebugMeshes()
+      this.updateDebugMeshVisibility()
+
       this.requestRender()
 
     } catch (err) {
       console.error('Failed to load geometry:', err)
+    }
+  }
+
+  private addDebugMeshes() {
+    const { worldRenderer } = this
+    if (!worldRenderer) return
+
+    // Clear existing helpers
+    this.removeDebugMeshes()
+
+    // Find the geometry export container
+    const container = worldRenderer.scene.getObjectByName('geometry-export-root')
+    if (!container) return
+
+    // Traverse all meshes and add BoxHelper for each
+    container.traverse((obj) => {
+      if ((obj as THREE.Mesh).isMesh && obj.name === 'mesh') {
+        const mesh = obj as THREE.Mesh
+        const helper = new THREE.BoxHelper(mesh, 0xff_ff_00)
+        helper.name = 'debug-helper'
+        mesh.add(helper)
+        this.debugHelpers.push(helper)
+      }
+    })
+  }
+
+  private removeDebugMeshes() {
+    for (const helper of this.debugHelpers) {
+      helper.parent?.remove(helper)
+      helper.dispose()
+    }
+    this.debugHelpers = []
+  }
+
+  private updateDebugMeshVisibility() {
+    const visible = this.params.showDebugMesh ?? true
+    for (const helper of this.debugHelpers) {
+      helper.visible = visible
     }
   }
 

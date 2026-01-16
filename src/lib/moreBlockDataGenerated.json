@@ -710,5 +710,13 @@
         "frogspawn": "rgb(64, 64, 255)",
         "reinforced_deepslate": "rgb(100, 100, 100)",
         "decorated_pot": "rgb(142, 60, 46)"
+    },
+    "invisibleBlocks": {
+        "air": true,
+        "void_air": true,
+        "cave_air": true,
+        "barrier": true,
+        "light": true,
+        "moving_piston": true
     }
 }

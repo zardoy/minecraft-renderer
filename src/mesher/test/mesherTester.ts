@@ -5,12 +5,17 @@ import blocksAtlasesJson from 'mc-assets/dist/blocksAtlases.json'
 import { World as MesherWorld } from '../world'
 import { setBlockStatesData, getSectionGeometry } from '../models'
 
-export const setup = (version, initialBlocks: Array<[number[], string]>) => {
+interface Options {
+  chunkOverride?: PCChunk
+  noDebugTiles?: boolean
+}
+
+export const setup = (version, initialBlocks: Array<[number[], string]>, options?: Options) => {
   const mcData = MinecraftData(version)
   const blockStatesModels = require(`mc-assets/dist/blockStatesModels.json`)
   const mesherWorld = new MesherWorld(version)
   const Chunk = ChunkLoader(version)
-  const chunk1 = new Chunk(undefined as any)
+  const chunk1 = options?.chunkOverride ?? new Chunk(undefined as any)
 
   const pos = new Vec3(2, 5, 2)
   for (const [addPos, name] of initialBlocks) {
@@ -33,7 +38,7 @@ export const setup = (version, initialBlocks: Array<[number[], string]>) => {
     }
   }
 
-  setBlockStatesData(blockStatesModels, blocksAtlasesJson, true, false, version)
+  setBlockStatesData(blockStatesModels, blocksAtlasesJson, !options?.noDebugTiles, false, version)
   const reload = () => {
     mesherWorld.removeColumn(0, 0)
     mesherWorld.addColumn(0, 0, chunk1.toJson())
