@@ -264,6 +264,7 @@ export function renderWasmOutputToGeometry(
     const cachedModel = getCachedBlockModel(blockStateId, version, blockProvider, PrismarineBlock)
     if (!cachedModel) continue
 
+    if (false) {
     // For now, use first model variant (can be extended later)
     const modelVariant = cachedModel.modelVariants[0]
     if (!modelVariant) continue
@@ -282,19 +283,9 @@ export function renderWasmOutputToGeometry(
     // We need to match this order to get the same vertex ordering
 
     // Find the element that contains faces (use cached element data)
-    let matchingElementData: { element: any, localMatrix: any, localShift: any } | null = null
-    for (const elemData of elements) {
-      if (elemData.element.faces && Object.keys(elemData.element.faces).length > 0) {
-        matchingElementData = elemData
-        break
-      }
-    }
+    const faceElements = elements.filter(elemData => elemData.element.faces && Object.keys(elemData.element.faces).length > 0)
 
-    if (!matchingElementData || !matchingElementData.element.faces) continue
-
-    const matchingElement = matchingElementData.element
-    const localMatrix = matchingElementData.localMatrix
-    const localShift = matchingElementData.localShift
+    if (faceElements.length === 0) continue
 
     // Map face names to their index in WASM output
     const faceNameToIndex: Record<string, number> = {
@@ -319,8 +310,13 @@ export function renderWasmOutputToGeometry(
     }
 
     // Process faces in the order they appear in the model (matching TS)
-    // eslint-disable-next-line guard-for-in
-    for (const faceName in matchingElement.faces) {
+    for (const elemData of faceElements) {
+      const element = elemData.element
+      const localMatrix = elemData.localMatrix
+      const localShift = elemData.localShift
+
+      // eslint-disable-next-line guard-for-in
+      for (const faceName in element.faces) {
       const faceIdx = faceNameToIndex[faceName]
       if (faceIdx === undefined) continue
 
@@ -329,7 +325,7 @@ export function renderWasmOutputToGeometry(
         continue
       }
 
-      const matchingEFace = matchingElement.faces[faceName]
+      const matchingEFace = element.faces[faceName]
       const { dir, corners } = elemFaces[faceName]
 
       // Get the correct data index for this face based on WASM's processing order
@@ -358,12 +354,12 @@ export function renderWasmOutputToGeometry(
       // Get tint (use cached model data and world if available)
       const tint = getTint(matchingEFace, cachedModel.blockName, cachedModel.blockProps, biome, world)
 
-      const minx = matchingElement.from[0]
-      const miny = matchingElement.from[1]
-      const minz = matchingElement.from[2]
-      const maxx = matchingElement.to[0]
-      const maxy = matchingElement.to[1]
-      const maxz = matchingElement.to[2]
+      const minx = element.from[0]
+      const miny = element.from[1]
+      const minz = element.from[2]
+      const maxx = element.to[0]
+      const maxy = element.to[1]
+      const maxz = element.to[2]
 
       // Calculate transformed direction
       const transformedDir = matmul3(globalMatrix, dir)
@@ -450,7 +446,179 @@ export function renderWasmOutputToGeometry(
         log(`[WASM]     Indices (standard): tri1=[${tri1.join(',')}], tri2=[${tri2.join(',')}], aos=[${aoValues.join(',')}]`)
       }
       indices.push(...tri1, ...tri2)
+      }
     }
+    }
+
+    const models = cachedModel.models
+    if (!models || models.length == 0) continue
+
+    const faceNameToIndex: Record<string, number> = {
+      'up': 0,
+      'down': 1,
+      'east': 2,
+      'west': 3,
+      'south': 4,
+      'north': 5
+    }
+
+    const dirKeyToIndex: Record<string, number> = {
+      '0,1,0': 0,
+      '0,-1,0': 1,
+      '1,0,0': 2,
+      '-1,0,0': 3,
+      '0,0,1': 4,
+      '0,0,-1': 5
+    }
+
+    const wasmFaceOrder = ['up', 'down', 'east', 'west', 'south', 'north']
+    const wasmFaceToDataIndex: Record<number, number> = {}
+    let dataIndex = 0
+    for (const faceName of wasmFaceOrder) {
+      const faceIdx = faceNameToIndex[faceName]
+      if ((block.visible_faces & (1 << faceIdx)) !== 0) {
+        wasmFaceToDataIndex[faceIdx] = dataIndex++
+      }
+    }
+
+    for (const modelVars of models ?? []) {
+      const model = modelVars[0]
+      if (!model) continue
+
+      let globalMatrix = null as any
+      let globalShift = null as any
+      for (const axis of ['x', 'y', 'z'] as const) {
+        if (axis in model) {
+          globalMatrix = globalMatrix
+            ? matmulmat3(globalMatrix, buildRotationMatrix(axis, -(model[axis] ?? 0)))
+            : buildRotationMatrix(axis, -(model[axis] ?? 0))
+        }
+      }
+      if (globalMatrix) {
+        globalShift = [8, 8, 8]
+        globalShift = vecsub3(globalShift, matmul3(globalMatrix, globalShift))
+      }
+
+      for (const element of model.elements ?? []) {
+        let localMatrix = null as any
+        let localShift = null as any
+        if (element.rotation) {
+          localMatrix = buildRotationMatrix(
+            element.rotation.axis,
+            element.rotation.angle
+          )
+          localShift = vecsub3(
+            element.rotation.origin,
+            matmul3(localMatrix, element.rotation.origin)
+          )
+        }
+
+        // eslint-disable-next-line guard-for-in
+        for (const faceName in element.faces) {
+          const matchingEFace = element.faces[faceName]
+          const { dir, corners } = elemFaces[faceName]
+
+          const transformedDir = matmul3(globalMatrix, dir)
+          const dirKey = `${Math.round(transformedDir[0])},${Math.round(transformedDir[1])},${Math.round(transformedDir[2])}`
+          const faceIdx = dirKeyToIndex[dirKey]
+          if (faceIdx === undefined) continue
+
+          const minx = element.from[0]
+          const miny = element.from[1]
+          const minz = element.from[2]
+          const maxx = element.to[0]
+          const maxy = element.to[1]
+          const maxz = element.to[2]
+
+          const isBoundary =
+            (faceName === 'east' && maxx === 16) ||
+            (faceName === 'west' && minx === 0) ||
+            (faceName === 'up' && maxy === 16) ||
+            (faceName === 'down' && miny === 0) ||
+            (faceName === 'south' && maxz === 16) ||
+            (faceName === 'north' && minz === 0)
+
+          if (matchingEFace.cullface && isBoundary) {
+            if ((block.visible_faces & (1 << faceIdx)) === 0) {
+              continue
+            }
+          }
+
+          const faceDataIndex = wasmFaceToDataIndex[faceIdx]
+          const aoValues = faceDataIndex === undefined ? [3, 3, 3, 3] : block.ao_data[faceDataIndex]
+          const lightValues = faceDataIndex === undefined ? [1, 1, 1, 1] : block.light_data[faceDataIndex]
+
+          const texture = matchingEFace.texture as any
+          const u = texture.u || 0
+          const v = texture.v || 0
+          const su = texture.su || 1
+          const sv = texture.sv || 1
+
+          let r = matchingEFace.rotation || 0
+          if (faceName === 'down') {
+            r += 180
+          }
+          const uvcs = Math.cos(r * Math.PI / 180)
+          const uvsn = -Math.sin(r * Math.PI / 180)
+
+          const tint = getTint(matchingEFace, cachedModel.blockName, cachedModel.blockProps, biome, world)
+
+          const baseIndex = currentIndex
+          for (let cornerIdx = 0; cornerIdx < 4; cornerIdx++) {
+            const pos = corners[cornerIdx]
+
+            let vertex = [
+              (pos[0] ? maxx : minx),
+              (pos[1] ? maxy : miny),
+              (pos[2] ? maxz : minz)
+            ]
+
+            vertex = vecadd3(matmul3(localMatrix, vertex), localShift)
+            vertex = vecadd3(matmul3(globalMatrix, vertex), globalShift)
+            vertex = vertex.map(v => v / 16)
+
+            const worldPos = [
+              vertex[0] + (bx & 15) - 8,
+              vertex[1] + (by & 15) - 8,
+              vertex[2] + (bz & 15) - 8
+            ]
+
+            positions.push(...worldPos)
+
+            normals.push(transformedDir[0], transformedDir[1], transformedDir[2])
+
+            const ao = aoValues[cornerIdx]
+
+            const wasmLightValue = lightValues[cornerIdx]
+            const baseLight = wasmLightValue > 0 ? wasmLightValue : 1.0
+            const cornerLightResult = baseLight * 15
+
+            const light = (ao + 1) / 4 * (cornerLightResult / 15)
+
+            colors.push(baseLight * tint[0] * light, baseLight * tint[1] * light, baseLight * tint[2] * light)
+
+            const baseu = (pos[3] - 0.5) * uvcs - (pos[4] - 0.5) * uvsn + 0.5
+            const basev = (pos[3] - 0.5) * uvsn + (pos[4] - 0.5) * uvcs + 0.5
+            const finalU = baseu * su + u
+            const finalV = basev * sv + v
+            uvs.push(finalU, finalV)
+
+            currentIndex++
+          }
+
+          let tri1: number[], tri2: number[]
+          if (aoValues[0] + aoValues[3] >= aoValues[1] + aoValues[2]) {
+            tri1 = [baseIndex, baseIndex + 3, baseIndex + 2]
+            tri2 = [baseIndex, baseIndex + 1, baseIndex + 3]
+          } else {
+            tri1 = [baseIndex, baseIndex + 1, baseIndex + 2]
+            tri2 = [baseIndex + 2, baseIndex + 1, baseIndex + 3]
+          }
+          indices.push(...tri1, ...tri2)
+        }
+      }
+    }
+
   }
 
   const result = {
