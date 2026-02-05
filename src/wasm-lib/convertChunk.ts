@@ -11,6 +11,7 @@ export interface ChunkConversionResult {
   transparentBlocks: Uint16Array
   noAoBlocks: Uint16Array
   cullIdenticalBlocks: Uint16Array
+  occludingBlocks: Uint16Array
   blockCount: number
 }
 
@@ -91,6 +92,38 @@ export function convertChunkToWasm(
   const noAoBlocks = new Uint16Array(mcData.blocksArray.filter(x => moreBlockDataGeneratedJson.noOcclusions[x.name]).flatMap(blockToIds))
   const cullIdenticalBlocks = new Uint16Array(mcData.blocksArray.filter(x => x.name.includes('glass') || x.name.includes('ice')).flatMap(blockToIds))
 
+  const isLikelyFullCubeBlockName = (name: string) => {
+    if (!name) return false
+    if (name.includes('stairs')) return false
+    if (name.includes('slab')) return false
+    if (name.includes('fence')) return false
+    if (name.includes('gate')) return false
+    if (name.includes('pane')) return false
+    if (name.includes('wall')) return false
+    if (name.includes('door')) return false
+    if (name.includes('trapdoor')) return false
+    if (name.includes('sign')) return false
+    if (name.includes('banner')) return false
+    if (name.includes('rail')) return false
+    if (name.includes('torch')) return false
+    if (name.includes('lantern')) return false
+    if (name.includes('button')) return false
+    if (name.includes('lever')) return false
+    if (name.includes('pressure_plate')) return false
+    if (name.includes('carpet')) return false
+    if (name.includes('flower')) return false
+    if (name.includes('sapling')) return false
+    if (name.includes('tall_grass')) return false
+    if (name === 'grass' || name === 'short_grass' || name === 'tall_grass') return false
+    return true
+  }
+
+  const occludingBlocks = new Uint16Array(
+    mcData.blocksArray
+      .filter(b => b.boundingBox === 'block' && !b.transparent && isLikelyFullCubeBlockName(b.name))
+      .flatMap(blockToIds)
+  )
+
   return {
     blockStates,
     blockLight,
@@ -100,6 +133,7 @@ export function convertChunkToWasm(
     transparentBlocks,
     noAoBlocks,
     cullIdenticalBlocks,
+    occludingBlocks,
     blockCount,
   }
 }

@@ -238,6 +238,7 @@ setInterval(async () => {
           transparentBlocks,
           noAoBlocks,
           cullIdenticalBlocks,
+          occludingBlocks,
         } = conversionResult
 
         // Run WASM mesher for this section
@@ -245,7 +246,7 @@ setInterval(async () => {
           x, y, z, sectionHeight,
           worldMinY, worldMaxY,
           blockStates, blockLight, skyLight, biomesArray,
-          invisibleBlocks, transparentBlocks, noAoBlocks, cullIdenticalBlocks,
+          invisibleBlocks, transparentBlocks, noAoBlocks, cullIdenticalBlocks, occludingBlocks,
           config?.enableLighting !== false, // default true
           // config?.smoothLighting !== false, // default true
           false,

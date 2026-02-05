@@ -70,6 +70,7 @@ impl Mesher {
         transparent_blocks: &[u16],
         no_ao_blocks: &[u16], // Block states that don't contribute to AO
         cull_identical_blocks: &[u16], // Block states that cull identical neighbors (glass, ice)
+        occluding_blocks: &[u16],
     ) -> GeometryOutput {
         // Build world view from input data
         let chunk = ChunkData {
@@ -93,6 +94,7 @@ impl Mesher {
         let no_ao_set: std::collections::HashSet<u16> = no_ao_blocks.iter().cloned().collect();
         let cull_identical_set: std::collections::HashSet<u16> =
             cull_identical_blocks.iter().cloned().collect();
+        let occluding_set: std::collections::HashSet<u16> = occluding_blocks.iter().cloned().collect();
 
         // Pre-allocate with estimated capacity
         let estimated_blocks = ((self.section_height * 16 * 16) / 4) as usize; // Rough estimate
@@ -133,11 +135,11 @@ impl Mesher {
 
                         // Determine if face should be culled
                         let should_cull = if neighbor_state == 0 {
-                            false // Never cull against air
+                            false
                         } else if cull_identical && neighbor_state == block_state {
-                            true // Cull identical blocks (glass, ice)
-                        } else if !transparent_set.contains(&neighbor_state) && !is_transparent {
-                            true // Cull solid neighbor
+                            true
+                        } else if occluding_set.contains(&neighbor_state) && !is_transparent {
+                            true
                         } else {
                             false
                         };

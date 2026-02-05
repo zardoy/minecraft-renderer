@@ -43,6 +43,7 @@ pub fn generate_geometry(
     transparent_blocks: &[u16],
     no_ao_blocks: &[u16],          // Block states that don't contribute to AO
     cull_identical_blocks: &[u16], // Block states that cull identical neighbors (glass, ice)
+    occluding_blocks: &[u16],
 
     // Config
     enable_lighting: bool,
@@ -81,6 +82,7 @@ pub fn generate_geometry(
         transparent_blocks,
         no_ao_blocks,
         cull_identical_blocks,
+        occluding_blocks,
     );
 
     // Convert to JS object using serde-wasm-bindgen

@@ -220,12 +220,13 @@ let WASM_VECTOR_LEN = 0;
  * @param {Uint16Array} transparent_blocks
  * @param {Uint16Array} no_ao_blocks
  * @param {Uint16Array} cull_identical_blocks
+ * @param {Uint16Array} occluding_blocks
  * @param {boolean} enable_lighting
  * @param {boolean} smooth_lighting
  * @param {number} sky_light_value
  * @returns {any}
  */
-export function generate_geometry(section_x, section_y, section_z, section_height, world_min_y, world_max_y, block_states, block_light, sky_light, biomes, invisible_blocks, transparent_blocks, no_ao_blocks, cull_identical_blocks, enable_lighting, smooth_lighting, sky_light_value) {
+export function generate_geometry(section_x, section_y, section_z, section_height, world_min_y, world_max_y, block_states, block_light, sky_light, biomes, invisible_blocks, transparent_blocks, no_ao_blocks, cull_identical_blocks, occluding_blocks, enable_lighting, smooth_lighting, sky_light_value) {
     _assertNum(section_x);
     _assertNum(section_y);
     _assertNum(section_z);
@@ -248,10 +249,12 @@ export function generate_geometry(section_x, section_y, section_z, section_heigh
     const len6 = WASM_VECTOR_LEN;
     const ptr7 = passArray16ToWasm0(cull_identical_blocks, wasm.__wbindgen_malloc);
     const len7 = WASM_VECTOR_LEN;
+    const ptr8 = passArray16ToWasm0(occluding_blocks, wasm.__wbindgen_malloc);
+    const len8 = WASM_VECTOR_LEN;
     _assertBoolean(enable_lighting);
     _assertBoolean(smooth_lighting);
     _assertNum(sky_light_value);
-    const ret = wasm.generate_geometry(section_x, section_y, section_z, section_height, world_min_y, world_max_y, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, enable_lighting, smooth_lighting, sky_light_value);
+    const ret = wasm.generate_geometry(section_x, section_y, section_z, section_height, world_min_y, world_max_y, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, enable_lighting, smooth_lighting, sky_light_value);
     return ret;
 }
 
