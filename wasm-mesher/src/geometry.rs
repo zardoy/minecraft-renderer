@@ -4,17 +4,47 @@ use crate::lighting::{calculate_color, FACE_DIRS};
 /// Format: [x, y, z, u, v] where u,v are UV coordinates
 pub const FACE_CORNERS: [[[i32; 5]; 4]; 6] = [
     // up
-    [[0, 1, 1, 0, 1], [1, 1, 1, 1, 1], [0, 1, 0, 0, 0], [1, 1, 0, 1, 0]],
+    [
+        [0, 1, 1, 0, 1],
+        [1, 1, 1, 1, 1],
+        [0, 1, 0, 0, 0],
+        [1, 1, 0, 1, 0],
+    ],
     // down
-    [[1, 0, 1, 0, 1], [0, 0, 1, 1, 1], [1, 0, 0, 0, 0], [0, 0, 0, 1, 0]],
+    [
+        [1, 0, 1, 0, 1],
+        [0, 0, 1, 1, 1],
+        [1, 0, 0, 0, 0],
+        [0, 0, 0, 1, 0],
+    ],
     // east
-    [[1, 1, 1, 0, 0], [1, 0, 1, 0, 1], [1, 1, 0, 1, 0], [1, 0, 0, 1, 1]],
+    [
+        [1, 1, 1, 0, 0],
+        [1, 0, 1, 0, 1],
+        [1, 1, 0, 1, 0],
+        [1, 0, 0, 1, 1],
+    ],
     // west
-    [[0, 1, 0, 0, 0], [0, 0, 0, 0, 1], [0, 1, 1, 1, 0], [0, 0, 1, 1, 1]],
+    [
+        [0, 1, 0, 0, 0],
+        [0, 0, 0, 0, 1],
+        [0, 1, 1, 1, 0],
+        [0, 0, 1, 1, 1],
+    ],
     // south
-    [[0, 0, 1, 0, 1], [1, 0, 1, 1, 1], [0, 1, 1, 0, 0], [1, 1, 1, 1, 0]],
+    [
+        [0, 0, 1, 0, 1],
+        [1, 0, 1, 1, 1],
+        [0, 1, 1, 0, 0],
+        [1, 1, 1, 1, 0],
+    ],
     // north
-    [[1, 0, 0, 1, 1], [0, 0, 0, 0, 1], [1, 1, 0, 1, 0], [0, 1, 0, 0, 0]],
+    [
+        [1, 0, 0, 1, 1],
+        [0, 0, 0, 0, 1],
+        [1, 1, 0, 1, 0],
+        [0, 1, 0, 0, 0],
+    ],
 ];
 
 pub struct GeometryBuilder {
@@ -75,7 +105,8 @@ impl GeometryBuilder {
             self.normals.push(face_dir[2] as f32);
 
             // Color (with AO and light)
-            let color = calculate_color(base_color, ao_values[corner_idx], light_values[corner_idx]);
+            let color =
+                calculate_color(base_color, ao_values[corner_idx], light_values[corner_idx]);
             self.colors.push(color[0]);
             self.colors.push(color[1]);
             self.colors.push(color[2]);

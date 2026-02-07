@@ -1,6 +1,7 @@
 import { Vec3 } from 'vec3'
 import { convertChunkToWasm } from '../wasm-lib/convertChunk'
 import { renderWasmOutputToGeometry } from '../wasm-lib/render-from-wasm'
+import { setBlockStatesData as setMesherData } from './models'
 import { defaultMesherConfig, type MesherGeometryOutput, IS_FULL_WORLD_SECTION, SECTION_HEIGHT } from './shared'
 import { worldColumnKey, World } from './world'
 
@@ -117,7 +118,9 @@ const handleMessage = async (data: any) => {
 
   switch (data.type) {
     case 'mesherData': {
-      // Initialize WASM when mesher data is ready
+      setMesherData(data.blockstatesModels, data.blocksAtlas, data.config.outputFormat === 'webgpu')
+      ;(globalThis as any).__wasmBlockModelCache = new Map()
+
       await initWasm()
       allDataReady = true
       workerIndex = data.workerIndex
@@ -306,8 +309,8 @@ setInterval(async () => {
           wasmResult,
           version,
           sectionKeyStr,
-          { x: x + 8, y: y + 8, z: z + 8 }, // section position
-          undefined // no world for now
+          { x: x + 8, y: y + 8, z: z + 8 },
+          world
         )
 
         // Convert to MesherGeometryOutput format

@@ -4,6 +4,24 @@ use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::rc::Rc;
 
+const FACE_MASK1: [[i32; 3]; 6] = [
+    [1, 1, 0],
+    [1, 1, 0],
+    [1, 1, 0],
+    [1, 1, 0],
+    [1, 0, 1],
+    [1, 0, 1],
+];
+
+const FACE_MASK2: [[i32; 3]; 6] = [
+    [0, 1, 1],
+    [0, 1, 1],
+    [1, 0, 1],
+    [1, 0, 1],
+    [0, 1, 1],
+    [0, 1, 1],
+];
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct MetaKey {
     invisible_len: usize,
@@ -203,7 +221,7 @@ impl Mesher {
                         let mut face_light = [0.0f32; 4];
 
                         for (corner_idx, corner) in corners.iter().enumerate() {
-                            let corner_offset = [corner[0], corner[1], corner[2]];
+                            let corner_offset = [corner[0] * 2 - 1, corner[1] * 2 - 1, corner[2] * 2 - 1];
 
                             // Calculate AO
                             face_ao[corner_idx] = calculate_ao_with_set(
@@ -211,7 +229,7 @@ impl Mesher {
                                 x,
                                 y,
                                 z,
-                                *face_dir,
+                                face_idx,
                                 corner_offset,
                                 &meta.no_ao,
                                 &meta.occluding,
@@ -225,6 +243,7 @@ impl Mesher {
                                     y,
                                     z,
                                     *face_dir,
+                                    face_idx,
                                     corner_offset,
                                     self.smooth_lighting,
                                 );
@@ -333,22 +352,23 @@ fn calculate_ao_with_set(
     x: i32,
     y: i32,
     z: i32,
-    face_dir: [i32; 3],
+    face_idx: usize,
     corner_offset: [i32; 3],
     no_ao_map: &[u8],
     occluding_map: &[u8],
 ) -> u8 {
-    let [fx, fy, fz] = face_dir;
     let [cx, cy, cz] = corner_offset;
 
-    // Calculate side block positions
-    let side1_x = x + if fx != 0 { 0 } else { cx };
-    let side1_y = y + if fy != 0 { 0 } else { cy };
-    let side1_z = z + if fz != 0 { 0 } else { cz };
+    let mask1 = FACE_MASK1[face_idx];
+    let mask2 = FACE_MASK2[face_idx];
 
-    let side2_x = x + if fx != 0 { cx } else { 0 };
-    let side2_y = y + if fy != 0 { cy } else { 0 };
-    let side2_z = z + if fz != 0 { cz } else { 0 };
+    let side1_x = x + cx * mask1[0];
+    let side1_y = y + cy * mask1[1];
+    let side1_z = z + cz * mask1[2];
+
+    let side2_x = x + cx * mask2[0];
+    let side2_y = y + cy * mask2[1];
+    let side2_z = z + cz * mask2[2];
 
     let corner_x = x + cx;
     let corner_y = y + cy;

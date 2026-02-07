@@ -62,6 +62,7 @@ interface CachedBlockModel {
   blockName: string
   blockProps: Record<string, any>
   models: any // BlockModelPartsResolved
+  isCube: boolean
   // Precomputed per-model variant
   modelVariants: Array<{
     model: any
@@ -161,11 +162,24 @@ function getCachedBlockModel(
       })
     }).flat()
 
+    const isCube = (() => {
+      try {
+        if (!models?.length || models.length !== 1) return false
+        if (blockObj.transparent) return false
+        return models[0].every((v) => v.elements.every((e) => {
+          return e.from[0] === 0 && e.from[1] === 0 && e.from[2] === 0 && e.to[0] === 16 && e.to[1] === 16 && e.to[2] === 16
+        }))
+      } catch {
+        return false
+      }
+    })()
+
     const cached: CachedBlockModel = {
       blockName,
       blockProps,
       models,
       modelVariants,
+      isCube,
     }
 
     cache.set(cacheKey, cached)
@@ -211,6 +225,149 @@ function getTint(
   return [1, 1, 1]
 }
 
+const ALWAYS_WATERLOGGED = new Set([
+  'seagrass',
+  'tall_seagrass',
+  'kelp',
+  'kelp_plant',
+  'bubble_column'
+])
+
+const isBlockWaterlogged = (block: any) => {
+  const props = block?.getProperties?.()
+  return props?.waterlogged === true || props?.waterlogged === 'true' || ALWAYS_WATERLOGGED.has(block?.name)
+}
+
+const getVec = (v: Vec3, dir: Vec3) => {
+  for (const coord of ['x', 'y', 'z'] as const) {
+    if (Math.abs((dir as any)[coord]) > 0) (v as any)[coord] = 0
+  }
+  return v.plus(dir)
+}
+
+const getLiquidRenderHeight = (world: World, block: any, type: number, pos: Vec3, isWater: boolean, isRealWater: boolean) => {
+  if ((isWater && !isRealWater) || (block && isBlockWaterlogged(block))) return 8 / 9
+  if (!block || block.type !== type) return 1 / 9
+  if (block.metadata === 0) {
+    const blockAbove = world.getBlock(pos.offset(0, 1, 0))
+    if (blockAbove && blockAbove.type === type) return 1
+    return 8 / 9
+  }
+  return ((block.metadata >= 8 ? 8 : 7 - block.metadata) + 1) / 9
+}
+
+const renderLiquidToGeometry = (
+  world: World,
+  cursor: Vec3,
+  texture: any,
+  type: number,
+  biome: string,
+  water: boolean,
+  isRealWater: boolean,
+  positions: number[],
+  normals: number[],
+  colors: number[],
+  uvs: number[],
+  indices: number[],
+) => {
+  const heights: number[] = []
+  for (let z = -1; z <= 1; z++) {
+    for (let x = -1; x <= 1; x++) {
+      const pos = cursor.offset(x, 0, z)
+      heights.push(getLiquidRenderHeight(world, world.getBlock(pos), type, pos, water, isRealWater))
+    }
+  }
+
+  const cornerHeights = [
+    Math.max(Math.max(heights[0], heights[1]), Math.max(heights[3], heights[4])),
+    Math.max(Math.max(heights[1], heights[2]), Math.max(heights[4], heights[5])),
+    Math.max(Math.max(heights[3], heights[4]), Math.max(heights[6], heights[7])),
+    Math.max(Math.max(heights[4], heights[5]), Math.max(heights[7], heights[8]))
+  ]
+
+  for (const face in elemFaces) {
+    const { dir, corners, mask1, mask2 } = (elemFaces as any)[face]
+    const isUp = dir[1] === 1
+
+    const neighborPos = cursor.offset(dir[0], dir[1], dir[2])
+    const neighbor = world.getBlock(neighborPos)
+    if (!neighbor) continue
+    if (neighbor.type === type || (water && (neighbor.name === 'water' || isBlockWaterlogged(neighbor)))) continue
+    if (neighbor.isCube && !neighbor.transparent && !isUp) continue
+
+    let tint: [number, number, number] = [1, 1, 1]
+    if (water) {
+      initializeTints()
+      let m = 1
+      if (Math.abs(dir[0]) > 0) m = 0.6
+      else if (Math.abs(dir[2]) > 0) m = 0.8
+      const wt = tints.water[biome] || [1, 1, 1]
+      tint = [wt[0] * m, wt[1] * m, wt[2] * m]
+    }
+
+    const u = texture.u || 0
+    const v = texture.v || 0
+    const su = texture.su || 1
+    const sv = texture.sv || 1
+
+    const baseLight = world.getLight(neighborPos, undefined, undefined, water ? 'water' : 'lava') / 15
+
+    const baseIndex = positions.length / 3
+
+    for (const pos of corners) {
+      const height = cornerHeights[pos[2] * 2 + pos[0]]
+      const OFFSET = 0.0001
+
+      positions.push(
+        (pos[0] ? 1 - OFFSET : OFFSET) + (cursor.x & 15) - 8,
+        (pos[1] ? height - OFFSET : OFFSET) + (cursor.y & 15) - 8,
+        (pos[2] ? 1 - OFFSET : OFFSET) + (cursor.z & 15) - 8
+      )
+
+      normals.push(dir[0], dir[1], dir[2])
+      uvs.push(pos[3] * su + u, pos[4] * sv * (pos[1] ? 1 : height) + v)
+
+      let cornerLightResult = baseLight
+      if (world.config.smoothLighting) {
+        const dx = pos[0] * 2 - 1
+        const dy = pos[1] * 2 - 1
+        const dz = pos[2] * 2 - 1
+        const cornerDir: [number, number, number] = [dx, dy, dz]
+        const side1Dir: [number, number, number] = [dx * mask1[0], dy * mask1[1], dz * mask1[2]]
+        const side2Dir: [number, number, number] = [dx * mask2[0], dy * mask2[1], dz * mask2[2]]
+
+        const dirVec = new Vec3(dir[0], dir[1], dir[2])
+
+        const side1LightDir = getVec(new Vec3(side1Dir[0], side1Dir[1], side1Dir[2]), dirVec)
+        const side1Light = world.getLight(cursor.plus(side1LightDir)) / 15
+        const side2DirLight = getVec(new Vec3(side2Dir[0], side2Dir[1], side2Dir[2]), dirVec)
+        const side2Light = world.getLight(cursor.plus(side2DirLight)) / 15
+        const cornerLightDir = getVec(new Vec3(cornerDir[0], cornerDir[1], cornerDir[2]), dirVec)
+        const cornerLight = world.getLight(cursor.plus(cornerLightDir)) / 15
+
+        cornerLightResult = (side1Light + side2Light + cornerLight + baseLight) / 4
+      }
+
+      colors.push(tint[0] * cornerLightResult, tint[1] * cornerLightResult, tint[2] * cornerLightResult)
+    }
+
+    indices.push(
+      baseIndex,
+      baseIndex + 1,
+      baseIndex + 2,
+      baseIndex + 2,
+      baseIndex + 1,
+      baseIndex + 3,
+      baseIndex,
+      baseIndex + 2,
+      baseIndex + 1,
+      baseIndex + 2,
+      baseIndex + 3,
+      baseIndex + 1,
+    )
+  }
+}
+
 /**
  * Render WASM mesher output to Three.js geometry
  */
@@ -231,12 +388,12 @@ export function renderWasmOutputToGeometry(
   const mcData = MinecraftData(version)
   const PrismarineBlock = PrismarineBlockLoader(version)
 
-  // Initialize block provider
   let blockProvider: WorldBlockProvider
-  if (typeof worldBlockProvider === 'function') {
+  if ((globalThis as any).blockProvider) {
+    blockProvider = (globalThis as any).blockProvider
+  } else if (typeof worldBlockProvider === 'function') {
     blockProvider = worldBlockProvider(blockStatesModels, blocksAtlasesJson, version)
   } else {
-    // Try alternative import
     const wbp = require('mc-assets/dist/worldBlockProvider')
     blockProvider = (wbp.default || wbp)(blockStatesModels, blocksAtlasesJson, version)
   }
@@ -252,6 +409,14 @@ export function renderWasmOutputToGeometry(
   const uvs: number[] = []
   const indices: number[] = []
 
+  const liquidQueue: Array<{
+    pos: Vec3,
+    type: number,
+    biome: string,
+    water: boolean,
+    isRealWater: boolean,
+  }> = []
+
   let currentIndex = 0
 
   for (const block of wasmOutput.blocks) {
@@ -260,15 +425,44 @@ export function renderWasmOutputToGeometry(
 
     log(`[WASM] Processing block at (${bx}, ${by}, ${bz}), stateId=${blockStateId}, visible_faces=0b${block.visible_faces.toString(2).padStart(6, '0')}`)
 
-    // Get cached block model with precomputed matrices
-    const cachedModel = getCachedBlockModel(blockStateId, version, blockProvider, PrismarineBlock)
-    if (!cachedModel) continue
+    const prismBlock = PrismarineBlock.fromStateId(blockStateId, 1)
 
     let biome: string | undefined
     if (world) {
       const blockObj = world.getBlock(new Vec3(bx, by, bz))
       biome = blockObj?.biome?.name
     }
+
+    if (world) {
+      const waterlogged = prismBlock.name !== 'water' && prismBlock.name !== 'lava' && isBlockWaterlogged(prismBlock)
+
+      if (prismBlock.name === 'water' || waterlogged) {
+        liquidQueue.push({
+          pos: new Vec3(bx, by, bz),
+          type: prismBlock.type,
+          biome: biome || 'plains',
+          water: true,
+          isRealWater: prismBlock.name === 'water' && !waterlogged,
+        })
+      }
+
+      if (prismBlock.name === 'lava') {
+        liquidQueue.push({
+          pos: new Vec3(bx, by, bz),
+          type: prismBlock.type,
+          biome: biome || 'plains',
+          water: false,
+          isRealWater: false,
+        })
+      }
+
+      if (prismBlock.name === 'water' || prismBlock.name === 'lava') {
+        continue
+      }
+    }
+
+    const cachedModel = getCachedBlockModel(blockStateId, version, blockProvider, PrismarineBlock)
+    if (!cachedModel) continue
 
     if (false) {
     // For now, use first model variant (can be extended later)
@@ -332,7 +526,7 @@ export function renderWasmOutputToGeometry(
       }
 
       const matchingEFace = element.faces[faceName]
-      const { dir, corners } = elemFaces[faceName]
+      const { dir, corners, mask1, mask2 } = elemFaces[faceName]
 
       // Get the correct data index for this face based on WASM's processing order
       const faceDataIndex = wasmFaceToDataIndex[faceName]
@@ -519,10 +713,15 @@ export function renderWasmOutputToGeometry(
         // eslint-disable-next-line guard-for-in
         for (const faceName in element.faces) {
           const matchingEFace = element.faces[faceName]
-          const { dir, corners } = elemFaces[faceName]
+          const { dir, corners, mask1, mask2 } = elemFaces[faceName]
 
           const transformedDir = matmul3(globalMatrix, dir)
-          const dirKey = `${Math.round(transformedDir[0])},${Math.round(transformedDir[1])},${Math.round(transformedDir[2])}`
+          const transformedDirI: [number, number, number] = [
+            Math.round(transformedDir[0]),
+            Math.round(transformedDir[1]),
+            Math.round(transformedDir[2]),
+          ]
+          const dirKey = `${transformedDirI[0]},${transformedDirI[1]},${transformedDirI[2]}`
           const faceIdx = dirKeyToIndex[dirKey]
           if (faceIdx === undefined) continue
 
@@ -533,23 +732,15 @@ export function renderWasmOutputToGeometry(
           const maxy = element.to[1]
           const maxz = element.to[2]
 
-          const isBoundary =
-            (faceName === 'east' && maxx === 16) ||
-            (faceName === 'west' && minx === 0) ||
-            (faceName === 'up' && maxy === 16) ||
-            (faceName === 'down' && miny === 0) ||
-            (faceName === 'south' && maxz === 16) ||
-            (faceName === 'north' && minz === 0)
-
-          if (matchingEFace.cullface && isBoundary) {
+          if (matchingEFace.cullface) {
             if ((block.visible_faces & (1 << faceIdx)) === 0) {
               continue
             }
           }
 
           const faceDataIndex = wasmFaceToDataIndex[faceIdx]
-          const aoValues = faceDataIndex === undefined ? [3, 3, 3, 3] : block.ao_data[faceDataIndex]
-          const lightValues = faceDataIndex === undefined ? [1, 1, 1, 1] : block.light_data[faceDataIndex]
+          const aoValuesRaw = faceDataIndex === undefined ? undefined : block.ao_data[faceDataIndex]
+          const lightValuesRaw = faceDataIndex === undefined ? undefined : block.light_data[faceDataIndex]
 
           const texture = matchingEFace.texture as any
           const u = texture.u || 0
@@ -567,6 +758,7 @@ export function renderWasmOutputToGeometry(
           const tint = getTint(matchingEFace, cachedModel.blockName, cachedModel.blockProps, biome, world)
 
           const baseIndex = currentIndex
+          const computedAoValues = [3, 3, 3, 3]
           for (let cornerIdx = 0; cornerIdx < 4; cornerIdx++) {
             const pos = corners[cornerIdx]
 
@@ -590,15 +782,75 @@ export function renderWasmOutputToGeometry(
 
             normals.push(transformedDir[0], transformedDir[1], transformedDir[2])
 
-            const ao = aoValues[cornerIdx]
+            const useModelLighting = !cachedModel.isCube && world
 
-            const wasmLightValue = lightValues[cornerIdx]
-            const baseLight = wasmLightValue > 0 ? wasmLightValue : 1.0
-            const cornerLightResult = baseLight * 15
+            let ao = 3
+            let cornerLightResult = 15
+
+            if (useModelLighting) {
+              const cursor = new Vec3(bx, by, bz)
+
+              const dx = pos[0] * 2 - 1
+              const dy = pos[1] * 2 - 1
+              const dz = pos[2] * 2 - 1
+
+              const cornerDir = matmul3(globalMatrix, [dx, dy, dz])
+              const side1Dir = matmul3(globalMatrix, [dx * mask1[0], dy * mask1[1], dz * mask1[2]])
+              const side2Dir = matmul3(globalMatrix, [dx * mask2[0], dy * mask2[1], dz * mask2[2]])
+
+              const cornerDirI: [number, number, number] = [Math.round(cornerDir[0]), Math.round(cornerDir[1]), Math.round(cornerDir[2])]
+              const side1DirI: [number, number, number] = [Math.round(side1Dir[0]), Math.round(side1Dir[1]), Math.round(side1Dir[2])]
+              const side2DirI: [number, number, number] = [Math.round(side2Dir[0]), Math.round(side2Dir[1]), Math.round(side2Dir[2])]
+
+              const side1 = world.getBlock(cursor.offset(side1DirI[0], side1DirI[1], side1DirI[2]))
+              const side2 = world.getBlock(cursor.offset(side2DirI[0], side2DirI[1], side2DirI[2]))
+              const corner = world.getBlock(cursor.offset(cornerDirI[0], cornerDirI[1], cornerDirI[2]))
+
+              const side1Block = world.shouldMakeAo(side1) ? 1 : 0
+              const side2Block = world.shouldMakeAo(side2) ? 1 : 0
+              const cornerBlock = world.shouldMakeAo(corner) ? 1 : 0
+
+              ao = (side1Block && side2Block) ? 0 : (3 - (side1Block + side2Block + cornerBlock))
+              computedAoValues[cornerIdx] = ao
+
+              const neighborPos = cursor.offset(transformedDirI[0], transformedDirI[1], transformedDirI[2])
+              const baseLight15 = world.getLight(neighborPos)
+
+              if (world.config.smoothLighting) {
+                const dirVec = new Vec3(transformedDirI[0], transformedDirI[1], transformedDirI[2])
+                const getVec = (v: Vec3) => {
+                  for (const coord of ['x', 'y', 'z'] as const) {
+                    if (Math.abs((dirVec as any)[coord]) > 0) (v as any)[coord] = 0
+                  }
+                  return v.plus(dirVec)
+                }
+
+                const side1LightDir = getVec(new Vec3(side1DirI[0], side1DirI[1], side1DirI[2]))
+                const side2LightDir = getVec(new Vec3(side2DirI[0], side2DirI[1], side2DirI[2]))
+                const cornerLightDir = getVec(new Vec3(cornerDirI[0], cornerDirI[1], cornerDirI[2]))
+
+                const side1Light = world.getLight(cursor.plus(side1LightDir))
+                const side2Light = world.getLight(cursor.plus(side2LightDir))
+                const cornerLight = world.getLight(cursor.plus(cornerLightDir))
+
+                cornerLightResult = (side1Light + side2Light + cornerLight + baseLight15) / 4
+              } else {
+                cornerLightResult = baseLight15
+              }
+            } else {
+              const aoValues = aoValuesRaw ?? [3, 3, 3, 3]
+              const lightValues = lightValuesRaw ?? [1, 1, 1, 1]
+
+              ao = aoValues[cornerIdx] ?? 3
+              computedAoValues[cornerIdx] = ao
+
+              const baseLight = lightValues[cornerIdx] ?? 1
+              cornerLightResult = baseLight * 15
+            }
 
             const light = (ao + 1) / 4 * (cornerLightResult / 15)
 
-            colors.push(baseLight * tint[0] * light, baseLight * tint[1] * light, baseLight * tint[2] * light)
+            colors.push(tint[0] * light, tint[1] * light, tint[2] * light)
 
             const baseu = (pos[3] - 0.5) * uvcs - (pos[4] - 0.5) * uvsn + 0.5
             const basev = (pos[3] - 0.5) * uvsn + (pos[4] - 0.5) * uvcs + 0.5
@@ -608,6 +860,8 @@ export function renderWasmOutputToGeometry(
 
             currentIndex++
           }
+
+          const aoValues = computedAoValues
 
           let tri1: number[], tri2: number[]
           if (aoValues[0] + aoValues[3] >= aoValues[1] + aoValues[2]) {
@@ -622,6 +876,30 @@ export function renderWasmOutputToGeometry(
       }
     }
 
+  }
+
+  if (world && liquidQueue.length) {
+    const waterTex = (blockProvider as any).getTextureInfo?.('water_still')
+    const lavaTex = (blockProvider as any).getTextureInfo?.('lava_still')
+
+    for (const q of liquidQueue) {
+      const tex = q.water ? waterTex : lavaTex
+      if (!tex) continue
+      renderLiquidToGeometry(
+        world,
+        q.pos,
+        tex,
+        q.type,
+        q.biome,
+        q.water,
+        q.isRealWater,
+        positions,
+        normals,
+        colors,
+        uvs,
+        indices,
+      )
+    }
   }
 
   const result = {

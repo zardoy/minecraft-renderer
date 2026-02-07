@@ -1,5 +1,6 @@
 import { Vec3 } from 'vec3'
 import MinecraftData from 'minecraft-data'
+import PrismarineBlockLoader from 'prismarine-block'
 import moreBlockDataGeneratedJson from '../lib/moreBlockDataGenerated.json'
 
 type BlockMeta = {
@@ -18,6 +19,12 @@ const blockToIds = (block: { minStateId: number, maxStateId: number }) => {
     ids.push(i)
   }
   return ids
+}
+
+const isCube = (shapes: any) => {
+  if (!shapes || shapes.length !== 1) return false
+  const s = shapes[0]
+  return s[0] === 0 && s[1] === 0 && s[2] === 0 && s[3] === 1 && s[4] === 1 && s[5] === 1
 }
 
 const isLikelyFullCubeBlockName = (name: string) => {
@@ -56,11 +63,23 @@ const getBlockMeta = (version: string): BlockMeta => {
   const transparentBlocks = new Uint16Array(mcData.blocksArray.filter(x => x.transparent).flatMap(blockToIds))
   const noAoBlocks = new Uint16Array(mcData.blocksArray.filter(x => moreBlockDataGeneratedJson.noOcclusions[x.name]).flatMap(blockToIds))
   const cullIdenticalBlocks = new Uint16Array(mcData.blocksArray.filter(x => x.name.includes('glass') || x.name.includes('ice')).flatMap(blockToIds))
-  const occludingBlocks = new Uint16Array(
-    mcData.blocksArray
-      .filter(b => b.boundingBox === 'block' && !b.transparent && isLikelyFullCubeBlockName(b.name))
-      .flatMap(blockToIds)
-  )
+  const Block = PrismarineBlockLoader(version)
+  const noOcclusionsSet = new Set(Object.keys(moreBlockDataGeneratedJson.noOcclusions))
+
+  const occludingBlockIds: number[] = []
+  for (const idStr of Object.keys((mcData as any).blocksByStateId)) {
+    const id = Number(idStr)
+    if (!id) continue
+    const b = (Block as any).fromStateId(id, 0)
+    if (!b) continue
+    if (b.transparent) continue
+    if (b.boundingBox !== 'block') continue
+    if (noOcclusionsSet.has(b.name)) continue
+    if (!isCube(b.shapes)) continue
+    occludingBlockIds.push(id)
+  }
+
+  const occludingBlocks = new Uint16Array(occludingBlockIds)
 
   const meta = {
     invisibleBlocks,
