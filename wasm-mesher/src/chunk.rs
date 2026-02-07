@@ -6,37 +6,18 @@
 pub const CHUNK_SIZE: i32 = 16;
 
 #[derive(Clone)]
-pub struct ChunkData {
-    pub block_states: Vec<u16>,
-    pub block_light: Vec<u8>,
-    pub sky_light: Vec<u8>,
-    pub biomes: Vec<u8>,
+pub struct ChunkData<'a> {
+    pub block_states: &'a [u16],
+    pub block_light: &'a [u8],
+    pub sky_light: &'a [u8],
+    pub biomes: &'a [u8],
     pub chunk_x: i32,
     pub chunk_z: i32,
     pub world_min_y: i32,
     pub world_height: i32,
 }
 
-impl ChunkData {
-    pub fn new(
-        chunk_x: i32,
-        chunk_z: i32,
-        world_min_y: i32,
-        world_height: i32,
-    ) -> Self {
-        let size = (CHUNK_SIZE * CHUNK_SIZE * world_height) as usize;
-        Self {
-            block_states: vec![0; size],
-            block_light: vec![0; size],
-            sky_light: vec![15; size], // Default to max sky light
-            biomes: vec![0; size],
-            chunk_x,
-            chunk_z,
-            world_min_y,
-            world_height,
-        }
-    }
-
+impl<'a> ChunkData<'a> {
     /// Get index for a world position
     /// Same algorithm as worldLightHolder.getIndex()
     #[inline(always)]
@@ -73,14 +54,14 @@ impl ChunkData {
 }
 
 /// Fast block lookup across multiple chunks
-pub struct WorldView {
-    chunks: Vec<ChunkData>,
+pub struct WorldView<'a> {
+    chunks: Vec<ChunkData<'a>>,
     world_min_y: i32,
     world_max_y: i32,
 }
 
-impl WorldView {
-    pub fn new(chunks: Vec<ChunkData>, world_min_y: i32, world_max_y: i32) -> Self {
+impl<'a> WorldView<'a> {
+    pub fn new(chunks: Vec<ChunkData<'a>>, world_min_y: i32, world_max_y: i32) -> Self {
         Self {
             chunks,
             world_min_y,
@@ -90,17 +71,19 @@ impl WorldView {
 
     /// Get chunk for a world position
     #[inline(always)]
-    fn get_chunk(&self, x: i32, z: i32) -> Option<&ChunkData> {
-        let chunk_x = (x / CHUNK_SIZE) * CHUNK_SIZE;
-        let chunk_z = (z / CHUNK_SIZE) * CHUNK_SIZE;
+    fn get_chunk(&self, x: i32, z: i32) -> Option<&ChunkData<'a>> {
+        let chunk_x = x.div_euclid(CHUNK_SIZE) * CHUNK_SIZE;
+        let chunk_z = z.div_euclid(CHUNK_SIZE) * CHUNK_SIZE;
 
-        self.chunks.iter().find(|c| c.chunk_x == chunk_x && c.chunk_z == chunk_z)
+        self.chunks
+            .iter()
+            .find(|c| c.chunk_x == chunk_x && c.chunk_z == chunk_z)
     }
 
     #[inline(always)]
     pub fn get_block_state(&self, x: i32, y: i32, z: i32) -> u16 {
         if y < self.world_min_y || y >= self.world_max_y {
-            return 0; // Air outside world bounds
+            return 0;
         }
 
         self.get_chunk(x, z)
@@ -122,7 +105,7 @@ impl WorldView {
     #[inline(always)]
     pub fn get_sky_light(&self, x: i32, y: i32, z: i32) -> u8 {
         if y < self.world_min_y || y >= self.world_max_y {
-            return 15; // Max sky light outside world
+            return 15;
         }
 
         self.get_chunk(x, z)

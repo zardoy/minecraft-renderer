@@ -1,6 +1,106 @@
 use crate::chunk::{ChunkData, WorldView};
 use crate::lighting::{calculate_light, FACE_DIRS};
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
+use std::rc::Rc;
+
+const FACE_MASK1: [[i32; 3]; 6] = [
+    [1, 1, 0],
+    [1, 1, 0],
+    [1, 1, 0],
+    [1, 1, 0],
+    [1, 0, 1],
+    [1, 0, 1],
+];
+
+const FACE_MASK2: [[i32; 3]; 6] = [
+    [0, 1, 1],
+    [0, 1, 1],
+    [1, 0, 1],
+    [1, 0, 1],
+    [0, 1, 1],
+    [0, 1, 1],
+];
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct MetaKey {
+    invisible_len: usize,
+    transparent_len: usize,
+    no_ao_len: usize,
+    cull_identical_len: usize,
+    occluding_len: usize,
+}
+
+struct MetaMaps {
+    invisible: Vec<u8>,
+    transparent: Vec<u8>,
+    no_ao: Vec<u8>,
+    cull_identical: Vec<u8>,
+    occluding: Vec<u8>,
+}
+
+thread_local! {
+    static META: RefCell<Option<(MetaKey, Rc<MetaMaps>)>> = RefCell::new(None);
+}
+
+fn get_meta(
+    invisible_blocks: &[u16],
+    transparent_blocks: &[u16],
+    no_ao_blocks: &[u16],
+    cull_identical_blocks: &[u16],
+    occluding_blocks: &[u16],
+) -> Rc<MetaMaps> {
+    let key = MetaKey {
+        invisible_len: invisible_blocks.len(),
+        transparent_len: transparent_blocks.len(),
+        no_ao_len: no_ao_blocks.len(),
+        cull_identical_len: cull_identical_blocks.len(),
+        occluding_len: occluding_blocks.len(),
+    };
+
+    META.with(|cell| {
+        let cur = cell.borrow();
+        if let Some((cur_key, maps)) = cur.as_ref() {
+            if *cur_key == key {
+                return maps.clone();
+            }
+        }
+        drop(cur);
+
+        let mut invisible = vec![0u8; 65536];
+        let mut transparent = vec![0u8; 65536];
+        let mut no_ao = vec![0u8; 65536];
+        let mut cull_identical = vec![0u8; 65536];
+        let mut occluding = vec![0u8; 65536];
+
+        for &id in invisible_blocks {
+            invisible[id as usize] = 1;
+        }
+        for &id in transparent_blocks {
+            transparent[id as usize] = 1;
+        }
+        for &id in no_ao_blocks {
+            no_ao[id as usize] = 1;
+        }
+        for &id in cull_identical_blocks {
+            cull_identical[id as usize] = 1;
+        }
+        for &id in occluding_blocks {
+            occluding[id as usize] = 1;
+        }
+
+        let maps = Rc::new(MetaMaps {
+            invisible,
+            transparent,
+            no_ao,
+            cull_identical,
+            occluding,
+        });
+
+        *cell.borrow_mut() = Some((key, maps.clone()));
+        maps
+    })
+}
 
 pub struct Mesher {
     section_x: i32,
@@ -60,40 +160,7 @@ impl Mesher {
         }
     }
 
-    pub fn generate(
-        &self,
-        block_states: &[u16],
-        block_light: &[u8],
-        sky_light: &[u8],
-        biomes: &[u8],
-        invisible_blocks: &[u16],
-        transparent_blocks: &[u16],
-        no_ao_blocks: &[u16], // Block states that don't contribute to AO
-        cull_identical_blocks: &[u16], // Block states that cull identical neighbors (glass, ice)
-    ) -> GeometryOutput {
-        // Build world view from input data
-        let chunk = ChunkData {
-            block_states: block_states.to_vec(),
-            block_light: block_light.to_vec(),
-            sky_light: sky_light.to_vec(),
-            biomes: biomes.to_vec(),
-            chunk_x: self.section_x,
-            chunk_z: self.section_z,
-            world_min_y: self.world_min_y,
-            world_height: self.world_max_y - self.world_min_y,
-        };
-
-        let world = WorldView::new(vec![chunk], self.world_min_y, self.world_max_y);
-
-        // Build sets for fast lookup
-        let invisible_set: std::collections::HashSet<u16> =
-            invisible_blocks.iter().cloned().collect();
-        let transparent_set: std::collections::HashSet<u16> =
-            transparent_blocks.iter().cloned().collect();
-        let no_ao_set: std::collections::HashSet<u16> = no_ao_blocks.iter().cloned().collect();
-        let cull_identical_set: std::collections::HashSet<u16> =
-            cull_identical_blocks.iter().cloned().collect();
-
+    fn generate_with_world(&self, world: &WorldView<'_>, meta: &MetaMaps) -> GeometryOutput {
         // Pre-allocate with estimated capacity
         let estimated_blocks = ((self.section_height * 16 * 16) / 4) as usize; // Rough estimate
         let mut blocks = Vec::with_capacity(estimated_blocks);
@@ -109,15 +176,14 @@ impl Mesher {
 
                     let block_state = world.get_block_state(x, y, z);
 
-                    // Skip air and invisible blocks
-                    if block_state == 0 || invisible_set.contains(&block_state) {
+                    if block_state == 0 || meta.invisible[block_state as usize] != 0 {
                         continue;
                     }
 
                     blocks_found += 1;
 
-                    let is_transparent = transparent_set.contains(&block_state);
-                    let cull_identical = cull_identical_set.contains(&block_state);
+                    let is_transparent = meta.transparent[block_state as usize] != 0;
+                    let cull_identical = meta.cull_identical[block_state as usize] != 0;
 
                     // Check each face and collect visible ones
                     let mut visible_faces = 0u8;
@@ -133,11 +199,11 @@ impl Mesher {
 
                         // Determine if face should be culled
                         let should_cull = if neighbor_state == 0 {
-                            false // Never cull against air
+                            false
                         } else if cull_identical && neighbor_state == block_state {
-                            true // Cull identical blocks (glass, ice)
-                        } else if !transparent_set.contains(&neighbor_state) && !is_transparent {
-                            true // Cull solid neighbor
+                            true
+                        } else if meta.occluding[neighbor_state as usize] != 0 && !is_transparent {
+                            true
                         } else {
                             false
                         };
@@ -155,7 +221,7 @@ impl Mesher {
                         let mut face_light = [0.0f32; 4];
 
                         for (corner_idx, corner) in corners.iter().enumerate() {
-                            let corner_offset = [corner[0], corner[1], corner[2]];
+                            let corner_offset = [corner[0] * 2 - 1, corner[1] * 2 - 1, corner[2] * 2 - 1];
 
                             // Calculate AO
                             face_ao[corner_idx] = calculate_ao_with_set(
@@ -163,9 +229,10 @@ impl Mesher {
                                 x,
                                 y,
                                 z,
-                                *face_dir,
+                                face_idx,
                                 corner_offset,
-                                &no_ao_set,
+                                &meta.no_ao,
+                                &meta.occluding,
                             );
 
                             // Calculate light
@@ -176,6 +243,7 @@ impl Mesher {
                                     y,
                                     z,
                                     *face_dir,
+                                    face_idx,
                                     corner_offset,
                                     self.smooth_lighting,
                                 );
@@ -220,38 +288,95 @@ impl Mesher {
             debug_blocks_with_faces: Some(blocks_with_faces),
         }
     }
+
+    pub fn generate(
+        &self,
+        block_states: &[u16],
+        block_light: &[u8],
+        sky_light: &[u8],
+        biomes: &[u8],
+        invisible_blocks: &[u16],
+        transparent_blocks: &[u16],
+        no_ao_blocks: &[u16], // Block states that don't contribute to AO
+        cull_identical_blocks: &[u16], // Block states that cull identical neighbors (glass, ice)
+        occluding_blocks: &[u16],
+    ) -> GeometryOutput {
+        // Build world view from input data
+        let chunk = ChunkData {
+            block_states,
+            block_light,
+            sky_light,
+            biomes,
+            chunk_x: self.section_x,
+            chunk_z: self.section_z,
+            world_min_y: self.section_y,
+            world_height: self.section_height,
+        };
+
+        let world = WorldView::new(vec![chunk], self.world_min_y, self.world_max_y);
+
+        let meta = get_meta(
+            invisible_blocks,
+            transparent_blocks,
+            no_ao_blocks,
+            cull_identical_blocks,
+            occluding_blocks,
+        );
+
+        self.generate_with_world(&world, meta.as_ref())
+    }
+    pub fn generate_multi<'a>(
+        &self,
+        chunks: Vec<ChunkData<'a>>,
+        invisible_blocks: &'a [u16],
+        transparent_blocks: &'a [u16],
+        no_ao_blocks: &'a [u16],
+        cull_identical_blocks: &'a [u16],
+        occluding_blocks: &'a [u16],
+    ) -> GeometryOutput {
+        let world = WorldView::new(chunks, self.world_min_y, self.world_max_y);
+        let meta = get_meta(
+            invisible_blocks,
+            transparent_blocks,
+            no_ao_blocks,
+            cull_identical_blocks,
+            occluding_blocks,
+        );
+        self.generate_with_world(&world, meta.as_ref())
+    }
 }
 
 /// Calculate AO with no_ao_blocks set support
 fn calculate_ao_with_set(
-    world: &WorldView,
+    world: &WorldView<'_>,
     x: i32,
     y: i32,
     z: i32,
-    face_dir: [i32; 3],
+    face_idx: usize,
     corner_offset: [i32; 3],
-    no_ao_set: &std::collections::HashSet<u16>,
+    no_ao_map: &[u8],
+    occluding_map: &[u8],
 ) -> u8 {
-    let [fx, fy, fz] = face_dir;
     let [cx, cy, cz] = corner_offset;
 
-    // Calculate side block positions
-    let side1_x = x + if fx != 0 { 0 } else { cx };
-    let side1_y = y + if fy != 0 { 0 } else { cy };
-    let side1_z = z + if fz != 0 { 0 } else { cz };
+    let mask1 = FACE_MASK1[face_idx];
+    let mask2 = FACE_MASK2[face_idx];
 
-    let side2_x = x + if fx != 0 { cx } else { 0 };
-    let side2_y = y + if fy != 0 { cy } else { 0 };
-    let side2_z = z + if fz != 0 { cz } else { 0 };
+    let side1_x = x + cx * mask1[0];
+    let side1_y = y + cy * mask1[1];
+    let side1_z = z + cz * mask1[2];
+
+    let side2_x = x + cx * mask2[0];
+    let side2_y = y + cy * mask2[1];
+    let side2_z = z + cz * mask2[2];
 
     let corner_x = x + cx;
     let corner_y = y + cy;
     let corner_z = z + cz;
 
-    // Check if blocks are solid (non-transparent, non-air, and not in no_ao_set)
     let is_solid = |x: i32, y: i32, z: i32| -> bool {
         let state = world.get_block_state(x, y, z);
-        state != 0 && !no_ao_set.contains(&state)
+        state != 0 && occluding_map[state as usize] != 0 && no_ao_map[state as usize] == 0
     };
 
     let side1_solid = is_solid(side1_x, side1_y, side1_z);

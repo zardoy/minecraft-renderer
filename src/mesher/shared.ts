@@ -1,6 +1,6 @@
 import { BlockType } from '../playground/shared'
 
-export const IS_FULL_WORLD_SECTION = true
+export const IS_FULL_WORLD_SECTION = false
 export const SECTION_HEIGHT = 16
 
 // only here for easier testing

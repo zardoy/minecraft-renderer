@@ -2,21 +2,39 @@ use crate::chunk::WorldView;
 
 /// Face directions (same as elemFaces in models.ts)
 pub const FACE_DIRS: [[i32; 3]; 6] = [
-    [0, 1, 0],   // up
-    [0, -1, 0],  // down
-    [1, 0, 0],   // east
-    [-1, 0, 0],  // west
-    [0, 0, 1],   // south
-    [0, 0, -1],  // north
+    [0, 1, 0],  // up
+    [0, -1, 0], // down
+    [1, 0, 0],  // east
+    [-1, 0, 0], // west
+    [0, 0, 1],  // south
+    [0, 0, -1], // north
 ];
 
 pub const FACE_NAMES: [&str; 6] = ["up", "down", "east", "west", "south", "north"];
+
+const FACE_MASK1: [[i32; 3]; 6] = [
+    [1, 1, 0],
+    [1, 1, 0],
+    [1, 1, 0],
+    [1, 1, 0],
+    [1, 0, 1],
+    [1, 0, 1],
+];
+
+const FACE_MASK2: [[i32; 3]; 6] = [
+    [0, 1, 1],
+    [0, 1, 1],
+    [1, 0, 1],
+    [1, 0, 1],
+    [0, 1, 1],
+    [0, 1, 1],
+];
 
 /// Calculate ambient occlusion for a vertex
 /// Returns AO value (0-3, where 0 = darkest, 3 = brightest)
 #[inline(always)]
 pub fn calculate_ao(
-    world: &WorldView,
+    world: &WorldView<'_>,
     x: i32,
     y: i32,
     z: i32,
@@ -58,7 +76,7 @@ pub fn calculate_ao(
 
 /// Check if a block is solid (non-transparent, non-air)
 #[inline(always)]
-fn is_solid(world: &WorldView, x: i32, y: i32, z: i32) -> bool {
+fn is_solid(world: &WorldView<'_>, x: i32, y: i32, z: i32) -> bool {
     let state = world.get_block_state(x, y, z);
     state != 0 // TODO: Check against transparent blocks list
 }
@@ -67,11 +85,12 @@ fn is_solid(world: &WorldView, x: i32, y: i32, z: i32) -> bool {
 /// Returns light value (0-15)
 #[inline(always)]
 pub fn calculate_light(
-    world: &WorldView,
+    world: &WorldView<'_>,
     x: i32,
     y: i32,
     z: i32,
     face_dir: [i32; 3],
+    face_idx: usize,
     corner_offset: [i32; 3],
     smooth_lighting: bool,
 ) -> f32 {
@@ -90,15 +109,55 @@ pub fn calculate_light(
         return base_light / 15.0;
     }
 
-    // Smooth lighting: interpolate from 4 corners
     let [cx, cy, cz] = corner_offset;
 
-    // Get light from 4 positions around the corner
+    let get_light = |x: i32, y: i32, z: i32| -> f32 {
+        let bl = world.get_block_light(x, y, z) as f32;
+        let sl = world.get_sky_light(x, y, z) as f32;
+        bl.max(sl)
+    };
+
+    let mask1 = FACE_MASK1[face_idx];
+    let mask2 = FACE_MASK2[face_idx];
+
+    let mut s1 = [cx * mask1[0], cy * mask1[1], cz * mask1[2]];
+    if fx != 0 {
+        s1[0] = 0;
+    }
+    if fy != 0 {
+        s1[1] = 0;
+    }
+    if fz != 0 {
+        s1[2] = 0;
+    }
+
+    let mut s2 = [cx * mask2[0], cy * mask2[1], cz * mask2[2]];
+    if fx != 0 {
+        s2[0] = 0;
+    }
+    if fy != 0 {
+        s2[1] = 0;
+    }
+    if fz != 0 {
+        s2[2] = 0;
+    }
+
+    let mut c = [cx, cy, cz];
+    if fx != 0 {
+        c[0] = 0;
+    }
+    if fy != 0 {
+        c[1] = 0;
+    }
+    if fz != 0 {
+        c[2] = 0;
+    }
+
     let lights = [
         base_light,
-        world.get_block_light(x + cx, y + cy, z + cz) as f32,
-        world.get_block_light(x + if fx != 0 { 0 } else { cx }, y + if fy != 0 { 0 } else { cy }, z + if fz != 0 { 0 } else { cz }) as f32,
-        world.get_block_light(x + if fx != 0 { cx } else { 0 }, y + if fy != 0 { cy } else { 0 }, z + if fz != 0 { cz } else { 0 }) as f32,
+        get_light(x + fx + s1[0], y + fy + s1[1], z + fz + s1[2]),
+        get_light(x + fx + s2[0], y + fy + s2[1], z + fz + s2[2]),
+        get_light(x + fx + c[0], y + fy + c[1], z + fz + c[2]),
     ];
 
     // Average the lights

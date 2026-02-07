@@ -1,9 +1,9 @@
 import { Vec3 } from 'vec3'
 import { convertChunkToWasm } from '../wasm-lib/convertChunk'
 import { renderWasmOutputToGeometry } from '../wasm-lib/render-from-wasm'
+import { setBlockStatesData as setMesherData } from './models'
 import { defaultMesherConfig, type MesherGeometryOutput, IS_FULL_WORLD_SECTION, SECTION_HEIGHT } from './shared'
-import { worldColumnKey } from './world'
-import { testChunkShared, WORLD_MIN_Y } from '../../wasm-mesher/test-chunk-shared'
+import { worldColumnKey, World } from './world'
 
 let wasm: typeof import('../../wasm-mesher/pkg/wasm_mesher.js') | null = null
 let wasmInitialized = false
@@ -38,7 +38,7 @@ if (globalThis.module && module.require) {
 let workerIndex = 0
 let config = defaultMesherConfig
 let version = '1.16.5'
-let chunks = new Map<string, any>() // chunkKey -> chunk data
+let world: World // chunkKey -> chunk data
 let dirtySections = new Map<string, number>()
 let allDataReady = false
 
@@ -75,7 +75,8 @@ function setSectionDirty(pos: Vec3, value = true) {
 
   // hadDirty = true
   const x = Math.floor(pos.x / 16) * 16
-  const y = Math.floor(pos.y / 16) * 16
+  const sectionHeight = getSectionHeight()
+  const y = Math.floor(pos.y / sectionHeight) * sectionHeight
   const z = Math.floor(pos.z / 16) * 16
   const key = sectionKey(x, y, z)
   if (!value) {
@@ -85,8 +86,8 @@ function setSectionDirty(pos: Vec3, value = true) {
   }
 
   // Check if we have the chunk for this section
-  const chunkKey = worldColumnKey(x, z)
-  if (chunks.has(chunkKey)) {
+  const chunk = world?.getColumn(x, z)
+  if (chunk?.getSection(pos)) {
     dirtySections.set(key, (dirtySections.get(key) || 0) + 1)
   } else {
     postMessage({ type: 'sectionFinished', key, workerIndex })
@@ -94,7 +95,8 @@ function setSectionDirty(pos: Vec3, value = true) {
 }
 
 const softCleanup = () => {
-  chunks.clear()
+  world = new World(world.config.version)
+  globalThis.world = world
 }
 
 const handleMessage = async (data: any) => {
@@ -108,12 +110,17 @@ const handleMessage = async (data: any) => {
   if (data.config) {
     config = { ...config, ...data.config }
     version = config.version || version
+    world ??= new World(version)
+    world.config = { ...world.config, ...data.config }
+    globalThis.world = world
     globalThis.Vec3 = Vec3
   }
 
   switch (data.type) {
     case 'mesherData': {
-      // Initialize WASM when mesher data is ready
+      setMesherData(data.blockstatesModels, data.blocksAtlas, data.config.outputFormat === 'webgpu')
+      ;(globalThis as any).__wasmBlockModelCache = new Map()
+
       await initWasm()
       allDataReady = true
       workerIndex = data.workerIndex
@@ -125,24 +132,33 @@ const handleMessage = async (data: any) => {
       break
     }
     case 'chunk': {
-      const chunkKey = worldColumnKey(data.x, data.z)
-      chunks.set(chunkKey, { chunk: data.chunk, x: data.x, z: data.z })
+      world.addColumn(data.x, data.z, data.chunk)
+      if (data.customBlockModels) {
+        const chunkKey = `${data.x},${data.z}`
+        world.customBlockModels.set(chunkKey, data.customBlockModels)
+      }
       break
     }
     case 'unloadChunk': {
-      const chunkKey = worldColumnKey(data.x, data.z)
-      chunks.delete(chunkKey)
-      if (chunks.size === 0) softCleanup()
+      world.removeColumn(data.x, data.z)
+      world.customBlockModels.delete(`${data.x},${data.z}`)
+      if (Object.keys(world.columns).length === 0) softCleanup()
       break
     }
     case 'blockUpdate': {
-      // Mark section as dirty
       const loc = new Vec3(data.pos.x, data.pos.y, data.pos.z).floored()
-      setSectionDirty(loc, true)
+      if (data.stateId !== undefined && data.stateId !== null) {
+        world?.setBlockStateId(loc, data.stateId)
+      }
+
+      const chunkKey = `${Math.floor(loc.x / 16) * 16},${Math.floor(loc.z / 16) * 16}`
+      if (data.customBlockModels) {
+        world?.customBlockModels.set(chunkKey, data.customBlockModels)
+      }
       break
     }
     case 'reset': {
-      chunks.clear()
+      world = undefined as any
       dirtySections.clear()
       globalVar.mcData = null
       globalVar.loadedData = null
@@ -173,6 +189,23 @@ const getSectionHeight = () => {
   return SECTION_HEIGHT
 }
 
+
+function collectChunksForSection(x: number, y: number, z: number) {
+  const result = [] as Array<{ x: number, z: number, chunk: any }>
+  result.push({ x, z, chunk: world.getColumn(x, z) })
+  const offsets = [-16, 0, 16]
+  for (const dx of offsets) {
+    for (const dz of offsets) {
+      if (dx === 0 && dz === 0) continue
+      const nx = x + dx
+      const nz = z + dz
+      const c = world.getColumn(nx, nz)
+      if (c) result.push({ x: nx, z: nz, chunk: c })
+    }
+  }
+  return result.filter(r => r.chunk)
+}
+
 setInterval(async () => {
   if (!allDataReady) return
 
@@ -189,11 +222,10 @@ setInterval(async () => {
   for (const key of dirtySections.keys()) {
     // for (const key of [] as string[]) {
     const [x, y, z] = key.split(',').map(v => parseInt(v, 10))
-    const chunkKey = worldColumnKey(x, z)
-    const chunkData = chunks.get(chunkKey)
+    const chunk = world.getColumn(x, z)
 
     let processTime = 0
-    if (chunkData && wasm) {
+    if (chunk?.getSection(new Vec3(x, y, z)) && wasm) {
       const start = performance.now()
 
       try {
@@ -204,42 +236,72 @@ setInterval(async () => {
         const sectionY = IS_FULL_WORLD_SECTION ? undefined : y
         const convertSectionHeight = IS_FULL_WORLD_SECTION ? undefined : sectionHeight
 
-        console.time(`converting chunk ${chunkData.x},${chunkData.z} y=${y}`)
-        const conversionResult = convertChunkToWasm(
-          chunkData.chunk,
+        // Run WASM mesher for this section
+        const chunksToUse = collectChunksForSection(x, y, z)
+        const chunkCount = chunksToUse.length
+
+        const conversions = chunksToUse.map(({ x: cx, z: cz, chunk }) => convertChunkToWasm(
+          chunk,
           version,
-          chunkData.x,
-          chunkData.z,
+          cx,
+          cz,
           worldMinY,
           worldMaxY,
           sectionY,
           convertSectionHeight
-        )
-        console.timeEnd(`converting chunk ${chunkData.x},${chunkData.z} y=${y}`)
+        ))
 
         const {
-          blockStates,
-          blockLight,
-          skyLight,
-          biomesArray,
           invisibleBlocks,
           transparentBlocks,
           noAoBlocks,
           cullIdenticalBlocks,
-        } = conversionResult
+          occludingBlocks,
+        } = conversions[0]
 
-        // Run WASM mesher for this section
-        const wasmResult = wasm.generate_geometry(
-          0, WORLD_MIN_Y, 0, sectionHeight,
-          worldMinY, worldMaxY,
-          blockStates, blockLight, skyLight, biomesArray,
-          invisibleBlocks, transparentBlocks, noAoBlocks, cullIdenticalBlocks,
-          config?.enableLighting !== false, // default true
-          // config?.smoothLighting !== false, // default true
-          false,
-          config?.skyLight || 15
-        )
-        console.log('wasmResult', wasmResult)
+        let wasmResult
+        if (chunkCount === 1 || !(wasm as any).generate_geometry_multi) {
+          const { blockStates, blockLight, skyLight, biomesArray } = conversions[0]
+          wasmResult = wasm.generate_geometry(
+            x, y, z, sectionHeight,
+            worldMinY, worldMaxY,
+            blockStates, blockLight, skyLight, biomesArray,
+            invisibleBlocks, transparentBlocks, noAoBlocks, cullIdenticalBlocks, occludingBlocks,
+            config?.enableLighting !== false,
+            config?.smoothLighting !== false,
+            config?.skyLight || 15
+          )
+        } else {
+          const perChunkLen = conversions[0].blockStates.length
+          const xs = new Int32Array(chunkCount)
+          const zs = new Int32Array(chunkCount)
+          const blockStatesAll = new Uint16Array(perChunkLen * chunkCount)
+          const blockLightAll = new Uint8Array(perChunkLen * chunkCount)
+          const skyLightAll = new Uint8Array(perChunkLen * chunkCount)
+          const biomesAll = new Uint8Array(perChunkLen * chunkCount)
+
+          for (let i = 0; i < chunkCount; i++) {
+            const c = conversions[i]
+            xs[i] = chunksToUse[i].x
+            zs[i] = chunksToUse[i].z
+            blockStatesAll.set(c.blockStates, perChunkLen * i)
+            blockLightAll.set(c.blockLight, perChunkLen * i)
+            skyLightAll.set(c.skyLight, perChunkLen * i)
+            biomesAll.set(c.biomesArray, perChunkLen * i)
+          }
+
+          wasmResult = (wasm as any).generate_geometry_multi(
+            x, y, z, sectionHeight,
+            worldMinY, worldMaxY,
+            xs, zs,
+            blockStatesAll, blockLightAll, skyLightAll, biomesAll,
+            invisibleBlocks, transparentBlocks, noAoBlocks, cullIdenticalBlocks, occludingBlocks,
+            config?.enableLighting !== false,
+            config?.smoothLighting !== false,
+            config?.skyLight || 15
+          )
+        }
+
 
         // Convert WASM output to MesherGeometryOutput format
         const sectionKeyStr = worldColumnKey(x, z)
@@ -247,8 +309,8 @@ setInterval(async () => {
           wasmResult,
           version,
           sectionKeyStr,
-          { x: x + 8, y: y + 8, z: z + 8 }, // section position
-          undefined // no world for now
+          { x: x + 8, y: y + 8, z: z + 8 },
+          world
         )
 
         // Convert to MesherGeometryOutput format
