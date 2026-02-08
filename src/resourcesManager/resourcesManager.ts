@@ -307,8 +307,7 @@ export class ResourcesManager extends (EventEmitter as new () => TypedEmitter<Re
   }
 
   async generateGuiTextures() {
-    // TODO!
-    // await generateGuiAtlas()
+    // todo-low handled now in the client
   }
 
   async downloadDebugAtlas(isItems = false) {

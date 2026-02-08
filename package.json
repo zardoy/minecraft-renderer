@@ -9,10 +9,11 @@
     "files": [
         "dist",
         "src",
+        "public/wasm_mesher_bg.wasm",
         "logo.webp"
     ],
     "scripts": {
-        "build": "pnpm unit-test && pnpm build:publish",
+        "build": "pnpm unit-test --run && pnpm build:publish",
         "build:publish": "run-s build:lib:minify build:mesher build:threeworker",
         "build:lib": "node scripts/buildLib.mjs",
         "build:lib:minify": "node scripts/buildLib.mjs --minify",

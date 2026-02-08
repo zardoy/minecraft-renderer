@@ -12,7 +12,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 // eslint-disable-next-line import/no-named-as-default
 import GUI from 'lil-gui'
 import _ from 'lodash'
-import { defaultWorldRendererConfig, WorldRendererConfig } from '../lib/worldrendererCommon'
+import { WorldRendererConfig } from '../graphicsBackend/config'
 import { getSyncWorld } from './shared'
 import { AppViewer, getInitialPlayerState } from '../graphicsBackend'
 import { WorldView } from '../worldView'
@@ -34,8 +34,8 @@ export interface PlaygroundSceneConfig {
 }
 
 const appGraphicBackends = [
-  // createGraphicsBackendSingleThread,
-  createGraphicsBackendOffThread
+  createGraphicsBackendSingleThread,
+  // createGraphicsBackendOffThread
 ]
 
 const includedVersions = globalThis.includedVersions
@@ -129,6 +129,7 @@ export class BasePlaygroundScene {
       Object.assign(this.appViewer.inWorldRenderingConfig, config.worldConfig)
     }
     this.appViewer.inWorldRenderingConfig.showHand = false
+    this.appViewer.inWorldRenderingConfig.showChunkBorders = true
     this.appViewer.inWorldRenderingConfig.isPlayground = true
     this.appViewer.inWorldRenderingConfig.instantCameraUpdate = this.enableCameraOrbitControl
     this.appViewer.config.statsVisible = 2

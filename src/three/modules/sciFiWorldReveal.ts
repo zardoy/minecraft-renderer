@@ -249,9 +249,11 @@ export class SciFiWorldRevealModule implements RendererModuleController {
     // Section keys are in format "x,y,z" where x, y, z are section coordinates
     // Mesh position is at geometry.sx, geometry.sy, geometry.sz
     const pos = mesh.position
-    const sectionX = Math.floor(pos.x / 16) * 16
-    const sectionY = Math.floor(pos.y / 16) * 16
-    const sectionZ = Math.floor(pos.z / 16) * 16
+    const CHUNK_SIZE = 16
+    const sectionHeight = this.worldRenderer.getSectionHeight()
+    const sectionX = Math.floor(pos.x / CHUNK_SIZE) * CHUNK_SIZE
+    const sectionY = Math.floor(pos.y / sectionHeight) * sectionHeight
+    const sectionZ = Math.floor(pos.z / CHUNK_SIZE) * CHUNK_SIZE
     const derivedKey = `${sectionX},${sectionY},${sectionZ}`
 
     // Verify this key exists in sectionObjects

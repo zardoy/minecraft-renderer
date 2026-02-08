@@ -8,7 +8,7 @@ import { proxy } from 'valtio'
 import type { ResourcesManagerTransferred } from '../resourcesManager/resourcesManager'
 import { dynamicMcDataFiles } from './buildSharedConfig.mjs'
 import { DisplayWorldOptions, GraphicsInitOptions, RendererReactiveState, SoundSystem } from '../graphicsBackend/types'
-import { HighestBlockInfo, CustomBlockModels, BlockStateModelInfo, getBlockAssetsCacheKey, MesherConfig, MesherMainEvent } from '../mesher/shared'
+import { HighestBlockInfo, CustomBlockModels, BlockStateModelInfo, getBlockAssetsCacheKey, MesherConfig, MesherMainEvent, IS_FULL_WORLD_SECTION, SECTION_HEIGHT } from '../mesher/shared'
 import { chunkPos } from './simpleUtils'
 import { addNewStat, removeAllStats, updatePanesVisibility, updateStatText } from './ui/newStats'
 import { getPlayerStateUtils } from '../graphicsBackend/playerState'
@@ -243,7 +243,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   }
 
   async getBlockInfo(blockPos: { x: number, y: number, z: number }, stateId: number) {
-    const chunkKey = `${Math.floor(blockPos.x / 16) * 16},${Math.floor(blockPos.z / 16) * 16}`
+    const CHUNK_SIZE = 16
+    const chunkKey = `${Math.floor(blockPos.x / CHUNK_SIZE) * CHUNK_SIZE},${Math.floor(blockPos.z / CHUNK_SIZE) * CHUNK_SIZE}`
     const customBlockName = this.protocolCustomBlocks.get(chunkKey)?.[`${blockPos.x},${blockPos.y},${blockPos.z}`]
     const cacheKey = getBlockAssetsCacheKey(stateId, customBlockName)
     const modelInfo = this.blockStateModelInfo.get(cacheKey)
@@ -255,7 +256,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
   initWorkers(numWorkers = this.worldRendererConfig.mesherWorkers) {
     // init workers
-    for (let i = 0; i < numWorkers + 1; i++) {
+    for (let i = 0; i < numWorkers + 0; i++) {
       const worker = initMesherWorker((data) => {
         if (Array.isArray(data)) {
           this.messageQueue.push(...data)
@@ -263,7 +264,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
           this.messageQueue.push(data)
         }
         void this.processMessageQueue('worker')
-      })
+      }, this.worldRendererConfig.wasmMesher ? 'mesherWasm.js' : 'mesher.js')
       this.workers.push(worker)
     }
   }
@@ -366,16 +367,26 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       const chunkKey = `${chunkCoords[0]},${chunkCoords[2]}`
       if (this.loadedChunks[chunkKey]) { // ensure chunk data was added, not a neighbor chunk update
         let loaded = true
-        for (let y = this.worldMinYRender; y < this.worldSizeParams.worldHeight; y += 16) {
-          if (!this.finishedSections[`${chunkCoords[0]},${y},${chunkCoords[2]}`]) {
+        const sectionHeight = this.getSectionHeight()
+        if (IS_FULL_WORLD_SECTION) {
+          // Only one section per chunk when full world section
+          const sectionY = this.worldMinYRender
+          if (!this.finishedSections[`${chunkCoords[0]},${sectionY},${chunkCoords[2]}`]) {
             loaded = false
-            break
+          }
+        } else {
+          for (let y = this.worldMinYRender; y < this.worldSizeParams.worldHeight; y += sectionHeight) {
+            if (!this.finishedSections[`${chunkCoords[0]},${y},${chunkCoords[2]}`]) {
+              loaded = false
+              break
+            }
           }
         }
         if (loaded) {
           // CHUNK FINISHED
           this.finishedChunks[chunkKey] = true
-          this.reactiveState.world.chunksLoaded.add(`${Math.floor(chunkCoords[0] / 16)},${Math.floor(chunkCoords[2] / 16)}`)
+          const CHUNK_SIZE = 16
+          this.reactiveState.world.chunksLoaded.add(`${Math.floor(chunkCoords[0] / CHUNK_SIZE)},${Math.floor(chunkCoords[2] / CHUNK_SIZE)}`)
           this.renderUpdateEmitter.emit(`chunkFinished`, `${chunkCoords[0]},${chunkCoords[2]}`)
           this.checkAllFinished()
           // merge highest blocks by sections into highest blocks by chunks
@@ -478,8 +489,9 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
   getDistance(posAbsolute: Vec3) {
     const [botX, botZ] = chunkPos(this.viewerChunkPosition!)
-    const dx = Math.abs(botX - Math.floor(posAbsolute.x / 16))
-    const dz = Math.abs(botZ - Math.floor(posAbsolute.z / 16))
+    const CHUNK_SIZE = 16
+    const dx = Math.abs(botX - Math.floor(posAbsolute.x / CHUNK_SIZE))
+    const dz = Math.abs(botZ - Math.floor(posAbsolute.z / CHUNK_SIZE))
     return [dx, dz] as [number, number]
   }
 
@@ -566,8 +578,16 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     console.log('textures loaded')
   }
 
+  getSectionHeight() {
+    if (IS_FULL_WORLD_SECTION) {
+      return this.worldSizeParams.worldHeight
+    }
+    return SECTION_HEIGHT
+  }
+
   get worldMinYRender() {
-    return Math.floor(Math.max(this.worldSizeParams.minY, this.worldRendererConfig.clipWorldBelowY ?? -Infinity) / 16) * 16
+    const sectionHeight = this.getSectionHeight()
+    return Math.floor(Math.max(this.worldSizeParams.minY, this.worldRendererConfig.clipWorldBelowY ?? -Infinity) / sectionHeight) * sectionHeight
   }
 
   updateChunksStats() {
@@ -608,14 +628,29 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     // })
     this.logWorkerWork(() => `-> chunk ${JSON.stringify({ x, z, chunkLength: chunk.length, customBlockModelsLength: customBlockModels ? Object.keys(customBlockModels).length : 0 })}`)
     this.mesherLogReader?.chunkReceived(x, z, chunk.length)
-    for (let y = this.worldMinYRender; y < this.worldSizeParams.worldHeight; y += 16) {
-      const loc = new Vec3(x, y, z)
+    const sectionHeight = this.getSectionHeight()
+    const CHUNK_SIZE = 16
+
+    if (IS_FULL_WORLD_SECTION) {
+      // Only one section per chunk when full world section
+      const loc = new Vec3(x, this.worldMinYRender, z)
       this.setSectionDirty(loc)
       if (this.neighborChunkUpdates && (!isLightUpdate || this.worldRendererConfig.smoothLighting)) {
-        this.setSectionDirty(loc.offset(-16, 0, 0))
-        this.setSectionDirty(loc.offset(16, 0, 0))
-        this.setSectionDirty(loc.offset(0, 0, -16))
-        this.setSectionDirty(loc.offset(0, 0, 16))
+        this.setSectionDirty(loc.offset(-CHUNK_SIZE, 0, 0))
+        this.setSectionDirty(loc.offset(CHUNK_SIZE, 0, 0))
+        this.setSectionDirty(loc.offset(0, 0, -CHUNK_SIZE))
+        this.setSectionDirty(loc.offset(0, 0, CHUNK_SIZE))
+      }
+    } else {
+      for (let y = this.worldMinYRender; y < this.worldSizeParams.worldHeight; y += sectionHeight) {
+        const loc = new Vec3(x, y, z)
+        this.setSectionDirty(loc)
+        if (this.neighborChunkUpdates && (!isLightUpdate || this.worldRendererConfig.smoothLighting)) {
+          this.setSectionDirty(loc.offset(-CHUNK_SIZE, 0, 0))
+          this.setSectionDirty(loc.offset(CHUNK_SIZE, 0, 0))
+          this.setSectionDirty(loc.offset(0, 0, -CHUNK_SIZE))
+          this.setSectionDirty(loc.offset(0, 0, CHUNK_SIZE))
+        }
       }
     }
   }
@@ -639,9 +674,16 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       this.allLoadedIn = undefined
       this.initialChunkLoadWasStartedIn = undefined
     }
-    for (let y = this.worldSizeParams.minY; y < this.worldSizeParams.worldHeight; y += 16) {
-      this.setSectionDirty(new Vec3(x, y, z), false)
-      delete this.finishedSections[`${x},${y},${z}`]
+    const sectionHeight = this.getSectionHeight()
+    if (IS_FULL_WORLD_SECTION) {
+      const sectionY = this.worldMinYRender
+      this.setSectionDirty(new Vec3(x, sectionY, z), false)
+      delete this.finishedSections[`${x},${sectionY},${z}`]
+    } else {
+      for (let y = this.worldSizeParams.minY; y < this.worldSizeParams.worldHeight; y += sectionHeight) {
+        this.setSectionDirty(new Vec3(x, y, z), false)
+        delete this.finishedSections[`${x},${y},${z}`]
+      }
     }
     this.highestBlocksByChunks.delete(`${x},${z}`)
 
@@ -656,8 +698,9 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
   setBlockStateId(pos: Vec3, stateId: number | undefined, needAoRecalculation = true) {
     const set = async () => {
-      const sectionX = Math.floor(pos.x / 16) * 16
-      const sectionZ = Math.floor(pos.z / 16) * 16
+      const CHUNK_SIZE = 16
+      const sectionX = Math.floor(pos.x / CHUNK_SIZE) * CHUNK_SIZE
+      const sectionZ = Math.floor(pos.z / CHUNK_SIZE) * CHUNK_SIZE
       if (this.queuedChunks.has(`${sectionX},${sectionZ}`)) {
         await new Promise<void>(resolve => {
           this.queuedFunctions.push(() => {
@@ -791,7 +834,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   }
 
   setBlockStateIdInner(pos: Vec3, stateId: number | undefined, needAoRecalculation = true) {
-    const chunkKey = `${Math.floor(pos.x / 16) * 16},${Math.floor(pos.z / 16) * 16}`
+    const CHUNK_SIZE = 16
+    const chunkKey = `${Math.floor(pos.x / CHUNK_SIZE) * CHUNK_SIZE},${Math.floor(pos.z / CHUNK_SIZE) * CHUNK_SIZE}`
     const blockPosKey = `${pos.x},${pos.y},${pos.z}`
     const customBlockModels = this.protocolCustomBlocks.get(chunkKey) || {}
 
@@ -806,34 +850,36 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.logWorkerWork(`-> blockUpdate ${JSON.stringify({ pos, stateId, customBlockModels })}`)
     this.setSectionDirty(pos, true, true)
     if (this.neighborChunkUpdates) {
-      if ((pos.x & 15) === 0) this.setSectionDirty(pos.offset(-16, 0, 0), true, true)
-      if ((pos.x & 15) === 15) this.setSectionDirty(pos.offset(16, 0, 0), true, true)
-      if ((pos.y & 15) === 0) this.setSectionDirty(pos.offset(0, -16, 0), true, true)
-      if ((pos.y & 15) === 15) this.setSectionDirty(pos.offset(0, 16, 0), true, true)
-      if ((pos.z & 15) === 0) this.setSectionDirty(pos.offset(0, 0, -16), true, true)
-      if ((pos.z & 15) === 15) this.setSectionDirty(pos.offset(0, 0, 16), true, true)
+      const CHUNK_SIZE = 16
+      const sectionHeight = this.getSectionHeight()
+      if ((pos.x & 15) === 0) this.setSectionDirty(pos.offset(-CHUNK_SIZE, 0, 0), true, true)
+      if ((pos.x & 15) === 15) this.setSectionDirty(pos.offset(CHUNK_SIZE, 0, 0), true, true)
+      if ((pos.y & (sectionHeight - 1)) === 0) this.setSectionDirty(pos.offset(0, -sectionHeight, 0), true, true)
+      if ((pos.y & (sectionHeight - 1)) === (sectionHeight - 1)) this.setSectionDirty(pos.offset(0, sectionHeight, 0), true, true)
+      if ((pos.z & 15) === 0) this.setSectionDirty(pos.offset(0, 0, -CHUNK_SIZE), true, true)
+      if ((pos.z & 15) === 15) this.setSectionDirty(pos.offset(0, 0, CHUNK_SIZE), true, true)
 
       if (needAoRecalculation) {
         // top view neighbors
-        if ((pos.x & 15) === 0 && (pos.z & 15) === 0) this.setSectionDirty(pos.offset(-16, 0, -16), true, true)
-        if ((pos.x & 15) === 15 && (pos.z & 15) === 0) this.setSectionDirty(pos.offset(16, 0, -16), true, true)
-        if ((pos.x & 15) === 0 && (pos.z & 15) === 15) this.setSectionDirty(pos.offset(-16, 0, 16), true, true)
-        if ((pos.x & 15) === 15 && (pos.z & 15) === 15) this.setSectionDirty(pos.offset(16, 0, 16), true, true)
+        if ((pos.x & 15) === 0 && (pos.z & 15) === 0) this.setSectionDirty(pos.offset(-CHUNK_SIZE, 0, -CHUNK_SIZE), true, true)
+        if ((pos.x & 15) === 15 && (pos.z & 15) === 0) this.setSectionDirty(pos.offset(CHUNK_SIZE, 0, -CHUNK_SIZE), true, true)
+        if ((pos.x & 15) === 0 && (pos.z & 15) === 15) this.setSectionDirty(pos.offset(-CHUNK_SIZE, 0, CHUNK_SIZE), true, true)
+        if ((pos.x & 15) === 15 && (pos.z & 15) === 15) this.setSectionDirty(pos.offset(CHUNK_SIZE, 0, CHUNK_SIZE), true, true)
 
         // side view neighbors (but ignore updates above)
         // z view neighbors
-        if ((pos.x & 15) === 0 && (pos.y & 15) === 0) this.setSectionDirty(pos.offset(-16, -16, 0), true, true)
-        if ((pos.x & 15) === 15 && (pos.y & 15) === 0) this.setSectionDirty(pos.offset(16, -16, 0), true, true)
+        if ((pos.x & 15) === 0 && (pos.y & (sectionHeight - 1)) === 0) this.setSectionDirty(pos.offset(-CHUNK_SIZE, -sectionHeight, 0), true, true)
+        if ((pos.x & 15) === 15 && (pos.y & (sectionHeight - 1)) === 0) this.setSectionDirty(pos.offset(CHUNK_SIZE, -sectionHeight, 0), true, true)
 
         // x view neighbors
-        if ((pos.z & 15) === 0 && (pos.y & 15) === 0) this.setSectionDirty(pos.offset(0, -16, -16), true, true)
-        if ((pos.z & 15) === 15 && (pos.y & 15) === 0) this.setSectionDirty(pos.offset(0, -16, 16), true, true)
+        if ((pos.z & 15) === 0 && (pos.y & (sectionHeight - 1)) === 0) this.setSectionDirty(pos.offset(0, -sectionHeight, -CHUNK_SIZE), true, true)
+        if ((pos.z & 15) === 15 && (pos.y & (sectionHeight - 1)) === 0) this.setSectionDirty(pos.offset(0, -sectionHeight, CHUNK_SIZE), true, true)
 
         // x & z neighbors
-        if ((pos.y & 15) === 0 && (pos.x & 15) === 0 && (pos.z & 15) === 0) this.setSectionDirty(pos.offset(-16, -16, -16), true, true)
-        if ((pos.y & 15) === 0 && (pos.x & 15) === 15 && (pos.z & 15) === 0) this.setSectionDirty(pos.offset(16, -16, -16), true, true)
-        if ((pos.y & 15) === 0 && (pos.x & 15) === 0 && (pos.z & 15) === 15) this.setSectionDirty(pos.offset(-16, -16, 16), true, true)
-        if ((pos.y & 15) === 0 && (pos.x & 15) === 15 && (pos.z & 15) === 15) this.setSectionDirty(pos.offset(16, -16, 16), true, true)
+        if ((pos.y & (sectionHeight - 1)) === 0 && (pos.x & 15) === 0 && (pos.z & 15) === 0) this.setSectionDirty(pos.offset(-CHUNK_SIZE, -sectionHeight, -CHUNK_SIZE), true, true)
+        if ((pos.y & (sectionHeight - 1)) === 0 && (pos.x & 15) === 15 && (pos.z & 15) === 0) this.setSectionDirty(pos.offset(CHUNK_SIZE, -sectionHeight, -CHUNK_SIZE), true, true)
+        if ((pos.y & (sectionHeight - 1)) === 0 && (pos.x & 15) === 0 && (pos.z & 15) === 15) this.setSectionDirty(pos.offset(-CHUNK_SIZE, -sectionHeight, CHUNK_SIZE), true, true)
+        if ((pos.y & (sectionHeight - 1)) === 0 && (pos.x & 15) === 15 && (pos.z & 15) === 15) this.setSectionDirty(pos.offset(CHUNK_SIZE, -sectionHeight, CHUNK_SIZE), true, true)
       }
     }
   }
@@ -844,14 +890,16 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   toWorkerMessagesQueue = {} as { [workerIndex: string]: any[] }
 
   getWorkerNumber(pos: Vec3, updateAction = false) {
+    const CHUNK_SIZE = 16
+    const sectionHeight = this.getSectionHeight()
     if (updateAction) {
-      const key = `${Math.floor(pos.x / 16) * 16},${Math.floor(pos.y / 16) * 16},${Math.floor(pos.z / 16) * 16}`
+      const key = `${Math.floor(pos.x / CHUNK_SIZE) * CHUNK_SIZE},${Math.floor(pos.y / sectionHeight) * sectionHeight},${Math.floor(pos.z / CHUNK_SIZE) * CHUNK_SIZE}`
       const cantUseChangeWorker = this.sectionsWaiting.get(key) && !this.finishedSections[key]
       if (!cantUseChangeWorker) return 0
     }
 
-    const hash = mod(Math.floor(pos.x / 16) + Math.floor(pos.y / 16) + Math.floor(pos.z / 16), this.workers.length - 1)
-    return hash + 1
+    const hash = mod(Math.floor(pos.x / CHUNK_SIZE) + Math.floor(pos.y / sectionHeight) + Math.floor(pos.z / CHUNK_SIZE), this.workers.length)
+    return hash + 0
   }
 
   async debugGetWorkerCustomBlockModel(pos: Vec3) {
@@ -880,7 +928,9 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     const distance = this.getDistance(pos)
     // todo shouldnt we check loadedChunks instead?
     if (!this.workers.length || distance[0] > this.viewDistance || distance[1] > this.viewDistance) return
-    const key = `${Math.floor(pos.x / 16) * 16},${Math.floor(pos.y / 16) * 16},${Math.floor(pos.z / 16) * 16}`
+    const CHUNK_SIZE = 16
+    const sectionHeight = this.getSectionHeight()
+    const key = `${Math.floor(pos.x / CHUNK_SIZE) * CHUNK_SIZE},${Math.floor(pos.y / sectionHeight) * sectionHeight},${Math.floor(pos.z / CHUNK_SIZE) * CHUNK_SIZE}`
     // if (this.sectionsOutstanding.has(key)) return
     this.renderUpdateEmitter.emit('dirty', pos, value)
     // Dispatch sections to workers based on position
@@ -950,7 +1000,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
   async waitForChunkToLoad(pos: Vec3) {
     return new Promise<void>((resolve, reject) => {
-      const key = `${Math.floor(pos.x / 16) * 16},${Math.floor(pos.z / 16) * 16}`
+      const CHUNK_SIZE = 16
+      const key = `${Math.floor(pos.x / CHUNK_SIZE) * CHUNK_SIZE},${Math.floor(pos.z / CHUNK_SIZE) * CHUNK_SIZE}`
       if (this.loadedChunks[key]) {
         resolve()
         return
@@ -994,9 +1045,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   }
 }
 
-export const initMesherWorker = (onGotMessage: (data: any) => void) => {
+export const initMesherWorker = (onGotMessage: (data: any) => void, workerName = 'mesher.js') => {
   // Node environment needs an absolute path, but browser needs the url of the file
-  const workerName = 'mesher.js'
 
   let worker: any
   if (process.env.SINGLE_FILE_BUILD) {

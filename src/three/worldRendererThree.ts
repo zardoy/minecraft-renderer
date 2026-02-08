@@ -795,7 +795,8 @@ export class WorldRendererThree extends WorldRendererCommon {
   debugChunksVisibilityOverride() {
     const { chunksRenderAboveOverride, chunksRenderBelowOverride, chunksRenderDistanceOverride, chunksRenderAboveEnabled, chunksRenderBelowEnabled, chunksRenderDistanceEnabled } = this.reactiveDebugParams
 
-    const baseY = this.cameraSectionPos.y * 16
+    const sectionHeight = this.getSectionHeight()
+    const baseY = this.cameraSectionPos.y * sectionHeight
 
     if (
       this.displayOptions.inWorldRenderingConfig.enableDebugOverlay &&
@@ -1076,9 +1077,11 @@ export class WorldRendererThree extends WorldRendererCommon {
 
   shouldObjectVisible(object: THREE.Object3D) {
     // Get chunk coordinates
-    const chunkX = Math.floor(object.position.x / 16) * 16
-    const chunkZ = Math.floor(object.position.z / 16) * 16
-    const sectionY = Math.floor(object.position.y / 16) * 16
+    const CHUNK_SIZE = 16
+    const sectionHeight = this.getSectionHeight()
+    const chunkX = Math.floor(object.position.x / CHUNK_SIZE) * CHUNK_SIZE
+    const chunkZ = Math.floor(object.position.z / CHUNK_SIZE) * CHUNK_SIZE
+    const sectionY = Math.floor(object.position.y / sectionHeight) * sectionHeight
 
     const chunkKey = `${chunkX},${chunkZ}`
     const sectionKey = `${chunkX},${sectionY},${chunkZ}`

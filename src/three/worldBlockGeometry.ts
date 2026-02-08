@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { Vec3 } from 'vec3'
 import nbt from 'prismarine-nbt'
-import { MesherGeometryOutput } from '../mesher/shared'
+import { MesherGeometryOutput, IS_FULL_WORLD_SECTION } from '../mesher/shared'
 import { getBannerTexture, createBannerMesh, releaseBannerTexture } from './bannerRenderer'
 import { disposeObject } from './threeJsUtils'
 import type { WorldRendererThree } from './worldRendererThree'
@@ -69,9 +69,11 @@ export class WorldBlockGeometry {
     mesh.name = 'mesh'
     object = new THREE.Group()
     object.add(mesh)
-    // mesh with static dimensions: 16x16x16
+    // mesh with static dimensions: 16x16xsectionHeight
+    const sectionHeight = data.geometry.sectionEndY - data.geometry.sectionStartY
+    const CHUNK_SIZE = 16
     const staticChunkMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(16, 16, 16),
+      new THREE.BoxGeometry(CHUNK_SIZE, sectionHeight, CHUNK_SIZE),
       new THREE.MeshBasicMaterial({ color: 0x00_00_00, transparent: true, opacity: 0 })
     )
     staticChunkMesh.position.set(data.geometry.sx, data.geometry.sy, data.geometry.sz)
@@ -229,7 +231,11 @@ export class WorldBlockGeometry {
   }
 
   removeColumn(x: number, z: number) {
-    for (let y = this.worldRenderer.worldSizeParams.minY; y < this.worldRenderer.worldSizeParams.worldHeight; y += 16) {
+    const sectionHeight = this.worldRenderer.getSectionHeight()
+    const worldMinY = this.worldRenderer.worldMinYRender
+    if (IS_FULL_WORLD_SECTION) {
+      // Only one section per chunk when full world section
+      const y = worldMinY
       this.worldRenderer.setSectionDirty(new Vec3(x, y, z), false)
       const key = `${x},${y},${z}`
       const mesh = this.sectionObjects[key]
@@ -246,6 +252,25 @@ export class WorldBlockGeometry {
         disposeObject(mesh)
       }
       delete this.sectionObjects[key]
+    } else {
+      for (let y = worldMinY; y < this.worldRenderer.worldSizeParams.worldHeight; y += sectionHeight) {
+        this.worldRenderer.setSectionDirty(new Vec3(x, y, z), false)
+        const key = `${x},${y},${z}`
+        const mesh = this.sectionObjects[key]
+        if (mesh) {
+          // Track memory usage removal
+          this.removeSectionMemoryUsage(mesh)
+          // Cleanup banner textures before disposing
+          mesh.traverse((child) => {
+            if ((child as any).bannerTexture) {
+              releaseBannerTexture((child as any).bannerTexture)
+            }
+          })
+          this.scene.remove(mesh)
+          disposeObject(mesh)
+        }
+        delete this.sectionObjects[key]
+      }
     }
   }
 }
