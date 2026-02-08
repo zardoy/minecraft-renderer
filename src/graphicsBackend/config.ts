@@ -45,7 +45,7 @@ export const defaultWorldRendererConfig = {
   showHand: false,
   viewBobbing: false,
   renderEars: true,
-  highlightBlockColor: 'blue' as 'blue' | 'classic' | undefined,
+  highlightBlockColor: 'blue' as 'blue' | 'classic' | 'auto' | undefined,
 
   // Player models
   fetchPlayerSkins: true,
