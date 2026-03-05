@@ -116,6 +116,8 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
   ) {
     super()
     this.lastPos = new Vec3(0, 0, 0).update(position)
+    ;(globalThis as any).worldView = this
+    ;(globalThis as any).window && (((globalThis as any).window).worldView = this)
   }
 
   /**
@@ -209,28 +211,35 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
     this.spiralNumber++
     const { spiralNumber } = this
 
-    // Stop loading previous chunks
     for (const pos of Object.keys(this.waitingSpiralChunksLoad)) {
       this.waitingSpiralChunksLoad[pos](false)
       delete this.waitingSpiralChunksLoad[pos]
     }
 
-    let continueLoading = true
     this.inLoading = true
 
-    await delayedIterator(positions, this.addWaitTime, async (pos) => {
-      if (!continueLoading || this.loadedChunks[`${pos.x},${pos.z}`]) return
-
-      // Wait for chunk to be available from server
-      if (!this.world.getColumnAt(pos)) {
-        continueLoading = await new Promise<boolean>(resolve => {
-          this.waitingSpiralChunksLoad[`${pos.x},${pos.z}`] = resolve
-        })
+    for (let i = 0; i < positions.length; i++) {
+      if (this.spiralNumber != spiralNumber) break
+      if (this.addWaitTime) {
+        await new Promise(resolve => setTimeout(resolve, this.addWaitTime))
       }
-      if (!continueLoading) return
+      const pos = positions[i]
+      const key = `${pos.x},${pos.z}`
+      if (this.loadedChunks[key]) continue
+
+      if (!this.world.getColumnAt(pos)) {
+        this.waitingSpiralChunksLoad[key] = (value: boolean) => {
+          if (!value) return
+          if (this.spiralNumber != spiralNumber) return
+          void this.loadChunk(pos, undefined, `spiral ${spiralNumber} from ${centerPos.x},${centerPos.z}`)
+          this.chunkProgress()
+        }
+        continue
+      }
+
       await this.loadChunk(pos, undefined, `spiral ${spiralNumber} from ${centerPos.x},${centerPos.z}`)
       this.chunkProgress()
-    })
+    }
 
     if (this.panicTimeout) clearTimeout(this.panicTimeout)
     this.inLoading = false
@@ -362,7 +371,7 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
 
       // Unload chunks that are no longer in view
       const chunksToUnload: Vec3[] = []
-      const viewDistanceWithBuffer = this.viewDistance + this.keepChunksDistance
+      const viewDistanceWithBuffer = force ? this.viewDistance : this.viewDistance + this.keepChunksDistance
 
       for (const coords of Object.keys(this.loadedChunks)) {
         const [x, z] = coords.split(',').map(Number)
