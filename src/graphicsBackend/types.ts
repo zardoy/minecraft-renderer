@@ -68,7 +68,7 @@ export interface NonReactiveState {
 export interface RendererReactiveState {
   world: {
     chunksLoaded: Set<string>
-    heightmaps: Map<string, Uint8Array>
+    heightmaps: Map<string, Int16Array>
     allChunksLoaded: boolean
     mesherWork: boolean
     intersectMedia: any | null

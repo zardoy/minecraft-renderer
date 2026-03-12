@@ -21,6 +21,10 @@ export class RainModule implements RendererModuleController {
   private material?: THREE.MeshBasicMaterial
   private particles: RainParticleData[] = []
   private enabled = false
+  private readonly dummy = new THREE.Matrix4()
+  private readonly tempPosition = new THREE.Vector3()
+  private readonly tempQuaternion = new THREE.Quaternion()
+  private readonly tempScale = new THREE.Vector3()
 
   constructor(private readonly worldRenderer: WorldRendererThree) {}
 
@@ -48,10 +52,14 @@ export class RainModule implements RendererModuleController {
     const cameraPos = this.worldRenderer.getCameraPosition()
     this.instancedMesh.position.copy(cameraPos)
 
-    const dummy = new THREE.Matrix4()
-    const position = new THREE.Vector3()
-    const quaternion = new THREE.Quaternion()
-    const scale = new THREE.Vector3()
+    const heightmaps = this.worldRenderer.reactiveState.world.heightmaps
+
+    const { dummy, tempPosition: position, tempQuaternion: quaternion, tempScale: scale } = this
+
+    // Cache chunk key lookup to avoid redundant Map.get and string allocation
+    let prevChunkX = NaN
+    let prevChunkZ = NaN
+    let cachedHeightmap: Int16Array | undefined
 
     for (let i = 0; i < PARTICLE_COUNT; i++) {
       const particle = this.particles[i]
@@ -63,7 +71,30 @@ export class RainModule implements RendererModuleController {
       const relativeY = position.y
       const horizontalDist = Math.sqrt(position.x * position.x + position.z * position.z)
 
-      if (relativeY < RESPAWN_BELOW || horizontalDist > RANGE) {
+      // Convert camera-relative position to world coordinates
+      const worldX = cameraPos.x + position.x
+      const worldY = cameraPos.y + position.y
+      const worldZ = cameraPos.z + position.z
+
+      // Look up heightmap for this world position (cached per chunk)
+      const chunkX = Math.floor(worldX / 16)
+      const chunkZ = Math.floor(worldZ / 16)
+      if (chunkX !== prevChunkX || chunkZ !== prevChunkZ) {
+        cachedHeightmap = heightmaps.get(`${chunkX},${chunkZ}`)
+        prevChunkX = chunkX
+        prevChunkZ = chunkZ
+      }
+
+      const localX = ((Math.floor(worldX) % 16) + 16) % 16
+      const localZ = ((Math.floor(worldZ) % 16) + 16) % 16
+      const heightY = cachedHeightmap?.[localZ * 16 + localX]
+
+      // Respawn when: out of range, hit heightmap surface (heightY + 1 = block top face), or fell too far
+      const shouldRespawn = horizontalDist > RANGE ||
+        (heightY !== undefined && heightY !== -32768 && worldY <= heightY + 1) ||
+        relativeY < RESPAWN_BELOW
+
+      if (shouldRespawn) {
         this.respawnParticle(position)
         const speed = FALL_SPEED_MIN + Math.random() * (FALL_SPEED_MAX - FALL_SPEED_MIN)
         particle.velocity.set(

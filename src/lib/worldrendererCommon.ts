@@ -63,7 +63,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     dirty(pos: Vec3, value: boolean): void
     update(/* pos: Vec3, value: boolean */): void
     chunkFinished(key: string): void
-    heightmap(key: string, heightmap: Uint8Array): void
+    heightmap(key: string, heightmap: Int16Array): void
   }>
   customTexturesDataUrl = undefined as string | undefined
   workers: any[] = []
@@ -427,7 +427,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     }
 
     if (data.type === 'heightmap') {
-      this.reactiveState.world.heightmaps.set(data.key, new Uint8Array(data.heightmap))
+      this.reactiveState.world.heightmaps.set(data.key, new Int16Array(data.heightmap))
     }
   }
 
@@ -621,11 +621,11 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         customBlockModels: customBlockModels || undefined
       })
     }
-    // this.workers[0].postMessage({
-    //   type: 'getHeightmap',
-    //   x,
-    //   z,
-    // })
+    this.workers[0].postMessage({
+      type: 'getHeightmap',
+      x,
+      z,
+    })
     this.logWorkerWork(() => `-> chunk ${JSON.stringify({ x, z, chunkLength: chunk.length, customBlockModelsLength: customBlockModels ? Object.keys(customBlockModels).length : 0 })}`)
     this.mesherLogReader?.chunkReceived(x, z, chunk.length)
     const sectionHeight = this.getSectionHeight()
@@ -686,6 +686,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       }
     }
     this.highestBlocksByChunks.delete(`${x},${z}`)
+    this.reactiveState.world.heightmaps.delete(`${Math.floor(x / 16)},${Math.floor(z / 16)}`)
 
     this.updateChunksStats()
 
@@ -847,6 +848,10 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         customBlockModels
       })
     }
+    // Re-request heightmap for the affected chunk after block change
+    const chunkCornerX = Math.floor(pos.x / CHUNK_SIZE) * CHUNK_SIZE
+    const chunkCornerZ = Math.floor(pos.z / CHUNK_SIZE) * CHUNK_SIZE
+    this.workers[0].postMessage({ type: 'getHeightmap', x: chunkCornerX, z: chunkCornerZ })
     this.logWorkerWork(`-> blockUpdate ${JSON.stringify({ pos, stateId, customBlockModels })}`)
     this.setSectionDirty(pos, true, true)
     if (this.neighborChunkUpdates) {

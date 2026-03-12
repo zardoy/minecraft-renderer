@@ -94,7 +94,7 @@ export const getDefaultRendererState = (): {
     reactive: proxy({
       world: {
         chunksLoaded: new Set<string>(),
-        heightmaps: new Map<string, Uint8Array>(),
+        heightmaps: new Map<string, Int16Array>(),
         allChunksLoaded: false,
         mesherWork: false,
         intersectMedia: null

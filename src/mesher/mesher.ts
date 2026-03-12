@@ -152,7 +152,7 @@ const handleMessage = data => {
       break
     }
     case 'getHeightmap': {
-      const heightmap = new Uint8Array(256)
+      const heightmap = new Int16Array(256)
 
       const blockPos = new Vec3(0, 0, 0)
       for (let z = 0; z < 16; z++) {
@@ -168,7 +168,7 @@ const handleMessage = data => {
             block = world.getBlock(blockPos)
           }
           const index = z * 16 + x
-          heightmap[index] = block ? blockPos.y : 0
+          heightmap[index] = block ? blockPos.y : -32768
         }
       }
       postMessage({ type: 'heightmap', key: `${Math.floor(data.x / 16)},${Math.floor(data.z / 16)}`, heightmap })
