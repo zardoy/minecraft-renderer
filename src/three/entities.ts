@@ -132,11 +132,12 @@ function getUsernameTexture({
 
   ctx.globalAlpha = nameTagTextOpacity / 255
 
-  renderComponent(username, PrismarineChat, canvas, fontSize, 'white', -padding + fontSize)
+  let textRendered = false
+  renderComponent(username, PrismarineChat, canvas, fontSize, 'white', -padding + fontSize, () => { textRendered = true })
 
   ctx.globalAlpha = 1
 
-  return canvas
+  return { canvas, textRendered }
 }
 
 const addNametag = (entity, options: { fontFamily: string }, mesh, version: string) => {
@@ -146,7 +147,13 @@ const addNametag = (entity, options: { fontFamily: string }, mesh, version: stri
     }
   }
   if (entity.username !== undefined) {
-    const canvas = getUsernameTexture(entity, options, version)
+    if (typeof entity.username === 'string' && entity.username.startsWith('EMPTY')) {
+      return
+    }
+    const { canvas, textRendered } = getUsernameTexture(entity, options, version)
+    if (!textRendered) {
+      return
+    }
     const tex = new THREE.Texture(canvas)
     tex.needsUpdate = true
     let nameTag: THREE.Object3D

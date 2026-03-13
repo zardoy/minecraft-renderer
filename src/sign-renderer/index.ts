@@ -84,11 +84,12 @@ export const renderSign = (
 
   ctxHook(_ctx)
   const defaultColor = ('front_text' in blockEntity ? blockEntity.front_text.color : blockEntity.Color) || 'black'
+  let textRendered = false
   for (const [lineNum, text] of texts.slice(0, 4).entries()) {
     if (text === 'null') continue
-    renderComponent(text, PrismarineChat, canvas, fontSize, defaultColor, fontSize * (lineNum + 1) + (isHanging ? 0 : -8))
+    renderComponent(text, PrismarineChat, canvas, fontSize, defaultColor, fontSize * (lineNum + 1) + (isHanging ? 0 : -8), () => { textRendered = true })
   }
-  return canvas
+  return { canvas, textRendered }
 }
 
 export const renderComponent = (
@@ -97,7 +98,8 @@ export const renderComponent = (
   canvas: OffscreenCanvas,
   fontSize: number,
   defaultColor: string,
-  offset = 0
+  offset = 0,
+  onTextRendered?: () => void
 ) => {
   // todo: in pre flatenning it seems the format was not json
   const parsed = typeof text === 'string' && (text?.startsWith('{') || text?.startsWith('"')) ? parseSafe(text ?? '""', 'sign text') : text
@@ -213,4 +215,5 @@ export const renderComponent = (
     }
     renderedWidth += ctx.measureText(text).width
   }
+  if (onTextRendered) onTextRendered()
 }

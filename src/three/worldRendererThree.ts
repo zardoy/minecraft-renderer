@@ -642,9 +642,9 @@ export class WorldRendererThree extends WorldRendererCommon {
     if (textures[texturekey]) return textures[texturekey]
 
     const PrismarineChat = PrismarineChatLoader(this.version)
-    const canvas = renderSign(blockEntity, isHanging, PrismarineChat)
-    if (!canvas) return
-    const tex = new THREE.Texture(canvas)
+    const result = renderSign(blockEntity, isHanging, PrismarineChat)
+    if (!result || !result.canvas) return
+    const tex = new THREE.Texture(result.canvas)
     tex.magFilter = THREE.NearestFilter
     tex.minFilter = THREE.NearestFilter
     tex.needsUpdate = true
