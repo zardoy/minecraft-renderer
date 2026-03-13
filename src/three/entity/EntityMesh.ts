@@ -12,6 +12,7 @@ import { WorldRendererThree } from '../worldRendererThree'
 import entities from './entities.json'
 import { externalModels } from './objModels'
 import externalTexturesJson from './externalTextures.json'
+import { createAnimatedObject } from './gltfAnimationUtils'
 
 interface ElemFace {
   dir: [number, number, number]
@@ -66,6 +67,8 @@ interface EntityOverrides {
       offset?: { x?: number, y?: number, z?: number }
       texture?: string
       textures?: Record<string, string>
+      animation?: string
+      animationLoop?: boolean
     }
   }
 }
@@ -241,23 +244,23 @@ export function getMesh(
   overrides: EntityOverrides = {},
   debugFlags: EntityDebugFlags = {}
 ): THREE.SkinnedMesh {
-  const textureWidth = jsonModel.texturewidth ?? 64
-  const textureHeight = jsonModel.textureheight ?? 64
+  let textureWidth = jsonModel.texturewidth ?? 64
+  let textureHeight = jsonModel.textureheight ?? 64
   let textureOffset: number[] | undefined
   const useBlockTexture = texture.startsWith('block:')
   const blocksTexture = worldRenderer?.material.map
   if (useBlockTexture) {
-    // if (!worldRenderer) throw new Error('worldRenderer is required for block textures')
-    // const blockName = texture.slice(6)
-    // const textureInfo = worldRenderer.resourcesManager.currentResources.blocksAtlasJson.textures[blockName]
-    // if (textureInfo) {
-    //   textureWidth = blocksTexture?.image.width ?? textureWidth
-    //   textureHeight = blocksTexture?.image.height ?? textureHeight
-    //   // todo support su/sv
-    //   textureOffset = [textureInfo.u, textureInfo.v]
-    // } else {
-    //   console.error(`Unknown block ${blockName}`)
-    // }
+    if (!worldRenderer) throw new Error('worldRenderer is required for block textures')
+    const blockName = texture.slice(6)
+    const textureInfo = worldRenderer.resourcesManager.currentResources.blocksAtlasJson.textures[blockName]
+    if (textureInfo) {
+      textureWidth = blocksTexture?.image.width ?? textureWidth
+      textureHeight = blocksTexture?.image.height ?? textureHeight
+      // todo support su/sv
+      textureOffset = [textureInfo.u, textureInfo.v]
+    } else {
+      console.error(`Unknown block ${blockName}`)
+    }
   }
 
   const bones: Record<string, THREE.Bone> = {}
@@ -449,7 +452,9 @@ export type EntityDebugFlags = {
 export class EntityMesh {
   mesh!: THREE.Object3D
   animations?: THREE.AnimationClip[]
-  mixer?: THREE.AnimationMixer
+  private animationController?: ReturnType<typeof createAnimatedObject>
+  private initialAnimation?: string
+  private initialLoop?: boolean
 
   constructor(
     version: string,
@@ -467,17 +472,19 @@ export class EntityMesh {
 
     // Handle custom model override
     if (overrides.customModel) {
+      // empty mesh to allow "handled" entity and not pink box
+      this.mesh = new THREE.Object3D()
+
       const { modelPath, modelType, metadata } = overrides.customModel
 
       switch (modelType) {
         case 'gltf': {
           const loader = new GLTFLoader()
-          const gltfData = loader.parseAsync(modelPath as ArrayBuffer, '')
+          const gltfData = loader.parseAsync(modelPath, '')
 
           gltfData.then(gltf => {
-            this.mesh = gltf.scene
+            this.mesh.add(gltf.scene)
             this.animations = gltf.animations
-            this.mixer = new THREE.AnimationMixer(this.mesh)
 
             // Apply metadata overrides if available
             if (metadata?.scale) {
@@ -503,6 +510,29 @@ export class EntityMesh {
                   })
                 }
               })
+            }
+
+            // Handle animations: play from config if provided, otherwise play first animation if present
+            if (gltf.animations && gltf.animations.length > 0) {
+              this.animations = gltf.animations
+              const animationName = metadata?.animation
+              const loop = metadata?.animationLoop ?? true
+
+              // Store initial animation settings for later use
+              this.initialAnimation = animationName
+              this.initialLoop = loop
+
+              // Create animation controller with onBeforeRender support
+              this.animationController = createAnimatedObject(this.mesh, gltf.animations)
+
+              if (animationName) {
+                // Play animation from config
+                this.playAnimation(animationName, loop)
+              } else {
+                // Play first animation
+                const clip = gltf.animations[0]
+                this.animationController.playAnimation(clip.name, loop)
+              }
             }
           }).catch(err => {
             console.error('Failed to load GLTF model:', err)
@@ -665,29 +695,21 @@ export class EntityMesh {
   }
 
   playAnimation(name: string, loop = false) {
-    if (!this.mixer || !this.animations) return
-
-    // Find animation by name
-    const clip = this.animations.find(a => a.name === name)
-    if (!clip) {
-      console.warn(`Animation "${name}" not found`)
+    if (!this.animationController || !this.animations) {
+      console.warn('No animation controller available')
       return
     }
 
-    // Stop any existing animations
-    this.mixer.stopAllAction()
-
-    // Play new animation
-    const action = this.mixer.clipAction(clip)
-    action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity)
-    action.clampWhenFinished = !loop
-    action.reset().play()
+    // Play animation using the controller
+    const success = this.animationController.playAnimation(name, loop)
+    if (!success) {
+      console.warn(`Animation "${name}" not found`)
+    }
   }
 
   update(deltaTime: number) {
-    if (this.mixer) {
-      this.mixer.update(deltaTime)
-    }
+    // Animation updates are now handled by onBeforeRender callback
+    // This method is kept for compatibility but no longer needed
   }
 
   static getStaticData(name: string): { boneNames: string[] } {
