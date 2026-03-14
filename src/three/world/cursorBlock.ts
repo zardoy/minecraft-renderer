@@ -105,7 +105,8 @@ export class CursorBlock {
     const position = new Vec3(_position.x, _position.y, _position.z)
     this.blockBreakMesh.scale.set(width * 1.001, height * 1.001, depth * 1.001)
     position.add(new Vec3(blockPosition.x, blockPosition.y, blockPosition.z))
-    this.blockBreakMesh.position.set(position.x, position.y, position.z)
+    this.blockBreakMesh.userData.worldPos = { x: position.x, y: position.y, z: position.z }
+    this.worldRenderer.sceneOrigin.setPositionFromWorld(this.blockBreakMesh, position.x, position.y, position.z)
     this.blockBreakMesh.visible = true;
 
     (this.blockBreakMesh.material as THREE.MeshBasicMaterial).map = this.breakTextures[stage] ?? this.breakTextures.at(-1);
@@ -146,7 +147,8 @@ export class CursorBlock {
       const lines = new LineSegmentsGeometry().fromEdgesGeometry(new THREE.EdgesGeometry(geometry))
       const wireframe = new Wireframe(lines, this.cursorLineMaterial)
       const pos = blockPos.plus(position)
-      wireframe.position.set(pos.x, pos.y, pos.z)
+      wireframe.userData.worldPos = { x: pos.x, y: pos.y, z: pos.z }
+      this.worldRenderer.sceneOrigin.setPositionFromWorld(wireframe, pos.x, pos.y, pos.z)
       wireframe.computeLineDistances()
       group.add(wireframe)
     }

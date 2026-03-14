@@ -65,7 +65,10 @@ export class WorldBlockGeometry {
     this.addSectionMemoryUsage(geometry)
 
     const mesh = new THREE.Mesh(geometry, this.material)
-    mesh.position.set(data.geometry.sx, data.geometry.sy, data.geometry.sz)
+    mesh.userData.worldSx = data.geometry.sx
+    mesh.userData.worldSy = data.geometry.sy
+    mesh.userData.worldSz = data.geometry.sz
+    this.worldRenderer.sceneOrigin.setPositionFromWorld(mesh, data.geometry.sx, data.geometry.sy, data.geometry.sz)
     mesh.name = 'mesh'
     object = new THREE.Group()
     object.add(mesh)
@@ -76,7 +79,10 @@ export class WorldBlockGeometry {
       new THREE.BoxGeometry(CHUNK_SIZE, sectionHeight, CHUNK_SIZE),
       new THREE.MeshBasicMaterial({ color: 0x00_00_00, transparent: true, opacity: 0 })
     )
-    staticChunkMesh.position.set(data.geometry.sx, data.geometry.sy, data.geometry.sz)
+    staticChunkMesh.userData.worldSx = data.geometry.sx
+    staticChunkMesh.userData.worldSy = data.geometry.sy
+    staticChunkMesh.userData.worldSz = data.geometry.sz
+    this.worldRenderer.sceneOrigin.setPositionFromWorld(staticChunkMesh, data.geometry.sx, data.geometry.sy, data.geometry.sz)
     const boxHelper = new THREE.BoxHelper(staticChunkMesh, 0xff_ff_00)
     boxHelper.name = 'helper'
     object.add(boxHelper)
@@ -100,6 +106,9 @@ export class WorldBlockGeometry {
           nbt.simplify(signBlockEntity)
         )
         if (!sign) continue
+        if (sign.userData.worldPosX !== undefined) {
+          this.worldRenderer.sceneOrigin.setPositionFromWorld(sign, sign.userData.worldPosX, sign.userData.worldPosY, sign.userData.worldPosZ)
+        }
         object.add(sign)
       }
     }
@@ -115,6 +124,9 @@ export class WorldBlockGeometry {
           nbt.simplify(headBlockEntity)
         )
         if (!head) continue
+        if (head.userData.worldPosX !== undefined) {
+          this.worldRenderer.sceneOrigin.setPositionFromWorld(head, head.userData.worldPosX, head.userData.worldPosY, head.userData.worldPosZ)
+        }
         object.add(head)
       }
     }
@@ -126,6 +138,9 @@ export class WorldBlockGeometry {
         const bannerTexture = getBannerTexture(this.worldRenderer, blockName, nbt.simplify(bannerBlockEntity))
         if (!bannerTexture) continue
         const banner = createBannerMesh(new Vec3(+x, +y, +z), rotation, isWall, bannerTexture)
+        if (banner.userData.worldPosX !== undefined) {
+          this.worldRenderer.sceneOrigin.setPositionFromWorld(banner, banner.userData.worldPosX, banner.userData.worldPosY, banner.userData.worldPosZ)
+        }
         object.add(banner)
       }
     }
@@ -143,6 +158,9 @@ export class WorldBlockGeometry {
 
     this.worldRenderer.updatePosDataChunk(data.key)
     object.matrixAutoUpdate = false
+    // Force matrix update after setting camera-relative position (matrixAutoUpdate is false)
+    mesh.updateMatrix()
+    object.updateMatrix()
     mesh.onAfterRender = (renderer, scene, camera, geometry, material, group) => {
       // mesh.matrixAutoUpdate = false
     }

@@ -390,7 +390,10 @@ export class SciFiWorldRevealModule implements RendererModuleController {
     }
     // Main wireframe
     const wireframe = new THREE.LineSegments(wireframeGeom, this.wireframeMaterial.clone())
-    wireframe.position.set(geometry.sx, geometry.sy, geometry.sz)
+    wireframe.userData.worldSx = geometry.sx
+    wireframe.userData.worldSy = geometry.sy
+    wireframe.userData.worldSz = geometry.sz
+    this.worldRenderer.sceneOrigin.setPositionFromWorld(wireframe, geometry.sx, geometry.sy, geometry.sz)
     wireframe.name = 'scifi-wireframe'
     wireframe.renderOrder = 1000
 

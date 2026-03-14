@@ -39,7 +39,7 @@ export class WaypointsRenderer {
 
   private updateWaypoints() {
     const currentTime = performance.now()
-    const playerPos = this.worldRenderer.cameraObject.position
+    const playerPos = this.worldRenderer.getCameraPosition()
 
     // Performance optimization: throttle updates and check for significant camera movement
     const cameraMovedSignificantly = this.lastCameraPosition.distanceTo(playerPos) > 0.5
@@ -63,7 +63,11 @@ export class WaypointsRenderer {
 
       if (visible) {
         // Update position
-        waypoint.sprite.setPosition(waypoint.x, waypoint.y, waypoint.z)
+        waypoint.sprite.setPosition(
+          this.worldRenderer.sceneOrigin.toSceneX(waypoint.x),
+          this.worldRenderer.sceneOrigin.toSceneY(waypoint.y),
+          this.worldRenderer.sceneOrigin.toSceneZ(waypoint.z)
+        )
         // Ensure camera-based update each frame
         waypoint.sprite.updateForCamera(this.worldRenderer.getCameraPosition(), this.worldRenderer.camera, sizeVec.width, sizeVec.height)
       }

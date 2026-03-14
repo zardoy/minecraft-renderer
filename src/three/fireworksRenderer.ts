@@ -100,7 +100,8 @@ export class FireworksRenderer {
         opacity: 0.8
       })
       debugSphere = new THREE.Mesh(sphereGeometry, sphereMaterial)
-      debugSphere.position.set(position.x, position.y, position.z)
+      this.worldRenderer.sceneOrigin.setPositionFromWorld(debugSphere, position.x, position.y, position.z)
+      debugSphere.userData.worldPos = { x: position.x, y: position.y, z: position.z }
       debugSphere.renderOrder = 999 // Render before particles
       this.worldRenderer.scene.add(debugSphere)
       console.log(`Debug: Created explosion center sphere at (${position.x}, ${position.y}, ${position.z}) with radius ${sphereRadius}`)
@@ -131,7 +132,7 @@ export class FireworksRenderer {
         : new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 })
 
       const mesh = new THREE.Mesh(this.particleGeometry, material)
-      mesh.position.set(position.x, position.y, position.z)
+      this.worldRenderer.sceneOrigin.setPositionFromWorld(mesh, position.x, position.y, position.z)
 
       // Make particles more visible
       mesh.renderOrder = 1000 // Render on top
@@ -190,7 +191,8 @@ export class FireworksRenderer {
         opacity: 0.8
       })
       debugSphere = new THREE.Mesh(sphereGeometry, sphereMaterial)
-      debugSphere.position.set(position.x, position.y, position.z)
+      this.worldRenderer.sceneOrigin.setPositionFromWorld(debugSphere, position.x, position.y, position.z)
+      debugSphere.userData.worldPos = { x: position.x, y: position.y, z: position.z }
       debugSphere.renderOrder = 999 // Render before particles
       this.worldRenderer.scene.add(debugSphere)
       console.log(`Debug: Created camera-facing explosion center sphere at (${position.x}, ${position.y}, ${position.z}) with radius ${sphereRadius}`)
@@ -235,7 +237,7 @@ export class FireworksRenderer {
         : new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 })
 
       const mesh = new THREE.Mesh(this.particleGeometry, material)
-      mesh.position.set(position.x, position.y, position.z)
+      this.worldRenderer.sceneOrigin.setPositionFromWorld(mesh, position.x, position.y, position.z)
 
       // Make particles more visible
       mesh.renderOrder = 1000 // Render on top
@@ -328,7 +330,7 @@ export class FireworksRenderer {
     // Convert deltaTime from milliseconds to seconds for proper physics
     const deltaTimeSeconds = deltaTime / 1000
     particle.position.add(particle.velocity.scaled(deltaTimeSeconds))
-    particle.mesh.position.set(particle.position.x, particle.position.y, particle.position.z)
+    this.worldRenderer.sceneOrigin.setPositionFromWorld(particle.mesh, particle.position.x, particle.position.y, particle.position.z)
 
     // Update life and opacity
     const oldLife = particle.life

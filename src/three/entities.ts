@@ -425,7 +425,8 @@ export class Entities {
 
     // Update position and rotation
     if (playerData.position) {
-      this.playerEntity.position.set(playerData.position.x, playerData.position.y, playerData.position.z)
+      this.playerEntity.userData.worldPos = { x: playerData.position.x, y: playerData.position.y, z: playerData.position.z }
+      this.worldRenderer.sceneOrigin.setPositionFromWorld(this.playerEntity, playerData.position.x, playerData.position.y, playerData.position.z)
     }
     if (playerData.yaw !== undefined) {
       this.playerEntity.rotation.y = playerData.yaw
@@ -536,12 +537,20 @@ export class Entities {
 
         if (thirdPersonNow) {
           const yOffset = this.worldRenderer.playerStateReactive.eyeHeight
-          const pos = this.worldRenderer.cameraObject.position.clone().add(new THREE.Vector3(0, -yOffset, 0))
-          entity.position.set(pos.x, pos.y, pos.z)
+          // Camera is at (0,0,0) in scene space, so scene-relative position is just the offset
+          entity.position.set(0, -yOffset, 0)
+          // Store world position for distance calculations etc.
+          entity.userData.worldPos = {
+            x: this.worldRenderer.cameraWorldPos.x,
+            y: this.worldRenderer.cameraWorldPos.y - yOffset,
+            z: this.worldRenderer.cameraWorldPos.z
+          }
 
           const p: any = (this.worldRenderer.playerStateReactive as any).position
           if (p && typeof p.x === 'number') {
             this.updateAutoWalkFlags(entityKey, entity, dtRaw, new THREE.Vector3(p.x, p.y, p.z))
+          } else if (entity.userData.worldPos) {
+            this.updateAutoWalkFlags(entityKey, entity, dtRaw, new THREE.Vector3(entity.userData.worldPos.x, entity.userData.worldPos.y, entity.userData.worldPos.z))
           } else {
             this.updateAutoWalkFlags(entityKey, entity, dtRaw, entity.position)
           }
@@ -1111,7 +1120,8 @@ export class Entities {
       mesh.name = 'mesh'
       // set initial position so there are no weird jumps update after
       const pos = entity.pos ?? entity.position
-      group.position.set(pos.x, pos.y, pos.z)
+      group.userData.worldPos = { x: pos.x, y: pos.y, z: pos.z }
+      this.worldRenderer.sceneOrigin.setPositionFromWorld(group, pos.x, pos.y, pos.z)
 
       // todo use width and height instead
       const boxHelper = new THREE.BoxHelper(
@@ -1328,7 +1338,17 @@ export class Entities {
     if (!e) return
     const ANIMATION_DURATION = justAdded ? 0 : TWEEN_DURATION
     if (entity.position) {
-      new TWEEN.Tween(e.position).to({ x: entity.position.x, y: entity.position.y, z: entity.position.z }, ANIMATION_DURATION).start()
+      // Initialize worldPos if not set
+      if (!e.userData.worldPos) {
+        e.userData.worldPos = { x: entity.position.x, y: entity.position.y, z: entity.position.z }
+      }
+      // Tween world position, convert to scene coords on each update
+      new TWEEN.Tween(e.userData.worldPos)
+        .to({ x: entity.position.x, y: entity.position.y, z: entity.position.z }, ANIMATION_DURATION)
+        .onUpdate(() => {
+          this.worldRenderer.sceneOrigin.setPositionFromWorld(e, e.userData.worldPos.x, e.userData.worldPos.y, e.userData.worldPos.z)
+        })
+        .start()
     }
     if (entity.yaw) {
       const da = (entity.yaw - e.rotation.y) % (Math.PI * 2)
@@ -1368,8 +1388,12 @@ export class Entities {
     if (!mesh.visible) return
 
     const MAX_DISTANCE_SKIN_LOAD = 128
-    const cameraPos = this.worldRenderer.cameraObject.position
-    const distance = mesh.position.distanceTo(cameraPos)
+    const cameraPos = this.worldRenderer.getCameraPosition()
+    // Use world positions for accurate distance calculation
+    const entityWorldPos = mesh.userData.worldPos
+      ? new THREE.Vector3(mesh.userData.worldPos.x, mesh.userData.worldPos.y, mesh.userData.worldPos.z)
+      : mesh.position.clone().add(new THREE.Vector3(this.worldRenderer.sceneOrigin.x, this.worldRenderer.sceneOrigin.y, this.worldRenderer.sceneOrigin.z))
+    const distance = entityWorldPos.distanceTo(cameraPos)
     if (distance < MAX_DISTANCE_SKIN_LOAD && distance < (this.worldRenderer.viewDistance * 16)) {
       if (this.loadedSkinEntityIds.has(String(entityId))) return
       void this.updatePlayerSkin(entityId, mesh.playerObject.realUsername, mesh.playerObject.realPlayerUuid, true, true)

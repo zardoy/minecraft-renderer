@@ -46,7 +46,7 @@ export class ThreeJsSound implements SoundSystem {
       sound.setPlaybackRate(pitch) // set the pitch
       this.worldRenderer.scene.add(sound)
       // set sound position
-      sound.position.set(position.x, position.y, position.z)
+      this.worldRenderer.sceneOrigin.setPositionFromWorld(sound, position.x, position.y, position.z)
       sound.onEnded = () => {
         this.worldRenderer.scene.remove(sound)
         if (sound.source) {
