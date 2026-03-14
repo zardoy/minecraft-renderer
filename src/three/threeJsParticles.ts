@@ -1,7 +1,9 @@
 import * as THREE from 'three'
+import type { SceneOrigin } from './sceneOrigin'
 
 interface ParticleMesh extends THREE.Mesh {
   velocity: THREE.Vector3;
+  worldPos: THREE.Vector3;
 }
 
 interface ParticleConfig {
@@ -23,11 +25,13 @@ export class Fountain {
   private readonly particles: ParticleMesh[] = []
   private readonly config: { particleConfig: ParticleConfig }
   private readonly position: THREE.Vector3
+  private readonly sceneOrigin: SceneOrigin | undefined
   container: THREE.Object3D | undefined
 
-  constructor (public sectionId: string, options: FountainOptions = {}) {
+  constructor (public sectionId: string, options: FountainOptions = {}, sceneOrigin?: SceneOrigin) {
     this.position = options.position ? new THREE.Vector3(options.position.x, options.position.y, options.position.z) : new THREE.Vector3(0, 0, 0)
     this.config = this.createConfig(options.particleConfig)
+    this.sceneOrigin = sceneOrigin
   }
 
   private createConfig (
@@ -47,6 +51,18 @@ export class Fountain {
     return { particleConfig }
   }
 
+  private toSceneX (worldX: number): number {
+    return this.sceneOrigin ? this.sceneOrigin.toSceneX(worldX) : worldX
+  }
+
+  private toSceneY (worldY: number): number {
+    return this.sceneOrigin ? this.sceneOrigin.toSceneY(worldY) : worldY
+  }
+
+  private toSceneZ (worldZ: number): number {
+    return this.sceneOrigin ? this.sceneOrigin.toSceneZ(worldZ) : worldZ
+  }
+
 
   createParticles (container: THREE.Object3D): void {
     this.container = container
@@ -64,11 +80,12 @@ export class Fountain {
       const mesh = new THREE.Mesh(geometry, material)
       const particle = mesh as unknown as ParticleMesh
 
-      particle.position.set(
-        this.position.x + (Math.random() - 0.5) * this.config.particleConfig.xVelocityRange * 2,
-        this.position.y + this.config.particleConfig.fountainHeight,
-        this.position.z + (Math.random() - 0.5) * this.config.particleConfig.zVelocityRange * 2
-      )
+      const worldX = this.position.x + (Math.random() - 0.5) * this.config.particleConfig.xVelocityRange * 2
+      const worldY = this.position.y + this.config.particleConfig.fountainHeight
+      const worldZ = this.position.z + (Math.random() - 0.5) * this.config.particleConfig.zVelocityRange * 2
+
+      particle.worldPos = new THREE.Vector3(worldX, worldY, worldZ)
+      particle.position.set(this.toSceneX(worldX), this.toSceneY(worldY), this.toSceneZ(worldZ))
 
       particle.velocity = new THREE.Vector3(
         (Math.random() - 0.5) * this.config.particleConfig.xVelocityRange,
@@ -88,20 +105,26 @@ export class Fountain {
   render (): void {
     for (const particle of this.particles) {
       particle.velocity.y -= 0.01 + Math.random() * 0.1
-      particle.position.add(particle.velocity)
+      particle.worldPos.add(particle.velocity)
 
-      if (particle.position.y < this.position.y + this.config.particleConfig.resetHeight) {
-        particle.position.set(
-          this.position.x + (Math.random() - 0.5) * this.config.particleConfig.xVelocityRange * 2,
-          this.position.y + this.config.particleConfig.fountainHeight,
-          this.position.z + (Math.random() - 0.5) * this.config.particleConfig.zVelocityRange * 2
-        )
+      if (particle.worldPos.y < this.position.y + this.config.particleConfig.resetHeight) {
+        const worldX = this.position.x + (Math.random() - 0.5) * this.config.particleConfig.xVelocityRange * 2
+        const worldY = this.position.y + this.config.particleConfig.fountainHeight
+        const worldZ = this.position.z + (Math.random() - 0.5) * this.config.particleConfig.zVelocityRange * 2
+
+        particle.worldPos.set(worldX, worldY, worldZ)
         particle.velocity.set(
           (Math.random() - 0.5) * this.config.particleConfig.xVelocityRange,
           -Math.random() * this.config.particleConfig.yVelocityRange.max,
           (Math.random() - 0.5) * this.config.particleConfig.zVelocityRange
         )
       }
+
+      particle.position.set(
+        this.toSceneX(particle.worldPos.x),
+        this.toSceneY(particle.worldPos.y),
+        this.toSceneZ(particle.worldPos.z)
+      )
     }
   }
 
@@ -125,7 +148,12 @@ export class Fountain {
     for (let i = 0; i < count; i++) {
       const mesh = new THREE.Mesh(geometry, material)
       const particle = mesh as unknown as ParticleMesh
-      particle.position.copy(this.position)
+      particle.worldPos = this.position.clone()
+      particle.position.set(
+        this.toSceneX(this.position.x),
+        this.toSceneY(this.position.y),
+        this.toSceneZ(this.position.z)
+      )
       particle.velocity = new THREE.Vector3(
         Math.random() * this.config.particleConfig.xVelocityRange -
         this.config.particleConfig.xVelocityRange / 2,

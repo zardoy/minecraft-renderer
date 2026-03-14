@@ -656,8 +656,8 @@ export class WorldRendererThree extends WorldRendererCommon {
     return tex
   }
 
-  getCameraPosition() {
-    return new THREE.Vector3(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
+  getCameraPosition(target?: THREE.Vector3): THREE.Vector3 {
+    return (target ?? new THREE.Vector3()).set(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
   }
 
   getSectionCameraPosition() {
@@ -800,9 +800,16 @@ export class WorldRendererThree extends WorldRendererCommon {
       this.debugRaycast(pos, direction, distance)
     }
 
+    // Convert world position to scene-relative coordinates for raycasting
+    const scenePos = new THREE.Vector3(
+      this.sceneOrigin.toSceneX(pos.x),
+      this.sceneOrigin.toSceneY(pos.y),
+      this.sceneOrigin.toSceneZ(pos.z)
+    )
+
     // Perform raycast to avoid camera going through blocks
     const raycaster = new THREE.Raycaster()
-    raycaster.set(pos, direction)
+    raycaster.set(scenePos, direction)
     raycaster.far = distance // Limit raycast distance
 
     // Filter to only nearby chunks for performance
@@ -816,7 +823,7 @@ export class WorldRendererThree extends WorldRendererCommon {
         // Check distance from player position to chunk
         const chunkWorldPos = new THREE.Vector3()
         mesh.getWorldPosition(chunkWorldPos)
-        const distance = pos.distanceTo(chunkWorldPos)
+        const distance = scenePos.distanceTo(chunkWorldPos)
         return distance < 80 // Only check chunks within 80 blocks
       })
 
@@ -858,10 +865,17 @@ export class WorldRendererThree extends WorldRendererCommon {
       this.debugHitPoint = undefined
     }
 
+    // Convert world position to scene-relative coordinates
+    const scenePos = new THREE.Vector3(
+      this.sceneOrigin.toSceneX(pos.x),
+      this.sceneOrigin.toSceneY(pos.y),
+      this.sceneOrigin.toSceneZ(pos.z)
+    )
+
     // Create raycast arrow
     this.debugRaycastHelper = new THREE.ArrowHelper(
       direction.clone().normalize(),
-      pos,
+      scenePos,
       distance,
       0xff_00_00, // Red color
       distance * 0.1,
@@ -873,7 +887,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     const hitGeometry = new THREE.SphereGeometry(0.2, 8, 8)
     const hitMaterial = new THREE.MeshBasicMaterial({ color: 0x00_ff_00 })
     this.debugHitPoint = new THREE.Mesh(hitGeometry, hitMaterial)
-    this.debugHitPoint.position.copy(pos).add(direction.clone().multiplyScalar(distance))
+    this.debugHitPoint.position.copy(scenePos).add(direction.clone().multiplyScalar(distance))
     this.scene.add(this.debugHitPoint)
   }
 
@@ -1345,21 +1359,11 @@ export class WorldRendererThree extends WorldRendererCommon {
       // Apply the offset to the section object (compose with camera-relative base position)
       const section = this.sectionObjects[key]
       if (section) {
-        const mesh = section.children.find(child => child.name === 'mesh') as THREE.Mesh | undefined
-        if (mesh && mesh.userData.worldSx !== undefined) {
-          // Compose animation offset with camera-relative position
-          section.position.set(
-            this.sceneOrigin.toSceneX(mesh.userData.worldSx) + anim.currentOffsetX,
-            this.sceneOrigin.toSceneY(mesh.userData.worldSy) + anim.currentOffsetY,
-            this.sceneOrigin.toSceneZ(mesh.userData.worldSz) + anim.currentOffsetZ
-          )
-        } else {
-          section.position.set(
-            anim.currentOffsetX,
-            anim.currentOffsetY,
-            anim.currentOffsetZ
-          )
-        }
+        section.position.set(
+          anim.currentOffsetX,
+          anim.currentOffsetY,
+          anim.currentOffsetZ
+        )
         section.updateMatrix()
       }
     }

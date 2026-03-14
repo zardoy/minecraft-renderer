@@ -273,6 +273,5 @@ export function createBannerMesh(
   group.userData.worldPosX = position.x + 0.5
   group.userData.worldPosY = position.y + heightOffset
   group.userData.worldPosZ = position.z + 0.5
-  group.position.set(position.x + 0.5, position.y + heightOffset, position.z + 0.5)
   return group
 }

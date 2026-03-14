@@ -1,4 +1,4 @@
-import * as THREE from 'three'
+import type { Object3D } from 'three'
 
 export class SceneOrigin {
   // World coordinates of origin in float64 (JavaScript number)
@@ -29,7 +29,7 @@ export class SceneOrigin {
 
   /** Set position of a Three.js object from world coordinates */
   setPositionFromWorld(
-    obj: THREE.Object3D,
+    obj: Object3D,
     worldX: number, worldY: number, worldZ: number
   ): void {
     obj.position.set(

@@ -109,6 +109,7 @@ export class SciFiWorldRevealModule implements RendererModuleController {
 
   render?: () => void = () => {
     if (!this.enabled) return
+    this.repositionWireframes()
     this.update(16)
   }
 
@@ -254,15 +255,17 @@ export class SciFiWorldRevealModule implements RendererModuleController {
       current = current.parent
     }
 
-    // Fallback: try to derive key from mesh position
-    // Section keys are in format "x,y,z" where x, y, z are section coordinates
-    // Mesh position is at geometry.sx, geometry.sy, geometry.sz
-    const pos = mesh.position
+    // Fallback: try to derive key from mesh world position
+    // mesh.position is scene-relative (near 0 in camera-relative rendering),
+    // so use stored world coords or convert back to world coords
+    const worldX = mesh.userData.worldSx ?? this.worldRenderer.sceneOrigin.toWorldX(mesh.position.x)
+    const worldY = mesh.userData.worldSy ?? this.worldRenderer.sceneOrigin.toWorldY(mesh.position.y)
+    const worldZ = mesh.userData.worldSz ?? this.worldRenderer.sceneOrigin.toWorldZ(mesh.position.z)
     const CHUNK_SIZE = 16
     const sectionHeight = this.worldRenderer.getSectionHeight()
-    const sectionX = Math.floor(pos.x / CHUNK_SIZE) * CHUNK_SIZE
-    const sectionY = Math.floor(pos.y / sectionHeight) * sectionHeight
-    const sectionZ = Math.floor(pos.z / CHUNK_SIZE) * CHUNK_SIZE
+    const sectionX = Math.floor(worldX / CHUNK_SIZE) * CHUNK_SIZE
+    const sectionY = Math.floor(worldY / sectionHeight) * sectionHeight
+    const sectionZ = Math.floor(worldZ / CHUNK_SIZE) * CHUNK_SIZE
     const derivedKey = `${sectionX},${sectionY},${sectionZ}`
 
     // Verify this key exists in sectionObjects
@@ -399,7 +402,10 @@ export class SciFiWorldRevealModule implements RendererModuleController {
 
     // Glow layer
     const glowWireframe = new THREE.LineSegments(wireframeGeom.clone(), this.wireframeGlowMaterial.clone())
-    glowWireframe.position.copy(wireframe.position)
+    glowWireframe.userData.worldSx = geometry.sx
+    glowWireframe.userData.worldSy = geometry.sy
+    glowWireframe.userData.worldSz = geometry.sz
+    this.worldRenderer.sceneOrigin.setPositionFromWorld(glowWireframe, geometry.sx, geometry.sy, geometry.sz)
     glowWireframe.scale.set(1.02, 1.02, 1.02)
     glowWireframe.name = 'scifi-glow'
     glowWireframe.renderOrder = 999
@@ -490,6 +496,16 @@ export class SciFiWorldRevealModule implements RendererModuleController {
   /**
    * Update the reveal animation - call this every frame
    */
+  repositionWireframes(): void {
+    for (const [, section] of this.revealingSections) {
+      for (const child of section.wireframeGroup.children) {
+        if (child.userData.worldSx !== undefined) {
+          this.worldRenderer.sceneOrigin.setPositionFromWorld(child, child.userData.worldSx, child.userData.worldSy, child.userData.worldSz)
+        }
+      }
+    }
+  }
+
   update(deltaTime: number): void {
     if (!this.enabled || this.revealingSections.size === 0) return
 

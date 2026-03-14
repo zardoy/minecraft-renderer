@@ -362,6 +362,12 @@ export class FireworksRenderer {
     for (const [explosionId, explosion] of this.explosions.entries()) {
       const elapsed = currentTime - explosion.startTime
 
+      // Reposition debug sphere to track scene origin changes
+      if (explosion.debugSphere?.userData.worldPos) {
+        const wp = explosion.debugSphere.userData.worldPos
+        this.worldRenderer.sceneOrigin.setPositionFromWorld(explosion.debugSphere, wp.x, wp.y, wp.z)
+      }
+
       if (elapsed >= explosion.duration) {
         // Remove expired explosion
         console.log(`Debug: Removing expired explosion ${explosionId} after ${elapsed}ms`)
