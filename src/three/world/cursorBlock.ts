@@ -57,6 +57,7 @@ export class CursorBlock {
     this.blockBreakMesh.visible = false
     this.blockBreakMesh.renderOrder = 999
     this.blockBreakMesh.name = 'blockBreakMesh'
+    this.worldRenderer.sceneOrigin.track(this.blockBreakMesh)
     this.worldRenderer.scene.add(this.blockBreakMesh)
 
     this.worldRenderer.onReactivePlayerStateUpdated('gameMode', () => {
@@ -105,7 +106,6 @@ export class CursorBlock {
     const position = new Vec3(_position.x, _position.y, _position.z)
     this.blockBreakMesh.scale.set(width * 1.001, height * 1.001, depth * 1.001)
     position.add(new Vec3(blockPosition.x, blockPosition.y, blockPosition.z))
-    this.worldRenderer.sceneOrigin.track(this.blockBreakMesh)
     this.blockBreakMesh.position.set(position.x, position.y, position.z)
     this.blockBreakMesh.visible = true;
 

@@ -564,7 +564,6 @@ export class ThreeJsMedia {
       new THREE.BoxGeometry(0.1, 0.1, 0.1),
       new THREE.MeshBasicMaterial({ color: 0xff_00_00 })
     )
-    this.worldRenderer.sceneOrigin.track(startMarker)
     startMarker.position.set(startPosition.x, startPosition.y, startPosition.z)
     debugGroup.add(startMarker)
 
@@ -575,7 +574,6 @@ export class ThreeJsMedia {
       new THREE.BoxGeometry(0.1, 0.1, 0.1),
       new THREE.MeshBasicMaterial({ color: 0x00_00_ff })
     )
-    this.worldRenderer.sceneOrigin.track(endYMarker)
     endYMarker.position.set(startPosition.x, startPosition.y + height, startPosition.z)
     debugGroup.add(endYMarker)
 
@@ -584,7 +582,6 @@ export class ThreeJsMedia {
       new THREE.BoxGeometry(0.1, 0.1, 0.1),
       new THREE.MeshBasicMaterial({ color: 0xff_ff_00 })
     )
-    this.worldRenderer.sceneOrigin.track(endWidthMarker)
     endWidthMarker.position.set(endX, startPosition.y, endZ)
     debugGroup.add(endWidthMarker)
 
@@ -593,7 +590,6 @@ export class ThreeJsMedia {
       new THREE.BoxGeometry(0.1, 0.1, 0.1),
       new THREE.MeshBasicMaterial({ color: 0xff_00_ff })
     )
-    this.worldRenderer.sceneOrigin.track(endCornerMarker)
     endCornerMarker.position.set(endX, startPosition.y + height, endZ)
     debugGroup.add(endCornerMarker)
 

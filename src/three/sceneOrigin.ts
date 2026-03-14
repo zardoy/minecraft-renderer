@@ -1,5 +1,24 @@
 import type { Object3D, Vector3 } from 'three'
 
+const IS_TRACKED_PROXY = Symbol('tracked-proxy')
+
+const MUTATING_METHODS = new Set([
+  'add', 'addScalar', 'addScaledVector', 'addVectors',
+  'sub', 'subScalar', 'subVectors',
+  'multiply', 'multiplyScalar', 'multiplyVectors',
+  'divide', 'divideScalar',
+  'applyEuler', 'applyAxisAngle', 'applyMatrix3', 'applyMatrix4', 'applyNormalMatrix', 'applyQuaternion',
+  'negate', 'floor', 'ceil', 'round', 'roundToZero',
+  'min', 'max', 'clamp', 'clampLength', 'clampScalar',
+  'project', 'unproject', 'reflect',
+  'lerp', 'lerpVectors',
+  'cross', 'crossVectors',
+  'setFromMatrixPosition', 'setFromMatrixColumn', 'setFromMatrix3Column',
+  'setFromEuler', 'setFromSpherical', 'setFromSphericalCoords', 'setFromCylindrical',
+  'fromArray', 'fromBufferAttribute',
+  'setComponent', 'randomDirection', 'random',
+])
+
 interface TrackOptions {
   updateMatrix?: boolean
 }
@@ -42,7 +61,11 @@ export class SceneOrigin {
 
     this._originalPositions.set(obj, realPosition)
     this._worldCoords.set(obj, worldData)
-    if (options) this._trackOptions.set(obj, options)
+    if (options) {
+      this._trackOptions.set(obj, options)
+    } else {
+      this._trackOptions.delete(obj)
+    }
 
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const origin = this
@@ -50,6 +73,7 @@ export class SceneOrigin {
 
     const proxy = new Proxy(realPosition, {
       get(target, prop, receiver) {
+        if (prop === IS_TRACKED_PROXY) return worldData
         if (prop === 'set') {
           return (x: number, y: number, z: number) => {
             worldData.x = x; worldData.y = y; worldData.z = z
@@ -60,8 +84,12 @@ export class SceneOrigin {
         }
         if (prop === 'copy') {
           return (v: Vector3) => {
-            worldData.x = v.x; worldData.y = v.y; worldData.z = v.z
-            target.set(v.x - origin._x, v.y - origin._y, v.z - origin._z)
+            const srcWorld = (v as any)[IS_TRACKED_PROXY] as { x: number; y: number; z: number } | undefined
+            const wx = srcWorld ? srcWorld.x : v.x
+            const wy = srcWorld ? srcWorld.y : v.y
+            const wz = srcWorld ? srcWorld.z : v.z
+            worldData.x = wx; worldData.y = wy; worldData.z = wz
+            target.set(wx - origin._x, wy - origin._y, wz - origin._z)
             if (opts?.updateMatrix) obj.updateMatrix()
             return receiver
           }
@@ -86,6 +114,9 @@ export class SceneOrigin {
             if (opts?.updateMatrix) obj.updateMatrix()
             return receiver
           }
+        }
+        if (typeof prop === 'string' && MUTATING_METHODS.has(prop)) {
+          return () => { throw new Error(`Cannot call position.${prop}() on a tracked object. Use position.set(x, y, z) instead.`) }
         }
         const value = (target as any)[prop]
         if (typeof value === 'function') return value.bind(target)
@@ -129,7 +160,20 @@ export class SceneOrigin {
 
   /** Get stored world position for a tracked object */
   getWorldPosition(obj: Object3D): { x: number; y: number; z: number } | undefined {
-    return this._worldCoords.get(obj)
+    const w = this._worldCoords.get(obj)
+    return w ? { x: w.x, y: w.y, z: w.z } : undefined
+  }
+
+  /** Clear all tracked objects (call on scene reset) */
+  clear(): void {
+    for (const obj of this._tracked) {
+      this.untrack(obj)
+    }
+  }
+
+  /** Number of currently tracked objects (for debugging) */
+  get trackedCount(): number {
+    return this._tracked.size
   }
 
   /** Convert world coordinates → scene coordinates */

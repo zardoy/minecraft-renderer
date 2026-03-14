@@ -80,7 +80,7 @@ export class WorldBlockGeometry {
       new THREE.BoxGeometry(CHUNK_SIZE, sectionHeight, CHUNK_SIZE),
       new THREE.MeshBasicMaterial({ color: 0x00_00_00, transparent: true, opacity: 0 })
     )
-    this.worldRenderer.sceneOrigin.track(staticChunkMesh)
+    this.worldRenderer.sceneOrigin.track(staticChunkMesh, { updateMatrix: true })
     staticChunkMesh.position.set(data.geometry.sx, data.geometry.sy, data.geometry.sz)
     const boxHelper = new THREE.BoxHelper(staticChunkMesh, 0xff_ff_00)
     boxHelper.name = 'helper'
