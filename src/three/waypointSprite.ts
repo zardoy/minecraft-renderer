@@ -284,8 +284,9 @@ export function createWaypointSprite (options: {
     return false
   }
 
-  function computeDistance (cameraPosition: THREE.Vector3): number {
-    return cameraPosition.distanceTo(group.position)
+  function computeDistance (_cameraPosition: THREE.Vector3): number {
+    // group.position is in scene space; camera is at scene origin (0,0,0)
+    return group.position.length()
   }
 
   function updateForCamera (

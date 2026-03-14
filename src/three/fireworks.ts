@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import type { SceneOrigin } from './sceneOrigin'
 import { createCanvas } from '../lib/utils'
 
 // Shader code
@@ -362,7 +363,8 @@ export class BasicFireworks {
 
     const pm = new ParticleSeedMesh(num, vels, this.texture)
     if (startPosition) {
-      pm.mesh.position.set(startPosition.x, startPosition.y, startPosition.z)
+      // World positioning is handled by meshGroup; seed starts at group origin
+      pm.mesh.position.set(0, 0, 0)
     } else {
       const x = Math.random() * 80 - 40
       const y = -50
@@ -581,13 +583,15 @@ export class RichFireworks extends BasicFireworks {
 export class FireworksManager {
   fireworksInstances: Array<BasicFireworks | RichFireworks>
   scene: THREE.Scene
+  sceneOrigin: SceneOrigin
   texture: THREE.Texture
   particleSize: number
   maxFireworks: number
 
-  constructor (scene: THREE.Scene, config?: FireworksManagerConfig) {
+  constructor (scene: THREE.Scene, sceneOrigin: SceneOrigin, config?: FireworksManagerConfig) {
     this.fireworksInstances = []
     this.scene = scene
+    this.sceneOrigin = sceneOrigin
     this.texture = createFireworksTexture()
     this.particleSize = config?.defaultParticleSize ?? FIREWORKS_CONFIG.defaultParticleSize
     this.maxFireworks = config?.maxActiveFireworks ?? FIREWORKS_CONFIG.maxActiveFireworks
@@ -608,8 +612,31 @@ export class FireworksManager {
       fw = Math.random() > 0.5 ? new BasicFireworks(this.texture, particleSize, position) : new RichFireworks(this.texture, particleSize, position)
     }
 
+    // Position the meshGroup in scene-relative coordinates
+    if (position) {
+      fw.meshGroup.position.set(
+        this.sceneOrigin.toSceneX(position.x),
+        this.sceneOrigin.toSceneY(position.y),
+        this.sceneOrigin.toSceneZ(position.z)
+      )
+      fw.meshGroup.userData.worldPos = { x: position.x, y: position.y, z: position.z }
+    }
+
     this.fireworksInstances.push(fw)
     this.scene.add(fw.meshGroup)
+  }
+
+  repositionAll (): void {
+    for (const instance of this.fireworksInstances) {
+      if (instance.meshGroup.userData.worldPos) {
+        const wp = instance.meshGroup.userData.worldPos
+        instance.meshGroup.position.set(
+          this.sceneOrigin.toSceneX(wp.x),
+          this.sceneOrigin.toSceneY(wp.y),
+          this.sceneOrigin.toSceneZ(wp.z)
+        )
+      }
+    }
   }
 
   update () {

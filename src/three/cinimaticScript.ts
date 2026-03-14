@@ -96,8 +96,8 @@ export class CinimaticScriptRunner {
   }
 
   runExampleScripts(index: number) {
-    const { cameraObject } = this.worldRenderer
-    const playerPos = new Vec3(cameraObject.position.x, cameraObject.position.y, cameraObject.position.z)
+    const cameraWorldPos = this.worldRenderer.getCameraPosition()
+    const playerPos = new Vec3(cameraWorldPos.x, cameraWorldPos.y, cameraWorldPos.z)
 
     // Circular flyby around current position
     const circular = CinimaticScriptRunner.createCircularFlyby(playerPos, 30, 20, 15_000)

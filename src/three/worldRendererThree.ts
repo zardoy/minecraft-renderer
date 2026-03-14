@@ -100,8 +100,23 @@ export class WorldRendererThree extends WorldRendererCommon {
   /** Camera world position stored in float64 (JS number) for precision */
   cameraWorldPos = { x: 0, y: 0, z: 0 }
 
+  private readonly _tmpCameraPos = new THREE.Vector3()
+  private _lastOriginX = NaN
+  private _lastOriginY = NaN
+  private _lastOriginZ = NaN
   private currentPosTween?: tweenJs.Tween<{ x: number, y: number, z: number }>
   private currentRotTween?: tweenJs.Tween<{ pitch: number, yaw: number }>
+
+  // Pre-allocated objects for getThirdPersonCamera (avoid per-frame allocs)
+  private readonly _tpDirection = new THREE.Vector3()
+  private readonly _tpPitchQuat = new THREE.Quaternion()
+  private readonly _tpYawQuat = new THREE.Quaternion()
+  private readonly _tpFinalQuat = new THREE.Quaternion()
+  private readonly _tpScenePos = new THREE.Vector3()
+  private readonly _tpAxisX = new THREE.Vector3(1, 0, 0)
+  private readonly _tpAxisY = new THREE.Vector3(0, 1, 0)
+  private readonly _tpRaycaster = new THREE.Raycaster()
+  private readonly _tpChunkWorldPos = new THREE.Vector3()
 
   get tilesRendered() {
     return Object.values(this.sectionObjects).reduce((acc, obj) => acc + (obj as any).tilesCount, 0)
@@ -154,7 +169,7 @@ export class WorldRendererThree extends WorldRendererCommon {
         fov: this.camera.fov
       })
     )
-    this.fireworks = new FireworksManager(this.scene)
+    this.fireworks = new FireworksManager(this.scene, this.sceneOrigin)
 
     // this.fountain = new Fountain(this.scene, this.scene, {
     //   position: new THREE.Vector3(0, 10, 0),
@@ -360,6 +375,11 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
 
   resetScene() {
+    this.sceneOrigin.update(0, 0, 0)
+    this.cameraWorldPos.x = 0
+    this.cameraWorldPos.y = 0
+    this.cameraWorldPos.z = 0
+
     this.scene.matrixAutoUpdate = false // for perf
     this.scene.background = new THREE.Color(this.initOptions.config.sceneBackground)
     this.scene.add(this.ambientLight)
@@ -657,7 +677,7 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
 
   getCameraPosition(target?: THREE.Vector3): THREE.Vector3 {
-    return (target ?? new THREE.Vector3()).set(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
+    return (target ?? this._tmpCameraPos).set(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
   }
 
   getSectionCameraPosition() {
@@ -679,8 +699,17 @@ export class WorldRendererThree extends WorldRendererCommon {
 
   /** Reposition all scene objects relative to the new scene origin (camera world position) */
   repositionAllSceneObjects(): void {
+    const ox = this.sceneOrigin.x
+    const oy = this.sceneOrigin.y
+    const oz = this.sceneOrigin.z
+    if (ox === this._lastOriginX && oy === this._lastOriginY && oz === this._lastOriginZ) return
+    this._lastOriginX = ox
+    this._lastOriginY = oy
+    this._lastOriginZ = oz
+
     // 1. Chunks/sections
-    for (const [key, section] of Object.entries(this.sectionObjects)) {
+    for (const key in this.sectionObjects) {
+      const section = this.sectionObjects[key]
       const mesh = section.children.find(child => child.name === 'mesh') as THREE.Mesh | undefined
       if (mesh && mesh.userData.worldSx !== undefined) {
         this.sceneOrigin.setPositionFromWorld(mesh, mesh.userData.worldSx, mesh.userData.worldSy, mesh.userData.worldSz)
@@ -719,8 +748,8 @@ export class WorldRendererThree extends WorldRendererCommon {
       this.sceneOrigin.setPositionFromWorld(this.entities.playerEntity, wp.x, wp.y, wp.z)
     }
 
-    // 3. Fireworks (legacy)
-    // Firework particles store world positions internally and update mesh.position each frame in render()
+    // 3. Fireworks
+    this.fireworks.repositionAll()
 
     // 4. Cursor block
     if (this.cursorBlock.blockBreakMesh.userData.worldPos) {
@@ -779,12 +808,12 @@ export class WorldRendererThree extends WorldRendererCommon {
 
     // Create a direction vector that represents where the camera is looking
     // This matches the Three.js camera coordinate system
-    const direction = new THREE.Vector3(0, 0, -1) // Forward direction in camera space
+    const direction = this._tpDirection.set(0, 0, -1) // Forward direction in camera space
 
     // Apply the same rotation that's applied to the camera container
-    const pitchQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitch)
-    const yawQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw)
-    const finalQuat = new THREE.Quaternion().multiplyQuaternions(yawQuat, pitchQuat)
+    const pitchQuat = this._tpPitchQuat.setFromAxisAngle(this._tpAxisX, pitch)
+    const yawQuat = this._tpYawQuat.setFromAxisAngle(this._tpAxisY, yaw)
+    const finalQuat = this._tpFinalQuat.multiplyQuaternions(yawQuat, pitchQuat)
 
     // Transform the direction vector by the camera's rotation
     direction.applyQuaternion(finalQuat)
@@ -801,14 +830,14 @@ export class WorldRendererThree extends WorldRendererCommon {
     }
 
     // Convert world position to scene-relative coordinates for raycasting
-    const scenePos = new THREE.Vector3(
+    const scenePos = this._tpScenePos.set(
       this.sceneOrigin.toSceneX(pos.x),
       this.sceneOrigin.toSceneY(pos.y),
       this.sceneOrigin.toSceneZ(pos.z)
     )
 
     // Perform raycast to avoid camera going through blocks
-    const raycaster = new THREE.Raycaster()
+    const raycaster = this._tpRaycaster
     raycaster.set(scenePos, direction)
     raycaster.far = distance // Limit raycast distance
 
@@ -821,7 +850,7 @@ export class WorldRendererThree extends WorldRendererCommon {
         if (!mesh) return false
 
         // Check distance from player position to chunk
-        const chunkWorldPos = new THREE.Vector3()
+        const chunkWorldPos = this._tpChunkWorldPos
         mesh.getWorldPosition(chunkWorldPos)
         const distance = scenePos.distanceTo(chunkWorldPos)
         return distance < 80 // Only check chunks within 80 blocks

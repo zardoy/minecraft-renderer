@@ -557,10 +557,10 @@ export class Entities {
 
           this.updateThirdPersonHeadAndBody(entity, dt)
         } else {
-          this.updateAutoWalkFlags(entityKey, entity, dtRaw, entity.position)
+          this.updateAutoWalkFlags(entityKey, entity, dtRaw, entity.userData.worldPos ? new THREE.Vector3(entity.userData.worldPos.x, entity.userData.worldPos.y, entity.userData.worldPos.z) : entity.position)
         }
       } else {
-        this.updateAutoWalkFlags(entityKey, entity, dtRaw, entity.position)
+        this.updateAutoWalkFlags(entityKey, entity, dtRaw, entity.userData.worldPos ? new THREE.Vector3(entity.userData.worldPos.x, entity.userData.worldPos.y, entity.userData.worldPos.z) : entity.position)
       }
 
       const { playerObject } = entity
@@ -1342,8 +1342,10 @@ export class Entities {
       if (!e.userData.worldPos) {
         e.userData.worldPos = { x: entity.position.x, y: entity.position.y, z: entity.position.z }
       }
+      // Stop previous position tween to prevent accumulation
+      e.userData._posTween?.stop()
       // Tween world position, convert to scene coords on each update
-      new TWEEN.Tween(e.userData.worldPos)
+      e.userData._posTween = new TWEEN.Tween(e.userData.worldPos)
         .to({ x: entity.position.x, y: entity.position.y, z: entity.position.z }, ANIMATION_DURATION)
         .onUpdate(() => {
           this.worldRenderer.sceneOrigin.setPositionFromWorld(e, e.userData.worldPos.x, e.userData.worldPos.y, e.userData.worldPos.z)

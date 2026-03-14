@@ -73,7 +73,7 @@ export class StarfieldModule implements RendererModuleController {
 
   render?: () => void = () => {
     if (!this.points) return
-    this.points.position.copy(this.worldRenderer.getCameraPosition())
+    this.points.position.set(0, 0, 0)
       ; (this.points.material as StarfieldMaterial).uniforms.time.value =
         this.clock.getElapsedTime() * 0.2
   }

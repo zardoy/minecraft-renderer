@@ -55,7 +55,7 @@ export class RainModule implements RendererModuleController {
     if (!this.enabled || !this.instancedMesh) return
 
     const cameraPos = this.worldRenderer.getCameraPosition()
-    this.instancedMesh.position.copy(cameraPos)
+    this.instancedMesh.position.set(0, 0, 0)
 
     const heightmaps = this.worldRenderer.reactiveState.world.heightmaps
 
