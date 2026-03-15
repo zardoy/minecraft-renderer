@@ -71,7 +71,7 @@ export class StarfieldModule implements RendererModuleController {
     return this.currentTime > nightTime && this.currentTime < morningStart
   }
 
-  render?: () => void = () => {
+  render?: (deltaTime: number) => void = (_deltaTime) => {
     if (!this.points) return
     this.points.position.copy(this.worldRenderer.getCameraPosition())
       ; (this.points.material as StarfieldMaterial).uniforms.time.value =

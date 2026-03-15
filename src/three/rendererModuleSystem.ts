@@ -10,7 +10,7 @@ export interface RendererModuleController {
 
   enablementCheck?: () => boolean
   autoEnableCheck?: () => boolean // Called when config updates, returns true to enable, false to disable
-  render?: () => void
+  render?: (deltaTime: number) => void
 }
 
 /**

@@ -9,7 +9,7 @@ export class CameraShake {
   private basePitch = 0
   private baseYaw = 0
 
-  constructor(public worldRenderer: WorldRendererThree, public onRenderCallbacks: Array<() => void>) {
+  constructor(public worldRenderer: WorldRendererThree, public onRenderCallbacks: Array<(deltaTime: number) => void>) {
     onRenderCallbacks.push(() => {
       this.update()
     })
