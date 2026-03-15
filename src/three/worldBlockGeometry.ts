@@ -35,10 +35,7 @@ export class WorldBlockGeometry {
           releaseBannerTexture((child as any).bannerTexture)
         }
       })
-      object.traverse((child) => {
-        this.worldRenderer.sceneOrigin.untrack(child)
-      })
-      this.scene.remove(object)
+      this.worldRenderer.sceneOrigin.removeAndUntrackAll(object)
       disposeObject(object)
       delete this.sectionObjects[data.key]
     }
@@ -231,10 +228,7 @@ export class WorldBlockGeometry {
     for (const mesh of Object.values(this.sectionObjects)) {
       // Track memory usage removal for all sections
       this.removeSectionMemoryUsage(mesh)
-      mesh.traverse((child) => {
-        this.worldRenderer.sceneOrigin.untrack(child)
-      })
-      this.scene.remove(mesh)
+      this.worldRenderer.sceneOrigin.removeAndUntrackAll(mesh)
     }
     this.sectionObjects = {}
     this.waitingChunksToDisplay = {}
@@ -261,10 +255,7 @@ export class WorldBlockGeometry {
             releaseBannerTexture((child as any).bannerTexture)
           }
         })
-        mesh.traverse((child) => {
-          this.worldRenderer.sceneOrigin.untrack(child)
-        })
-        this.scene.remove(mesh)
+        this.worldRenderer.sceneOrigin.removeAndUntrackAll(mesh)
         disposeObject(mesh)
       }
       delete this.sectionObjects[key]
@@ -282,10 +273,7 @@ export class WorldBlockGeometry {
               releaseBannerTexture((child as any).bannerTexture)
             }
           })
-          mesh.traverse((child) => {
-            this.worldRenderer.sceneOrigin.untrack(child)
-          })
-          this.scene.remove(mesh)
+          this.worldRenderer.sceneOrigin.removeAndUntrackAll(mesh)
           disposeObject(mesh)
         }
         delete this.sectionObjects[key]

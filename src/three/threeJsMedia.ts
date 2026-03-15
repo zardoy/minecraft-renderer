@@ -202,8 +202,7 @@ export class ThreeJsMedia {
       positionalAudio = new THREE.PositionalAudio(soundSystem.audioListener)
       positionalAudio.setRefDistance(6)
       positionalAudio.setVolume(volume)
-      scene.add(positionalAudio)
-      this.worldRenderer.sceneOrigin.track(positionalAudio)
+      this.worldRenderer.sceneOrigin.addAndTrack(positionalAudio)
       positionalAudio.position.set(props.position.x, props.position.y, props.position.z)
 
       // Connect video to positional audio
@@ -461,11 +460,9 @@ export class ThreeJsMedia {
       if (mediaData.positionalAudio) {
         // mediaData.positionalAudio.stop()
         // mediaData.positionalAudio.disconnect()
-        this.worldRenderer.sceneOrigin.untrack(mediaData.positionalAudio)
-        scene.remove(mediaData.positionalAudio)
+        this.worldRenderer.sceneOrigin.removeAndUntrack(mediaData.positionalAudio)
       }
-      this.worldRenderer.sceneOrigin.untrack(mediaData.mesh)
-      scene.remove(mediaData.mesh)
+      this.worldRenderer.sceneOrigin.removeAndUntrack(mediaData.mesh)
       mediaData.texture.dispose()
 
       // Get the inner mesh from the group

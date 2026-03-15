@@ -57,8 +57,7 @@ export class CursorBlock {
     this.blockBreakMesh.visible = false
     this.blockBreakMesh.renderOrder = 999
     this.blockBreakMesh.name = 'blockBreakMesh'
-    this.worldRenderer.sceneOrigin.track(this.blockBreakMesh)
-    this.worldRenderer.scene.add(this.blockBreakMesh)
+    this.worldRenderer.sceneOrigin.addAndTrack(this.blockBreakMesh)
 
     this.worldRenderer.onReactivePlayerStateUpdated('gameMode', () => {
       this.updateLineMaterial()
@@ -132,8 +131,7 @@ export class CursorBlock {
       return
     }
     if (this.interactionLines !== null) {
-      this.worldRenderer.sceneOrigin.untrack(this.interactionLines.mesh)
-      this.worldRenderer.scene.remove(this.interactionLines.mesh)
+      this.worldRenderer.sceneOrigin.removeAndUntrack(this.interactionLines.mesh)
       this.interactionLines = null
     }
     if (blockPos === null) {
@@ -141,8 +139,6 @@ export class CursorBlock {
     }
 
     const group = new THREE.Group()
-    this.worldRenderer.sceneOrigin.track(group)
-    group.position.set(blockPos.x, blockPos.y, blockPos.z)
     for (const { position: _position, width, height, depth } of shapePositions ?? []) {
       const position = new Vec3(_position.x, _position.y, _position.z)
       const scale = [1.0001 * width, 1.0001 * height, 1.0001 * depth] as const
@@ -153,7 +149,8 @@ export class CursorBlock {
       wireframe.computeLineDistances()
       group.add(wireframe)
     }
-    this.worldRenderer.scene.add(group)
+    this.worldRenderer.sceneOrigin.addAndTrack(group)
+    group.position.set(blockPos.x, blockPos.y, blockPos.z)
     group.visible = !this.cursorLinesHidden
     this.interactionLines = { blockPos, mesh: group, shapePositions }
   }

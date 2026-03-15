@@ -612,14 +612,13 @@ export class FireworksManager {
       fw = Math.random() > 0.5 ? new BasicFireworks(this.texture, particleSize, position) : new RichFireworks(this.texture, particleSize, position)
     }
 
-    // Position the meshGroup in scene-relative coordinates
-    if (position) {
-      this.sceneOrigin.track(fw.meshGroup)
-      fw.meshGroup.position.set(position.x, position.y, position.z)
-    }
-
     this.fireworksInstances.push(fw)
-    this.scene.add(fw.meshGroup)
+    if (position) {
+      this.sceneOrigin.addAndTrack(fw.meshGroup)
+      fw.meshGroup.position.set(position.x, position.y, position.z)
+    } else {
+      this.scene.add(fw.meshGroup)
+    }
   }
 
   repositionAll (): void {
@@ -644,8 +643,7 @@ export class FireworksManager {
       instance.seed.disposeAll()
 
       if (instance.life <= 0) {
-        this.sceneOrigin.untrack(instance.meshGroup)
-        this.scene.remove(instance.meshGroup)
+        this.sceneOrigin.removeAndUntrack(instance.meshGroup)
         if (instance instanceof RichFireworks && instance.tailMeshGroup) {
           for (const v of instance.tails) {
             v.disposeAll()
@@ -659,8 +657,7 @@ export class FireworksManager {
 
   clear () {
     for (const instance of this.fireworksInstances) {
-      this.sceneOrigin.untrack(instance.meshGroup)
-      this.scene.remove(instance.meshGroup)
+      this.sceneOrigin.removeAndUntrack(instance.meshGroup)
       instance.seed.disposeAll()
       if (instance.flower) instance.flower.disposeAll()
       if (instance instanceof RichFireworks) {

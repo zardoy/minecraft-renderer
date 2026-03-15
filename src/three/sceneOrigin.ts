@@ -1,4 +1,4 @@
-import type { Object3D, Vector3 } from 'three'
+import type { Object3D, Scene, Vector3 } from 'three'
 
 const IS_TRACKED_PROXY = Symbol('tracked-proxy')
 
@@ -24,6 +24,8 @@ interface TrackOptions {
 }
 
 export class SceneOrigin {
+  private scene: Scene
+
   // World coordinates of origin in float64 (JavaScript number)
   private _x = 0
   private _y = 0
@@ -33,6 +35,10 @@ export class SceneOrigin {
   private readonly _worldCoords = new WeakMap<Object3D, { x: number; y: number; z: number }>()
   private readonly _originalPositions = new WeakMap<Object3D, Vector3>()
   private readonly _trackOptions = new WeakMap<Object3D, TrackOptions>()
+
+  constructor(scene: Scene) {
+    this.scene = scene
+  }
 
   get x(): number { return this._x }
   get y(): number { return this._y }
@@ -156,6 +162,26 @@ export class SceneOrigin {
     this._worldCoords.delete(obj)
     this._originalPositions.delete(obj)
     this._trackOptions.delete(obj)
+  }
+
+  /** Track an Object3D and add it to the scene */
+  addAndTrack(obj: Object3D, options?: TrackOptions): void {
+    this.track(obj, options)
+    this.scene.add(obj)
+  }
+
+  /** Untrack an Object3D and remove it from the scene */
+  removeAndUntrack(obj: Object3D): void {
+    this.untrack(obj)
+    this.scene.remove(obj)
+  }
+
+  /** Untrack an Object3D and all its descendants, then remove from the scene */
+  removeAndUntrackAll(obj: Object3D): void {
+    obj.traverse((child) => {
+      this.untrack(child)
+    })
+    this.scene.remove(obj)
   }
 
   /** Get stored world position for a tracked object */

@@ -96,7 +96,7 @@ export class WorldRendererThree extends WorldRendererCommon {
   DEBUG_RAYCAST = false
   skyboxRenderer: SkyboxRenderer
   fireworks: FireworksManager
-  sceneOrigin = new SceneOrigin()
+  sceneOrigin = new SceneOrigin(this.scene)
   /** Camera world position stored in float64 (JS number) for precision */
   cameraWorldPos = { x: 0, y: 0, z: 0 }
 

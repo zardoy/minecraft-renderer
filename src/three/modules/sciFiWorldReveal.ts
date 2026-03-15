@@ -617,10 +617,7 @@ export class SciFiWorldRevealModule implements RendererModuleController {
    * Dispose a wireframe group and remove from scene
    */
   private disposeWireframeGroup(group: THREE.Group): void {
-    group.traverse((child) => {
-      this.worldRenderer.sceneOrigin.untrack(child)
-    })
-    this.scene.remove(group)
+    this.worldRenderer.sceneOrigin.removeAndUntrackAll(group)
 
     // Collect all objects to dispose
     const toDispose: THREE.Object3D[] = []

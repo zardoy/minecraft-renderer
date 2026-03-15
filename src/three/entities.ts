@@ -439,8 +439,7 @@ export class Entities {
 
   clear() {
     for (const mesh of Object.values(this.entities)) {
-      this.worldRenderer.sceneOrigin.untrack(mesh)
-      this.worldRenderer.scene.remove(mesh)
+      this.worldRenderer.sceneOrigin.removeAndUntrack(mesh)
       disposeObject(mesh)
     }
     this.entities = {}
@@ -452,8 +451,7 @@ export class Entities {
 
     // Clean up player entity
     if (this.playerEntity) {
-      this.worldRenderer.sceneOrigin.untrack(this.playerEntity)
-      this.worldRenderer.scene.remove(this.playerEntity)
+      this.worldRenderer.sceneOrigin.removeAndUntrack(this.playerEntity)
       disposeObject(this.playerEntity)
       this.playerEntity = null
     }
@@ -1051,8 +1049,7 @@ export class Entities {
         if (c['additionalCleanup']) c['additionalCleanup']()
       })
       this.onRemoveEntity(entity)
-      this.worldRenderer.sceneOrigin.untrack(e)
-      this.worldRenderer.scene.remove(e)
+      this.worldRenderer.sceneOrigin.removeAndUntrack(e)
       disposeObject(e)
       // todo dispose textures as well ?
       delete this.entities[entity.id]
