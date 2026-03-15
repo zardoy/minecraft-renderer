@@ -19,6 +19,7 @@
         "build:lib:minify": "node scripts/buildLib.mjs --minify",
         "watch:lib": "node scripts/buildLib.mjs -w",
         "build:mesher": "node scripts/buildMesherWorker.mjs",
+        "build:wasm": "cd wasm-mesher && ./build.sh web",
         "watch:mesher": "pnpm build:mesher -w",
         "build:threeworker": "node scripts/buildThreeWorker.mjs",
         "watch:threeworker": "pnpm build:threeworker -w",

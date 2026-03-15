@@ -50,30 +50,36 @@ else
   echo "🔧 Building in RELEASE mode (optimized, smaller binary)"
 fi
 
+# Output dir: repo root / wasm (one level up from wasm-mesher)
+OUT_DIR="$(cd .. && pwd)/wasm"
+
 case "$TARGET" in
   web)
     echo "🔨 Building WASM mesher for web target..."
-    wasm-pack build --target web --out-dir ../../wasm $BUILD_FLAGS
+    wasm-pack build --target web --out-dir "$OUT_DIR" $BUILD_FLAGS
     echo "✅ Build complete! (web target)"
-    echo "📦 Output: ../../wasm/"
+    echo "📦 Output: $OUT_DIR"
+    echo "   Files: wasm_mesher.js, wasm_mesher_bg.wasm, wasm_mesher.d.ts"
     ;;
   nodejs)
     echo "🔨 Building WASM mesher for nodejs target..."
-    wasm-pack build --target nodejs --out-dir ../../wasm $BUILD_FLAGS
+    wasm-pack build --target nodejs --out-dir "$OUT_DIR" $BUILD_FLAGS
     echo "✅ Build complete! (nodejs target)"
-    echo "📦 Output: ../../wasm/"
+    echo "📦 Output: $OUT_DIR"
+    echo "   Files: wasm_mesher.js, wasm_mesher_bg.wasm, wasm_mesher.d.ts"
     ;;
   both)
     echo "🔨 Building WASM mesher for both targets..."
     echo ""
     echo "📦 Building for web target..."
-    wasm-pack build --target web --out-dir ../../wasm $BUILD_FLAGS
+    wasm-pack build --target web --out-dir "$OUT_DIR" $BUILD_FLAGS
     echo ""
     echo "📦 Building for nodejs target..."
-    wasm-pack build --target nodejs --out-dir ../../wasm $BUILD_FLAGS
+    wasm-pack build --target nodejs --out-dir "$OUT_DIR" $BUILD_FLAGS
     echo ""
     echo "✅ Build complete! (both targets)"
-    echo "📦 Output: ../../wasm/"
+    echo "📦 Output: $OUT_DIR"
+    echo "   Files: wasm_mesher.js, wasm_mesher_bg.wasm, wasm_mesher.d.ts"
     echo "⚠️  Note: nodejs target overwrites web target in wasm/"
     ;;
   *)
@@ -84,3 +90,7 @@ case "$TARGET" in
     exit 1
     ;;
 esac
+
+# Remove wasm-pack extras we don't ship
+echo "🧹 Removing README, package.json, .gitignore from $OUT_DIR"
+rm -f "$OUT_DIR/README" "$OUT_DIR/README.md" "$OUT_DIR/package.json" "$OUT_DIR/.gitignore"
