@@ -56,7 +56,8 @@ export class WorldRendererThree extends WorldRendererCommon {
   material = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, alphaTest: 0.1 })
   itemsTexture!: THREE.Texture
   cursorBlock: CursorBlock
-  onRender: Array<() => void> = []
+  onRender: Array<(deltaTime: number) => void> = []
+  private lastRenderTime = 0
   cameraShake: CameraShake
   cameraContainer!: THREE.Object3D
   media: ThreeJsMedia
@@ -927,6 +928,10 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.debugChunksVisibilityOverride()
     const start = performance.now()
     this.lastRendered = performance.now()
+    const deltaTime = this.lastRenderTime > 0
+      ? Math.min(Math.max((start - this.lastRenderTime) / 1000, 0), 0.1)
+      : 1 / 60
+    this.lastRenderTime = start
     this.cursorBlock.render()
     this.updateSectionOffsets()
 
@@ -973,7 +978,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.fireworks.update()
 
     for (const onRender of this.onRender) {
-      onRender()
+      onRender(deltaTime)
     }
     const end = performance.now()
     const totalTime = end - start

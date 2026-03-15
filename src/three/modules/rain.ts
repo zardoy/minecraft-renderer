@@ -11,9 +11,9 @@ interface RainParticleData {
 const PARTICLE_COUNT = 2000
 const RANGE = 32
 const HEIGHT = 32
-const FALL_SPEED_MIN = 0.2
-const FALL_SPEED_MAX = 0.4
-const HORIZONTAL_DRIFT = 0.02
+const FALL_SPEED_MIN = 12
+const FALL_SPEED_MAX = 24
+const HORIZONTAL_DRIFT = 1.2
 const RESPAWN_BELOW = -5
 
 export class RainModule implements RendererModuleController {
@@ -51,7 +51,7 @@ export class RainModule implements RendererModuleController {
     return this.worldRenderer.worldRendererConfig.isRaining === true
   }
 
-  render?: () => void = () => {
+  render?: (deltaTime: number) => void = (deltaTime) => {
     if (!this.enabled || !this.instancedMesh) return
 
     const cameraPos = this.worldRenderer.getCameraPosition()
@@ -71,7 +71,7 @@ export class RainModule implements RendererModuleController {
       this.instancedMesh.getMatrixAt(i, dummy)
       dummy.decompose(position, quaternion, scale)
 
-      position.add(particle.velocity)
+      position.addScaledVector(particle.velocity, deltaTime)
 
       const relativeY = position.y
       const horizontalDist = Math.sqrt(position.x * position.x + position.z * position.z)

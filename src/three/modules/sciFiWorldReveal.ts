@@ -107,9 +107,9 @@ export class SciFiWorldRevealModule implements RendererModuleController {
     return this.enabled
   }
 
-  render?: () => void = () => {
+  render?: (deltaTime: number) => void = (deltaTime) => {
     if (!this.enabled) return
-    this.update(16)
+    this.update(deltaTime * 1000)
   }
 
   dispose(): void {
