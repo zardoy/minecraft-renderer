@@ -1,5 +1,6 @@
 import type { ModuleInfo } from './rendererModuleSystem'
 import { isWebWorker } from './documentRenderer'
+import { isMobile } from '../lib/simpleUtils'
 
 export class DebugModulesPanel {
   private overlay: HTMLDivElement | null = null
@@ -94,17 +95,22 @@ export class DebugModulesPanel {
     })
 
     // Panel container
+    const mobile = isMobile()
     const panel = document.createElement('div')
     panel.style.backgroundColor = 'rgba(0, 0, 0, 0.85)'
     panel.style.border = '2px solid rgba(255, 255, 255, 0.2)'
     panel.style.borderRadius = '4px'
-    panel.style.padding = '6px'
-    panel.style.maxWidth = 'min(308px, 85vw)'
-    panel.style.maxHeight = '70vh'
+    panel.style.boxSizing = 'border-box'
+    panel.style.padding = mobile ? '14px' : '18px'
+    panel.style.maxWidth = mobile ? '64vw' : 'min(780px, 90vw)'
+    panel.style.maxHeight = mobile ? '85vh' : '85vh'
     panel.style.overflowY = 'auto'
     panel.style.color = 'white'
     panel.style.fontFamily = 'monospace'
-    panel.style.fontSize = '11px'
+    panel.style.fontSize = mobile ? '16px' : '19px'
+    if (mobile) {
+      panel.style.width = '64vw'
+    }
     panel.addEventListener('click', (e) => {
       e.stopPropagation()
     })
@@ -115,11 +121,11 @@ export class DebugModulesPanel {
     header.style.justifyContent = 'space-between'
     header.style.alignItems = 'center'
     header.style.borderBottom = '1px solid rgba(255, 255, 255, 0.2)'
-    header.style.marginBottom = '6px'
-    header.style.paddingBottom = '4px'
+    header.style.marginBottom = '12px'
+    header.style.paddingBottom = '9px'
 
     const title = document.createElement('div')
-    title.style.fontSize = '13px'
+    title.style.fontSize = '22px'
     title.style.fontWeight = 'bold'
     title.innerText = 'Modules Debug'
 
@@ -129,10 +135,10 @@ export class DebugModulesPanel {
     closeBtn.style.border = 'none'
     closeBtn.style.color = '#aaa'
     closeBtn.style.fontFamily = 'monospace'
-    closeBtn.style.fontSize = '14px'
+    closeBtn.style.fontSize = mobile ? '22px' : '27px'
     closeBtn.style.cursor = 'pointer'
-    closeBtn.style.minWidth = '28px'
-    closeBtn.style.minHeight = '28px'
+    closeBtn.style.minWidth = mobile ? '44px' : '54px'
+    closeBtn.style.minHeight = mobile ? '44px' : '54px'
     closeBtn.style.display = 'flex'
     closeBtn.style.alignItems = 'center'
     closeBtn.style.justifyContent = 'center'
@@ -153,7 +159,7 @@ export class DebugModulesPanel {
     const modulesList = document.createElement('div')
     modulesList.style.display = 'flex'
     modulesList.style.flexDirection = 'column'
-    modulesList.style.gap = '4px'
+    modulesList.style.gap = mobile ? '7px' : '9px'
 
     panel.appendChild(header)
     panel.appendChild(modulesList)
@@ -188,14 +194,15 @@ export class DebugModulesPanel {
   }
 
   private createModuleRow (mod: ModuleInfo): HTMLDivElement {
+    const mobile = isMobile()
     const row = document.createElement('div')
     row.style.display = 'flex'
     row.style.justifyContent = 'space-between'
     row.style.alignItems = 'center'
     row.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'
-    row.style.padding = '4px 6px'
+    row.style.padding = mobile ? '7px 10px' : '9px 15px'
     row.style.borderRadius = '3px'
-    row.style.gap = '6px'
+    row.style.gap = '12px'
     row.style.flexWrap = 'wrap'
 
     const name = document.createElement('span')
@@ -205,10 +212,10 @@ export class DebugModulesPanel {
 
     const switchGroup = document.createElement('div')
     switchGroup.style.display = 'flex'
-    switchGroup.style.gap = '2px'
+    switchGroup.style.gap = '4px'
     switchGroup.style.backgroundColor = 'rgba(0, 0, 0, 0.3)'
     switchGroup.style.borderRadius = '3px'
-    switchGroup.style.padding = '2px'
+    switchGroup.style.padding = '4px'
 
     const autoLabel = mod.enabled ? 'AUTO (on)' : 'AUTO (off)'
 
@@ -219,7 +226,7 @@ export class DebugModulesPanel {
       this.setModuleForceState(mod.id, null)
       this.scheduleImmediateRefresh()
     })
-    autoBtn.style.width = '80px'
+    autoBtn.style.width = '120px'
     autoBtn.style.textAlign = 'center'
 
     const onBtn = this.createSwitchButton('ON', mod.configState === 'enabled', false, {
@@ -255,16 +262,17 @@ export class DebugModulesPanel {
     colors: { activeBg: string; activeBorder: string },
     onClick: () => void
   ): HTMLButtonElement {
+    const mobile = isMobile()
     const btn = document.createElement('button')
     btn.innerText = label
-    btn.style.padding = '3px 6px'
-    btn.style.minWidth = '28px'
-    btn.style.minHeight = '28px'
+    btn.style.padding = mobile ? '4px 8px' : '6px 12px'
+    btn.style.minWidth = mobile ? '44px' : '54px'
+    btn.style.minHeight = mobile ? '44px' : '54px'
     btn.style.border = '1px solid rgba(255, 255, 255, 0.1)'
     btn.style.backgroundColor = 'rgba(255, 255, 255, 0.05)'
     btn.style.color = '#999'
     btn.style.fontFamily = 'monospace'
-    btn.style.fontSize = '10px'
+    btn.style.fontSize = '16px'
     btn.style.borderRadius = '2px'
     btn.style.cursor = 'pointer'
     btn.style.whiteSpace = 'nowrap'
