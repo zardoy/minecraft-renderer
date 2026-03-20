@@ -127,9 +127,11 @@
   "bat": {
     "identifier": "minecraft:bat",
     "materials": {"default": "bat"},
-    "textures": {"default": "textures/entity/bat"},
+    "textures": {"default": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAABGdBTUEAALGPC/xhBQAAAAFzUkdCAK7OHOkAAALHSURBVHja7VrBSiQxFJybHvci6G1gF2TBwyoKelnWy55kWYS9ePDmD+in+KcevLb7GgpqipeeTkzPpGdewSNJmx6nKtXJS3oWiwTOv33pbs6Ou9vr731YHddQ5/ZiAHa/9cXnjLln62DyLALIL48P+4AIQ+RZAP2cnO909/PH4uvRQcdh1zSqwCMPIiDPIqwT8uHufMVJuDfnOxnhq9OT7vHPZR9WZxEgSjUBUi7IcQBG++XpphfB6rgvVwCQ//f7og8WAeL8F6Kr6oD7X8s+PPuOmQNYAAsIUOIAkDeSLIK1LeCMagIweZQ8iRkBlJuYl5gwSlxjZ2R9KM/2XBphsyxEQGhfOCEVNQXQ0UZdo2i21+edR57DmxjZFRpTCaD2/7QAXsAFcEKq3zYEGHJBtgCeC97f3vtnG0uY1e1aavQ3/QgMuaBoDtCsDyWv3yqSlxhpTClAygXZArAILIaS8ezOo52TIJVA1/sqAswRnhCfEoAnuqGkZwpbZxJfyflTQuysAN7GxxNiZ62fEoCFMBGqpcK8h8ckqIkRoiU3VPkHIM/2R4rMaTLK0pGr9oVrw9v7Iy/QDLFEAH5umxTAW9utreTHOuD1+e/KaQ4mrGrb1ykE0L07HODFmKMsJs1b2GYfAc0MdYPEThiTvIA8DjWayNxSs3pJePPDOvJNCKDL27r22L95AlRJXaewuh57cVuPx7Acen1VlNkIoKR0++udCer84PXn42wj660EW38BooS99rqTn1R/FkCTnibyAH3l5bW9GOqjx+Wa8TWVCXpn/NzW63oIote1bH6HlSKUK0BKkFkIgDSX01+taz9+vTV0X/MC6Hu+1OFmSb9tHp6MRopIrQgBAjMDtr2bfOvb3KTIP2vZy9HnvH6vXJD6ZdheOYAJl/yOZ/YCMOFYygKBQCAQCAQCgUAgEAgEAoFAIBDYKXwAXSs8dJ1Ggb4AAAAASUVORK5CYII="},
     "geometry": {
       "default": {
+        "texturewidth": 64,
+        "textureheight": 64,
         "visible_bounds_width": 1,
         "visible_bounds_height": 1,
         "visible_bounds_offset": [0, 0.5, 0],
