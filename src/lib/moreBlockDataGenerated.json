@@ -718,5 +718,13 @@
         "barrier": true,
         "light": true,
         "moving_piston": true
+    },
+    "hasSemiTransparentTextuersRegex": {
+        "_stained_glass$": true,
+        "_stained_glass_pane$": true,
+        "^ice$": true,
+        "^tinted_glass$": true,
+        "^slime_block$": true,
+        "^honey_block$": true
     }
 }
