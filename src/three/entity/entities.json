@@ -125,11 +125,14 @@
     "render_controllers": ["controller.render.arrow"]
   },
   "bat": {
+    "_comment": "Wing tip mirror flags are swapped vs vanilla Bedrock model: our addCube() mirror implementation flips UVs in the opposite direction, so rightWingTip needs mirror=true and leftWingTip needs mirror=false to render correctly.",
     "identifier": "minecraft:bat",
     "materials": {"default": "bat"},
-    "textures": {"default": "textures/entity/bat"},
+    "textures": {"default": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAABGdBTUEAALGPC/xhBQAAAAFzUkdCAK7OHOkAAALHSURBVHja7VrBSiQxFJybHvci6G1gF2TBwyoKelnWy55kWYS9ePDmD+in+KcevLb7GgpqipeeTkzPpGdewSNJmx6nKtXJS3oWiwTOv33pbs6Ou9vr731YHddQ5/ZiAHa/9cXnjLln62DyLALIL48P+4AIQ+RZAP2cnO909/PH4uvRQcdh1zSqwCMPIiDPIqwT8uHufMVJuDfnOxnhq9OT7vHPZR9WZxEgSjUBUi7IcQBG++XpphfB6rgvVwCQ//f7og8WAeL8F6Kr6oD7X8s+PPuOmQNYAAsIUOIAkDeSLIK1LeCMagIweZQ8iRkBlJuYl5gwSlxjZ2R9KM/2XBphsyxEQGhfOCEVNQXQ0UZdo2i21+edR57DmxjZFRpTCaD2/7QAXsAFcEKq3zYEGHJBtgCeC97f3vtnG0uY1e1aavQ3/QgMuaBoDtCsDyWv3yqSlxhpTClAygXZArAILIaS8ezOo52TIJVA1/sqAswRnhCfEoAnuqGkZwpbZxJfyflTQuysAN7GxxNiZ62fEoCFMBGqpcK8h8ckqIkRoiU3VPkHIM/2R4rMaTLK0pGr9oVrw9v7Iy/QDLFEAH5umxTAW9utreTHOuD1+e/KaQ4mrGrb1ykE0L07HODFmKMsJs1b2GYfAc0MdYPEThiTvIA8DjWayNxSs3pJePPDOvJNCKDL27r22L95AlRJXaewuh57cVuPx7Acen1VlNkIoKR0++udCer84PXn42wj660EW38BooS99rqTn1R/FkCTnibyAH3l5bW9GOqjx+Wa8TWVCXpn/NzW63oIote1bH6HlSKUK0BKkFkIgDSX01+taz9+vTV0X/MC6Hu+1OFmSb9tHp6MRopIrQgBAjMDtr2bfOvb3KTIP2vZy9HnvH6vXJD6ZdheOYAJl/yOZ/YCMOFYygKBQCAQCAQCgUAgEAgEAoFAIBDYKXwAXSs8dJ1Ggb4AAAAASUVORK5CYII="},
     "geometry": {
       "default": {
+        "texturewidth": 64,
+        "textureheight": 64,
         "visible_bounds_width": 1,
         "visible_bounds_height": 1,
         "visible_bounds_offset": [0, 0.5, 0],
@@ -174,6 +177,7 @@
           },
           {
             "name": "rightWingTip",
+            "mirror": true,
             "pivot": [-12, 23, 1.5],
             "cubes": [
               {"origin": [-20, 10, 1.5], "size": [8, 12, 1], "uv": [24, 16]}
@@ -191,7 +195,6 @@
           },
           {
             "name": "leftWingTip",
-            "mirror": true,
             "pivot": [12, 23, 1.5],
             "cubes": [
               {"origin": [12, 10, 1.5], "size": [8, 12, 1], "uv": [24, 16]}
@@ -3540,6 +3543,109 @@
     },
     "render_controllers": ["controller.render.salmon"],
     "spawn_egg": {"texture": "spawn_egg", "texture_index": 47}
+  },
+  "sheep": {
+    "identifier": "minecraft:sheep",
+    "materials": {"default": "sheep"},
+    "textures": {"default": "textures/entity/sheep/sheep", "wool": "textures/entity/sheep/sheep_fur"},
+    "geometry": {
+      "default": {
+        "visible_bounds_width": 2,
+        "visible_bounds_height": 1.75,
+        "visible_bounds_offset": [0, 0.5, 0],
+        "texturewidth": 64,
+        "textureheight": 32,
+        "bones": [
+          {
+            "name": "body",
+            "pivot": [0, 19, 2],
+            "bind_pose_rotation": [90, 0, 0],
+            "cubes": [
+              {"origin": [-4, 13, -5], "size": [8, 16, 6], "uv": [28, 8]}
+            ]
+          },
+          {
+            "name": "head",
+            "pivot": [0, 18, -8],
+            "cubes": [
+              {"origin": [-3, 16, -14], "size": [6, 6, 8], "uv": [0, 0]}
+            ]
+          },
+          {
+            "name": "leg0",
+            "parent": "body",
+            "pivot": [-3, 12, 7],
+            "cubes": [{"origin": [-5, 0, 5], "size": [4, 12, 4], "uv": [0, 16]}]
+          },
+          {
+            "name": "leg1",
+            "parent": "body",
+            "pivot": [3, 12, 7],
+            "cubes": [{"origin": [1, 0, 5], "size": [4, 12, 4], "uv": [0, 16]}]
+          },
+          {
+            "name": "leg2",
+            "parent": "body",
+            "pivot": [-3, 12, -5],
+            "cubes": [{"origin": [-5, 0, -7], "size": [4, 12, 4], "uv": [0, 16]}]
+          },
+          {
+            "name": "leg3",
+            "parent": "body",
+            "pivot": [3, 12, -5],
+            "cubes": [{"origin": [1, 0, -7], "size": [4, 12, 4], "uv": [0, 16]}]
+          }
+        ]
+      },
+      "wool": {
+        "visible_bounds_width": 2,
+        "visible_bounds_height": 1.75,
+        "visible_bounds_offset": [0, 0.5, 0],
+        "texturewidth": 64,
+        "textureheight": 64,
+        "bones": [
+          {
+            "name": "head",
+            "pivot": [0, 18, -8],
+            "cubes": [
+              {"origin": [-3, 16, -12], "size": [6, 6, 6], "uv": [0, 32], "inflate": 0.6}
+            ]
+          },
+          {
+            "name": "body",
+            "pivot": [0, 19, 2],
+            "bind_pose_rotation": [90, 0, 0],
+            "cubes": [
+              {"origin": [-4, 13, -5], "size": [8, 16, 6], "uv": [28, 40], "inflate": 1.75}
+            ]
+          },
+          {
+            "name": "leg0",
+            "parent": "body",
+            "pivot": [-3, 12, 7],
+            "cubes": [{"origin": [-5, 6, 5], "size": [4, 6, 4], "uv": [0, 48], "inflate": 0.5}]
+          },
+          {
+            "name": "leg1",
+            "parent": "body",
+            "pivot": [3, 12, 7],
+            "cubes": [{"origin": [1, 6, 5], "size": [4, 6, 4], "uv": [0, 48], "inflate": 0.5}]
+          },
+          {
+            "name": "leg2",
+            "parent": "body",
+            "pivot": [-3, 12, -5],
+            "cubes": [{"origin": [-5, 6, -7], "size": [4, 6, 4], "uv": [0, 48], "inflate": 0.5}]
+          },
+          {
+            "name": "leg3",
+            "parent": "body",
+            "pivot": [3, 12, -5],
+            "cubes": [{"origin": [1, 6, -7], "size": [4, 6, 4], "uv": [0, 48], "inflate": 0.5}]
+          }
+        ]
+      }
+    }
   },
   "shulker_bullet": {
     "identifier": "minecraft:shulker_bullet",
