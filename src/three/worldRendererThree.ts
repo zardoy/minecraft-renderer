@@ -59,7 +59,6 @@ export class WorldRendererThree extends WorldRendererCommon {
   cursorBlock: CursorBlock
   onRender: Array<() => void> = []
   cameraShake: CameraShake
-  /** Parent container for the camera. Position is reset to `(0,0,0)` each frame by `updateCamera()`. Camera rotation is applied to this container. */
   cameraContainer!: THREE.Object3D
   media: ThreeJsMedia
   get waitingChunksToDisplay() {
@@ -67,14 +66,6 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
   waypoints: WaypointsRenderer
   cinimaticScript: CinimaticScriptRunner
-  /**
-   * Three.js camera used for rendering.
-   *
-   * **WARNING:** `camera.position` is scene-local (near origin due to sceneOrigin rebasing),
-   * NOT world-space. In first-person mode it's `(0,0,0)`; in third-person it's `(0,0,zOffset)`.
-   *
-   * Use `getCameraPosition()` or `cameraWorldPos` for actual world-space coordinates.
-   */
   camera!: THREE.PerspectiveCamera
   renderTimeAvg = 0
   // Memory usage tracking (in bytes)
@@ -105,18 +96,10 @@ export class WorldRendererThree extends WorldRendererCommon {
   DEBUG_RAYCAST = false
   skyboxRenderer: SkyboxRenderer
   fireworks: FireworksManager
-  /** Manages scene-origin rebasing: the world moves around the camera (not vice-versa) to maintain float32 precision at large coordinates. See {@link SceneOrigin}. */
   sceneOrigin = new SceneOrigin(this.scene)
-  /**
-   * Camera world position stored in float64 (JS number) for precision.
-   * Authoritative source of the camera's world position.
-   * Direct target of tween interpolation when the camera moves.
-   * {@link SceneOrigin.update sceneOrigin.update()} uses these values to rebase the scene each frame.
-   * Use {@link getCameraPosition} to read this as a `THREE.Vector3`.
-   */
+  /** Camera world position stored in float64 (JS number) for precision */
   cameraWorldPos = { x: 0, y: 0, z: 0 }
 
-  /** Reusable Vector3 returned by {@link getCameraPosition} when no target is provided. Do not store references to this value. */
   private readonly _tmpCameraPos = new THREE.Vector3()
 
   private currentPosTween?: tweenJs.Tween<{ x: number, y: number, z: number }>
@@ -345,7 +328,6 @@ export class WorldRendererThree extends WorldRendererCommon {
     return Object.values(this.modules).some(m => m.enabled && m.manifest.requiresHeightmap)
   }
 
-  /** Returns the active camera container (may differ in VR mode). Used for position resets and rotation. */
   get cameraObject() {
     return this.cameraGroupVr ?? this.cameraContainer
   }
@@ -692,17 +674,6 @@ export class WorldRendererThree extends WorldRendererCommon {
     return tex
   }
 
-  /**
-   * Returns the camera's world-space position with float64 precision.
-   *
-   * Use this instead of `camera.position`, which is scene-local and does not
-   * reflect the actual Minecraft world coordinates.
-   *
-   * @param target - Optional Vector3 to write into. If omitted, returns an
-   *   internal reusable Vector3 — **do not store the reference** as it will be
-   *   overwritten on the next call.
-   * @returns Vector3 containing world-space camera coordinates.
-   */
   getCameraPosition(target?: THREE.Vector3): THREE.Vector3 {
     return (target ?? this._tmpCameraPos).set(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
   }
@@ -874,7 +845,6 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.camera.updateProjectionMatrix()
   }
 
-  /** Main camera update loop. Handles tween interpolation of `cameraWorldPos`, perspective mode switching (first/third person), and rebasing the scene via `sceneOrigin.update()`. */
   updateCamera(pos: Vec3 | null, yaw: number, pitch: number): void {
     // Skip position/rotation updates if cinematic script is running
     if (this.cinimaticScript.running) {
