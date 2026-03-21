@@ -1,0 +1,135 @@
+# Deploy minecraft-renderer PR build to Vercel via minecraft-web-client
+# Trigger: comment "/deploy" on a PR
+name: Deploy PR
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  deploy:
+    # Only run when /deploy is commented on a PR
+    if: github.event.issue.pull_request != '' && contains(github.event.comment.body, '/deploy')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write  # for add-pr-comment
+    env:
+      DEP_NAME: minecraft-renderer
+      CLIENT_PR: 460  # minecraft-web-client PR with minecraft-renderer dep
+    steps:
+      - name: Parse CLIENT_REF from comment
+        id: client_ref
+        run: |
+          BODY="${{ github.event.comment.body }}"
+          ARG=$(echo "$BODY" | sed -n 's/^\/deploy[[:space:]]*//p' | tr -d '[:space:]')
+          if [[ -z "$ARG" || "$ARG" == "no" ]]; then
+            echo "ref=${{ env.CLIENT_DEFAULT_BRANCH }}" >> $GITHUB_OUTPUT
+            echo "Using default branch: ${{ env.CLIENT_DEFAULT_BRANCH }}"
+          elif [[ "$ARG" =~ ^[0-9]+$ ]]; then
+            echo "ref=refs/pull/${ARG}/head" >> $GITHUB_OUTPUT
+            echo "Using PR: $ARG"
+          else
+            echo "ref=${{ env.CLIENT_DEFAULT_BRANCH }}" >> $GITHUB_OUTPUT
+            echo "Invalid PR number, using default branch"
+          fi
+
+      - name: Checkout minecraft-renderer (PR branch)
+        uses: actions/checkout@v4
+        with:
+          ref: refs/pull/${{ github.event.issue.number }}/head
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Update npm and enable Corepack
+        run: |
+          npm install -g npm@latest
+          corepack enable
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build
+        run: pnpm build
+
+      - name: Create package archive
+        run: pnpm pack
+
+      - name: Clone minecraft-web-client
+        uses: actions/checkout@v4
+        with:
+          repository: zardoy/minecraft-web-client
+          ref: ${{ steps.client_ref.outputs.ref }}
+          path: client
+
+      - name: Copy archive to client
+        run: cp minecraft-renderer-*.tgz client/
+
+      - name: Replace minecraft-renderer dependency in package.json
+        working-directory: client
+        run: |
+          ARCHIVE=$(ls minecraft-renderer-*.tgz | head -1)
+          ARCHIVE_SPEC="file:./$ARCHIVE"
+          if command -v jq &>/dev/null; then
+            # Replace in dependencies (PR 460 has minecraft-renderer in dependencies)
+            jq --arg spec "$ARCHIVE_SPEC" '.dependencies["minecraft-renderer"] = $spec' package.json > package.json.tmp
+            mv package.json.tmp package.json
+            # Also update devDependencies if present
+            if jq -e '.devDependencies["minecraft-renderer"] != null' package.json &>/dev/null; then
+              jq --arg spec "$ARCHIVE_SPEC" '.devDependencies["minecraft-renderer"] = $spec' package.json > package.json.tmp
+              mv package.json.tmp package.json
+            fi
+          else
+            node -e "
+              const fs=require('fs');
+              const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));
+              const spec='$ARCHIVE_SPEC';
+              if(pkg.dependencies)pkg.dependencies['minecraft-renderer']=spec;
+              if(pkg.devDependencies)pkg.devDependencies['minecraft-renderer']=spec;
+              fs.writeFileSync('package.json',JSON.stringify(pkg,null,2));
+            "
+          fi
+          grep minecraft-renderer package.json
+
+      - name: Setup Corepack in client
+        working-directory: client
+        run: |
+          npm install -g npm@latest
+          corepack enable
+
+      - name: Install client dependencies
+        working-directory: client
+        run: pnpm install
+
+      - name: Build client
+        working-directory: client
+        run: pnpm build
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel
+
+      - name: Pull Vercel Environment Information
+        run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build for Vercel
+        working-directory: client
+        run: vercel build  --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy to Vercel
+        working-directory: client
+        id: deploy
+        run: |
+          url=$(vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }} 2>&1)
+          echo "url<<EOF" >> $GITHUB_OUTPUT
+          echo "$url" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Comment on PR
+        uses: mshick/add-pr-comment@v2
+        with:
+          allow-repeats: true
+          pull-request-number: ${{ github.event.issue.number }}
+          message: |
+            Deployed to Vercel Preview: ${{ steps.deploy.outputs.url }}

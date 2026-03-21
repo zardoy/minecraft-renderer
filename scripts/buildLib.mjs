@@ -28,6 +28,7 @@ const buildOptions = {
   logLevel: 'info',
   drop: minify ? ['debugger', 'console'] : [],
   sourcemap: !minify,
+  metafile: true,
   define: {
     'process.env.NODE_ENV': watch ? '"development"' : '"production"',
     'process.env.BROWSER': '"true"',
@@ -46,6 +47,7 @@ const buildOptions = {
     'valtio',
     'minecraft-data',
     'prismarine-*',
+    'mc-assets'
   ],
   plugins: [
     polyfillNode({
@@ -75,5 +77,10 @@ if (watch) {
   console.log('👀 Watching for changes...')
 } else {
   console.log('🔨 Building library...')
-  await build(buildOptions)
+  const result = await build(buildOptions)
+  if (result.metafile) {
+    const metaPath = path.join(rootDir, './dist/minecraft-renderer.js.meta.json')
+    fs.writeFileSync(metaPath, JSON.stringify(result.metafile))
+    console.log('  metafile:', metaPath)
+  }
 }
