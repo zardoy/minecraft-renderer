@@ -3,7 +3,6 @@ import { Vec3 } from 'vec3'
 import nbt from 'prismarine-nbt'
 import { MesherGeometryOutput, IS_FULL_WORLD_SECTION } from '../mesher/shared'
 import { getBannerTexture, createBannerMesh, releaseBannerTexture } from './bannerRenderer'
-import { disposeObject } from './threeJsUtils'
 import type { WorldRendererThree } from './worldRendererThree'
 
 export interface SectionObject extends THREE.Object3D {
@@ -16,6 +15,9 @@ export class WorldBlockGeometry {
   sectionObjects: Record<string, SectionObject> = {}
   waitingChunksToDisplay: { [chunkKey: string]: string[] } = {}
   estimatedMemoryUsage = 0
+  private pendingUpdates: Map<string, { geometry: MesherGeometryOutput; key: string; type: string }> = new Map()
+  private pendingBufferStartTime: number | null = null
+  private static readonly MAX_BUFFER_MS = 500
 
   constructor(
     private readonly worldRenderer: WorldRendererThree,
@@ -25,21 +27,84 @@ export class WorldBlockGeometry {
   ) { }
 
   handleWorkerGeometryMessage(data: { geometry: MesherGeometryOutput; key: string; type: string }): void {
-    let object: THREE.Object3D = this.sectionObjects[data.key]
-    if (object) {
-      // Track memory usage removal for existing section
-      this.removeSectionMemoryUsage(object)
-      // Cleanup banner textures before disposing
-      object.traverse((child) => {
-        if ((child as any).bannerTexture) {
-          releaseBannerTexture((child as any).bannerTexture)
-        }
-      })
-      this.worldRenderer.sceneOrigin.removeAndUntrackAll(object)
-      disposeObject(object)
-      delete this.sectionObjects[data.key]
+    const isUpdate = !!this.sectionObjects[data.key]
+
+    if (isUpdate) {
+      // Buffer updates for existing sections — keep old mesh visible
+      this.pendingUpdates.set(data.key, data)
+      if (this.pendingBufferStartTime === null) {
+        this.pendingBufferStartTime = performance.now()
+      }
+      return
     }
 
+    // Initial load — apply immediately
+    this._applySectionGeometry(data)
+  }
+
+  applyPendingUpdates(): void {
+    if (this.pendingUpdates.size === 0) return
+
+    const now = performance.now()
+    const sinceFirst = now - (this.pendingBufferStartTime ?? now)
+
+    // Wait for neighboring sections still being meshed (unless max timeout reached)
+    if (sinceFirst < WorldBlockGeometry.MAX_BUFFER_MS) {
+      const sectionHeight = this.worldRenderer.getSectionHeight()
+      for (const key of this.pendingUpdates.keys()) {
+        const [sx, sy, sz] = key.split(',').map(Number)
+        const neighborKeys = [
+          `${sx - 16},${sy},${sz}`, `${sx + 16},${sy},${sz}`,
+          `${sx},${sy - sectionHeight},${sz}`, `${sx},${sy + sectionHeight},${sz}`,
+          `${sx},${sy},${sz - 16}`, `${sx},${sy},${sz + 16}`,
+        ]
+        for (const neighborKey of neighborKeys) {
+          // Wait if neighbor is being meshed, hasn't arrived yet, and has a loaded mesh
+          if (this.worldRenderer.sectionsWaiting.has(neighborKey) &&
+              !this.pendingUpdates.has(neighborKey) &&
+              this.sectionObjects[neighborKey]) {
+            return
+          }
+        }
+      }
+    }
+
+    // Flush all pending updates atomically
+    for (const [key, data] of this.pendingUpdates) {
+      this._removeSectionSafely(key)
+      this._applySectionGeometry(data)
+    }
+
+    this.pendingUpdates.clear()
+    this.pendingBufferStartTime = null
+  }
+
+  private disposeSectionObject(obj: THREE.Object3D): void {
+    if (obj instanceof THREE.Mesh) {
+      obj.geometry?.dispose?.()
+      // Don't dispose material - it's shared across all sections
+    }
+    if (obj.children) {
+      obj.children.forEach(child => this.disposeSectionObject(child))
+    }
+  }
+
+  private _removeSectionSafely(key: string): void {
+    const object = this.sectionObjects[key]
+    if (!object) return
+
+    this.removeSectionMemoryUsage(object)
+    object.traverse((child) => {
+      if ((child as any).bannerTexture) {
+        releaseBannerTexture((child as any).bannerTexture)
+      }
+    })
+    this.worldRenderer.sceneOrigin.removeAndUntrackAll(object)
+    this.disposeSectionObject(object)
+    delete this.sectionObjects[key]
+  }
+
+  private _applySectionGeometry(data: { geometry: MesherGeometryOutput; key: string; type: string }): void {
     const chunkCoords = data.key.split(',')
     if (
       !this.worldRenderer.loadedChunks[chunkCoords[0] + ',' + chunkCoords[2]] ||
@@ -68,7 +133,7 @@ export class WorldBlockGeometry {
     this.worldRenderer.sceneOrigin.track(mesh, { updateMatrix: true })
     mesh.position.set(data.geometry.sx, data.geometry.sy, data.geometry.sz)
     mesh.name = 'mesh'
-    object = new THREE.Group()
+    const object: THREE.Object3D = new THREE.Group()
     object.add(mesh)
     // mesh with static dimensions: 16x16xsectionHeight
     const sectionHeight = data.geometry.sectionEndY - data.geometry.sectionStartY
@@ -237,6 +302,8 @@ export class WorldBlockGeometry {
 
     // Reset memory tracking since all sections are cleared
     this.estimatedMemoryUsage = 0
+    this.pendingUpdates.clear()
+    this.pendingBufferStartTime = null
   }
 
   removeColumn(x: number, z: number) {
@@ -258,9 +325,10 @@ export class WorldBlockGeometry {
           }
         })
         this.worldRenderer.sceneOrigin.removeAndUntrackAll(mesh)
-        disposeObject(mesh)
+        this.disposeSectionObject(mesh)
       }
       delete this.sectionObjects[key]
+      this.pendingUpdates.delete(key)
     } else {
       for (let y = worldMinY; y < this.worldRenderer.worldSizeParams.worldHeight; y += sectionHeight) {
         this.worldRenderer.setSectionDirty(new Vec3(x, y, z), false)
@@ -276,9 +344,10 @@ export class WorldBlockGeometry {
             }
           })
           this.worldRenderer.sceneOrigin.removeAndUntrackAll(mesh)
-          disposeObject(mesh)
+          this.disposeSectionObject(mesh)
         }
         delete this.sectionObjects[key]
+        this.pendingUpdates.delete(key)
       }
     }
   }

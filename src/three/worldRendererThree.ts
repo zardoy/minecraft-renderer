@@ -1064,6 +1064,8 @@ export class WorldRendererThree extends WorldRendererCommon {
 
     // eslint-disable-next-line @typescript-eslint/non-nullable-type-assertion-style
     const cam = this.cameraGroupVr instanceof THREE.Group ? this.cameraGroupVr.children.find(child => child instanceof THREE.PerspectiveCamera) as THREE.PerspectiveCamera : this.camera
+    // Flush buffered geometry updates atomically before rendering
+    this.worldBlockGeometry.applyPendingUpdates()
     this.renderer.render(this.scene, cam)
 
     if (
