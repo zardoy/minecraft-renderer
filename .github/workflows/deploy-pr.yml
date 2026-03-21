@@ -62,9 +62,9 @@ jobs:
         with:
           repository: zardoy/minecraft-web-client
           ref: ${{ steps.client_ref.outputs.ref }}
-          path: client
+          path: prismarine-web
 
-      - name: Copy archive to client
+      - name: Copy archive to prismarine-web
         run: cp minecraft-renderer-*.tgz prismarine-web/
 
       - name: Replace minecraft-renderer dependency in package.json
@@ -93,13 +93,13 @@ jobs:
           fi
           grep minecraft-renderer package.json
 
-      - name: Setup Corepack in client
+      - name: Setup Corepack in prismarine-web
         working-directory: prismarine-web
         run: |
           npm install -g npm@latest
           corepack enable
 
-      - name: Install client dependencies
+      - name: Install prismarine-web dependencies
         working-directory: prismarine-web
         run: pnpm install --no-frozen-lockfile
 
