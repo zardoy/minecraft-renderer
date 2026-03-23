@@ -59,6 +59,8 @@ export class WorldRendererThree extends WorldRendererCommon {
   cursorBlock: CursorBlock
   onRender: Array<(deltaTime: number) => void> = []
   private lastRenderTime = 0
+  private lastBobWalkDist = 0
+  private lastBobTickTime = 0
   cameraShake: CameraShake
   cameraContainer!: THREE.Object3D
   media: ThreeJsMedia
@@ -165,6 +167,31 @@ export class WorldRendererThree extends WorldRendererCommon {
 
     this.soundSystem = new ThreeJsSound(this)
     this.cameraShake = new CameraShake(this, this.onRender)
+
+    // Feed camera bobbing data to CameraShake each frame
+    this.onRender.push(() => {
+      const config = this.displayOptions.inWorldRenderingConfig
+      const { perspective } = this.playerStateReactive
+
+      if (config.viewBobbing && perspective === 'first_person') {
+        // Track tick timing for partialTick interpolation (game ticks at 20 TPS = 50ms)
+        if (this.playerStateReactive.walkDist !== this.lastBobWalkDist) {
+          this.lastBobTickTime = performance.now()
+          this.lastBobWalkDist = this.playerStateReactive.walkDist
+        }
+        const partialTick = Math.min((performance.now() - this.lastBobTickTime) / 50, 1)
+
+        this.cameraShake.setCameraBobInput({
+          walkDist: this.playerStateReactive.walkDist,
+          prevWalkDist: this.playerStateReactive.prevWalkDist,
+          bob: this.playerStateReactive.bob,
+          prevBob: this.playerStateReactive.prevBob,
+          partialTick
+        })
+      } else {
+        this.cameraShake.setCameraBobInput(null)
+      }
+    })
     this.media = new ThreeJsMedia(this)
     this.fireworksLegacy = new FireworksRenderer(this)
     this.waypoints = new WaypointsRenderer(this)
@@ -984,7 +1011,8 @@ export class WorldRendererThree extends WorldRendererCommon {
           this.camera.rotation.set(0, 0, 0)
         }
       } else {
-        this.camera.position.set(0, 0, 0)
+        // Only reset z (clears third-person offset); x/y are managed by CameraShake for bobbing
+        this.camera.position.z = 0
         this.camera.rotation.set(0, 0, 0)
 
         // remove any debug raycasting
