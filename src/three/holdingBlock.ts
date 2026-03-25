@@ -332,6 +332,29 @@ export default class HoldingBlock {
       blockInner = this.playerHand!
     }
     if (!blockInner) return
+
+    // Apply vanilla firstperson_righthand display transforms (ItemTransform.apply)
+    // Vanilla order: translate(÷16) → rotateXYZ → scale, then model centering
+    if (handItem.type === 'item' || handItem.type === 'block') {
+      const displayGroup = new THREE.Group()
+      displayGroup.name = 'displayTransform'
+
+      if (handItem.type === 'item') {
+        // Vanilla item/handheld firstperson_righthand defaults
+        // Translation pre-divided by 16 per ItemTransform deserialization
+        displayGroup.position.set(1.13 / 16, 3.2 / 16, 1.13 / 16)
+        displayGroup.rotation.set(0, THREE.MathUtils.degToRad(-90), THREE.MathUtils.degToRad(25), 'XYZ')
+        displayGroup.scale.set(0.68, 0.68, 0.68)
+      } else {
+        // Vanilla block/block firstperson_righthand defaults
+        displayGroup.rotation.set(0, THREE.MathUtils.degToRad(45), 0, 'XYZ')
+        displayGroup.scale.set(0.4, 0.4, 0.4)
+      }
+
+      displayGroup.add(blockInner)
+      blockInner = displayGroup
+    }
+
     blockInner.name = 'holdingBlock'
 
     return { model: blockInner, type: handItem.type }
