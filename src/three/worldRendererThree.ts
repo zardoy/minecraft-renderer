@@ -1005,7 +1005,8 @@ export class WorldRendererThree extends WorldRendererCommon {
           this.camera.rotation.set(0, 0, 0)
         }
       } else {
-        this.camera.position.set(0, 0, 0)
+        // Only reset z (clears third-person offset); x/y are managed by CameraShake for bobbing
+        this.camera.position.z = 0
         this.camera.rotation.set(0, 0, 0)
 
         // remove any debug raycasting

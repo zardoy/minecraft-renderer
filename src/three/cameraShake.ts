@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { computeCameraBob, type CameraBobInput } from '../lib/cameraBobbing'
 import { WorldRendererThree } from './worldRendererThree'
 
 export class CameraShake {
@@ -8,6 +9,11 @@ export class CameraShake {
   private rollAnimation?: { startTime: number, startRoll: number, targetRoll: number, duration: number, returnToZero?: boolean }
   private basePitch = 0
   private baseYaw = 0
+  private cameraBobInput: CameraBobInput | null = null
+
+  setCameraBobInput(input: CameraBobInput | null) {
+    this.cameraBobInput = input
+  }
 
   constructor(public worldRenderer: WorldRendererThree, public onRenderCallbacks: Array<(deltaTime: number) => void>) {
     onRenderCallbacks.push(() => {
@@ -87,8 +93,26 @@ export class CameraShake {
       const pitchQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitchOffset)
       const yawQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yawOffset)
       const rollQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), THREE.MathUtils.degToRad(this.rollAngle))
-      // Combine rotations in the correct order: pitch -> yaw -> roll
-      const finalQuat = yawQuat.multiply(pitchQuat).multiply(rollQuat)
+
+      // Camera bobbing rotation
+      let bobRollQuat = new THREE.Quaternion()
+      let bobPitchQuat = new THREE.Quaternion()
+      const perspective = this.worldRenderer.playerStateReactive.perspective
+      if (this.cameraBobInput) {
+        const bob = computeCameraBob(this.cameraBobInput)
+        bobRollQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), bob.rotation.z)
+        bobPitchQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), bob.rotation.x)
+
+        // Apply position bobbing to the camera child (not cameraContainer) in first-person only
+        if (perspective === 'first_person') {
+          this.worldRenderer.camera.position.set(bob.position.x, bob.position.y, 0)
+        }
+      } else if (perspective === 'first_person') {
+        this.worldRenderer.camera.position.set(0, 0, 0)
+      }
+
+      // Combine: yaw * pitch * damageRoll * bobRoll(Z) * bobPitch(X) — vanilla applies Z then X
+      const finalQuat = yawQuat.multiply(pitchQuat).multiply(rollQuat).multiply(bobRollQuat).multiply(bobPitchQuat)
       camera.setRotationFromQuaternion(finalQuat)
     }
   }
