@@ -287,7 +287,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     if (initial) {
       callback(this.playerStateReactive[key])
     }
-    subscribeKey(this.playerStateReactive, key, callback)
+    return subscribeKey(this.playerStateReactive, key, callback)
   }
 
   onReactiveConfigUpdated<T extends keyof typeof this.worldRendererConfig>(key: T, callback: (value: typeof this.worldRendererConfig[T]) => void) {

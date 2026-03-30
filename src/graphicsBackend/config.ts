@@ -44,6 +44,7 @@ export const defaultWorldRendererConfig = {
   // Camera visual related settings
   showHand: false,
   viewBobbing: false,
+  handRenderer: 'vanilla' as 'vanilla' | 'legacy',
   renderEars: true,
   highlightBlockColor: 'blue' as 'blue' | 'classic' | 'auto' | undefined,
 

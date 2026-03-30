@@ -14,7 +14,8 @@ import { ItemSpecificContextProperties } from '../playerState/types'
 import { setBlockPosition } from '../mesher/standaloneRenderer'
 import { getBannerTexture, createBannerMesh, releaseBannerTexture } from './bannerRenderer'
 import { getMyHand } from './hand'
-import HoldingBlock from './holdingBlock'
+import { createHoldingBlock } from './holdingBlockFactory'
+import type { IHoldingBlock } from './holdingBlockTypes'
 import { getMesh } from './entity/EntityMesh'
 import { armorModel } from './entity/armorModels'
 import { disposeObject, loadThreeJsTextureFromBitmap } from './threeJsUtils'
@@ -47,8 +48,8 @@ export class WorldRendererThree extends WorldRendererCommon {
   chunkTextures = new Map<string, { [pos: string]: THREE.Texture }>()
   signsCache = new Map<string, any>()
   cameraSectionPos: Vec3 = new Vec3(0, 0, 0)
-  holdingBlock: HoldingBlock
-  holdingBlockLeft: HoldingBlock
+  holdingBlock: IHoldingBlock
+  holdingBlockLeft: IHoldingBlock
   scene = new THREE.Scene()
   ambientLight = new THREE.AmbientLight(0xcc_cc_cc)
   directionalLight = new THREE.DirectionalLight(0xff_ff_ff, 0.5)
@@ -147,8 +148,8 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.worldBlockGeometry = new WorldBlockGeometry(this, this.scene, this.material, displayOptions)
 
     this.cursorBlock = new CursorBlock(this)
-    this.holdingBlock = new HoldingBlock(this)
-    this.holdingBlockLeft = new HoldingBlock(this, true)
+    this.holdingBlock = createHoldingBlock(this)
+    this.holdingBlockLeft = createHoldingBlock(this, true)
 
     // Register built-in modules
     for (const manifest of Object.values(BUILTIN_MODULES)) {
@@ -497,6 +498,26 @@ export class WorldRendererThree extends WorldRendererCommon {
     })
     this.onReactiveConfigUpdated('defaultSkybox', (value) => {
       this.skyboxRenderer.updateDefaultSkybox(value)
+    })
+
+    let currentHandRenderer = this.displayOptions.inWorldRenderingConfig.handRenderer
+    this.onReactiveConfigUpdated('handRenderer', (value) => {
+      if (value === currentHandRenderer) return
+      currentHandRenderer = value
+      const wasReady = this.holdingBlock.ready
+      const wasReadyLeft = this.holdingBlockLeft.ready
+      this.holdingBlock.dispose()
+      this.holdingBlockLeft.dispose()
+      this.holdingBlock = createHoldingBlock(this)
+      this.holdingBlockLeft = createHoldingBlock(this, true)
+      if (wasReady) {
+        this.holdingBlock.ready = true
+        this.holdingBlock.updateItem()
+      }
+      if (wasReadyLeft) {
+        this.holdingBlockLeft.ready = true
+        this.holdingBlockLeft.updateItem()
+      }
     })
 
     // Watch for config changes that affect modules

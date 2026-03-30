@@ -20,70 +20,121 @@ export const getMyHand = async (image?: string, userName?: string) => {
 
   newMap.magFilter = THREE.NearestFilter
   newMap.minFilter = THREE.NearestFilter
-  // right arm
-  const box = new THREE.BoxGeometry()
-  const material = new THREE.MeshStandardMaterial()
+
   const slim = false
-  const mesh = new THREE.Mesh(box, material)
-  mesh.scale.x = slim ? 3 : 4
-  mesh.scale.y = 12
-  mesh.scale.z = 4
-  setSkinUVs(box, 40, 16, slim ? 3 : 4, 12, 4)
+  const pixelWidth = slim ? 3 : 4
+
+  // Exact replica of vanilla's Cube: addBox(-3, -2, -2, 4, 12, 4) at texOffs(40, 16)
+  const box = createVanillaCubeGeometry(
+    40, 16,
+    slim ? -2 : -3, -2, -2,
+    pixelWidth, 12, 4,
+    64, 64
+  )
+
+  const material = new THREE.MeshStandardMaterial()
   material.map = newMap
   material.needsUpdate = true
+
+  const mesh = new THREE.Mesh(box, material)
+
   const group = new THREE.Group()
   group.add(mesh)
-  group.scale.set(0.1, 0.1, 0.1)
-  mesh.rotation.z = Math.PI
   return group
 }
 
-function setUVs (
-  box: THREE.BoxGeometry,
-  u: number,
-  v: number,
-  width: number,
-  height: number,
-  depth: number,
-  textureWidth: number,
-  textureHeight: number
-): void {
-  const toFaceVertices = (x1: number, y1: number, x2: number, y2: number) => [
-    new THREE.Vector2(x1 / textureWidth, 1 - y2 / textureHeight),
-    new THREE.Vector2(x2 / textureWidth, 1 - y2 / textureHeight),
-    new THREE.Vector2(x2 / textureWidth, 1 - y1 / textureHeight),
-    new THREE.Vector2(x1 / textureWidth, 1 - y1 / textureHeight),
-  ]
+/**
+ * Creates a BufferGeometry replicating vanilla Minecraft's ModelPart.Cube exactly.
+ * Vertices, face winding, normals, and UV mapping match the decompiled Java source.
+ * Position coordinates are in pixels, divided by 16 for block units.
+ */
+function createVanillaCubeGeometry (
+  texU: number, texV: number,
+  originX: number, originY: number, originZ: number,
+  sizeX: number, sizeY: number, sizeZ: number,
+  texWidth: number, texHeight: number,
+  mirror = false
+): THREE.BufferGeometry {
+  let minX = originX / 16
+  let minY = originY / 16
+  let minZ = originZ / 16
+  let maxX = (originX + sizeX) / 16
+  let maxY = (originY + sizeY) / 16
+  let maxZ = (originZ + sizeZ) / 16
 
-  const top = toFaceVertices(u + depth, v, u + width + depth, v + depth)
-  const bottom = toFaceVertices(u + width + depth, v, u + width * 2 + depth, v + depth)
-  const left = toFaceVertices(u, v + depth, u + depth, v + depth + height)
-  const front = toFaceVertices(u + depth, v + depth, u + width + depth, v + depth + height)
-  const right = toFaceVertices(u + width + depth, v + depth, u + width + depth * 2, v + height + depth)
-  const back = toFaceVertices(u + width + depth * 2, v + depth, u + width * 2 + depth * 2, v + height + depth)
-
-  const uvAttr = box.attributes.uv as THREE.BufferAttribute
-  const uvRight = [right[3], right[2], right[0], right[1]]
-  const uvLeft = [left[3], left[2], left[0], left[1]]
-  const uvTop = [top[3], top[2], top[0], top[1]]
-  const uvBottom = [bottom[0], bottom[1], bottom[3], bottom[2]]
-  const uvFront = [front[3], front[2], front[0], front[1]]
-  const uvBack = [back[3], back[2], back[0], back[1]]
-
-  // Create a new array to hold the modified UV data
-  const newUVData = [] as number[]
-
-  // Iterate over the arrays and copy the data to uvData
-  for (const uvArray of [uvRight, uvLeft, uvTop, uvBottom, uvFront, uvBack]) {
-    for (const uv of uvArray) {
-      newUVData.push(uv.x, uv.y)
-    }
+  if (mirror) {
+    [minX, maxX] = [maxX, minX]
   }
 
-  uvAttr.set(new Float32Array(newUVData))
-  uvAttr.needsUpdate = true
-}
+  // 8 corner vertices matching vanilla's Cube constructor
+  const V = [
+    [minX, minY, minZ], // 0
+    [maxX, minY, minZ], // 1
+    [maxX, maxY, minZ], // 2
+    [minX, maxY, minZ], // 3
+    [minX, minY, maxZ], // 4
+    [maxX, minY, maxZ], // 5
+    [maxX, maxY, maxZ], // 6
+    [minX, maxY, maxZ], // 7
+  ]
 
-function setSkinUVs (box: THREE.BoxGeometry, u: number, v: number, width: number, height: number, depth: number): void {
-  setUVs(box, u, v, width, height, depth, 64, 64)
+  // UV grid (pixel coords)
+  const u0 = texU
+  const u1 = texU + sizeZ
+  const u2 = texU + sizeZ + sizeX
+  const u3 = texU + sizeZ + sizeX + sizeX
+  const u4 = texU + sizeZ + sizeX + sizeZ
+  const u5 = texU + sizeZ + sizeX + sizeZ + sizeX
+  const v0 = texV
+  const v1 = texV + sizeZ
+  const v2 = texV + sizeZ + sizeY
+
+  // 6 faces: vanilla vertex order + UV rect + normal
+  const faces: { vi: number[]; uv: number[]; n: number[] }[] = [
+    { vi: [5, 4, 0, 1], uv: [u1, v0, u2, v1], n: [0, -1, 0] },  // DOWN
+    { vi: [2, 3, 7, 6], uv: [u2, v1, u3, v0], n: [0, 1, 0] },   // UP
+    { vi: [0, 4, 7, 3], uv: [u0, v1, u1, v2], n: [-1, 0, 0] },  // WEST
+    { vi: [1, 0, 3, 2], uv: [u1, v1, u2, v2], n: [0, 0, -1] },  // NORTH
+    { vi: [5, 1, 2, 6], uv: [u2, v1, u4, v2], n: [1, 0, 0] },   // EAST
+    { vi: [4, 5, 6, 7], uv: [u4, v1, u5, v2], n: [0, 0, 1] },   // SOUTH
+  ]
+
+  const positions: number[] = []
+  const uvs: number[] = []
+  const normals: number[] = []
+  const indices: number[] = []
+
+  for (let fi = 0; fi < faces.length; fi++) {
+    const face = faces[fi]
+    const base = fi * 4
+
+    const [uL, vT, uR, vB] = face.uv
+    // Vanilla vertex UV order: top-right, top-left, bottom-left, bottom-right
+    const fUV = [
+      [uR / texWidth, 1 - vT / texHeight],
+      [uL / texWidth, 1 - vT / texHeight],
+      [uL / texWidth, 1 - vB / texHeight],
+      [uR / texWidth, 1 - vB / texHeight],
+    ]
+
+    const order = mirror ? [3, 2, 1, 0] : [0, 1, 2, 3]
+    const nx = mirror ? -face.n[0] : face.n[0]
+
+    for (let i = 0; i < 4; i++) {
+      const vert = V[face.vi[order[i]]]
+      positions.push(vert[0], vert[1], vert[2])
+      uvs.push(fUV[i][0], fUV[i][1])
+      normals.push(nx, face.n[1], face.n[2])
+    }
+
+    indices.push(base, base + 1, base + 2, base, base + 2, base + 3)
+  }
+
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3))
+  geometry.setIndex(indices)
+
+  return geometry
 }
