@@ -231,11 +231,23 @@ export default class HoldingBlock implements IHoldingBlock {
 
     const scene = new THREE.Scene()
     scene.add(this.cameraGroup)
-    // Sync aspect ratio with main camera (vanilla renders hand in full viewport)
-    if (this.camera.aspect !== originalCamera.aspect) {
-      this.camera.aspect = originalCamera.aspect
-      this.camera.updateProjectionMatrix()
+    const viewerSize = renderer.getSize(new THREE.Vector2())
+    const isPortrait = viewerSize.height > viewerSize.width
+
+    if (isPortrait) {
+      // Portrait: use fixed 1:1 aspect with square viewport to keep hand visible
+      if (this.camera.aspect !== 1) {
+        this.camera.aspect = 1
+        this.camera.updateProjectionMatrix()
+      }
+    } else {
+      // Landscape: sync aspect with main camera (vanilla full-viewport rendering)
+      if (this.camera.aspect !== originalCamera.aspect) {
+        this.camera.aspect = originalCamera.aspect
+        this.camera.updateProjectionMatrix()
+      }
     }
+
     this.updateCameraGroup()
     scene.add(ambientLight.clone())
     scene.add(directionalLight.clone())
@@ -248,8 +260,23 @@ export default class HoldingBlock implements IHoldingBlock {
 
     renderer.autoClear = false
     renderer.clearDepth()
-    // Vanilla renders hand in full viewport (depth buffer cleared so hand is always on top)
+
+    if (isPortrait) {
+      // Portrait: render in square viewport anchored to bottom-right (or bottom-left for offhand)
+      const minSize = Math.min(viewerSize.width, viewerSize.height)
+      if (offHandDisplay) {
+        renderer.setViewport(0, 0, minSize, minSize)
+      } else {
+        renderer.setViewport(viewerSize.width - minSize, 0, minSize, minSize)
+      }
+    }
+
     renderer.render(scene, this.camera)
+
+    if (isPortrait) {
+      // Restore full viewport
+      renderer.setViewport(0, 0, viewerSize.width, viewerSize.height)
+    }
 
     // Reset the mirroring after rendering
     if (offHandDisplay) {
