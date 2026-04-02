@@ -1,3 +1,4 @@
+import { blockBreakParticlesManifest } from './blockBreakParticles'
 import { cameraBobbingManifest } from './cameraBobbing'
 import { rainManifest } from './rain'
 import { sciFiWorldRevealManifest } from './sciFiWorldReveal'
@@ -8,4 +9,5 @@ export const BUILTIN_MODULES = {
   futuristicReveal: sciFiWorldRevealManifest,
   rain: rainManifest,
   cameraBobbing: cameraBobbingManifest,
+  blockBreakParticles: blockBreakParticlesManifest,
 }

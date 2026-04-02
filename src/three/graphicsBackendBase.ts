@@ -67,6 +67,10 @@ export const getBackendMethods = (worldRenderer: WorldRendererThree): any => {
     setSkyboxImage: worldRenderer.skyboxRenderer.setSkyboxImage.bind(worldRenderer.skyboxRenderer),
     // Rain methods
     setRain: (newState: boolean) => worldRenderer.toggleModule('rain', newState),
+    spawnBlockBreakParticles(x: number, y: number, z: number, blockName: string, floorMap: number[]) {
+      const module = worldRenderer.getModule<import('./modules/blockBreakParticles').BlockBreakParticlesModule>('blockBreakParticles')
+      module?.spawnBlockBreakParticles(x, y, z, blockName, floorMap)
+    },
     async loadGeometryExport(exportData: any) {
       // Import dynamically to avoid circular dependencies
       const { applyWorldGeometryExport } = await import('./worldGeometryExport')
