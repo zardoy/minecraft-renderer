@@ -67,13 +67,13 @@ export const getBackendMethods = (worldRenderer: WorldRendererThree): any => {
     setSkyboxImage: worldRenderer.skyboxRenderer.setSkyboxImage.bind(worldRenderer.skyboxRenderer),
     // Rain methods
     setRain: (newState: boolean) => worldRenderer.toggleModule('rain', newState),
-    spawnBlockBreakParticles(x: number, y: number, z: number, blockName: string, floorMap: number[]) {
+    spawnBlockBreakParticles(x: number, y: number, z: number, blockName: string, floorMap: number[], biomeName?: string) {
       const module = worldRenderer.getModule<import('./modules/blockBreakParticles').BlockBreakParticlesModule>('blockBreakParticles')
-      module?.spawnBlockBreakParticles(x, y, z, blockName, floorMap)
+      module?.spawnBlockBreakParticles(x, y, z, blockName, floorMap, biomeName)
     },
-    spawnBlockCrackParticle(x: number, y: number, z: number, face: number, blockName: string, floorMap: number[]) {
+    spawnBlockCrackParticle(x: number, y: number, z: number, face: number, blockName: string, floorMap: number[], biomeName?: string) {
       const module = worldRenderer.getModule<import('./modules/blockBreakParticles').BlockBreakParticlesModule>('blockBreakParticles')
-      module?.spawnCrackParticle(x, y, z, face, blockName, floorMap)
+      module?.spawnCrackParticle(x, y, z, face, blockName, floorMap, biomeName)
     },
     async loadGeometryExport(exportData: any) {
       // Import dynamically to avoid circular dependencies

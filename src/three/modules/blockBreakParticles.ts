@@ -2,6 +2,63 @@ import * as THREE from 'three'
 import type { WorldRendererThree } from '../worldRendererThree'
 import type { RendererModuleController, RendererModuleManifest } from '../rendererModuleSystem'
 
+// --- Tint data (lazy-loaded from globalThis.loadedData.tints at runtime) ---
+const tints: Record<string, Record<string, [number, number, number]>> = {}
+let tintsInitialized = false
+
+function ensureTintsLoaded(): void {
+  if (tintsInitialized) return
+  const tintsData = (globalThis as any).loadedData?.tints
+  if (!tintsData) return
+  for (const key of Object.keys(tintsData)) {
+    tints[key] = prepareTints(tintsData[key])
+  }
+  tintsInitialized = true
+}
+
+function prepareTints(data: any): Record<string, [number, number, number]> {
+  const result: Record<string, [number, number, number]> = {}
+  const defaultColor = tintToGl(data.default ?? 0xFFFFFF)
+  if (data.data) {
+    for (const entry of data.data) {
+      const color = tintToGl(entry.color)
+      for (const key of entry.keys) {
+        result[key] = color
+      }
+    }
+  }
+  return new Proxy(result, {
+    get(target, prop: string) {
+      return target[prop] ?? defaultColor
+    }
+  })
+}
+
+function tintToGl(tint: number): [number, number, number] {
+  return [
+    ((tint >> 16) & 0xFF) / 255,
+    ((tint >> 8) & 0xFF) / 255,
+    (tint & 0xFF) / 255,
+  ]
+}
+
+function resolveTintColor(blockName: string, biomeName: string): [number, number, number] {
+  ensureTintsLoaded()
+  if (blockName === 'grass_block') return [1, 1, 1]
+  if (blockName === 'redstone_wire') return [1, 1, 1]
+  if (blockName === 'birch_leaves' || blockName === 'spruce_leaves' || blockName === 'lily_pad') {
+    return tints.constant?.[blockName] ?? [1, 1, 1]
+  }
+  if (blockName.includes('leaves') || blockName === 'vine') {
+    return tints.foliage?.[biomeName] ?? [1, 1, 1]
+  }
+  const grassTintedBlocks = ['short_grass', 'tall_grass', 'fern', 'large_fern', 'sugar_cane', 'grass']
+  if (grassTintedBlocks.includes(blockName)) {
+    return tints.grass?.[biomeName] ?? [1, 1, 1]
+  }
+  return [1, 1, 1]
+}
+
 interface BreakParticle {
   mesh: THREE.Mesh
   active: boolean
@@ -65,11 +122,13 @@ export class BlockBreakParticlesModule implements RendererModuleController {
     this.updateVisuals(alpha)
   }
 
-  spawnBlockBreakParticles(worldX: number, worldY: number, worldZ: number, blockName: string, floorMap: number[]): void {
+  spawnBlockBreakParticles(worldX: number, worldY: number, worldZ: number, blockName: string, floorMap: number[], biomeName = 'plains'): void {
     if (!this.enabled) return
 
     const texInfo = this.resolveBlockTexture(blockName)
     if (!texInfo) return
+
+    const tintColor = resolveTintColor(blockName, biomeName)
 
     for (let ox = 0; ox < 4; ox++) {
       for (let oy = 0; oy < 4; oy++) {
@@ -94,7 +153,7 @@ export class BlockBreakParticlesModule implements RendererModuleController {
 
           const maxAge = Math.floor(4 / (Math.random() * 0.9 + 0.1))
 
-          this.createParticle(px, py, pz, xd, yd, zd, maxAge, texInfo, floorMap, worldX, worldZ)
+          this.createParticle(px, py, pz, xd, yd, zd, maxAge, texInfo, floorMap, worldX, worldZ, 1.0, tintColor)
         }
       }
     }
@@ -157,11 +216,13 @@ export class BlockBreakParticlesModule implements RendererModuleController {
     }
   }
 
-  spawnCrackParticle(worldX: number, worldY: number, worldZ: number, face: number, blockName: string, floorMap: number[]): void {
+  spawnCrackParticle(worldX: number, worldY: number, worldZ: number, face: number, blockName: string, floorMap: number[], biomeName = 'plains'): void {
     if (!this.enabled) return
 
     const texInfo = this.resolveBlockTexture(blockName)
     if (!texInfo) return
+
+    const tintColor = resolveTintColor(blockName, biomeName)
 
     // Random position within block, inset 0.1 on each axis
     let px = worldX + Math.random() * 0.8 + 0.1
@@ -185,7 +246,7 @@ export class BlockBreakParticlesModule implements RendererModuleController {
 
     const maxAge = Math.floor(4 / (Math.random() * 0.9 + 0.1))
 
-    this.createParticle(px, py, pz, xd, yd, zd, maxAge, texInfo, floorMap, worldX, worldZ, 0.6)
+    this.createParticle(px, py, pz, xd, yd, zd, maxAge, texInfo, floorMap, worldX, worldZ, 0.6, tintColor)
   }
 
   private createParticle(
@@ -195,7 +256,8 @@ export class BlockBreakParticlesModule implements RendererModuleController {
     texInfo: { u: number; v: number; su: number; sv: number },
     floorMap: number[],
     blockX: number, blockZ: number,
-    scaleFactor = 1.0
+    scaleFactor = 1.0,
+    tintColor: [number, number, number] = [1, 1, 1]
   ): void {
     this.ensureMaterial()
 
@@ -233,6 +295,19 @@ export class BlockBreakParticlesModule implements RendererModuleController {
     particle.mesh.scale.set(scale, scale, scale)
     particle.mesh.position.set(px, py, pz)
     particle.mesh.visible = true
+
+    // Apply tint: base darkening 0.6 × tint color
+    const r = 0.6 * tintColor[0]
+    const g = 0.6 * tintColor[1]
+    const b = 0.6 * tintColor[2]
+    const colorArray = new Float32Array([r, g, b, r, g, b, r, g, b, r, g, b])
+    const colorAttr = particle.mesh.geometry.getAttribute('color') as THREE.BufferAttribute
+    if (colorAttr) {
+      colorAttr.set(colorArray)
+      colorAttr.needsUpdate = true
+    } else {
+      particle.mesh.geometry.setAttribute('color', new THREE.Float32BufferAttribute(colorArray, 3))
+    }
 
     this.worldRenderer.sceneOrigin.addAndTrack(particle.mesh)
   }
@@ -346,7 +421,7 @@ export class BlockBreakParticlesModule implements RendererModuleController {
     if (!atlasTexture) return
     this.sharedMaterial = new THREE.MeshBasicMaterial({
       map: atlasTexture,
-      color: 0x999999,
+      vertexColors: true,
       transparent: true,
       alphaTest: 0.1,
     })
