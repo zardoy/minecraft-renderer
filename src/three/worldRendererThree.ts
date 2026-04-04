@@ -12,7 +12,6 @@ import { addNewStat } from '../lib/ui/newStats'
 import { MesherGeometryOutput } from '../mesher/shared'
 import { ItemSpecificContextProperties } from '../playerState/types'
 import { setBlockPosition } from '../mesher/standaloneRenderer'
-import { getBannerTexture, createBannerMesh, releaseBannerTexture } from './bannerRenderer'
 import { getMyHand } from './hand'
 import { createHoldingBlock } from './holdingBlockFactory'
 import type { IHoldingBlock } from './holdingBlockTypes'
@@ -33,7 +32,7 @@ import { DEFAULT_TEMPERATURE, SkyboxRenderer } from './skyboxRenderer'
 import { FireworksManager } from './fireworks'
 import { SceneOrigin } from './sceneOrigin'
 import { downloadWorldGeometry } from './worldGeometryExport'
-import { WorldBlockGeometry } from './worldBlockGeometry'
+import { ChunkMeshManager } from './chunkMeshManager'
 import type { RendererModuleManifest, RegisteredModule, RendererModuleController } from './rendererModuleSystem'
 import { BUILTIN_MODULES } from './modules/index'
 
@@ -41,16 +40,17 @@ type SectionKey = string
 
 export class WorldRendererThree extends WorldRendererCommon {
   outputFormat = 'threeJs' as const
-  worldBlockGeometry: WorldBlockGeometry
+  chunkMeshManager: ChunkMeshManager
   get sectionObjects() {
-    return this.worldBlockGeometry.sectionObjects
+    return this.chunkMeshManager.sectionObjects
   }
   chunkTextures = new Map<string, { [pos: string]: THREE.Texture }>()
   signsCache = new Map<string, any>()
   cameraSectionPos: Vec3 = new Vec3(0, 0, 0)
   holdingBlock: IHoldingBlock
   holdingBlockLeft: IHoldingBlock
-  scene = new THREE.Scene()
+  realScene = new THREE.Scene()
+  scene = new THREE.Group()
   ambientLight = new THREE.AmbientLight(0xcc_cc_cc)
   directionalLight = new THREE.DirectionalLight(0xff_ff_ff, 0.5)
   entities = new Entities(this, (globalThis as any).mcData)
@@ -64,7 +64,7 @@ export class WorldRendererThree extends WorldRendererCommon {
   cameraContainer!: THREE.Object3D
   media: ThreeJsMedia
   get waitingChunksToDisplay() {
-    return this.worldBlockGeometry.waitingChunksToDisplay
+    return {} as { [chunkKey: string]: string[] }
   }
   waypoints: WaypointsRenderer
   cinimaticScript: CinimaticScriptRunner
@@ -80,7 +80,7 @@ export class WorldRendererThree extends WorldRendererCommon {
   renderTimeAvg = 0
   // Memory usage tracking (in bytes)
   get estimatedMemoryUsage() {
-    return this.worldBlockGeometry.estimatedMemoryUsage
+    return this.chunkMeshManager.getEstimatedMemoryUsage().total
   }
   // Module system
   private modules = {} as Record<string, RegisteredModule>
@@ -106,7 +106,7 @@ export class WorldRendererThree extends WorldRendererCommon {
   DEBUG_RAYCAST = false
   skyboxRenderer: SkyboxRenderer
   fireworks: FireworksManager
-  sceneOrigin = new SceneOrigin(this.scene)
+  sceneOrigin = new SceneOrigin(this.realScene)
   /** Camera world position stored in float64 (JS number) for precision */
   cameraWorldPos = { x: 0, y: 0, z: 0 }
 
@@ -130,11 +130,11 @@ export class WorldRendererThree extends WorldRendererCommon {
   private readonly _tpChunkWorldPos = new THREE.Vector3()
 
   get tilesRendered() {
-    return Object.values(this.sectionObjects).reduce((acc, obj) => acc + (obj as any).tilesCount, 0)
+    return this.chunkMeshManager.getTotalTiles()
   }
 
   get blocksRendered() {
-    return Object.values(this.sectionObjects).reduce((acc, obj) => acc + (obj as any).blocksCount, 0)
+    return this.chunkMeshManager.getTotalBlocks()
   }
 
   constructor(public renderer: THREE.WebGLRenderer, public initOptions: GraphicsInitOptions, public displayOptions: DisplayWorldOptions) {
@@ -144,8 +144,8 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.renderer = renderer
     displayOptions.rendererState.renderer = WorldRendererThree.getRendererInfo(renderer) ?? '...'
 
-    // Initialize world block geometry handler
-    this.worldBlockGeometry = new WorldBlockGeometry(this, this.scene, this.material, displayOptions)
+    // Initialize chunk mesh manager
+    this.chunkMeshManager = new ChunkMeshManager(this, this.scene, this.material, this.worldSizeParams.worldHeight, this.viewDistance)
 
     this.cursorBlock = new CursorBlock(this)
     this.holdingBlock = createHoldingBlock(this)
@@ -157,7 +157,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     }
 
     // Initialize skybox renderer
-    this.skyboxRenderer = new SkyboxRenderer(this.scene, false, null)
+    this.skyboxRenderer = new SkyboxRenderer(this.realScene, false, null)
     void this.skyboxRenderer.init()
 
     this.addDebugOverlay()
@@ -180,7 +180,7 @@ export class WorldRendererThree extends WorldRendererCommon {
         fov: this.camera.fov
       })
     )
-    this.fireworks = new FireworksManager(this.scene, this.sceneOrigin)
+    this.fireworks = new FireworksManager(this.realScene, this.sceneOrigin)
 
     // this.fountain = new Fountain(this.scene, this.scene, {
     //   position: new THREE.Vector3(0, 10, 0),
@@ -446,19 +446,20 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.cameraWorldPos.y = 0
     this.cameraWorldPos.z = 0
 
-    this.scene.matrixAutoUpdate = false // for perf
-    this.scene.background = new THREE.Color(this.initOptions.config.sceneBackground)
-    this.scene.add(this.ambientLight)
+    this.realScene.matrixAutoUpdate = false // for perf
+    this.realScene.background = new THREE.Color(this.initOptions.config.sceneBackground)
+    this.realScene.add(this.ambientLight)
     this.directionalLight.position.set(1, 1, 0.5).normalize()
     this.directionalLight.castShadow = true
-    this.scene.add(this.directionalLight)
+    this.realScene.add(this.directionalLight)
 
     const size = this.renderer.getSize(new THREE.Vector2())
     this.camera = new THREE.PerspectiveCamera(75, size.x / size.y, 0.1, 1000)
     this._wrapCameraPositionWithWarning()
     this.cameraContainer = new THREE.Object3D()
     this.cameraContainer.add(this.camera)
-    this.scene.add(this.cameraContainer)
+    this.realScene.add(this.cameraContainer)
+    this.realScene.add(this.scene)
   }
 
   override watchReactivePlayerState() {
@@ -624,7 +625,7 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
 
   changeBackgroundColor(color: [number, number, number]): void {
-    this.scene.background = new THREE.Color(color[0], color[1], color[2])
+    this.realScene.background = new THREE.Color(color[0], color[1], color[2])
   }
 
   timeUpdated(newTime: number): void {
@@ -661,7 +662,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     setBlockPosition(mesh, pos)
     const helper = new THREE.BoxHelper(mesh, 0xff_ff_00)
     mesh.add(helper)
-    this.scene.add(mesh)
+    this.realScene.add(mesh)
   }
 
   demoItem() {
@@ -674,7 +675,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     // mesh.scale.set(0.5, 0.5, 0.5)
     const helper = new THREE.BoxHelper(mesh, 0xff_ff_00)
     mesh.add(helper)
-    this.scene.add(mesh)
+    this.realScene.add(mesh)
   }
 
   debugOverlayAdded = false
@@ -694,7 +695,9 @@ export class WorldRendererThree extends WorldRendererCommon {
         text += `TE: ${formatBigNumber(this.renderer.info.memory.textures)} `
         text += `F: ${formatBigNumber(this.tilesRendered)} `
         text += `B: ${formatBigNumber(this.blocksRendered)} `
-        text += `MEM: ${this.worldBlockGeometry.getEstimatedMemoryUsage().readable}`
+        text += `MEM: ${this.chunkMeshManager.getEstimatedMemoryUsage().total} `
+        const poolStats = this.chunkMeshManager.getStats()
+        text += `POOL: ${poolStats.activeCount}/${poolStats.poolSize} HR: ${poolStats.hitRate}`
         pane.updateText(text)
         this.backendInfoReport = text
       }
@@ -708,7 +711,8 @@ export class WorldRendererThree extends WorldRendererCommon {
     const [x, y, z] = key.split(',').map(x => Math.floor(+x / 16))
     // sum of distances: x + y + z
     const chunkDistance = Math.abs(x - this.cameraSectionPos.x) + Math.abs(y - this.cameraSectionPos.y) + Math.abs(z - this.cameraSectionPos.z)
-    const section = this.sectionObjects[key].children.find(child => child.name === 'mesh')!
+    const sectionObj = this.sectionObjects[key]
+    const section = (sectionObj as any).mesh ?? sectionObj.children.find(child => child.name === 'mesh')!
     section.renderOrder = 500 - chunkDistance
   }
 
@@ -731,12 +735,15 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
 
   finishChunk(chunkKey: string) {
-    this.worldBlockGeometry.finishChunk(chunkKey)
+    // ChunkMeshManager applies updates immediately, no buffering needed
   }
 
   handleWorkerMessage(data: { geometry: MesherGeometryOutput, key, type }): void {
     if (data.type === 'geometry') {
-      this.worldBlockGeometry.handleWorkerGeometryMessage(data)
+      const chunkCoords = data.key.split(',')
+      if (!this.loadedChunks[chunkCoords[0] + ',' + chunkCoords[2]] || !data.geometry.positions.length || !this.active) return
+      this.chunkMeshManager.updateSection(data.key, data.geometry)
+      this.updatePosDataChunk(data.key)
     }
   }
 
@@ -882,11 +889,11 @@ export class WorldRendererThree extends WorldRendererCommon {
   private debugRaycast(pos: THREE.Vector3, direction: THREE.Vector3, distance: number) {
     // Remove existing debug objects
     if (this.debugRaycastHelper) {
-      this.scene.remove(this.debugRaycastHelper)
+      this.realScene.remove(this.debugRaycastHelper)
       this.debugRaycastHelper = undefined
     }
     if (this.debugHitPoint) {
-      this.scene.remove(this.debugHitPoint)
+      this.realScene.remove(this.debugHitPoint)
       this.debugHitPoint = undefined
     }
 
@@ -906,14 +913,14 @@ export class WorldRendererThree extends WorldRendererCommon {
       distance * 0.1,
       distance * 0.05
     )
-    this.scene.add(this.debugRaycastHelper)
+    this.realScene.add(this.debugRaycastHelper)
 
     // Create hit point indicator
     const hitGeometry = new THREE.SphereGeometry(0.2, 8, 8)
     const hitMaterial = new THREE.MeshBasicMaterial({ color: 0x00_ff_00 })
     this.debugHitPoint = new THREE.Mesh(hitGeometry, hitMaterial)
     this.debugHitPoint.position.copy(scenePos).add(direction.clone().multiplyScalar(distance))
-    this.scene.add(this.debugHitPoint)
+    this.realScene.add(this.debugHitPoint)
   }
 
   prevFramePerspective = null as string | null
@@ -1011,11 +1018,11 @@ export class WorldRendererThree extends WorldRendererCommon {
 
         // remove any debug raycasting
         if (this.debugRaycastHelper) {
-          this.scene.remove(this.debugRaycastHelper)
+          this.realScene.remove(this.debugRaycastHelper)
           this.debugRaycastHelper = undefined
         }
         if (this.debugHitPoint) {
-          this.scene.remove(this.debugHitPoint)
+          this.realScene.remove(this.debugHitPoint)
           this.debugHitPoint = undefined
         }
       }
@@ -1086,9 +1093,8 @@ export class WorldRendererThree extends WorldRendererCommon {
 
     // eslint-disable-next-line @typescript-eslint/non-nullable-type-assertion-style
     const cam = this.cameraGroupVr instanceof THREE.Group ? this.cameraGroupVr.children.find(child => child instanceof THREE.PerspectiveCamera) as THREE.PerspectiveCamera : this.camera
-    // Flush buffered geometry updates atomically before rendering
-    this.worldBlockGeometry.applyPendingUpdates()
-    this.renderer.render(this.scene, cam)
+    // ChunkMeshManager applies updates immediately, no pending updates to flush
+    this.renderer.render(this.realScene, cam)
 
     if (
       this.displayOptions.inWorldRenderingConfig.showHand &&
@@ -1232,15 +1238,16 @@ export class WorldRendererThree extends WorldRendererCommon {
   resetWorld() {
     super.resetWorld()
 
-    this.worldBlockGeometry.resetWorld()
+    this.chunkMeshManager.dispose()
+    this.chunkMeshManager = new ChunkMeshManager(this, this.scene, this.material, this.worldSizeParams.worldHeight, this.viewDistance)
 
     // Clean up debug objects
     if (this.debugRaycastHelper) {
-      this.scene.remove(this.debugRaycastHelper)
+      this.realScene.remove(this.debugRaycastHelper)
       this.debugRaycastHelper = undefined
     }
     if (this.debugHitPoint) {
-      this.scene.remove(this.debugHitPoint)
+      this.realScene.remove(this.debugHitPoint)
       this.debugHitPoint = undefined
     }
   }
@@ -1285,7 +1292,14 @@ export class WorldRendererThree extends WorldRendererCommon {
     super.removeColumn(x, z)
 
     this.cleanChunkTextures(x, z)
-    this.worldBlockGeometry.removeColumn(x, z)
+    const sectionHeight = this.getSectionHeight()
+    const worldMinY = this.worldMinYRender
+    for (let y = worldMinY; y < this.worldSizeParams.worldHeight; y += sectionHeight) {
+      const key = `${x},${y},${z}`
+      if (this.chunkMeshManager.sectionObjects[key]) {
+        this.chunkMeshManager.releaseSection(key)
+      }
+    }
   }
 
   setSectionDirty(...args: Parameters<WorldRendererCommon['setSectionDirty']>) {
@@ -1308,6 +1322,7 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
 
   destroy(): void {
+    this.chunkMeshManager.dispose()
     this.disposeModules()
     this.fireworksLegacy.destroy()
     super.destroy()

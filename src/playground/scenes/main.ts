@@ -218,7 +218,7 @@ class MainScene extends BasePlaygroundScene {
 
     // Temporarily replace PerspectiveCamera with OrthographicCamera for block rendering
     this.worldRenderer.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 10) as any
-    this.worldRenderer.scene.background = null
+    this.worldRenderer.realScene.background = null
 
     const rad = THREE.MathUtils.degToRad(-120)
     this.worldRenderer.directionalLight.position.set(

@@ -213,7 +213,7 @@ export class PanoramaRenderer {
       }
     )
     if (this.worldRenderer instanceof WorldRendererThree) {
-      this.scene = this.worldRenderer.scene
+      this.scene = this.worldRenderer.realScene
     }
     void worldView.init(initPos)
 

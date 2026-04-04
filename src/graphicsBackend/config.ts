@@ -28,6 +28,7 @@ export const defaultWorldRendererConfig = {
   addChunksBatchWaitTime: 200,
   _experimentalSmoothChunkLoading: true,
   _renderByChunks: false,
+  autoLowerRenderDistance: false,
 
   // Rendering engine settings
   dayCycle: true,

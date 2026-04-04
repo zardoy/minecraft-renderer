@@ -224,7 +224,7 @@ export const createGraphicsBackendBase = () => {
       },
       get left() {
         return {
-          'Geo Memory': worldRenderer?.worldBlockGeometry.getEstimatedMemoryUsage().readable ?? '-'
+          'Geo Memory': worldRenderer?.chunkMeshManager.getEstimatedMemoryUsage().total ?? '-'
         }
       },
     }),

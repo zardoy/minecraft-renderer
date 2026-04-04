@@ -57,10 +57,8 @@ export class SciFiWorldRevealModule implements RendererModuleController {
   // Store original methods for patching
   private originalFinishChunk: ((chunkKey: string) => void) | null = null
   private originalDestroy: (() => void) | null = null
-  private originalSceneAdd: ((...object: THREE.Object3D[]) => THREE.Scene) | null = null
+  private originalSceneAdd: ((...object: THREE.Object3D[]) => THREE.Group) | null = null
   private originalHandleWorkerMessage: ((data: { geometry: MesherGeometryOutput; key: string; type: string }) => void) | null = null
-
-  private originalWbgHandle: ((data: any) => void) | null = null
 
   private configEnabled = true
 
@@ -145,12 +143,10 @@ export class SciFiWorldRevealModule implements RendererModuleController {
       this.originalDestroy!()
     }
 
-    // Patch handleWorkerMessage
-    const wbg = wr.worldBlockGeometry
-    this.originalWbgHandle = wbg.handleWorkerGeometryMessage.bind(wbg)
-
-    wbg.handleWorkerGeometryMessage = (data: any) => {
-      const result = this.originalWbgHandle!(data)
+    // Patch handleWorkerMessage to intercept geometry
+    this.originalHandleWorkerMessage = wr.handleWorkerMessage.bind(wr)
+    wr.handleWorkerMessage = (data: any) => {
+      this.originalHandleWorkerMessage!(data)
 
       if (this.enabled && data?.type === 'geometry') {
         Promise.resolve().then(() => {
@@ -161,14 +157,12 @@ export class SciFiWorldRevealModule implements RendererModuleController {
           }
         })
       }
-
-      return result
     }
 
 
     // Patch scene.add to intercept mesh additions
     this.originalSceneAdd = wr.scene.add.bind(wr.scene)
-    wr.scene.add = (...objects: THREE.Object3D[]): THREE.Scene => {
+    wr.scene.add = (...objects: THREE.Object3D[]): THREE.Group => {
       // Call original add first
       const result = this.originalSceneAdd!(...objects)
 
@@ -207,11 +201,6 @@ export class SciFiWorldRevealModule implements RendererModuleController {
       this.originalSceneAdd = null
     }
 
-    if (this.originalWbgHandle) {
-      wr.worldBlockGeometry.handleWorkerGeometryMessage = this.originalWbgHandle as any
-      this.originalWbgHandle = null
-    }
-
     if (this.onWorldSwitchedCb) {
       const i = wr.onWorldSwitched.indexOf(this.onWorldSwitchedCb)
       if (i !== -1) wr.onWorldSwitched.splice(i, 1)
@@ -248,7 +237,7 @@ export class SciFiWorldRevealModule implements RendererModuleController {
     let current: THREE.Object3D | null = mesh
     while (current) {
       const { sectionKey } = (current as any)
-      if (sectionKey && this.worldRenderer.worldBlockGeometry.sectionObjects[sectionKey] === current) {
+      if (sectionKey && this.worldRenderer.chunkMeshManager.sectionObjects[sectionKey] === current) {
         return sectionKey
       }
       current = current.parent
@@ -269,7 +258,7 @@ export class SciFiWorldRevealModule implements RendererModuleController {
     const derivedKey = `${sectionX},${sectionY},${sectionZ}`
 
     // Verify this key exists in sectionObjects
-    if (this.worldRenderer.worldBlockGeometry.sectionObjects[derivedKey]) {
+    if (this.worldRenderer.chunkMeshManager.sectionObjects[derivedKey]) {
       return derivedKey
     }
 
@@ -280,7 +269,7 @@ export class SciFiWorldRevealModule implements RendererModuleController {
    * Get the scene from world renderer
    */
   private get scene(): THREE.Scene {
-    return this.worldRenderer.scene
+    return this.worldRenderer.realScene
   }
 
   /**
@@ -294,7 +283,7 @@ export class SciFiWorldRevealModule implements RendererModuleController {
    * Get original mesh for a section key
    */
   private getOriginalMesh(key: string): THREE.Mesh | null {
-    const sectionObject = this.worldRenderer.worldBlockGeometry.sectionObjects[key]
+    const sectionObject = this.worldRenderer.chunkMeshManager.sectionObjects[key]
     if (!sectionObject) return null
     return sectionObject.children.find(child => child.name === 'mesh') as THREE.Mesh | null
   }
