@@ -148,43 +148,49 @@ const addNametag = (entity, options: { fontFamily: string }, mesh, version: stri
       c.removeFromParent()
     }
   }
-  if (entity.username !== undefined && !entity.username.startsWith('EMPTY')) {
-    const canvas = getUsernameTexture(entity, options, version)
-    if (!canvas) return
-    const tex = new THREE.Texture(canvas)
-    tex.needsUpdate = true
-    let nameTag: THREE.Object3D
-    if (entity.nameTagFixed) {
-      const geometry = new THREE.PlaneGeometry()
-      const material = new THREE.MeshBasicMaterial({ map: tex })
-      material.transparent = true
-      nameTag = new THREE.Mesh(geometry, material)
-      nameTag.rotation.set(entity.pitch, THREE.MathUtils.degToRad(entity.yaw + 180), 0)
-      nameTag.position.y += entity.height + 0.3
-    } else {
-      const spriteMat = new THREE.SpriteMaterial({ map: tex })
-      nameTag = new THREE.Sprite(spriteMat)
-      nameTag.position.y += entity.height + 0.6
-    }
-    nameTag.renderOrder = 1000
-    nameTag.scale.set(canvas.width * 0.005, canvas.height * 0.005, 1)
-    if (entity.nameTagRotationRight) {
-      nameTag.applyQuaternion(entity.nameTagRotationRight)
-    }
-    if (entity.nameTagScale) {
-      nameTag.scale.multiply(entity.nameTagScale)
-    }
-    if (entity.nameTagRotationLeft) {
-      nameTag.applyQuaternion(entity.nameTagRotationLeft)
-    }
-    if (entity.nameTagTranslation) {
-      nameTag.position.add(entity.nameTagTranslation)
-    }
-    nameTag.name = 'nametag'
+  if (entity.username === undefined || entity.username === null) return
 
-    mesh.add(nameTag)
-    return nameTag
+  const plainUsername =
+    typeof entity.username === 'string'
+      ? entity.username
+      : new (PrismarineChatLoader(version))(entity.username).toString()
+  if (plainUsername.startsWith('EMPTY')) return
+
+  const canvas = getUsernameTexture(entity, options, version)
+  if (!canvas) return
+  const tex = new THREE.Texture(canvas)
+  tex.needsUpdate = true
+  let nameTag: THREE.Object3D
+  if (entity.nameTagFixed) {
+    const geometry = new THREE.PlaneGeometry()
+    const material = new THREE.MeshBasicMaterial({ map: tex })
+    material.transparent = true
+    nameTag = new THREE.Mesh(geometry, material)
+    nameTag.rotation.set(entity.pitch, THREE.MathUtils.degToRad(entity.yaw + 180), 0)
+    nameTag.position.y += entity.height + 0.3
+  } else {
+    const spriteMat = new THREE.SpriteMaterial({ map: tex })
+    nameTag = new THREE.Sprite(spriteMat)
+    nameTag.position.y += entity.height + 0.6
   }
+  nameTag.renderOrder = 1000
+  nameTag.scale.set(canvas.width * 0.005, canvas.height * 0.005, 1)
+  if (entity.nameTagRotationRight) {
+    nameTag.applyQuaternion(entity.nameTagRotationRight)
+  }
+  if (entity.nameTagScale) {
+    nameTag.scale.multiply(entity.nameTagScale)
+  }
+  if (entity.nameTagRotationLeft) {
+    nameTag.applyQuaternion(entity.nameTagRotationLeft)
+  }
+  if (entity.nameTagTranslation) {
+    nameTag.position.add(entity.nameTagTranslation)
+  }
+  nameTag.name = 'nametag'
+
+  mesh.add(nameTag)
+  return nameTag
 }
 
 // todo cleanup
