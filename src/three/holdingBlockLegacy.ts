@@ -1,6 +1,5 @@
 import * as THREE from 'three'
 import * as tweenJs from '@tweenjs/tween.js'
-import PrismarineItem from 'prismarine-item'
 import { WorldBlockProvider } from 'mc-assets/dist/worldBlockProvider'
 import { BlockModel } from 'mc-assets'
 import { DebugGui } from '../lib/DebugGui'
@@ -16,6 +15,7 @@ import { getThreeBlockModelGroup } from '../mesher/standaloneRenderer'
 import { IndexedData } from 'minecraft-data'
 import { WorldRendererConfig } from '../graphicsBackend'
 import { IHoldingBlock } from './holdingBlockTypes'
+import { getFirstPersonItemSpecificProps, getHandItemRenderKey } from './holdingBlockItemIdentity'
 
 const rotationPositionData = {
   itemRight: {
@@ -102,6 +102,7 @@ export default class HoldingBlockLegacy implements IHoldingBlock {
   camera = new THREE.PerspectiveCamera(75, 1, 0.1, 100)
   stopUpdate = false
   lastHeldItem: HandItemBlock | undefined
+  lastHeldItemRenderKey: string | undefined
   isSwinging = false
   nextIterStopCallbacks: Array<() => void> | undefined
   idleAnimator: HandIdleAnimator | undefined
@@ -303,19 +304,7 @@ export default class HoldingBlockLegacy implements IHoldingBlock {
   }
 
   isDifferentItem(block: HandItemBlock | undefined) {
-    const Item = PrismarineItem(this.worldRenderer.version)
-    if (!this.lastHeldItem) {
-      return true
-    }
-    if (this.lastHeldItem.name !== block?.name) {
-      return true
-    }
-    // eslint-disable-next-line sonarjs/prefer-single-boolean-return
-    if (!Item.equal(this.lastHeldItem.fullItem, block?.fullItem ?? {}) || JSON.stringify(this.lastHeldItem.fullItem.components) !== JSON.stringify(block?.fullItem?.components)) {
-      return true
-    }
-
-    return false
+    return this.lastHeldItemRenderKey !== getHandItemRenderKey(this.worldRenderer, block)
   }
 
   updateCameraGroup() {
@@ -354,11 +343,7 @@ export default class HoldingBlockLegacy implements IHoldingBlock {
       const result = this.worldRenderer.entities.getItemMesh({
         ...handItem.fullItem,
         itemId: handItem.id,
-      }, {
-        'minecraft:display_context': 'firstperson',
-        'minecraft:use_duration': this.worldRenderer.playerStateReactive.itemUsageTicks,
-        'minecraft:using_item': !!this.worldRenderer.playerStateReactive.itemUsageTicks,
-      }, false, this.lastItemModelName)
+      }, getFirstPersonItemSpecificProps(this.worldRenderer), false, this.lastItemModelName)
       if (result) {
         const { mesh: itemMesh, isBlock, modelName } = result
         if (isBlock) {
@@ -420,10 +405,14 @@ export default class HoldingBlockLegacy implements IHoldingBlock {
 
   switchRequest = 0
   async setNewItem(handItem?: HandItemBlock) {
-    if (!this.isDifferentItem(handItem)) return
+    const nextRenderKey = getHandItemRenderKey(this.worldRenderer, handItem)
+    const itemChanged = this.lastHeldItemRenderKey !== nextRenderKey
+    this.lastHeldItem = handItem
+    if (!itemChanged) return
+
+    this.lastHeldItemRenderKey = nextRenderKey
     this.lastItemModelName = undefined
     const switchRequest = ++this.switchRequest
-    this.lastHeldItem = handItem
     let playAppearAnimation = false
     if (this.holdingBlock) {
       // play disappear animation
@@ -471,7 +460,8 @@ export default class HoldingBlockLegacy implements IHoldingBlock {
       await this.playBlockSwapAnimation('appeared')
     }
 
-    this.swingAnimator = new HandSwingAnimator(this.holdingBlockInnerGroup)
+    this.swingAnimator ??= new HandSwingAnimator(this.holdingBlockInnerGroup)
+    this.swingAnimator.setHandMesh(this.holdingBlockInnerGroup)
     this.swingAnimator.type = result.type
     if (this.config.viewBobbing) {
       this.idleAnimator = new HandIdleAnimator(this.holdingBlockInnerGroup, this.worldRenderer.playerStateReactive)
@@ -782,9 +772,9 @@ class HandSwingAnimator {
   private lastTime = 0
   private isAnimating = false
   private stopRequested = false
-  private readonly originalRotation: THREE.Euler
-  private readonly originalPosition: THREE.Vector3
-  private readonly originalScale: THREE.Vector3
+  private originalRotation: THREE.Euler
+  private originalPosition: THREE.Vector3
+  private originalScale: THREE.Vector3
 
   readonly debugParams = {
     // Animation timing
@@ -846,6 +836,13 @@ class HandSwingAnimator {
       armHeightScale: { min: -2, max: 2, step: 0.1 }
     })
     // this.debugGui.activate()
+  }
+
+  setHandMesh(handMesh: THREE.Object3D) {
+    this.handMesh = handMesh
+    this.originalRotation.copy(handMesh.rotation)
+    this.originalPosition.copy(handMesh.position)
+    this.originalScale.copy(handMesh.scale)
   }
 
   update() {
