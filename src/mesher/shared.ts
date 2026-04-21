@@ -10,7 +10,9 @@ export const defaultMesherConfig = {
   worldMinY: 0,
   enableLighting: true,
   skyLight: 15,
-  smoothLighting: false,
+  smoothLighting: true,
+  shadingTheme: 'high-contrast' as 'vanilla' | 'high-contrast',
+  cardinalLight: 'default' as string,
   outputFormat: 'threeJs' as 'threeJs' | 'webgpu',
   // textureSize: 1024, // for testing
   debugModelVariant: undefined as undefined | number[],

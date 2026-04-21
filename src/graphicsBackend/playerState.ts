@@ -31,6 +31,7 @@ export const getInitialPlayerState = (): PlayerStateReactive => proxy({
   itemUsageTicks: 0,
   username: '',
   onlineMode: false,
+  cardinalLight: 'default',
   lightingDisabled: false,
   shouldHideHand: false,
   heldItemMain: undefined,

@@ -31,6 +31,10 @@ export const defaultWorldRendererConfig = {
   autoLowerRenderDistance: false,
 
   // Rendering engine settings
+  /** Face shading: vanilla Minecraft vs higher-contrast client look */
+  shadingTheme: 'high-contrast' as 'vanilla' | 'high-contrast',
+  /** Synced from player reactive state (dimension / nether) — consumed by mesher */
+  cardinalLight: 'default' as string,
   dayCycle: true,
   smoothLighting: true,
   enableLighting: true,

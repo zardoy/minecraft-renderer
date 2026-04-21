@@ -55,7 +55,7 @@ export class WorldRendererThree extends WorldRendererCommon {
   directionalLight = new THREE.DirectionalLight(0xff_ff_ff, 0.5)
   entities = new Entities(this, (globalThis as any).mcData)
   cameraGroupVr?: THREE.Object3D
-  material = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, alphaTest: 0.1 })
+  material = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, alphaTest: 0.1 })
   itemsTexture!: THREE.Texture
   cursorBlock: CursorBlock
   onRender: Array<(deltaTime: number) => void> = []
@@ -629,6 +629,10 @@ export class WorldRendererThree extends WorldRendererCommon {
 
   changeBackgroundColor(color: [number, number, number]): void {
     this.realScene.background = new THREE.Color(color[0], color[1], color[2])
+  }
+
+  changeCardinalLight(cardinalLight: string): void {
+    this.worldRendererConfig.cardinalLight = cardinalLight
   }
 
   timeUpdated(newTime: number): void {

@@ -38,6 +38,8 @@ export const getInitialPlayerState = () => proxy({
   itemUsageTicks: 0,
   username: '',
   onlineMode: false,
+  /** Dimension ambient lighting preset (e.g. nether) — from login/respawn dimension data when available */
+  cardinalLight: 'default' as string,
   lightingDisabled: false,
   shouldHideHand: false,
   heldItemMain: undefined as HandItemBlock | undefined,
