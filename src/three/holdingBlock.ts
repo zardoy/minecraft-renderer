@@ -18,6 +18,11 @@ import { WorldRendererConfig } from '../graphicsBackend'
 import { computeCameraBob, type CameraBobInput } from '../lib/cameraBobbing'
 
 const _tempMat = new THREE.Matrix4()
+const wrapPi = (a: number) => {
+  a = (a + Math.PI) % (Math.PI * 2)
+  if (a < 0) a += Math.PI * 2
+  return a - Math.PI
+}
 
 // Vanilla renderPlayerArm transform chain
 function buildBareHandMatrix(swingProgress: number, equipProgress: number): THREE.Matrix4 {
@@ -350,25 +355,25 @@ export default class HoldingBlock implements IHoldingBlock {
     if (this.stopUpdate) return
     const { camera } = this
 
-    // Hand rotation momentum (xBob/yBob) — vanilla Minecraft inertia effect
-    // Use base rotation from CameraShake (actual player view angles)
     const now = performance.now()
     const baseRotation = this.worldRenderer.cameraShake.getBaseRotation()
     const actualPitch = baseRotation.pitch
     const actualYaw = baseRotation.yaw
+
     if (this.lastBobUpdateTime === 0) {
       this.xBob = actualPitch
       this.yBob = actualYaw
-      this.lastBobUpdateTime = now
     } else {
       const dt = Math.min((now - this.lastBobUpdateTime) / 1000, 0.1)
-      this.lastBobUpdateTime = now
-      const factor = 1 - Math.pow(0.5, dt * 20)
-      this.xBob += (actualPitch - this.xBob) * factor
-      this.yBob += (actualYaw - this.yBob) * factor
+      const pitchFactor = 1 - Math.pow(0.5, dt * 28)
+      const yawFactor = 1 - Math.pow(0.5, dt * 36)
+      this.xBob += (actualPitch - this.xBob) * pitchFactor
+      this.yBob += wrapPi(actualYaw - this.yBob) * yawFactor
     }
-    const pitchOffset = (actualPitch - this.xBob) * -0.1
-    const yawOffset = (actualYaw - this.yBob) * -0.1
+
+    this.lastBobUpdateTime = now
+    const pitchOffset = (actualPitch - this.xBob) * -0.05
+    const yawOffset = wrapPi(actualYaw - this.yBob) * -0.035
 
     this.cameraGroup.position.copy(camera.position)
     this.cameraGroup.rotation.copy(camera.rotation)

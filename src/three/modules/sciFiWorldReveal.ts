@@ -57,7 +57,7 @@ export class SciFiWorldRevealModule implements RendererModuleController {
   // Store original methods for patching
   private originalFinishChunk: ((chunkKey: string) => void) | null = null
   private originalDestroy: (() => void) | null = null
-  private originalSceneAdd: ((...object: THREE.Object3D[]) => THREE.Group) | null = null
+  private originalSceneAdd: ((...object: THREE.Object3D[]) => THREE.Scene) | null = null
   private originalHandleWorkerMessage: ((data: { geometry: MesherGeometryOutput; key: string; type: string }) => void) | null = null
 
   private configEnabled = true
@@ -162,7 +162,7 @@ export class SciFiWorldRevealModule implements RendererModuleController {
 
     // Patch scene.add to intercept mesh additions
     this.originalSceneAdd = wr.scene.add.bind(wr.scene)
-    wr.scene.add = (...objects: THREE.Object3D[]): THREE.Group => {
+    wr.scene.add = (...objects: THREE.Object3D[]): THREE.Scene => {
       // Call original add first
       const result = this.originalSceneAdd!(...objects)
 

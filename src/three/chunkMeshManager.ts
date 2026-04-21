@@ -63,7 +63,7 @@ export class ChunkMeshManager {
 
   constructor (
     public worldRenderer: WorldRendererThree,
-    public scene: THREE.Group,
+    public scene: THREE.Object3D,
     public material: THREE.Material,
     public worldHeight: number,
     viewDistance = 3,

@@ -49,8 +49,10 @@ export class WorldRendererThree extends WorldRendererCommon {
   cameraSectionPos: Vec3 = new Vec3(0, 0, 0)
   holdingBlock: IHoldingBlock
   holdingBlockLeft: IHoldingBlock
-  realScene = new THREE.Scene()
-  scene = new THREE.Group()
+  scene = new THREE.Scene()
+  get realScene() {
+    return this.scene
+  }
   ambientLight = new THREE.AmbientLight(0xcc_cc_cc)
   directionalLight = new THREE.DirectionalLight(0xff_ff_ff, 0.5)
   entities = new Entities(this, (globalThis as any).mcData)
@@ -78,6 +80,9 @@ export class WorldRendererThree extends WorldRendererCommon {
    */
   camera!: THREE.PerspectiveCamera
   renderTimeAvg = 0
+  private pendingSectionUpdates = new Map<string, { geometry: MesherGeometryOutput, key: string, type: string }>()
+  private pendingSectionBufferStartTime: number | null = null
+  private static readonly MAX_SECTION_UPDATE_BUFFER_MS = 500
   // Memory usage tracking (in bytes)
   get estimatedMemoryUsage() {
     return this.chunkMeshManager.getEstimatedMemoryUsage().total
@@ -106,7 +111,7 @@ export class WorldRendererThree extends WorldRendererCommon {
   DEBUG_RAYCAST = false
   skyboxRenderer: SkyboxRenderer
   fireworks: FireworksManager
-  sceneOrigin = new SceneOrigin(this.realScene)
+  sceneOrigin = new SceneOrigin(this.scene)
   /** Camera world position stored in float64 (JS number) for precision */
   cameraWorldPos = { x: 0, y: 0, z: 0 }
 
@@ -449,20 +454,19 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.cameraWorldPos.y = 0
     this.cameraWorldPos.z = 0
 
-    this.realScene.matrixAutoUpdate = false // for perf
-    this.realScene.background = new THREE.Color(this.initOptions.config.sceneBackground)
-    this.realScene.add(this.ambientLight)
+    this.scene.matrixAutoUpdate = false // for perf
+    this.scene.background = new THREE.Color(this.initOptions.config.sceneBackground)
+    this.scene.add(this.ambientLight)
     this.directionalLight.position.set(1, 1, 0.5).normalize()
     this.directionalLight.castShadow = true
-    this.realScene.add(this.directionalLight)
+    this.scene.add(this.directionalLight)
 
     const size = this.renderer.getSize(new THREE.Vector2())
     this.camera = new THREE.PerspectiveCamera(75, size.x / size.y, 0.1, 1000)
     this._wrapCameraPositionWithWarning()
     this.cameraContainer = new THREE.Object3D()
     this.cameraContainer.add(this.camera)
-    this.realScene.add(this.cameraContainer)
-    this.realScene.add(this.scene)
+    this.scene.add(this.cameraContainer)
   }
 
   override watchReactivePlayerState() {
@@ -742,13 +746,94 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
 
   finishChunk(chunkKey: string) {
-    // ChunkMeshManager applies updates immediately, no buffering needed
+    // Existing sections are buffered and flushed from applyPendingSectionUpdates().
+  }
+
+  private applyPendingSectionUpdates() {
+    if (this.pendingSectionUpdates.size === 0) return
+
+    const now = performance.now()
+    const sinceFirst = now - (this.pendingSectionBufferStartTime ?? now)
+
+    if (sinceFirst < WorldRendererThree.MAX_SECTION_UPDATE_BUFFER_MS) {
+      const sectionHeight = this.getSectionHeight()
+      for (const key of this.pendingSectionUpdates.keys()) {
+        const [sx, sy, sz] = key.split(',').map(Number)
+        const neighborKeys = [
+          `${sx - 16},${sy},${sz}`, `${sx + 16},${sy},${sz}`,
+          `${sx},${sy - sectionHeight},${sz}`, `${sx},${sy + sectionHeight},${sz}`,
+          `${sx},${sy},${sz - 16}`, `${sx},${sy},${sz + 16}`,
+        ]
+
+        for (const neighborKey of neighborKeys) {
+          if (
+            this.sectionsWaiting.has(neighborKey) &&
+            !this.pendingSectionUpdates.has(neighborKey) &&
+            this.sectionObjects[neighborKey]
+          ) {
+            return
+          }
+        }
+      }
+    }
+
+    const updates = [...this.pendingSectionUpdates.values()]
+    this.pendingSectionUpdates.clear()
+    this.pendingSectionBufferStartTime = null
+
+    for (const update of updates) {
+      const chunkCoords = update.key.split(',')
+      const chunkKey = `${chunkCoords[0]},${chunkCoords[2]}`
+
+      if (!this.loadedChunks[chunkKey] || !this.active) {
+        this.chunkMeshManager.releaseSection(update.key)
+        continue
+      }
+
+      if (!update.geometry.positions.length) {
+        this.chunkMeshManager.releaseSection(update.key)
+        continue
+      }
+
+      this.chunkMeshManager.updateSection(update.key, update.geometry)
+      this.updatePosDataChunk(update.key)
+    }
+  }
+
+  private clearPendingSectionUpdatesForChunk(x: number, z: number) {
+    for (const key of [...this.pendingSectionUpdates.keys()]) {
+      if (key.startsWith(`${x},`) && key.endsWith(`,${z}`)) {
+        this.pendingSectionUpdates.delete(key)
+      }
+    }
+
+    if (this.pendingSectionUpdates.size === 0) {
+      this.pendingSectionBufferStartTime = null
+    }
   }
 
   handleWorkerMessage(data: { geometry: MesherGeometryOutput, key, type }): void {
     if (data.type === 'geometry') {
       const chunkCoords = data.key.split(',')
-      if (!this.loadedChunks[chunkCoords[0] + ',' + chunkCoords[2]] || !data.geometry.positions.length || !this.active) return
+      const chunkKey = `${chunkCoords[0]},${chunkCoords[2]}`
+      if (!this.loadedChunks[chunkKey] || !this.active) {
+        this.pendingSectionUpdates.delete(data.key)
+        if (this.pendingSectionUpdates.size === 0) {
+          this.pendingSectionBufferStartTime = null
+        }
+        return
+      }
+
+      if (this.sectionObjects[data.key]) {
+        this.pendingSectionUpdates.set(data.key, data)
+        this.pendingSectionBufferStartTime ??= performance.now()
+        return
+      }
+
+      if (!data.geometry.positions.length) {
+        this.chunkMeshManager.releaseSection(data.key)
+        return
+      }
       this.chunkMeshManager.updateSection(data.key, data.geometry)
       this.updatePosDataChunk(data.key)
     }
@@ -1100,8 +1185,8 @@ export class WorldRendererThree extends WorldRendererCommon {
 
     // eslint-disable-next-line @typescript-eslint/non-nullable-type-assertion-style
     const cam = this.cameraGroupVr instanceof THREE.Group ? this.cameraGroupVr.children.find(child => child instanceof THREE.PerspectiveCamera) as THREE.PerspectiveCamera : this.camera
-    // ChunkMeshManager applies updates immediately, no pending updates to flush
-    this.renderer.render(this.realScene, cam)
+    this.applyPendingSectionUpdates()
+    this.renderer.render(this.scene, cam)
 
     if (
       this.displayOptions.inWorldRenderingConfig.showHand &&
@@ -1248,6 +1333,8 @@ export class WorldRendererThree extends WorldRendererCommon {
   resetWorld() {
     super.resetWorld()
 
+    this.pendingSectionUpdates.clear()
+    this.pendingSectionBufferStartTime = null
     this.chunkMeshManager.dispose()
     this.chunkMeshManager = new ChunkMeshManager(this, this.scene, this.material, this.worldSizeParams.worldHeight, this.viewDistance)
 
@@ -1302,6 +1389,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     super.removeColumn(x, z)
 
     this.cleanChunkTextures(x, z)
+    this.clearPendingSectionUpdatesForChunk(x, z)
     const sectionHeight = this.getSectionHeight()
     const worldMinY = this.worldMinYRender
     for (let y = worldMinY; y < this.worldSizeParams.worldHeight; y += sectionHeight) {
@@ -1332,6 +1420,8 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
 
   destroy(): void {
+    this.pendingSectionUpdates.clear()
+    this.pendingSectionBufferStartTime = null
     this.chunkMeshManager.dispose()
     this.disposeModules()
     this.fireworksLegacy.destroy()

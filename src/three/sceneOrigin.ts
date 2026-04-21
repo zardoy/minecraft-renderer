@@ -173,7 +173,7 @@ export class SceneOrigin {
   /** Untrack an Object3D and remove it from the scene */
   removeAndUntrack(obj: Object3D): void {
     this.untrack(obj)
-    this.scene.remove(obj)
+    obj.removeFromParent()
   }
 
   /** Untrack an Object3D and all its descendants, then remove from the scene */
@@ -181,7 +181,7 @@ export class SceneOrigin {
     obj.traverse((child) => {
       this.untrack(child)
     })
-    this.scene.remove(obj)
+    obj.removeFromParent()
   }
 
   /** Get stored world position for a tracked object */
