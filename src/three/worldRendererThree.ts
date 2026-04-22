@@ -66,7 +66,7 @@ export class WorldRendererThree extends WorldRendererCommon {
   cameraContainer!: THREE.Object3D
   media: ThreeJsMedia
   get waitingChunksToDisplay() {
-    return {} as { [chunkKey: string]: string[] }
+    return this.chunkMeshManager.waitingChunksToDisplay
   }
   waypoints: WaypointsRenderer
   cinimaticScript: CinimaticScriptRunner
@@ -81,7 +81,14 @@ export class WorldRendererThree extends WorldRendererCommon {
   camera!: THREE.PerspectiveCamera
   renderTimeAvg = 0
   private pendingSectionUpdates = new Map<string, { geometry: MesherGeometryOutput, key: string, type: string }>()
-  private pendingSectionBufferStartTime: number | null = null
+  /**
+   * Per-section buffering timestamps for `applyPendingSectionUpdates`.
+   * Each section gets its own deadline so a continuous stream of updates
+   * (e.g. server-side block changes from explosions, pistons, fluid ticks)
+   * does not flush freshly added sections together with stale ones via a
+   * single global timer.
+   */
+  private pendingSectionBufferStartTimes = new Map<string, number>()
   private static readonly MAX_SECTION_UPDATE_BUFFER_MS = 500
   // Memory usage tracking (in bytes)
   get estimatedMemoryUsage() {
@@ -746,42 +753,57 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
 
   finishChunk(chunkKey: string) {
-    // Existing sections are buffered and flushed from applyPendingSectionUpdates().
+    // Reveal all sections of this chunk that were held invisible by the
+    // "Batch Chunks Display" (`_renderByChunks`) option. No-op when the
+    // option is off — `waitingChunksToDisplay` is empty in that case.
+    this.chunkMeshManager.finishChunkDisplay(chunkKey)
   }
 
   private applyPendingSectionUpdates() {
     if (this.pendingSectionUpdates.size === 0) return
 
     const now = performance.now()
-    const sinceFirst = now - (this.pendingSectionBufferStartTime ?? now)
+    const sectionHeight = this.getSectionHeight()
+    const ready: string[] = []
 
-    if (sinceFirst < WorldRendererThree.MAX_SECTION_UPDATE_BUFFER_MS) {
-      const sectionHeight = this.getSectionHeight()
-      for (const key of this.pendingSectionUpdates.keys()) {
+    for (const key of this.pendingSectionUpdates.keys()) {
+      const startedAt = this.pendingSectionBufferStartTimes.get(key) ?? now
+      const sinceFirst = now - startedAt
+
+      if (sinceFirst < WorldRendererThree.MAX_SECTION_UPDATE_BUFFER_MS) {
+        // Still within this section's grace window — wait if any neighbor is
+        // currently being re-meshed so we don't briefly expose a hole between
+        // the just-updated section and a stale neighbor (sky-flicker bug).
         const [sx, sy, sz] = key.split(',').map(Number)
         const neighborKeys = [
           `${sx - 16},${sy},${sz}`, `${sx + 16},${sy},${sz}`,
           `${sx},${sy - sectionHeight},${sz}`, `${sx},${sy + sectionHeight},${sz}`,
           `${sx},${sy},${sz - 16}`, `${sx},${sy},${sz + 16}`,
         ]
-
+        let neighborBusy = false
         for (const neighborKey of neighborKeys) {
           if (
             this.sectionsWaiting.has(neighborKey) &&
             !this.pendingSectionUpdates.has(neighborKey) &&
             this.sectionObjects[neighborKey]
           ) {
-            return
+            neighborBusy = true
+            break
           }
         }
+        if (neighborBusy) continue
       }
+
+      ready.push(key)
     }
 
-    const updates = [...this.pendingSectionUpdates.values()]
-    this.pendingSectionUpdates.clear()
-    this.pendingSectionBufferStartTime = null
+    if (ready.length === 0) return
 
-    for (const update of updates) {
+    for (const key of ready) {
+      const update = this.pendingSectionUpdates.get(key)!
+      this.pendingSectionUpdates.delete(key)
+      this.pendingSectionBufferStartTimes.delete(key)
+
       const chunkCoords = update.key.split(',')
       const chunkKey = `${chunkCoords[0]},${chunkCoords[2]}`
 
@@ -804,11 +826,8 @@ export class WorldRendererThree extends WorldRendererCommon {
     for (const key of [...this.pendingSectionUpdates.keys()]) {
       if (key.startsWith(`${x},`) && key.endsWith(`,${z}`)) {
         this.pendingSectionUpdates.delete(key)
+        this.pendingSectionBufferStartTimes.delete(key)
       }
-    }
-
-    if (this.pendingSectionUpdates.size === 0) {
-      this.pendingSectionBufferStartTime = null
     }
   }
 
@@ -818,15 +837,17 @@ export class WorldRendererThree extends WorldRendererCommon {
       const chunkKey = `${chunkCoords[0]},${chunkCoords[2]}`
       if (!this.loadedChunks[chunkKey] || !this.active) {
         this.pendingSectionUpdates.delete(data.key)
-        if (this.pendingSectionUpdates.size === 0) {
-          this.pendingSectionBufferStartTime = null
-        }
+        this.pendingSectionBufferStartTimes.delete(data.key)
         return
       }
 
       if (this.sectionObjects[data.key]) {
         this.pendingSectionUpdates.set(data.key, data)
-        this.pendingSectionBufferStartTime ??= performance.now()
+        // Per-section deadline: only set if we don't already have one, so
+        // repeated updates to the same section don't postpone its flush.
+        if (!this.pendingSectionBufferStartTimes.has(data.key)) {
+          this.pendingSectionBufferStartTimes.set(data.key, performance.now())
+        }
         return
       }
 
@@ -1136,6 +1157,7 @@ export class WorldRendererThree extends WorldRendererCommon {
       chunksRenderDistanceOverride !== undefined
     ) {
       for (const [key, object] of Object.entries(this.sectionObjects)) {
+        if (object._waitingForChunkDisplay) continue
         const [x, y, z] = key.split(',').map(Number)
         const isVisible =
           // eslint-disable-next-line no-constant-binary-expression, sonarjs/no-redundant-boolean
@@ -1149,6 +1171,7 @@ export class WorldRendererThree extends WorldRendererCommon {
       }
     } else {
       for (const object of Object.values(this.sectionObjects)) {
+        if (object._waitingForChunkDisplay) continue
         object.visible = true
       }
     }
@@ -1321,20 +1344,16 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
 
   updateShowChunksBorder(value: boolean) {
-    for (const object of Object.values(this.sectionObjects)) {
-      for (const child of object.children) {
-        if (child.name === 'helper') {
-          child.visible = value
-        }
-      }
-    }
+    // Lazily create helpers on the first toggle (they are not created upfront
+    // for sections streamed in while the option was off).
+    this.chunkMeshManager.updateAllBoxHelpers(value)
   }
 
   resetWorld() {
     super.resetWorld()
 
     this.pendingSectionUpdates.clear()
-    this.pendingSectionBufferStartTime = null
+    this.pendingSectionBufferStartTimes.clear()
     this.chunkMeshManager.dispose()
     this.chunkMeshManager = new ChunkMeshManager(this, this.scene, this.material, this.worldSizeParams.worldHeight, this.viewDistance)
 
@@ -1365,6 +1384,11 @@ export class WorldRendererThree extends WorldRendererCommon {
       textures[key].dispose()
       delete textures[key]
     }
+    // Sign / head textures moved to ChunkMeshManager.signHeadsRenderer in PR
+    // #16; without invalidating that cache here, sign edits (and any other
+    // block-entity NBT change picked up via setSectionDirty) would re-render
+    // with the stale cached canvas until a full world reset.
+    this.chunkMeshManager.cleanSignChunkTextures(x, z)
   }
 
   readdChunks() {
@@ -1421,7 +1445,7 @@ export class WorldRendererThree extends WorldRendererCommon {
 
   destroy(): void {
     this.pendingSectionUpdates.clear()
-    this.pendingSectionBufferStartTime = null
+    this.pendingSectionBufferStartTimes.clear()
     this.chunkMeshManager.dispose()
     this.disposeModules()
     this.fireworksLegacy.destroy()
