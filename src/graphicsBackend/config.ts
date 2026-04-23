@@ -18,7 +18,7 @@ export const defaultWorldRendererConfig = {
 
   // Debug settings
   showChunkBorders: false,
-  enableDebugOverlay: true,
+  enableDebugOverlay: false,
   debugModelVariant: undefined as undefined | number[],
   futuristicReveal: false,
 

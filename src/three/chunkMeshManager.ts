@@ -27,17 +27,46 @@ export interface SectionObject extends THREE.Group {
   headsContainer?: THREE.Group
   bannersContainer?: THREE.Group
   boxHelper?: THREE.BoxHelper
+  /**
+   * World-space coordinates of the section origin. Cached so that
+   * {@link ChunkMeshManager.updateBoxHelper} can position lazily-created
+   * border helpers correctly under camera-relative rendering, where
+   * `mesh.position` is proxied to (world - sceneOrigin) and cannot be
+   * reused directly for objects that are tracked separately.
+   */
+  worldX?: number
+  worldY?: number
+  worldZ?: number
   foutain?: boolean
+  /**
+   * True while the section is held invisible by the "Batch Chunks Display"
+   * (`_renderByChunks`) feature, waiting for the parent chunk to finish meshing
+   * before being shown together with the rest of the chunk.
+   */
+  _waitingForChunkDisplay?: boolean
 }
 
 export class ChunkMeshManager {
   private readonly meshPool: ChunkMeshPool[] = []
   private readonly activeSections = new Map<string, ChunkMeshPool>()
   readonly sectionObjects: Record<string, SectionObject> = {}
+  /**
+   * Sections kept invisible because the "Batch Chunks Display" option is on
+   * and their parent chunk hasn't finished meshing yet. Keyed by chunk key
+   * (`x,z`); flushed by `WorldRendererThree.finishChunk(chunkKey)`.
+   */
+  readonly waitingChunksToDisplay: Record<string, string[]> = {}
   private poolSize!: number
   private maxPoolSize!: number
   private minPoolSize!: number
   private readonly signHeadsRenderer: SignHeadsRenderer
+  /**
+   * Shared transparent material used as the basis for the wireframe chunk
+   * border `BoxHelper` created lazily in {@link updateBoxHelper}. Kept on the
+   * manager so the BoxHelper machinery doesn't allocate a new material per
+   * section.
+   */
+  private readonly chunkBoxMaterial = new THREE.MeshBasicMaterial({ color: 0x00_00_00, transparent: true, opacity: 0 })
 
   // Performance tracking
   private hits = 0
@@ -155,6 +184,17 @@ export class ChunkMeshManager {
     // Store metadata
     sectionObject.tilesCount = geometryData.positions.length / 3 / 4
     sectionObject.blocksCount = geometryData.blocksCount
+    sectionObject.worldX = geometryData.sx
+    sectionObject.worldY = geometryData.sy
+    sectionObject.worldZ = geometryData.sz
+    // Stamp the section key so modules (e.g. sciFiWorldReveal) can resolve
+    // mesh -> section without falling back to sceneOrigin world-position math.
+    ;(sectionObject as any).sectionKey = sectionKey
+    // Tag the group so `WorldRendererThree.getThirdPersonCamera` raycast can
+    // still find chunk meshes — the old `WorldBlockGeometry` set this name
+    // unconditionally; the pooling port lost that and only the border-helper
+    // path used to restore it.
+    sectionObject.name = 'chunk'
 
     try {
       // Add signs container
@@ -217,13 +257,64 @@ export class ChunkMeshManager {
     this.scene.add(sectionObject)
     sectionObject.matrixAutoUpdate = false
 
+    // Create chunk border helper eagerly when the option is on so freshly
+    // streamed sections immediately get the F3+G yellow wireframe instead of
+    // appearing only on the next toggle.
+    if (this.worldRenderer.displayOptions?.inWorldRenderingConfig?.showChunkBorders) {
+      this.updateBoxHelper(sectionKey, true)
+    }
+
+    // Honor "Batch Chunks Display" (`_renderByChunks`): keep this section's
+    // mesh hidden until the whole chunk has finished meshing, so users see a
+    // chunk appear as a single 16xHx16 tile instead of streaming per-section.
+    // Updates to chunks that are already finished bypass batching to avoid
+    // flickering on block changes / lighting updates.
+    const chunkCoords = sectionKey.split(',')
+    const chunkKey = `${chunkCoords[0]},${chunkCoords[2]}`
+    const renderByChunks = !!this.worldRenderer.displayOptions
+      ?.inWorldRenderingConfig?._renderByChunks
+    if (renderByChunks && !this.worldRenderer.finishedChunks[chunkKey]) {
+      sectionObject.visible = false
+      sectionObject._waitingForChunkDisplay = true
+      const list = this.waitingChunksToDisplay[chunkKey] ?? (this.waitingChunksToDisplay[chunkKey] = [])
+      if (!list.includes(sectionKey)) list.push(sectionKey)
+    }
+
     return sectionObject
+  }
+
+  /**
+   * Reveal all sections of a chunk that were held invisible by the
+   * "Batch Chunks Display" option. Called from `WorldRendererThree.finishChunk`.
+   */
+  finishChunkDisplay (chunkKey: string): void {
+    const sectionKeys = this.waitingChunksToDisplay[chunkKey]
+    if (!sectionKeys) return
+    for (const sectionKey of sectionKeys) {
+      const sectionObject = this.sectionObjects[sectionKey]
+      if (!sectionObject) continue
+      sectionObject._waitingForChunkDisplay = false
+      sectionObject.visible = true
+    }
+    delete this.waitingChunksToDisplay[chunkKey]
   }
 
   cleanupSection (sectionKey: string) {
     // Remove section object from scene
     const sectionObject = this.sectionObjects[sectionKey]
     if (sectionObject) {
+      // Drop from any pending "batch display" queue so we don't try to flip
+      // visibility on a stale (released) object later.
+      if (sectionObject._waitingForChunkDisplay) {
+        const chunkCoords = sectionKey.split(',')
+        const chunkKey = `${chunkCoords[0]},${chunkCoords[2]}`
+        const list = this.waitingChunksToDisplay[chunkKey]
+        if (list) {
+          const idx = list.indexOf(sectionKey)
+          if (idx !== -1) list.splice(idx, 1)
+          if (list.length === 0) delete this.waitingChunksToDisplay[chunkKey]
+        }
+      }
       // Cleanup banner textures before disposing
       if (sectionObject.bannersContainer) {
         sectionObject.bannersContainer.traverse((child) => {
@@ -242,6 +333,21 @@ export class ChunkMeshManager {
       }
       this.worldRenderer.sceneOrigin.removeAndUntrackAll(sectionObject)
       this.scene.remove(sectionObject)
+      // boxHelper lives directly on the scene (so it stays world-anchored
+      // under camera-relative rendering), so it must be cleaned up explicitly
+      // — `removeAndUntrackAll` above only walks `sectionObject` descendants.
+      if (sectionObject.boxHelper) {
+        this.worldRenderer.sceneOrigin.removeAndUntrack(sectionObject.boxHelper)
+        this.scene.remove(sectionObject.boxHelper)
+        sectionObject.boxHelper.geometry.dispose()
+        const helperMat = sectionObject.boxHelper.material as THREE.Material | THREE.Material[]
+        if (Array.isArray(helperMat)) {
+          for (const m of helperMat) m.dispose()
+        } else {
+          helperMat.dispose()
+        }
+        sectionObject.boxHelper = undefined
+      }
       delete this.sectionObjects[sectionKey]
     }
   }
@@ -284,25 +390,56 @@ export class ChunkMeshManager {
   /**
    * Update box helper for a section
    */
-  updateBoxHelper (sectionKey: string, showChunkBorders: boolean, chunkBoxMaterial: THREE.Material) {
+  updateBoxHelper (sectionKey: string, showChunkBorders: boolean, chunkBoxMaterial: THREE.Material = this.chunkBoxMaterial) {
     const sectionObject = this.sectionObjects[sectionKey]
     if (!sectionObject?.mesh) return
 
     if (showChunkBorders) {
       if (!sectionObject.boxHelper) {
-        // mesh with static dimensions: 16x16x16
+        // Build a 16x16x16 reference mesh in world coordinates so BoxHelper's
+        // `setFromObject` produces the correct geometry. The reference mesh is
+        // not added to the scene; only the resulting BoxHelper is.
         const staticChunkMesh = new THREE.Mesh(new THREE.BoxGeometry(16, 16, 16), chunkBoxMaterial)
-        staticChunkMesh.position.copy(sectionObject.mesh.position)
         const boxHelper = new THREE.BoxHelper(staticChunkMesh, 0xff_ff_00)
         boxHelper.name = 'helper'
-        sectionObject.add(boxHelper)
-        sectionObject.name = 'chunk'
+        // Add directly to the scene and track it through sceneOrigin so that
+        // camera-relative rendering (floating origin) keeps the helper pinned
+        // to its world coordinates instead of following the camera.
+        const sx = sectionObject.worldX ?? 0
+        const sy = sectionObject.worldY ?? 0
+        const sz = sectionObject.worldZ ?? 0
+        this.worldRenderer.sceneOrigin.track(boxHelper, { updateMatrix: true })
+        boxHelper.position.set(sx, sy, sz)
+        boxHelper.updateMatrix()
+        this.scene.add(boxHelper)
         sectionObject.boxHelper = boxHelper
       }
       sectionObject.boxHelper.visible = true
     } else if (sectionObject.boxHelper) {
       sectionObject.boxHelper.visible = false
     }
+  }
+
+  /**
+   * Create / toggle chunk border helpers for every active section. Used by
+   * `WorldRendererThree.updateShowChunksBorder` so the F3+G hotkey works
+   * after the move from `WorldBlockGeometry` (which created the helpers
+   * eagerly per section) to the pooled `ChunkMeshManager`.
+   */
+  updateAllBoxHelpers (showChunkBorders: boolean) {
+    for (const sectionKey of Object.keys(this.sectionObjects)) {
+      this.updateBoxHelper(sectionKey, showChunkBorders)
+    }
+  }
+
+  /**
+   * Forward to {@link SignHeadsRenderer.cleanChunkTextures} so callers in
+   * `WorldRendererThree` (which historically owned the sign-texture cache)
+   * can invalidate cached sign textures when a section is marked dirty,
+   * without reaching into the manager's private members.
+   */
+  cleanSignChunkTextures (x: number, z: number) {
+    this.signHeadsRenderer.cleanChunkTextures(x, z)
   }
 
   /**
@@ -458,6 +595,7 @@ export class ChunkMeshManager {
 
     this.meshPool.length = 0
     this.activeSections.clear()
+    this.chunkBoxMaterial.dispose()
   }
 
   // Private helper methods
@@ -666,6 +804,12 @@ export class ChunkMeshManager {
   updateSectionsVisibility (): void {
     const cameraPos = this.worldRenderer.cameraSectionPos
     for (const [sectionKey, sectionObject] of Object.entries(this.sectionObjects)) {
+      // Don't override "Batch Chunks Display" hiding — those sections must
+      // stay invisible until their chunk finishes meshing.
+      if (sectionObject._waitingForChunkDisplay) {
+        sectionObject.visible = false
+        continue
+      }
       if (!this.performanceOverrideDistance) {
         sectionObject.visible = true
         continue
@@ -803,5 +947,22 @@ class SignHeadsRenderer {
     tex.needsUpdate = true
     textures[texturekey] = tex
     return tex
+  }
+
+  /**
+   * Dispose all cached sign textures for the chunk containing world coords
+   * (x, z). Called from `WorldRendererThree.cleanChunkTextures` so that
+   * re-meshes triggered by `setSectionDirty` (e.g. a player edits a sign)
+   * pick up fresh block-entity NBT instead of returning the stale cached
+   * texture from {@link SignHeadsRenderer.getSignTexture}.
+   */
+  cleanChunkTextures (x: number, z: number) {
+    const key = `${Math.floor(x / 16)},${Math.floor(z / 16)}`
+    const textures = this.chunkTextures.get(key)
+    if (!textures) return
+    for (const k of Object.keys(textures)) {
+      textures[k].dispose()
+      delete textures[k]
+    }
   }
 }
