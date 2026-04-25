@@ -27,8 +27,10 @@ await init();
 const result = generate_geometry(
     section_x, section_y, section_z, section_height,
     world_min_y, world_max_y,
+    section_data_start_y,
     block_states, block_light, sky_light, biomes,
     invisible_blocks, transparent_blocks,
+    no_ao_blocks, cull_identical_blocks, occluding_blocks,
     enable_lighting, smooth_lighting, sky_light_value
 );
 
@@ -55,7 +57,15 @@ const result = generate_geometry(
 # Build
 wasm-pack build --target web --dev
 
-# Test
+# Test (runs the snapshot test + the boundary/heightmap fixtures)
+pnpm test:wasm                # from the renderer root
+pnpm test:wasm:boundary       # boundary + heightmap fixtures only
+
+# Regenerate snapshot after intentional output changes:
+# delete the snapshot file and re-run; it will be re-created.
+#   rm test-snapshots/1.16.5/wasm-chunk.snapshot.json && pnpm test:wasm
+
+# Rust unit tests
 cargo test
 
 # Benchmark (when implemented)

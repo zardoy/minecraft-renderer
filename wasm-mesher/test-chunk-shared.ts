@@ -47,6 +47,7 @@ export async function testChunkShared(wasm: typeof import('./pkg/wasm_mesher.js'
     wasm.generate_geometry(
       0, WORLD_MIN_Y, 0, WORLD_HEIGHT,
       WORLD_MIN_Y, WORLD_MIN_Y + WORLD_HEIGHT,
+      WORLD_MIN_Y,
       blockStates, blockLight, skyLight, biomesArray,
       invisibleBlocks, transparentBlocks, noAoBlocks, cullIdenticalBlocks, occludingBlocks,
       true, false, 15
@@ -56,6 +57,7 @@ export async function testChunkShared(wasm: typeof import('./pkg/wasm_mesher.js'
   const result = wasm.generate_geometry(
     0, WORLD_MIN_Y, 0, WORLD_HEIGHT,
     WORLD_MIN_Y, WORLD_MIN_Y + WORLD_HEIGHT,
+    WORLD_MIN_Y,
     blockStates, blockLight, skyLight, biomesArray,
     invisibleBlocks, transparentBlocks, noAoBlocks, cullIdenticalBlocks, occludingBlocks,
     true, false, 15
