@@ -1,2 +1,2 @@
 cd "$(dirname "$0")"
-node build.mjs && node wasm-mesher.cjs
+node build.mjs && node test-chunk.cjs

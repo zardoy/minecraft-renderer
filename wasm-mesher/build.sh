@@ -67,7 +67,7 @@ case "$TARGET" in
     echo "🔨 Building for nodejs (snapshot test)..."
     wasm-pack build --target nodejs --out-dir "$PKG_DIR" $BUILD_FLAGS
     echo "🧪 Running WASM snapshot test (chunk.json → wasm-chunk.snapshot.json)..."
-    node build.mjs && node wasm-mesher.cjs
+    node build.mjs && node test-chunk.cjs
     ;;
   nodejs)
     echo "🔨 Building WASM mesher for nodejs target..."
