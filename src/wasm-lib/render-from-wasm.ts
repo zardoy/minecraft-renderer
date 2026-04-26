@@ -722,8 +722,12 @@ export function renderWasmOutputToGeometry(
             Math.round(transformedDir[2]),
           ]
           const dirKey = `${transformedDirI[0]},${transformedDirI[1]},${transformedDirI[2]}`
+          // faceIdx may be undefined for diagonal-rotated faces (e.g. signs at 45/135/225/315 deg).
+          // Such faces are not representable in the 6-axis WASM visible_faces / ao_data / light_data
+          // arrays. We still emit them (mirrors JS mesher behavior); cullface and AO/light data
+          // lookups are skipped, and the model-lighting fallback below derives AO/light by
+          // sampling neighbors via transformedDirI (its rounded form, same as for cardinal axes).
           const faceIdx = dirKeyToIndex[dirKey]
-          if (faceIdx === undefined) continue
 
           const minx = element.from[0]
           const miny = element.from[1]
@@ -732,13 +736,13 @@ export function renderWasmOutputToGeometry(
           const maxy = element.to[1]
           const maxz = element.to[2]
 
-          if (matchingEFace.cullface) {
+          if (matchingEFace.cullface && faceIdx !== undefined) {
             if ((block.visible_faces & (1 << faceIdx)) === 0) {
               continue
             }
           }
 
-          const faceDataIndex = wasmFaceToDataIndex[faceIdx]
+          const faceDataIndex = faceIdx === undefined ? undefined : wasmFaceToDataIndex[faceIdx]
           const aoValuesRaw = faceDataIndex === undefined ? undefined : block.ao_data[faceDataIndex]
           const lightValuesRaw = faceDataIndex === undefined ? undefined : block.light_data[faceDataIndex]
 
