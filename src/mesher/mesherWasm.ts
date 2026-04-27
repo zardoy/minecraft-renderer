@@ -7,6 +7,11 @@ import { worldColumnKey, World } from './world'
 import { handleGetHeightmap } from './computeHeightmap'
 import { collectBlockEntityMetadata, type SignMeta, type HeadMeta, type BannerMeta } from './blockEntityMetadata'
 import { SectionRequestTracker } from './mesherWasmRequestTracker'
+import {
+  clearConversionCache,
+  getOrConvertColumn,
+  invalidateConversion,
+} from './mesherWasmConversionCache'
 
 let wasm: typeof import('../../wasm/wasm_mesher.js') | null = null
 let wasmInitialized = false
@@ -148,6 +153,8 @@ const handleMessage = async (data: any) => {
     case 'mesherData': {
       setMesherData(data.blockstatesModels, data.blocksAtlas, data.config.outputFormat === 'webgpu')
       ;(globalThis as any).__wasmBlockModelCache = new Map()
+      // Conservative: blockstates/version/world config may have changed.
+      clearConversionCache()
 
       await initWasm()
       allDataReady = true
@@ -160,6 +167,10 @@ const handleMessage = async (data: any) => {
       break
     }
     case 'chunk': {
+      // Invalidate BEFORE replacing the column reference so a stale entry
+      // can never outlive the old chunk object.
+      invalidateConversion(data.x, data.z)
+      if (!world) break
       world.addColumn(data.x, data.z, data.chunk)
       if (data.customBlockModels) {
         const chunkKey = `${data.x},${data.z}`
@@ -168,6 +179,8 @@ const handleMessage = async (data: any) => {
       break
     }
     case 'unloadChunk': {
+      invalidateConversion(data.x, data.z)
+      if (!world) break
       world.removeColumn(data.x, data.z)
       world.customBlockModels.delete(`${data.x},${data.z}`)
       if (Object.keys(world.columns).length === 0) softCleanup()
@@ -179,7 +192,12 @@ const handleMessage = async (data: any) => {
         world?.setBlockStateId(loc, data.stateId)
       }
 
-      const chunkKey = `${Math.floor(loc.x / 16) * 16},${Math.floor(loc.z / 16) * 16}`
+      const chunkX = Math.floor(loc.x / 16) * 16
+      const chunkZ = Math.floor(loc.z / 16) * 16
+      // In-place mutation preserves chunk identity; explicit invalidation
+      // is required so the next tick recomputes from current block state.
+      invalidateConversion(chunkX, chunkZ)
+      const chunkKey = `${chunkX},${chunkZ}`
       if (data.customBlockModels) {
         world?.customBlockModels.set(chunkKey, data.customBlockModels)
       }
@@ -189,12 +207,17 @@ const handleMessage = async (data: any) => {
       world = undefined as any
       dirtySections.clear()
       requestTracker.clear()
+      clearConversionCache()
       globalVar.mcData = null
       globalVar.loadedData = null
       allDataReady = false
       break
     }
     case 'getHeightmap': {
+      if (!world) {
+        postMessage({ type: 'heightmap', key: `${data.x},${data.z}`, heightmap: new Int16Array(256) })
+        break
+      }
       const { key, heightmap } = handleGetHeightmap(world, data.x, data.z)
       postMessage({ type: 'heightmap', key, heightmap }, [heightmap.buffer])
 
@@ -326,6 +349,13 @@ function processColumnTick() {
     let prePhase = 0
     let wasmPhase = 0
     let postPhase = 0
+    let preTargetConvert = 0
+    let preNeighborConvert = 0
+    let preNeighborCount = 0
+    let preTypedArrayBuild = 0
+    let preOther = 0
+    let preCacheHits = 0
+    let preCacheMisses = 0
     let hadError = false
 
     if (targetChunk && wasm) {
@@ -335,15 +365,37 @@ function processColumnTick() {
         const chunksToUse = collectChunksForColumn(x, z)
         const chunkCount = chunksToUse.length
 
-        const conversions = chunksToUse.map(({ x: cx, z: cz, chunk }) => convertChunkToWasm(
-          chunk,
-          version,
-          cx,
-          cz,
-          worldMinY,
-          worldMaxY
-          // No sectionY/sectionHeight => full column conversion.
-        ))
+        const conversions = chunksToUse.map(({ x: cx, z: cz, chunk }) => {
+          const cs = performance.now()
+          const { result: conv, hit } = getOrConvertColumn(
+            cx,
+            cz,
+            chunk,
+            version,
+            worldMinY,
+            worldMaxY,
+            () => convertChunkToWasm(
+              chunk,
+              version,
+              cx,
+              cz,
+              worldMinY,
+              worldMaxY
+              // No sectionY/sectionHeight => full column conversion.
+            ),
+            chunk
+          )
+          const ce = performance.now()
+          if (hit) preCacheHits++
+          else preCacheMisses++
+          if (cx === x && cz === z) {
+            preTargetConvert += ce - cs
+          } else {
+            preNeighborConvert += ce - cs
+            preNeighborCount++
+          }
+          return conv
+        })
 
         const {
           invisibleBlocks,
@@ -356,6 +408,9 @@ function processColumnTick() {
         let wasmResult: any
         let t1: number
         if (chunkCount === 1 || !(wasm as any).generate_geometry_multi) {
+          // Single-chunk path: no discrete typed-array build/copy step
+          // (the per-chunk arrays from convertChunkToWasm are passed
+          // straight through). preTypedArrayBuild stays 0.
           const { blockStates, blockLight, skyLight, biomesArray } = conversions[0]
           t1 = performance.now()
           wasmResult = wasm.generate_geometry(
@@ -369,6 +424,7 @@ function processColumnTick() {
             config?.skyLight || 15
           )
         } else {
+          const tBuildStart = performance.now()
           const perChunkLen = conversions[0].blockStates.length
           const xs = new Int32Array(chunkCount)
           const zs = new Int32Array(chunkCount)
@@ -386,6 +442,7 @@ function processColumnTick() {
             skyLightAll.set(c.skyLight, perChunkLen * i)
             biomesAll.set(c.biomesArray, perChunkLen * i)
           }
+          preTypedArrayBuild = performance.now() - tBuildStart
 
           t1 = performance.now()
           wasmResult = (wasm as any).generate_geometry_multi(
@@ -419,6 +476,7 @@ function processColumnTick() {
         prePhase = t1 - t0
         wasmPhase = t2 - t1
         postPhase = t3 - t2
+        preOther = Math.max(0, prePhase - (preTargetConvert + preNeighborConvert + preTypedArrayBuild))
         processTime = performance.now() - start
       } catch (err) {
         console.error(`[WASM Mesher] Error processing column ${x},${z}:`, err)
@@ -566,6 +624,13 @@ function processColumnTick() {
       const pre = firstEvent ? prePhase : 0
       const w = firstEvent ? wasmPhase : 0
       const post = firstEvent ? postPhase : 0
+      const ptc = firstEvent ? preTargetConvert : 0
+      const pnc = firstEvent ? preNeighborConvert : 0
+      const pncn = firstEvent ? preNeighborCount : 0
+      const ptab = firstEvent ? preTypedArrayBuild : 0
+      const po = firstEvent ? preOther : 0
+      const pch = firstEvent ? preCacheHits : 0
+      const pcm = firstEvent ? preCacheMisses : 0
       let attributed = false
       for (let i = 0; i < count; i++) {
         emitSectionFinished({
@@ -576,6 +641,13 @@ function processColumnTick() {
           pre: !attributed ? pre : 0,
           wasm: !attributed ? w : 0,
           post: !attributed ? post : 0,
+          preTargetConvert: !attributed ? ptc : 0,
+          preNeighborConvert: !attributed ? pnc : 0,
+          preNeighborCount: !attributed ? pncn : 0,
+          preTypedArrayBuild: !attributed ? ptab : 0,
+          preOther: !attributed ? po : 0,
+          preCacheHits: !attributed ? pch : 0,
+          preCacheMisses: !attributed ? pcm : 0,
         })
         attributed = true
       }
@@ -619,6 +691,11 @@ setInterval(async () => {
     let prePhase = 0
     let wasmPhase = 0
     let postPhase = 0
+    let preTargetConvert = 0
+    let preNeighborConvert = 0
+    let preNeighborCount = 0
+    let preTypedArrayBuild = 0
+    let preOther = 0
     if (chunk?.getSection(new Vec3(x, y, z)) && wasm) {
       const start = performance.now()
       const t0 = start
@@ -642,16 +719,27 @@ setInterval(async () => {
         const chunksToUse = collectChunksForSection(x, y, z)
         const chunkCount = chunksToUse.length
 
-        const conversions = chunksToUse.map(({ x: cx, z: cz, chunk }) => convertChunkToWasm(
-          chunk,
-          version,
-          cx,
-          cz,
-          worldMinY,
-          worldMaxY,
-          convertSectionY,
-          convertSectionHeight
-        ))
+        const conversions = chunksToUse.map(({ x: cx, z: cz, chunk }) => {
+          const cs = performance.now()
+          const conv = convertChunkToWasm(
+            chunk,
+            version,
+            cx,
+            cz,
+            worldMinY,
+            worldMaxY,
+            convertSectionY,
+            convertSectionHeight
+          )
+          const ce = performance.now()
+          if (cx === x && cz === z) {
+            preTargetConvert += ce - cs
+          } else {
+            preNeighborConvert += ce - cs
+            preNeighborCount++
+          }
+          return conv
+        })
 
         const {
           invisibleBlocks,
@@ -664,6 +752,7 @@ setInterval(async () => {
         let wasmResult
         let t1: number
         if (chunkCount === 1 || !(wasm as any).generate_geometry_multi) {
+          // Single-chunk path: no discrete typed-array build/copy step.
           const { blockStates, blockLight, skyLight, biomesArray } = conversions[0]
           t1 = performance.now()
           wasmResult = wasm.generate_geometry(
@@ -677,6 +766,7 @@ setInterval(async () => {
             config?.skyLight || 15
           )
         } else {
+          const tBuildStart = performance.now()
           const perChunkLen = conversions[0].blockStates.length
           const xs = new Int32Array(chunkCount)
           const zs = new Int32Array(chunkCount)
@@ -694,6 +784,7 @@ setInterval(async () => {
             skyLightAll.set(c.skyLight, perChunkLen * i)
             biomesAll.set(c.biomesArray, perChunkLen * i)
           }
+          preTypedArrayBuild = performance.now() - tBuildStart
 
           t1 = performance.now()
           wasmResult = (wasm as any).generate_geometry_multi(
@@ -789,6 +880,7 @@ setInterval(async () => {
         prePhase = t1 - t0
         wasmPhase = t2 - t1
         postPhase = t3 - t2
+        preOther = Math.max(0, prePhase - (preTargetConvert + preNeighborConvert + preTypedArrayBuild))
         processTime = performance.now() - start
       } catch (err) {
         console.error(`[WASM Mesher] Error processing section ${key}:`, err)
@@ -828,11 +920,29 @@ setInterval(async () => {
     for (let i = 0; i < dirtyTimes; i++) {
       // Route through the shared emitter so request accounting stays in
       // lock-step with the legacy `dirtySections` counter.
-      emitSectionFinished({ type: 'sectionFinished', key, workerIndex, processTime, pre: prePhase, wasm: wasmPhase, post: postPhase })
+      emitSectionFinished({
+        type: 'sectionFinished',
+        key,
+        workerIndex,
+        processTime,
+        pre: prePhase,
+        wasm: wasmPhase,
+        post: postPhase,
+        preTargetConvert,
+        preNeighborConvert,
+        preNeighborCount,
+        preTypedArrayBuild,
+        preOther,
+      })
       processTime = 0
       prePhase = 0
       wasmPhase = 0
       postPhase = 0
+      preTargetConvert = 0
+      preNeighborConvert = 0
+      preNeighborCount = 0
+      preTypedArrayBuild = 0
+      preOther = 0
     }
     dirtySections.delete(key)
   }

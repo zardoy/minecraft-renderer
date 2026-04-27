@@ -94,6 +94,15 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   workersWasmAverageTime = 0
   workersPostAverageTime = 0
   workersPhaseSampleCount = 0
+  // Pre-stage substage averages (column-mode perf instrumentation).
+  workersPreTargetConvertAverageTime = 0
+  workersPreNeighborConvertAverageTime = 0
+  workersPreNeighborCountAverage = 0
+  workersPreTypedArrayBuildAverageTime = 0
+  workersPreOtherAverageTime = 0
+  // Cumulative cache hit/miss counters (column-mode conversion cache).
+  workersPreCacheHitsTotal = 0
+  workersPreCacheMissesTotal = 0
   private static readonly PHASE_PERF_LOG_INTERVAL = 64
   geometryReceiveCount = {} as Record<number, number>
   allLoadedIn: undefined | number
@@ -452,13 +461,38 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         this.workersPreAverageTime = ((this.workersPreAverageTime * (n - 1)) + data.pre) / n
         this.workersWasmAverageTime = ((this.workersWasmAverageTime * (n - 1)) + data.wasm) / n
         this.workersPostAverageTime = ((this.workersPostAverageTime * (n - 1)) + data.post) / n
+        // Pre-stage substages — additive schema; treat undefined as 0 so
+        // events from older mesher builds don't poison the running mean.
+        const ptc = typeof data.preTargetConvert === 'number' ? data.preTargetConvert : 0
+        const pnc = typeof data.preNeighborConvert === 'number' ? data.preNeighborConvert : 0
+        const pncn = typeof data.preNeighborCount === 'number' ? data.preNeighborCount : 0
+        const ptab = typeof data.preTypedArrayBuild === 'number' ? data.preTypedArrayBuild : 0
+        const po = typeof data.preOther === 'number' ? data.preOther : 0
+        const pch = typeof data.preCacheHits === 'number' ? data.preCacheHits : 0
+        const pcm = typeof data.preCacheMisses === 'number' ? data.preCacheMisses : 0
+        this.workersPreTargetConvertAverageTime = ((this.workersPreTargetConvertAverageTime * (n - 1)) + ptc) / n
+        this.workersPreNeighborConvertAverageTime = ((this.workersPreNeighborConvertAverageTime * (n - 1)) + pnc) / n
+        this.workersPreNeighborCountAverage = ((this.workersPreNeighborCountAverage * (n - 1)) + pncn) / n
+        this.workersPreTypedArrayBuildAverageTime = ((this.workersPreTypedArrayBuildAverageTime * (n - 1)) + ptab) / n
+        this.workersPreOtherAverageTime = ((this.workersPreOtherAverageTime * (n - 1)) + po) / n
+        this.workersPreCacheHitsTotal += pch
+        this.workersPreCacheMissesTotal += pcm
         if (this.worldRendererConfig.debugWasmPerf && n % WorldRendererCommon.PHASE_PERF_LOG_INTERVAL === 0) {
           const total = this.workersPreAverageTime + this.workersWasmAverageTime + this.workersPostAverageTime
           const prePct = total > 0 ? (this.workersPreAverageTime / total) * 100 : 0
           const wasmPct = total > 0 ? (this.workersWasmAverageTime / total) * 100 : 0
           const postPct = total > 0 ? (this.workersPostAverageTime / total) * 100 : 0
+          const preAvg = this.workersPreAverageTime
+          const tgtPct = preAvg > 0 ? (this.workersPreTargetConvertAverageTime / preAvg) * 100 : 0
+          const nbrPct = preAvg > 0 ? (this.workersPreNeighborConvertAverageTime / preAvg) * 100 : 0
+          const tabPct = preAvg > 0 ? (this.workersPreTypedArrayBuildAverageTime / preAvg) * 100 : 0
+          const othPct = preAvg > 0 ? (this.workersPreOtherAverageTime / preAvg) * 100 : 0
+          const nbrCnt = this.workersPreNeighborCountAverage
+          const nbrPerAvg = nbrCnt > 0 ? this.workersPreNeighborConvertAverageTime / nbrCnt : 0
+          const cacheTotal = this.workersPreCacheHitsTotal + this.workersPreCacheMissesTotal
+          const cacheHitPct = cacheTotal > 0 ? (this.workersPreCacheHitsTotal / cacheTotal) * 100 : 0
           // eslint-disable-next-line no-console
-          console.log(`[wasm-mesher perf] n=${n} pre=${this.workersPreAverageTime.toFixed(2)}ms (${prePct.toFixed(1)}%) wasm=${this.workersWasmAverageTime.toFixed(2)}ms (${wasmPct.toFixed(1)}%) post=${this.workersPostAverageTime.toFixed(2)}ms (${postPct.toFixed(1)}%)`)
+          console.log(`[wasm-mesher perf] n=${n} pre=${this.workersPreAverageTime.toFixed(2)}ms (${prePct.toFixed(1)}%) wasm=${this.workersWasmAverageTime.toFixed(2)}ms (${wasmPct.toFixed(1)}%) post=${this.workersPostAverageTime.toFixed(2)}ms (${postPct.toFixed(1)}%) | pre.targetConvert=${this.workersPreTargetConvertAverageTime.toFixed(2)}ms (${tgtPct.toFixed(1)}%) pre.neighborConvert=${this.workersPreNeighborConvertAverageTime.toFixed(2)}ms (${nbrPct.toFixed(1)}%) [n̄=${nbrCnt.toFixed(2)}, per-nbr=${nbrPerAvg.toFixed(2)}ms] pre.typedArrayBuild=${this.workersPreTypedArrayBuildAverageTime.toFixed(2)}ms (${tabPct.toFixed(1)}%) pre.other=${this.workersPreOtherAverageTime.toFixed(2)}ms (${othPct.toFixed(1)}%) | pre.cache hits=${this.workersPreCacheHitsTotal} misses=${this.workersPreCacheMissesTotal} (${cacheHitPct.toFixed(1)}% hit)`)
         }
       }
     }

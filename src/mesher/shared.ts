@@ -67,7 +67,26 @@ export type MesherGeometryOutput = {
 
 export interface MesherMainEvents {
   geometry: { type: 'geometry'; key: string; geometry: MesherGeometryOutput; workerIndex: number };
-  sectionFinished: { type: 'sectionFinished'; key: string; workerIndex: number; processTime?: number; pre?: number; wasm?: number; post?: number };
+  sectionFinished: {
+    type: 'sectionFinished';
+    key: string;
+    workerIndex: number;
+    processTime?: number;
+    pre?: number;
+    wasm?: number;
+    post?: number;
+    // Pre-stage substages (added for column-mode perf instrumentation).
+    // All times in ms. `preNeighborConvert` is a SUM across neighbors;
+    // divide by `preNeighborCount` for per-neighbor average.
+    preTargetConvert?: number;
+    preNeighborConvert?: number;
+    preNeighborCount?: number;
+    preTypedArrayBuild?: number;
+    preOther?: number;
+    // Per-event counts for the column-mode conversion cache.
+    preCacheHits?: number;
+    preCacheMisses?: number;
+  };
   blockStateModelInfo: { type: 'blockStateModelInfo'; info: Record<string, BlockStateModelInfo> };
   heightmap: { type: 'heightmap'; key: string; heightmap: Int16Array };
 }

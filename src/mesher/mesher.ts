@@ -108,6 +108,7 @@ const handleMessage = data => {
       break
     }
     case 'chunk': {
+      if (!world) break
       world.addColumn(data.x, data.z, data.chunk)
       if (data.customBlockModels) {
         const chunkKey = `${data.x},${data.z}`
@@ -116,6 +117,7 @@ const handleMessage = data => {
       break
     }
     case 'unloadChunk': {
+      if (!world) break
       world.removeColumn(data.x, data.z)
       world.customBlockModels.delete(`${data.x},${data.z}`)
       if (Object.keys(world.columns).length === 0) softCleanup()
@@ -145,6 +147,10 @@ const handleMessage = data => {
       break
     }
     case 'getCustomBlockModel': {
+      if (!world) {
+        global.postMessage({ type: 'customBlockModel', chunkKey: '', customBlockModel: undefined })
+        break
+      }
       const pos = new Vec3(data.pos.x, data.pos.y, data.pos.z)
       const chunkKey = `${Math.floor(pos.x / 16) * 16},${Math.floor(pos.z / 16) * 16}`
       const customBlockModel = world.customBlockModels.get(chunkKey)?.[`${pos.x},${pos.y},${pos.z}`]
@@ -152,6 +158,10 @@ const handleMessage = data => {
       break
     }
     case 'getHeightmap': {
+      if (!world) {
+        postMessage({ type: 'heightmap', key: `${data.x},${data.z}`, heightmap: new Int16Array(256) })
+        break
+      }
       const { key, heightmap } = handleGetHeightmap(world, data.x, data.z)
       postMessage({ type: 'heightmap', key, heightmap })
 
