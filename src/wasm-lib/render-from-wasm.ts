@@ -86,10 +86,47 @@ interface WasmBlockFaceData {
   light_data: number[][]
 }
 
-interface WasmGeometryOutput {
+export interface WasmGeometryOutput {
   blocks: WasmBlockFaceData[]
   block_count: number
   block_iterations: number
+  /**
+   * Per-(x,z) max non-invisible block Y for the meshed column, indexed as
+   * `z * 16 + x`. Sentinel value `-32768` = no block in that column.
+   *
+   * Populated by Rust `Mesher::generate_with_world` (see
+   * `wasm-mesher/src/mesher.rs`, field `heightmap`). serde_wasm_bindgen
+   * serializes `Vec<i16>` as a plain JS `number[]`, which is why the type
+   * here is `ArrayLike<number>` rather than `Int16Array` — the runtime
+   * adapter `extractColumnHeightmap` handles both shapes.
+   *
+   * Optional because runtime heightmap updates still use the shared JS
+   * `getHeightmap` handler. Using Rust heightmap at runtime is deferred until
+   * empty-column semantics are aligned with `computeHeightmap`.
+   */
+  heightmap?: ArrayLike<number> | null
+}
+
+/**
+ * Extract a 256-entry Int16Array heightmap from a full-column WASM mesher
+ * result, indexed as `z * 16 + x` (matching the JS `computeHeightmap`
+ * convention). Returns `null` when the WASM output does not carry a
+ * heightmap or carries one of unexpected length — in that case the
+ * caller MUST fall back to JS `computeHeightmap` rather than guess.
+ *
+ * This adapter is the single place that converts Rust's `Vec<i16>` heightmap
+ * shape into a transferable typed array. Tests exercise this same adapter so
+ * future runtime usage and parity assertions cannot drift apart.
+ */
+export function extractColumnHeightmap(
+  wasmOutput: { heightmap?: ArrayLike<number> | null } | null | undefined
+): Int16Array | null {
+  const raw = wasmOutput?.heightmap
+  if (!raw || raw.length !== 256) return null
+  if (raw instanceof Int16Array) return new Int16Array(raw)
+  const out = new Int16Array(256)
+  for (let i = 0; i < 256; i++) out[i] = raw[i]
+  return out
 }
 
 /**
@@ -939,6 +976,92 @@ export function renderWasmOutputToGeometry(
   log(`[WASM]   Indices: [${indices.slice(0, 12).join(',')}...] (first 2 faces)`)
 
   return result
+}
+
+/**
+ * Split a single full-column WASM mesher result into per-section
+ * `ExportedSection` outputs by filtering `wasmResult.blocks` per requested
+ * section's Y range and invoking `renderWasmOutputToGeometry` once per
+ * section.
+ *
+ * Why split at the block level (and not after geometry generation):
+ *   - Liquids (water/lava), signs/heads/banners metadata, AO/light arrays
+ *     and index numbering are computed inside `renderWasmOutputToGeometry`.
+ *     Splitting *finished* vertex/index buffers would silently break those.
+ *   - Filtering blocks by Y range and re-running the post-processor per
+ *     section keeps the output identical to the existing per-section path.
+ *
+ * Y=15/16 (and any other inter-section) seam handling:
+ *   - The Rust mesher produced `wasmResult` over the full column, so each
+ *     block's `visible_faces`, `ao_data` and `light_data` already account
+ *     for its true neighbors — including the block above at the section
+ *     seam (e.g. a Y=15 top face is correctly suppressed when Y=16 is
+ *     opaque, even though Y=16 lives in the next render section).
+ *   - This helper therefore does NOT need to widen the per-section block
+ *     window: a strict `[sy*sectionHeight, sy*sectionHeight + sectionHeight)`
+ *     filter on `block.position[1]` is sufficient. The neighbor information
+ *     is already baked into each block's per-face mask/AO/light arrays.
+ *
+ * Empty sections: sections with no blocks in range still get a call into
+ * `renderWasmOutputToGeometry` with an empty `blocks` array, so the
+ * returned `ExportedSection` shape matches what the per-section path
+ * produces for an empty section (empty positions/normals/colors/uvs/
+ * indices arrays).
+ *
+ * Note: this pure helper is not gated internally; callers decide whether
+ * column meshing is enabled.
+ */
+export function splitColumnWasmOutputToSections(
+  fullColumnOutput: WasmGeometryOutput,
+  requestedSectionKeys: Array<{ x: number, y: number, z: number }>,
+  ctx: { version: string, world?: World, sectionHeight?: number }
+): Map<string, ExportedSection> {
+  const { version, world } = ctx
+  const sectionHeight = ctx.sectionHeight ?? 16
+
+  // Bucket blocks by section Y once, so we don't re-scan the full column
+  // for every requested section. Bucket key = section-relative chunk Y
+  // (i.e. floor(by / sectionHeight)).
+  const blocksByChunkY = new Map<number, WasmBlockFaceData[]>()
+  for (const block of fullColumnOutput.blocks) {
+    const by = block.position[1]
+    const chunkY = Math.floor(by / sectionHeight)
+    let bucket = blocksByChunkY.get(chunkY)
+    if (!bucket) {
+      bucket = []
+      blocksByChunkY.set(chunkY, bucket)
+    }
+    bucket.push(block)
+  }
+
+  const out = new Map<string, ExportedSection>()
+  for (const { x, y, z } of requestedSectionKeys) {
+    // `y` here is the section's world-Y origin (multiple of sectionHeight),
+    // matching the convention used by `mesherWasm.ts` (section keys are
+    // `${chunkX*16},${sectionY},${chunkZ*16}` with sectionY a world-Y
+    // multiple of 16). Translate to chunk-Y bucket index.
+    const chunkY = Math.floor(y / sectionHeight)
+    const sectionBlocks = blocksByChunkY.get(chunkY) ?? []
+
+    const sectionView: WasmGeometryOutput = {
+      blocks: sectionBlocks,
+      block_count: sectionBlocks.length,
+      block_iterations: fullColumnOutput.block_iterations,
+    }
+
+    const sectionKey = `${x},${y},${z}`
+    const sectionPosition = { x: x + 8, y: y + 8, z: z + 8 }
+    const exported = renderWasmOutputToGeometry(
+      sectionView,
+      version,
+      sectionKey,
+      sectionPosition,
+      world
+    )
+    out.set(sectionKey, exported)
+  }
+
+  return out
 }
 
 /**

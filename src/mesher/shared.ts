@@ -17,7 +17,10 @@ export const defaultMesherConfig = {
   // textureSize: 1024, // for testing
   debugModelVariant: undefined as undefined | number[],
   clipWorldBelowY: undefined as undefined | number,
-  disableBlockEntityTextures: false
+  disableBlockEntityTextures: false,
+  // Enables the WASM worker to mesh a full chunk column internally while
+  // keeping the renderer-facing output split into 16-block sections.
+  wasmColumnMesher: false
 }
 
 export type CustomBlockModels = {

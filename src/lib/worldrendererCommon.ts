@@ -581,6 +581,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       disableBlockEntityTextures: !this.worldRendererConfig.extraBlockRenderers,
       worldMinY: this.worldMinYRender,
       worldMaxY: this.worldMinYRender + this.worldSizeParams.worldHeight,
+      wasmColumnMesher: this.worldRendererConfig.wasmColumnMesher,
     }
   }
 
@@ -954,15 +955,21 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   toWorkerMessagesQueue = {} as { [workerIndex: string]: any[] }
 
   getWorkerNumber(pos: Vec3, updateAction = false) {
+    // Column meshing must keep all vertical sections of a chunk column on one
+    // worker. Hash by x/z only and bypass the change-worker shortcut so block
+    // edits cannot remesh the same column concurrently on worker 0.
+    const columnMode = this.worldRendererConfig.wasmColumnMesher && this.worldRendererConfig.wasmMesher
     const CHUNK_SIZE = 16
     const sectionHeight = this.getSectionHeight()
-    if (updateAction) {
+    if (updateAction && !columnMode) {
       const key = `${Math.floor(pos.x / CHUNK_SIZE) * CHUNK_SIZE},${Math.floor(pos.y / sectionHeight) * sectionHeight},${Math.floor(pos.z / CHUNK_SIZE) * CHUNK_SIZE}`
       const cantUseChangeWorker = this.sectionsWaiting.get(key) && !this.finishedSections[key]
       if (!cantUseChangeWorker) return 0
     }
 
-    const hash = mod(Math.floor(pos.x / CHUNK_SIZE) + Math.floor(pos.y / sectionHeight) + Math.floor(pos.z / CHUNK_SIZE), this.workers.length)
+    const hash = columnMode
+      ? mod(Math.floor(pos.x / CHUNK_SIZE) + Math.floor(pos.z / CHUNK_SIZE), this.workers.length)
+      : mod(Math.floor(pos.x / CHUNK_SIZE) + Math.floor(pos.y / sectionHeight) + Math.floor(pos.z / CHUNK_SIZE), this.workers.length)
     return hash + 0
   }
 
