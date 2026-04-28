@@ -8,7 +8,7 @@ import { proxy, subscribe } from 'valtio'
 import type { ResourcesManagerTransferred } from '../resourcesManager/resourcesManager'
 import { dynamicMcDataFiles } from './buildSharedConfig.mjs'
 import { DisplayWorldOptions, GraphicsInitOptions, RendererReactiveState, SoundSystem } from '../graphicsBackend/types'
-import { HighestBlockInfo, CustomBlockModels, BlockStateModelInfo, getBlockAssetsCacheKey, MesherConfig, MesherMainEvent, IS_FULL_WORLD_SECTION, SECTION_HEIGHT } from '../mesher/shared'
+import { HighestBlockInfo, CustomBlockModels, BlockStateModelInfo, getBlockAssetsCacheKey, MesherConfig, MesherMainEvent, SECTION_HEIGHT } from '../mesher/shared'
 import { chunkPos } from './simpleUtils'
 import { addNewStat, removeAllStats, updatePanesVisibility, updateStatText } from './ui/newStats'
 import { getPlayerStateUtils } from '../graphicsBackend/playerState'
@@ -405,18 +405,10 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       if (this.loadedChunks[chunkKey]) { // ensure chunk data was added, not a neighbor chunk update
         let loaded = true
         const sectionHeight = this.getSectionHeight()
-        if (IS_FULL_WORLD_SECTION) {
-          // Only one section per chunk when full world section
-          const sectionY = this.worldMinYRender
-          if (!this.finishedSections[`${chunkCoords[0]},${sectionY},${chunkCoords[2]}`]) {
+        for (let y = this.worldMinYRender; y < this.worldSizeParams.worldHeight; y += sectionHeight) {
+          if (!this.finishedSections[`${chunkCoords[0]},${y},${chunkCoords[2]}`]) {
             loaded = false
-          }
-        } else {
-          for (let y = this.worldMinYRender; y < this.worldSizeParams.worldHeight; y += sectionHeight) {
-            if (!this.finishedSections[`${chunkCoords[0]},${y},${chunkCoords[2]}`]) {
-              loaded = false
-              break
-            }
+            break
           }
         }
         if (loaded) {
@@ -615,7 +607,6 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       disableBlockEntityTextures: !this.worldRendererConfig.extraBlockRenderers,
       worldMinY: this.worldMinYRender,
       worldMaxY: this.worldMinYRender + this.worldSizeParams.worldHeight,
-      wasmColumnMesher: this.worldRendererConfig.wasmColumnMesher,
     }
   }
 
@@ -648,9 +639,6 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   }
 
   getSectionHeight() {
-    if (IS_FULL_WORLD_SECTION) {
-      return this.worldSizeParams.worldHeight
-    }
     return SECTION_HEIGHT
   }
 
@@ -690,36 +678,31 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         customBlockModels: customBlockModels || undefined
       })
     }
-    this.workers[0].postMessage({
-      type: 'getHeightmap',
-      x,
-      z,
-    })
+    // WASM mesher pushes heightmaps from `processColumnTick` after each
+    // column tick — the main thread no longer requests them on chunk load
+    // (would double-compute and starve the WASM hot loop). The JS mesher
+    // still needs the explicit request because it has no per-tick column
+    // pass.
+    if (!this.worldRendererConfig.wasmMesher) {
+      this.workers[0].postMessage({
+        type: 'getHeightmap',
+        x,
+        z,
+      })
+    }
     this.logWorkerWork(() => `-> chunk ${JSON.stringify({ x, z, chunkLength: chunk.length, customBlockModelsLength: customBlockModels ? Object.keys(customBlockModels).length : 0 })}`)
     this.mesherLogReader?.chunkReceived(x, z, chunk.length)
     const sectionHeight = this.getSectionHeight()
     const CHUNK_SIZE = 16
 
-    if (IS_FULL_WORLD_SECTION) {
-      // Only one section per chunk when full world section
-      const loc = new Vec3(x, this.worldMinYRender, z)
+    for (let y = this.worldMinYRender; y < this.worldSizeParams.worldHeight; y += sectionHeight) {
+      const loc = new Vec3(x, y, z)
       this.setSectionDirty(loc)
       if (this.neighborChunkUpdates && (!isLightUpdate || this.worldRendererConfig.smoothLighting)) {
         this.setSectionDirty(loc.offset(-CHUNK_SIZE, 0, 0))
         this.setSectionDirty(loc.offset(CHUNK_SIZE, 0, 0))
         this.setSectionDirty(loc.offset(0, 0, -CHUNK_SIZE))
         this.setSectionDirty(loc.offset(0, 0, CHUNK_SIZE))
-      }
-    } else {
-      for (let y = this.worldMinYRender; y < this.worldSizeParams.worldHeight; y += sectionHeight) {
-        const loc = new Vec3(x, y, z)
-        this.setSectionDirty(loc)
-        if (this.neighborChunkUpdates && (!isLightUpdate || this.worldRendererConfig.smoothLighting)) {
-          this.setSectionDirty(loc.offset(-CHUNK_SIZE, 0, 0))
-          this.setSectionDirty(loc.offset(CHUNK_SIZE, 0, 0))
-          this.setSectionDirty(loc.offset(0, 0, -CHUNK_SIZE))
-          this.setSectionDirty(loc.offset(0, 0, CHUNK_SIZE))
-        }
       }
     }
   }
@@ -760,15 +743,9 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       this.initialChunkLoadWasStartedIn = undefined
     }
     const sectionHeight = this.getSectionHeight()
-    if (IS_FULL_WORLD_SECTION) {
-      const sectionY = this.worldMinYRender
-      this.setSectionDirty(new Vec3(x, sectionY, z), false)
-      delete this.finishedSections[`${x},${sectionY},${z}`]
-    } else {
-      for (let y = this.worldSizeParams.minY; y < this.worldSizeParams.worldHeight; y += sectionHeight) {
-        this.setSectionDirty(new Vec3(x, y, z), false)
-        delete this.finishedSections[`${x},${y},${z}`]
-      }
+    for (let y = this.worldSizeParams.minY; y < this.worldSizeParams.worldHeight; y += sectionHeight) {
+      this.setSectionDirty(new Vec3(x, y, z), false)
+      delete this.finishedSections[`${x},${y},${z}`]
     }
     this.highestBlocksByChunks.delete(`${x},${z}`)
     this.reactiveState.world.heightmaps.delete(`${Math.floor(x / 16)},${Math.floor(z / 16)}`)
@@ -939,12 +916,17 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       const chunkCornerX = Math.floor(pos.x / CHUNK_SIZE) * CHUNK_SIZE
       const chunkCornerZ = Math.floor(pos.z / CHUNK_SIZE) * CHUNK_SIZE
       const chunkKey2 = `${chunkCornerX},${chunkCornerZ}`
-      const existing = this.heightmapDebounceTimers.get(chunkKey2)
-      if (existing) clearTimeout(existing)
-      this.heightmapDebounceTimers.set(chunkKey2, setTimeout(() => {
-        this.heightmapDebounceTimers.delete(chunkKey2)
-        this.workers[0]?.postMessage({ type: 'getHeightmap', x: chunkCornerX, z: chunkCornerZ })
-      }, 100))
+      // WASM mesher pushes heightmaps from `processColumnTick`, so the
+      // block-update path doesn't need an explicit re-request — the next
+      // column tick will repush the recomputed heightmap.
+      if (!this.worldRendererConfig.wasmMesher) {
+        const existing = this.heightmapDebounceTimers.get(chunkKey2)
+        if (existing) clearTimeout(existing)
+        this.heightmapDebounceTimers.set(chunkKey2, setTimeout(() => {
+          this.heightmapDebounceTimers.delete(chunkKey2)
+          this.workers[0]?.postMessage({ type: 'getHeightmap', x: chunkCornerX, z: chunkCornerZ })
+        }, 100))
+      }
     }
     this.logWorkerWork(`-> blockUpdate ${JSON.stringify({ pos, stateId, customBlockModels })}`)
     this.setSectionDirty(pos, true, true)
@@ -989,22 +971,21 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   toWorkerMessagesQueue = {} as { [workerIndex: string]: any[] }
 
   getWorkerNumber(pos: Vec3, updateAction = false) {
-    // Column meshing must keep all vertical sections of a chunk column on one
-    // worker. Hash by x/z only and bypass the change-worker shortcut so block
-    // edits cannot remesh the same column concurrently on worker 0.
-    const columnMode = this.worldRendererConfig.wasmColumnMesher && this.worldRendererConfig.wasmMesher
     const CHUNK_SIZE = 16
     const sectionHeight = this.getSectionHeight()
-    if (updateAction && !columnMode) {
+    if (this.worldRendererConfig.wasmMesher) {
+      // WASM column meshing must keep all vertical sections of a chunk column
+      // on one worker. Hash by x/z only and bypass the change-worker shortcut
+      // so block edits cannot remesh the same column concurrently on worker 0.
+      return mod(Math.floor(pos.x / CHUNK_SIZE) + Math.floor(pos.z / CHUNK_SIZE), this.workers.length)
+    }
+    if (updateAction) {
       const key = `${Math.floor(pos.x / CHUNK_SIZE) * CHUNK_SIZE},${Math.floor(pos.y / sectionHeight) * sectionHeight},${Math.floor(pos.z / CHUNK_SIZE) * CHUNK_SIZE}`
       const cantUseChangeWorker = this.sectionsWaiting.get(key) && !this.finishedSections[key]
       if (!cantUseChangeWorker) return 0
     }
 
-    const hash = columnMode
-      ? mod(Math.floor(pos.x / CHUNK_SIZE) + Math.floor(pos.z / CHUNK_SIZE), this.workers.length)
-      : mod(Math.floor(pos.x / CHUNK_SIZE) + Math.floor(pos.y / sectionHeight) + Math.floor(pos.z / CHUNK_SIZE), this.workers.length)
-    return hash + 0
+    return mod(Math.floor(pos.x / CHUNK_SIZE) + Math.floor(pos.y / sectionHeight) + Math.floor(pos.z / CHUNK_SIZE), this.workers.length)
   }
 
   async debugGetWorkerCustomBlockModel(pos: Vec3) {

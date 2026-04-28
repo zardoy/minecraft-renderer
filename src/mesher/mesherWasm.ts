@@ -1,10 +1,10 @@
 import { Vec3 } from 'vec3'
 import { convertChunkToWasm } from '../wasm-lib/convertChunk'
-import { renderWasmOutputToGeometry, splitColumnWasmOutputToSections } from '../wasm-lib/render-from-wasm'
+import { extractColumnHeightmap, splitColumnWasmOutputToSections } from '../wasm-lib/render-from-wasm'
 import { setBlockStatesData as setMesherData } from './models'
-import { defaultMesherConfig, type MesherGeometryOutput, IS_FULL_WORLD_SECTION, SECTION_HEIGHT } from './shared'
+import { defaultMesherConfig, type MesherGeometryOutput, SECTION_HEIGHT } from './shared'
 import { worldColumnKey, World } from './world'
-import { handleGetHeightmap } from './computeHeightmap'
+import { handleGetHeightmap, EMPTY_COLUMN_HEIGHTMAP_SENTINEL } from './computeHeightmap'
 import { collectBlockEntityMetadata, type SignMeta, type HeadMeta, type BannerMeta } from './blockEntityMetadata'
 import { SectionRequestTracker } from './mesherWasmRequestTracker'
 import {
@@ -84,13 +84,13 @@ function drainQueue(from: number, to: number) {
 // Single emit point for `sectionFinished`. Consumes one pending request from
 // `requestTracker` and posts via the existing batched `postMessage` queue.
 //
-// When `wasmColumnMesher` is ON, an emit for a non-requested key is a
+// Column-mode is the ONLY WASM path now: an emit for a non-requested key is a
 // contract violation (`WorldRendererCommon` would throw on the main thread)
 // and we surface it via `console.warn` so it shows up in dev/CI without
 // killing the worker.
 const emitSectionFinished = (payload: { type: 'sectionFinished', key: string } & Record<string, any>) => {
   const consumed = requestTracker.consumeOne(payload.key)
-  if (!consumed && (config?.wasmColumnMesher ?? false)) {
+  if (!consumed) {
     console.warn(`[WASM Mesher] sectionFinished for non-requested key ${payload.key} (column-mode contract violation)`)
   }
   postMessage(payload)
@@ -214,8 +214,15 @@ const handleMessage = async (data: any) => {
       break
     }
     case 'getHeightmap': {
+      // Fallback path. With WASM column mesher as the sole path, the main
+      // thread should be receiving heightmaps as `'heightmap'` push messages
+      // posted by `processColumnTick`. This handler stays as a safety net for
+      // cases where the WASM heightmap could not be extracted (length mismatch
+      // or missing field) — see the `extractColumnHeightmap` warn below.
+      console.warn(`[WASM Mesher] explicit getHeightmap request for ${data.x},${data.z} — push from processColumnTick missed?`)
       if (!world) {
-        postMessage({ type: 'heightmap', key: `${data.x},${data.z}`, heightmap: new Int16Array(256) })
+        const emptyHeightmap = new Int16Array(256).fill(EMPTY_COLUMN_HEIGHTMAP_SENTINEL)
+        postMessage({ type: 'heightmap', key: `${Math.floor(data.x / 16)},${Math.floor(data.z / 16)}`, heightmap: emptyHeightmap })
         break
       }
       const { key, heightmap } = handleGetHeightmap(world, data.x, data.z)
@@ -239,34 +246,12 @@ self.onmessage = ({ data }) => {
   handleMessage(data)
 }
 
-// Calculate section height based on IS_FULL_WORLD_SECTION
-const getSectionHeight = () => {
-  if (IS_FULL_WORLD_SECTION && config) {
-    return (config.worldMaxY || 256) - (config.worldMinY || 0)
-  }
-  return SECTION_HEIGHT
-}
+// Section height is always 16 in column mode (the only WASM path).
+const getSectionHeight = () => SECTION_HEIGHT
 
 
-function collectChunksForSection(x: number, y: number, z: number) {
-  const result = [] as Array<{ x: number, z: number, chunk: any }>
-  result.push({ x, z, chunk: world.getColumn(x, z) })
-  const offsets = [-16, 0, 16]
-  for (const dx of offsets) {
-    for (const dz of offsets) {
-      if (dx === 0 && dz === 0) continue
-      const nx = x + dx
-      const nz = z + dz
-      const c = world.getColumn(nx, nz)
-      if (c) result.push({ x: nx, z: nz, chunk: c })
-    }
-  }
-  return result.filter(r => r.chunk)
-}
-
-// Column-mode variant of `collectChunksForSection`: same 3x3 X/Z neighbor
-// set, but Y-agnostic because full-column meshing converts the entire world Y
-// range in one go. Kept separate so the per-section path stays unchanged.
+// 3x3 X/Z neighbor set for column meshing. Y-agnostic because full-column
+// meshing converts the entire world Y range in one go.
 function collectChunksForColumn(x: number, z: number) {
   const result = [] as Array<{ x: number, z: number, chunk: any }>
   const target = world.getColumn(x, z)
@@ -313,7 +298,7 @@ function makeEmptyColumnGeometry(sx: number, sy: number, sz: number, sectionHeig
   }
 }
 
-// Full-column meshing path. Enabled only by `config.wasmColumnMesher`.
+// Full-column meshing path — the sole WASM mesh path.
 // It groups dirty section keys by chunk column, runs one WASM call per column
 // over the full Y range, then splits the column output back into per-section
 // geometries. Only requested section keys are emitted back to the main thread.
@@ -480,6 +465,21 @@ function processColumnTick() {
           requestedSectionKeys,
           { version, world, sectionHeight }
         )
+
+        // Push heightmap from the WASM column output. With column meshing as
+        // the only WASM path, the main thread does not request heightmaps
+        // explicitly anymore — the worker is the source of truth and pushes
+        // a `'heightmap'` message every column tick. Key shape matches the
+        // legacy `handleGetHeightmap` contract: `${chunkX>>4},${chunkZ>>4}`.
+        const heightmapKey = `${x >> 4},${z >> 4}`
+        const wasmHeightmap = extractColumnHeightmap(wasmResult)
+        if (wasmHeightmap) {
+          postMessage({ type: 'heightmap', key: heightmapKey, heightmap: wasmHeightmap }, [wasmHeightmap.buffer])
+        } else {
+          console.warn(`[WASM Mesher] heightmap extraction returned null for column ${x},${z}, falling back to JS computeHeightmap`)
+          const fallback = handleGetHeightmap(world, x, z)
+          postMessage({ type: 'heightmap', key: fallback.key, heightmap: fallback.heightmap }, [fallback.heightmap.buffer])
+        }
 
         prePhase = t1 - t0
         wasmPhase = t2 - t1
@@ -652,283 +652,11 @@ setInterval(async () => {
 
   if (dirtySections.size === 0) return
 
-  // The legacy per-section loop below remains unchanged when column mode is
-  // disabled.
-  if (config?.wasmColumnMesher) {
-    try {
-      processColumnTick()
-    } catch (err) {
-      console.error('[WASM Mesher] processColumnTick failed:', err)
-      // Swallow to avoid breaking the setInterval; individual columns
-      // already have their own try/catch.
-    }
-    return
-  }
-
-  const sectionHeight = getSectionHeight()
-
-  for (const key of dirtySections.keys()) {
-    // for (const key of [] as string[]) {
-    const [x, y, z] = key.split(',').map(v => parseInt(v, 10))
-    const chunk = world.getColumn(x, z)
-
-    let processTime = 0
-    let prePhase = 0
-    let wasmPhase = 0
-    let postPhase = 0
-    let preTargetConvert = 0
-    let preNeighborConvert = 0
-    let preNeighborCount = 0
-    let preTypedArrayBuild = 0
-    let preOther = 0
-    if (chunk?.getSection(new Vec3(x, y, z)) && wasm) {
-      const start = performance.now()
-      const t0 = start
-
-      try {
-        // Convert chunk to WASM format (always recompute since section is dirty)
-        const worldMinY = config?.worldMinY || 0
-        const worldMaxY = config?.worldMaxY || 256
-
-        // Expand the data range by ±1 Y block so WASM can correctly cull faces at section
-        // boundaries (without this, the block above/below a section always appears as air).
-        // We clamp to world bounds and pass section_data_start_y to WASM so it knows the offset.
-        const sectionDataStartY = IS_FULL_WORLD_SECTION ? worldMinY : Math.max(y - 1, worldMinY)
-        const sectionDataEndY = IS_FULL_WORLD_SECTION ? worldMaxY : Math.min(y + sectionHeight + 1, worldMaxY)
-        const sectionDataHeight = sectionDataEndY - sectionDataStartY
-
-        const convertSectionY = IS_FULL_WORLD_SECTION ? undefined : sectionDataStartY
-        const convertSectionHeight = IS_FULL_WORLD_SECTION ? undefined : sectionDataHeight
-
-        // Run WASM mesher for this section
-        const chunksToUse = collectChunksForSection(x, y, z)
-        const chunkCount = chunksToUse.length
-
-        const conversions = chunksToUse.map(({ x: cx, z: cz, chunk }) => {
-          const cs = performance.now()
-          const conv = convertChunkToWasm(
-            chunk,
-            version,
-            cx,
-            cz,
-            worldMinY,
-            worldMaxY,
-            convertSectionY,
-            convertSectionHeight
-          )
-          const ce = performance.now()
-          if (cx === x && cz === z) {
-            preTargetConvert += ce - cs
-          } else {
-            preNeighborConvert += ce - cs
-            preNeighborCount++
-          }
-          return conv
-        })
-
-        const {
-          invisibleBlocks,
-          transparentBlocks,
-          noAoBlocks,
-          cullIdenticalBlocks,
-          occludingBlocks,
-        } = conversions[0]
-
-        let wasmResult
-        let t1: number
-        if (chunkCount === 1 || !(wasm as any).generate_geometry_multi) {
-          // Single-chunk path: no discrete typed-array build/copy step.
-          const { blockStates, blockLight, skyLight, biomesArray } = conversions[0]
-          t1 = performance.now()
-          wasmResult = wasm.generate_geometry(
-            x, y, z, sectionHeight,
-            worldMinY, worldMaxY,
-            sectionDataStartY,
-            blockStates, blockLight, skyLight, biomesArray,
-            invisibleBlocks, transparentBlocks, noAoBlocks, cullIdenticalBlocks, occludingBlocks,
-            config?.enableLighting !== false,
-            config?.smoothLighting !== false,
-            config?.skyLight || 15
-          )
-        } else {
-          const tBuildStart = performance.now()
-          const perChunkLen = conversions[0].blockStates.length
-          const xs = new Int32Array(chunkCount)
-          const zs = new Int32Array(chunkCount)
-          const blockStatesAll = new Uint16Array(perChunkLen * chunkCount)
-          const blockLightAll = new Uint8Array(perChunkLen * chunkCount)
-          const skyLightAll = new Uint8Array(perChunkLen * chunkCount)
-          const biomesAll = new Uint8Array(perChunkLen * chunkCount)
-
-          for (let i = 0; i < chunkCount; i++) {
-            const c = conversions[i]
-            xs[i] = chunksToUse[i].x
-            zs[i] = chunksToUse[i].z
-            blockStatesAll.set(c.blockStates, perChunkLen * i)
-            blockLightAll.set(c.blockLight, perChunkLen * i)
-            skyLightAll.set(c.skyLight, perChunkLen * i)
-            biomesAll.set(c.biomesArray, perChunkLen * i)
-          }
-          preTypedArrayBuild = performance.now() - tBuildStart
-
-          t1 = performance.now()
-          wasmResult = (wasm as any).generate_geometry_multi(
-            x, y, z, sectionHeight,
-            worldMinY, worldMaxY,
-            sectionDataStartY,
-            xs, zs,
-            blockStatesAll, blockLightAll, skyLightAll, biomesAll,
-            invisibleBlocks, transparentBlocks, noAoBlocks, cullIdenticalBlocks, occludingBlocks,
-            config?.enableLighting !== false,
-            config?.smoothLighting !== false,
-            config?.skyLight || 15
-          )
-        }
-
-        // Heightmap is now produced by the dedicated 'getHeightmap' handler (full-column,
-        // parity with JS mesher). Per-section heightmaps from WASM are intentionally ignored.
-
-        const t2 = performance.now()
-
-        // Convert WASM output to MesherGeometryOutput format
-        const sectionKeyStr = worldColumnKey(x, z)
-        const exportedSection = renderWasmOutputToGeometry(
-          wasmResult,
-          version,
-          sectionKeyStr,
-          { x: x + 8, y: y + 8, z: z + 8 },
-          world
-        )
-
-        // Convert to MesherGeometryOutput format
-        // Determine if we need Uint32Array based on max index
-        const maxIndex = Math.max(...exportedSection.geometry.indices)
-        const using32Array = maxIndex > 65535
-
-        // console.log('exportedSection.geometry', exportedSection.geometry)
-        const signs: Record<string, SignMeta> = {}
-        const heads: Record<string, HeadMeta> = {}
-        const banners: Record<string, BannerMeta> = {}
-        const beTarget = { signs, heads, banners }
-        const beOpts = { disableBlockEntityTextures: world.config.disableBlockEntityTextures }
-        const cursor = new Vec3(0, 0, 0)
-        for (cursor.y = y; cursor.y < y + sectionHeight; cursor.y++) {
-          for (cursor.z = z; cursor.z < z + 16; cursor.z++) {
-            for (cursor.x = x; cursor.x < x + 16; cursor.x++) {
-              const b = world.getBlock(cursor)
-              if (!b) continue
-              collectBlockEntityMetadata(b, cursor.x, cursor.y, cursor.z, beTarget, beOpts)
-            }
-          }
-        }
-
-        const geometry: MesherGeometryOutput = {
-          sectionYNumber: (y - (config?.worldMinY || 0)) >> 4,
-          chunkKey: sectionKeyStr,
-          sectionStartY: y,
-          sectionEndY: y + sectionHeight,
-          sectionStartX: x,
-          sectionEndX: x + 16,
-          sectionStartZ: z,
-          sectionEndZ: z + 16,
-          sx: x + 8,
-          sy: y + 8,
-          sz: z + 8,
-          positions: new Float32Array(exportedSection.geometry.positions),
-          normals: new Float32Array(exportedSection.geometry.normals),
-          colors: new Float32Array(exportedSection.geometry.colors),
-          uvs: new Float32Array(exportedSection.geometry.uvs),
-          indices: using32Array
-            ? new Uint32Array(exportedSection.geometry.indices)
-            : new Uint16Array(exportedSection.geometry.indices),
-          indicesCount: exportedSection.geometry.indices.length,
-          using32Array,
-          tiles: {},
-          heads,
-          signs,
-          banners,
-          hadErrors: false,
-          blocksCount: wasmResult.block_count,
-        }
-
-        const transferable = [
-          geometry.positions?.buffer,
-          geometry.normals?.buffer,
-          geometry.colors?.buffer,
-          geometry.uvs?.buffer,
-          //@ts-ignore
-          geometry.indices?.buffer,
-        ].filter(Boolean)
-
-        postMessage({ type: 'geometry', key, geometry, workerIndex }, transferable)
-        const t3 = performance.now()
-        prePhase = t1 - t0
-        wasmPhase = t2 - t1
-        postPhase = t3 - t2
-        preOther = Math.max(0, prePhase - (preTargetConvert + preNeighborConvert + preTypedArrayBuild))
-        processTime = performance.now() - start
-      } catch (err) {
-        console.error(`[WASM Mesher] Error processing section ${key}:`, err)
-        // Send error geometry
-        const errorGeometry: MesherGeometryOutput = {
-          sectionYNumber: (y - (config?.worldMinY || 0)) >> 4,
-          chunkKey: worldColumnKey(x, z),
-          sectionStartY: y,
-          sectionEndY: y + sectionHeight,
-          sectionStartX: x,
-          sectionEndX: x + 16,
-          sectionStartZ: z,
-          sectionEndZ: z + 16,
-          sx: x + 8,
-          sy: y + 8,
-          sz: z + 8,
-          positions: new Float32Array(0),
-          normals: new Float32Array(0),
-          colors: new Float32Array(0),
-          uvs: new Float32Array(0),
-          indices: new Uint32Array(0),
-          indicesCount: 0,
-          using32Array: false,
-          tiles: {},
-          heads: {},
-          signs: {},
-          banners: {},
-          hadErrors: true,
-          blocksCount: 0,
-        }
-        postMessage({ type: 'geometry', key, geometry: errorGeometry, workerIndex })
-      }
-    }
-
-    const dirtyTimes = dirtySections.get(key)
-    if (!dirtyTimes) throw new Error('dirtySections.get(key) is falsy')
-    for (let i = 0; i < dirtyTimes; i++) {
-      // Route through the shared emitter so request accounting stays in
-      // lock-step with the legacy `dirtySections` counter.
-      emitSectionFinished({
-        type: 'sectionFinished',
-        key,
-        workerIndex,
-        processTime,
-        pre: prePhase,
-        wasm: wasmPhase,
-        post: postPhase,
-        preTargetConvert,
-        preNeighborConvert,
-        preNeighborCount,
-        preTypedArrayBuild,
-        preOther,
-      })
-      processTime = 0
-      prePhase = 0
-      wasmPhase = 0
-      postPhase = 0
-      preTargetConvert = 0
-      preNeighborConvert = 0
-      preNeighborCount = 0
-      preTypedArrayBuild = 0
-      preOther = 0
-    }
-    dirtySections.delete(key)
+  try {
+    processColumnTick()
+  } catch (err) {
+    console.error('[WASM Mesher] processColumnTick failed:', err)
+    // Swallow to avoid breaking the setInterval; individual columns
+    // already have their own try/catch.
   }
 }, 50)

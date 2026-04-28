@@ -200,21 +200,24 @@ function testHeightmapParity() {
     }
   }
 
-  // ---- Handler-delegation guard: both mesher files' getHeightmap case must invoke handleGetHeightmap. ----
-  // We do not import the mesher modules (their top-level binds `self.onmessage`,
-  // which throws in node). Instead we read the source text and assert the
-  // handler body still routes through `handleGetHeightmap(world, …)`. If a future
-  // refactor inlines diverging logic in either handler, this guard fires.
+  // ---- Handler-delegation guard: both mesher files must invoke handleGetHeightmap. ----
+  // For `mesher.ts` (JS mesher) this guards the live `getHeightmap` worker case.
+  // For `mesherWasm.ts` it guards the fallback path: the worker pushes heightmaps
+  // from `processColumnTick` directly, but if `extractColumnHeightmap` returns
+  // null (or the explicit `getHeightmap` case is hit as a safety net) the worker
+  // must still route through `handleGetHeightmap(world, …)` so the JS reference
+  // computation stays the single source of truth.
   const fs = require('fs') as typeof import('fs')
   const path = require('path') as typeof import('path')
-  const checkHandler = (file: string) => {
+  const checkHandler = (file: string, options?: { requireGetHeightmapCase?: boolean }) => {
+    const requireCase = options?.requireGetHeightmapCase ?? true
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'mesher', file), 'utf8')
-    if (!/case\s+'getHeightmap'\s*:/.test(src)) {
+    if (requireCase && !/case\s+'getHeightmap'\s*:/.test(src)) {
       throw new Error(`${file}: no 'getHeightmap' case found — handler may have been removed/renamed`)
     }
     if (!/handleGetHeightmap\s*\(\s*world\s*,/.test(src)) {
       throw new Error(
-        `${file}: 'getHeightmap' handler no longer delegates to handleGetHeightmap(world, …). ` +
+        `${file}: handler no longer delegates to handleGetHeightmap(world, …). ` +
         `If you intentionally inlined the logic, update test-section-boundary.ts to assert the new path matches the independent reference.`
       )
     }

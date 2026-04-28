@@ -100,9 +100,11 @@ export interface WasmGeometryOutput {
    * here is `ArrayLike<number>` rather than `Int16Array` — the runtime
    * adapter `extractColumnHeightmap` handles both shapes.
    *
-   * Optional because runtime heightmap updates still use the shared JS
-   * `getHeightmap` handler. Using Rust heightmap at runtime is deferred until
-   * empty-column semantics are aligned with `computeHeightmap`.
+   * Optional because the WASM mesher may emit a tick without column
+   * heightmap (e.g. when only individual sections changed). The runtime
+   * adapter pushes the Rust heightmap on every column tick when present
+   * (see `mesherWasm.ts` `processColumnTick`), and falls back to JS
+   * `computeHeightmap` only when it is missing or has unexpected length.
    */
   heightmap?: ArrayLike<number> | null
 }

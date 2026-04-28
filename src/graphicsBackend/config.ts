@@ -25,9 +25,6 @@ export const defaultWorldRendererConfig = {
 
   // Performance settings
   wasmMesher: false,
-  // Rollout flag for full-column WASM meshing. The renderer still receives
-  // normal 16-block section meshes when this is enabled.
-  wasmColumnMesher: false,
   mesherWorkers: 1,
   addChunksBatchWaitTime: 200,
   _experimentalSmoothChunkLoading: true,

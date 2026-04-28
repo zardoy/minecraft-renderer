@@ -1,6 +1,5 @@
 import { BlockType } from '../playground/shared'
 
-export const IS_FULL_WORLD_SECTION = false
 export const SECTION_HEIGHT = 16
 
 // only here for easier testing
@@ -18,9 +17,6 @@ export const defaultMesherConfig = {
   debugModelVariant: undefined as undefined | number[],
   clipWorldBelowY: undefined as undefined | number,
   disableBlockEntityTextures: false,
-  // Enables the WASM worker to mesh a full chunk column internally while
-  // keeping the renderer-facing output split into 16-block sections.
-  wasmColumnMesher: false
 }
 
 export type CustomBlockModels = {

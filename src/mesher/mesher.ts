@@ -2,7 +2,7 @@ import { Vec3 } from 'vec3'
 import { World } from './world'
 import { getSectionGeometry, setBlockStatesData as setMesherData } from './models'
 import { BlockStateModelInfo } from './shared'
-import { handleGetHeightmap } from './computeHeightmap'
+import { handleGetHeightmap, EMPTY_COLUMN_HEIGHTMAP_SENTINEL } from './computeHeightmap'
 
 globalThis.structuredClone ??= (value) => JSON.parse(JSON.stringify(value))
 
@@ -159,7 +159,8 @@ const handleMessage = data => {
     }
     case 'getHeightmap': {
       if (!world) {
-        postMessage({ type: 'heightmap', key: `${data.x},${data.z}`, heightmap: new Int16Array(256) })
+        const emptyHeightmap = new Int16Array(256).fill(EMPTY_COLUMN_HEIGHTMAP_SENTINEL)
+        postMessage({ type: 'heightmap', key: `${Math.floor(data.x / 16)},${Math.floor(data.z / 16)}`, heightmap: emptyHeightmap })
         break
       }
       const { key, heightmap } = handleGetHeightmap(world, data.x, data.z)

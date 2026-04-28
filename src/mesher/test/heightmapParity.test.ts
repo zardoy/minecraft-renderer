@@ -177,36 +177,30 @@ test('heightmap parity: varied heights, every column populated (Rust == JS)', ()
 })
 
 // ---------------------------------------------------------------------------
-// Documented parity gap — the reason runtime Rust heightmap usage is deferred.
-//
-// `computeHeightmap` returns `0` (== worldMinY) for a fully-empty column,
-// because its loop reads at worldMinY, finds air (truthy block, name in
-// INVISIBLE_BLOCKS), exits the `while` because `blockPos.y > worldMinY`
-// becomes false, and falls through to `heightmap[index] = blockPos.y`
-// (== worldMinY). It only writes the `-32768` sentinel when `getBlock`
-// itself returns falsy — which prismarine-chunk normally doesn't do for
-// in-range coordinates.
-//
-// Rust's mesher writes `-32768` for any column with no non-invisible
-// block in `[section_y, section_y + section_height)`.
-//
-// These two encodings disagree on the "no surface" case. Swapping the
-// `getHeightmap` source in `mesherWasm.ts` from JS to Rust would change
-// `0` -> `-32768` for empty columns, which would silently flip behavior
-// in any downstream consumer that treats `0` as "ground at y=0" (e.g.
-// rain placement). That risk needs a coordinated downstream pass, not a
-// silent WASM-only switch.
 // ---------------------------------------------------------------------------
-test('heightmap parity gap (DOCUMENTED, BLOCKS RUNTIME SWITCH): empty columns differ — JS writes worldMinY, Rust writes -32768', () => {
+// Empty-column parity (post-alignment).
+//
+// Historically `computeHeightmap` returned `0` (== worldMinY) for a fully-
+// empty column, because its loop reads at worldMinY, finds air (truthy block,
+// name in INVISIBLE_BLOCKS), exits the `while` because `blockPos.y > worldMinY`
+// becomes false, and fell through to `heightmap[index] = blockPos.y`
+// (== worldMinY). Rust's mesher writes `-32768` for any column with no
+// non-invisible block, so the two encodings disagreed and the WASM
+// `getHeightmap` runtime switch was blocked on that gap.
+//
+// `computeHeightmap` has since been aligned: it now writes
+// `EMPTY_COLUMN_HEIGHTMAP_SENTINEL` (-32768) for empty columns, matching
+// Rust. This test pins that alignment so a regression can never silently
+// re-introduce the divergence.
+// ---------------------------------------------------------------------------
+test('heightmap parity: empty columns produce the same sentinel (-32768) in JS and Rust', () => {
   // No blocks at all — fully empty chunk.
   const { js, rust } = runParity([])
   for (let i = 0; i < 256; i++) {
-    expect(js[i]).toBe(0)        // == world.config.worldMinY
-    expect(rust[i]).toBe(-32768) // Rust sentinel
+    expect(js[i]).toBe(-32768)
+    expect(rust[i]).toBe(-32768)
   }
-  // Confirm the two encodings really do differ for this case so this gap
-  // can never be silently "fixed" by accident.
-  expect(Array.from(rust)).not.toEqual(Array.from(js))
+  expect(Array.from(rust)).toEqual(Array.from(js))
 })
 
 test('extractColumnHeightmap: returns null for missing or wrong-length heightmap (forces JS fallback)', () => {
