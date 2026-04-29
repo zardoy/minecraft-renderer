@@ -1423,6 +1423,13 @@ export class WorldRendererThree extends WorldRendererCommon {
         this.chunkMeshManager.releaseSection(key)
       }
     }
+    // Drop near-first reveal state and re-check any farther chunks
+    // that may have been blocked by this column.
+    this.chunkMeshManager.onChunkRemovedFromGate(`${x},${z}`)
+  }
+
+  protected onViewerChunkPositionChanged(): void {
+    this.chunkMeshManager.tryRevealPending()
   }
 
   setSectionDirty(...args: Parameters<WorldRendererCommon['setSectionDirty']>) {

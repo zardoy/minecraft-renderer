@@ -56,6 +56,20 @@ export class ChunkMeshManager {
    * (`x,z`); flushed by `WorldRendererThree.finishChunk(chunkKey)`.
    */
   readonly waitingChunksToDisplay: Record<string, string[]> = {}
+  /**
+   * Chunks whose mesh batch is fully ready but kept invisible by the
+   * WASM near-first reveal gate because at least one nearer column is
+   * not yet finished. Value = enqueue timestamp (ms), used by the
+   * expected-delivery grace window in `isBlockedByNearer`.
+   */
+  readonly pendingNearReveal = new Map<string, number>()
+  private readonly nearRevealTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  private readonly nearRevealGraceTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  // Force-flush pending reveal after this many ms (last-resort safety).
+  private static readonly NEAR_REVEAL_TIMEOUT_MS = 5000
+  // Soft window during which the gate also waits for *expected* nearer
+  // columns that have not arrived yet (covers far-worker-beats-near-worker).
+  private static readonly EXPECTED_NEAR_GRACE_MS = 1500
   private poolSize!: number
   private maxPoolSize!: number
   private minPoolSize!: number
@@ -269,11 +283,14 @@ export class ChunkMeshManager {
     // chunk appear as a single 16xHx16 tile instead of streaming per-section.
     // Updates to chunks that are already finished bypass batching to avoid
     // flickering on block changes / lighting updates.
+    // For the WASM column path we force batching ON regardless of the user
+    // setting so the near-first reveal gate has sections to hold.
     const chunkCoords = sectionKey.split(',')
     const chunkKey = `${chunkCoords[0]},${chunkCoords[2]}`
     const renderByChunks = !!this.worldRenderer.displayOptions
       ?.inWorldRenderingConfig?._renderByChunks
-    if (renderByChunks && !this.worldRenderer.finishedChunks[chunkKey]) {
+    const forceBatchForWasm = !!this.worldRenderer.worldRendererConfig?.wasmMesher
+    if ((renderByChunks || forceBatchForWasm) && !this.worldRenderer.finishedChunks[chunkKey]) {
       sectionObject.visible = false
       sectionObject._waitingForChunkDisplay = true
       const list = this.waitingChunksToDisplay[chunkKey] ?? (this.waitingChunksToDisplay[chunkKey] = [])
@@ -286,9 +303,34 @@ export class ChunkMeshManager {
   /**
    * Reveal all sections of a chunk that were held invisible by the
    * "Batch Chunks Display" option. Called from `WorldRendererThree.finishChunk`.
+   *
+   * For the WASM path: if any nearer column is not yet finished, the
+   * reveal is deferred (parked in `pendingNearReveal`) and re-checked on
+   * the next chunkFinished / player-move / grace-expiry.
    */
   finishChunkDisplay (chunkKey: string): void {
     const sectionKeys = this.waitingChunksToDisplay[chunkKey]
+    if (!sectionKeys) {
+      // No held sections (empty column / non-batched path) — but the
+      // chunk just transitioned to finished, so re-check pending farther.
+      this.tryRevealPending()
+      return
+    }
+    if (this.isWasmGateActive() && this.isBlockedByNearer(chunkKey, 0)) {
+      this.pendingNearReveal.set(chunkKey, Date.now())
+      this.armNearRevealTimer(chunkKey)
+      this.armExpectedGraceTimer(chunkKey)
+      return
+    }
+    this.flushChunkDisplay(chunkKey)
+    this.tryRevealPending()
+  }
+
+  private flushChunkDisplay (chunkKey: string): void {
+    const sectionKeys = this.waitingChunksToDisplay[chunkKey]
+    this.pendingNearReveal.delete(chunkKey)
+    this.clearNearRevealTimer(chunkKey)
+    this.clearExpectedGraceTimer(chunkKey)
     if (!sectionKeys) return
     for (const sectionKey of sectionKeys) {
       const sectionObject = this.sectionObjects[sectionKey]
@@ -297,6 +339,134 @@ export class ChunkMeshManager {
       sectionObject.visible = true
     }
     delete this.waitingChunksToDisplay[chunkKey]
+  }
+
+  // Re-check every parked entry; each has its own grace window via `ageMs`.
+  // Single pass is enough — pending entries are already finished, so flushing
+  // one cannot un-block another via this code path (cascading happens via
+  // chunkFinished events and per-pending grace timers).
+  tryRevealPending (): void {
+    if (this.pendingNearReveal.size === 0) return
+    const now = Date.now()
+    for (const [chunkKey, enqueuedAt] of [...this.pendingNearReveal]) {
+      if (!this.isBlockedByNearer(chunkKey, now - enqueuedAt)) {
+        this.flushChunkDisplay(chunkKey)
+      }
+    }
+  }
+
+  // Drop gate state for an unloaded column and re-evaluate any farther
+  // chunks that may have been blocked by it.
+  onChunkRemovedFromGate (chunkKey: string): void {
+    this.pendingNearReveal.delete(chunkKey)
+    this.clearNearRevealTimer(chunkKey)
+    this.clearExpectedGraceTimer(chunkKey)
+    delete this.waitingChunksToDisplay[chunkKey]
+    this.tryRevealPending()
+  }
+
+  private isWasmGateActive (): boolean {
+    return !!this.worldRenderer.worldRendererConfig?.wasmMesher
+  }
+
+  /**
+   * True if some chunk-grid position strictly closer to the viewer than
+   * `chunkKey` is not yet `finishedChunks=true`.
+   *
+   * Two regimes by `ageMs` (time spent in `pendingNearReveal`):
+   * - Within `EXPECTED_NEAR_GRACE_MS`: walks every expected position in
+   *   the view-distance circle; missing-and-not-finished counts as a
+   *   blocker (catches "far worker beats near worker").
+   * - After grace: only actually-loaded-but-not-finished columns block,
+   *   so a never-arriving column does not freeze the view.
+   */
+  private isBlockedByNearer (chunkKey: string, ageMs: number): boolean {
+    const viewer = this.worldRenderer.viewerChunkPosition
+    if (!viewer) return false
+    const ownParts = chunkKey.split(',')
+    if (ownParts.length !== 2) return false
+    const ownX = Number(ownParts[0])
+    const ownZ = Number(ownParts[1])
+    const playerCx = Math.floor(viewer.x / 16)
+    const playerCz = Math.floor(viewer.z / 16)
+    const myDx = (ownX >> 4) - playerCx
+    const myDz = (ownZ >> 4) - playerCz
+    const myDist = myDx * myDx + myDz * myDz
+    if (myDist === 0) return false
+    const finishedChunks = this.worldRenderer.finishedChunks
+    const loadedChunks = this.worldRenderer.loadedChunks
+    const viewDist = this.worldRenderer.viewDistance
+    const inGrace = ageMs < ChunkMeshManager.EXPECTED_NEAR_GRACE_MS && viewDist > 0
+
+    if (inGrace) {
+      const viewDistSq = viewDist * viewDist
+      const limit = Math.min(viewDist, Math.ceil(Math.sqrt(Math.max(0, myDist - 1))))
+      for (let dCx = -limit; dCx <= limit; dCx++) {
+        for (let dCz = -limit; dCz <= limit; dCz++) {
+          const oDistSq = dCx * dCx + dCz * dCz
+          if (oDistSq >= myDist || oDistSq > viewDistSq) continue
+          const ox = (playerCx + dCx) << 4
+          const oz = (playerCz + dCz) << 4
+          const otherKey = `${ox},${oz}`
+          if (otherKey === chunkKey) continue
+          if (!finishedChunks[otherKey]) return true
+        }
+      }
+      return false
+    }
+
+    for (const otherKey in loadedChunks) {
+      if (otherKey === chunkKey || finishedChunks[otherKey]) continue
+      const parts = otherKey.split(',')
+      if (parts.length !== 2) continue
+      const odx = (Number(parts[0]) >> 4) - playerCx
+      const odz = (Number(parts[1]) >> 4) - playerCz
+      if (odx * odx + odz * odz < myDist) return true
+    }
+    return false
+  }
+
+  private armNearRevealTimer (chunkKey: string): void {
+    if (this.nearRevealTimers.has(chunkKey)) return
+    const timer = setTimeout(() => {
+      this.nearRevealTimers.delete(chunkKey)
+      if (!this.pendingNearReveal.has(chunkKey)) return
+      console.warn(`[chunk-reveal] safety timeout for ${chunkKey} — a nearer pending column never finished, force-revealing`)
+      this.flushChunkDisplay(chunkKey)
+      this.tryRevealPending()
+    }, ChunkMeshManager.NEAR_REVEAL_TIMEOUT_MS)
+    this.nearRevealTimers.set(chunkKey, timer)
+  }
+
+  private clearNearRevealTimer (chunkKey: string): void {
+    const timer = this.nearRevealTimers.get(chunkKey)
+    if (timer) {
+      clearTimeout(timer)
+      this.nearRevealTimers.delete(chunkKey)
+    }
+  }
+
+  /**
+   * Schedule a re-evaluation just after the grace window expires so that
+   * "expected but never arrived" positions stop blocking promptly,
+   * without waiting for the next chunkFinished / player-move event.
+   */
+  private armExpectedGraceTimer (chunkKey: string): void {
+    if (this.nearRevealGraceTimers.has(chunkKey)) return
+    const timer = setTimeout(() => {
+      this.nearRevealGraceTimers.delete(chunkKey)
+      if (!this.pendingNearReveal.has(chunkKey)) return
+      this.tryRevealPending()
+    }, ChunkMeshManager.EXPECTED_NEAR_GRACE_MS + 50)
+    this.nearRevealGraceTimers.set(chunkKey, timer)
+  }
+
+  private clearExpectedGraceTimer (chunkKey: string): void {
+    const timer = this.nearRevealGraceTimers.get(chunkKey)
+    if (timer) {
+      clearTimeout(timer)
+      this.nearRevealGraceTimers.delete(chunkKey)
+    }
   }
 
   cleanupSection (sectionKey: string) {
@@ -596,6 +766,12 @@ export class ChunkMeshManager {
     this.meshPool.length = 0
     this.activeSections.clear()
     this.chunkBoxMaterial.dispose()
+    // Drop any pending near-first reveal state and cancel safety timers.
+    this.pendingNearReveal.clear()
+    for (const timer of this.nearRevealTimers.values()) clearTimeout(timer)
+    this.nearRevealTimers.clear()
+    for (const timer of this.nearRevealGraceTimers.values()) clearTimeout(timer)
+    this.nearRevealGraceTimers.clear()
   }
 
   // Private helper methods

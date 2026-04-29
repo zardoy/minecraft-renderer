@@ -50,11 +50,6 @@ let config = defaultMesherConfig
 let version = '1.16.5'
 let world: World // chunkKey -> chunk data
 let dirtySections = new Map<string, number>()
-// Player chunk-coords broadcast from main thread (`type: 'priorityCenter'`).
-// Used by `processColumnTick` to process near columns first. Null until the
-// first broadcast — fallback is insertion order.
-let priorityCenterChunkX: number | null = null
-let priorityCenterChunkZ: number | null = null
 // Kept in sync with `dirtySections` so column mode can filter outgoing
 // geometry/sectionFinished events to only the section keys requested by the
 // main thread, even though a full-column WASM call may generate more data.
@@ -172,15 +167,6 @@ const handleMessage = async (data: any) => {
     case 'dirty': {
       const loc = new Vec3(data.x, data.y, data.z)
       setSectionDirty(loc, data.value)
-      break
-    }
-    case 'priorityCenter': {
-      // Player chunk position from main thread; used to sort column groups
-      // by squared distance in `processColumnTick` so near columns mesh first.
-      if (typeof data.chunkX === 'number' && typeof data.chunkZ === 'number') {
-        priorityCenterChunkX = data.chunkX
-        priorityCenterChunkZ = data.chunkZ
-      }
       break
     }
     case 'chunk': {
@@ -372,25 +358,7 @@ function processColumnTick() {
   }
   dirtySections.clear()
 
-  // Order columns by squared distance to the player's chunk so that near
-  // columns are meshed first within this tick. Insertion order is the
-  // implicit tie-break (Map preserves insertion; Array.from + stable sort
-  // preserve it for equal distances). Falls back to insertion order if
-  // priorityCenter has not been broadcast yet.
-  const orderedGroups = Array.from(groups.values())
-  if (priorityCenterChunkX !== null && priorityCenterChunkZ !== null && orderedGroups.length > 1) {
-    const cx = priorityCenterChunkX
-    const cz = priorityCenterChunkZ
-    orderedGroups.sort((a, b) => {
-      const adx = (a.x >> 4) - cx
-      const adz = (a.z >> 4) - cz
-      const bdx = (b.x >> 4) - cx
-      const bdz = (b.z >> 4) - cz
-      return (adx * adx + adz * adz) - (bdx * bdx + bdz * bdz)
-    })
-  }
-
-  for (const group of orderedGroups) {
+  for (const group of groups.values()) {
     const { x, z, sections } = group
     const targetChunk = world.getColumn(x, z)
 

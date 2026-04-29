@@ -69,11 +69,10 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   customTexturesDataUrl = undefined as string | undefined
   workers: any[] = []
   viewerChunkPosition?: Vec3
-  // Latest chunk-coords broadcast to WASM workers as priorityCenter.
-  // Used to throttle priorityCenter messages to chunk-grid changes only,
-  // since updateViewerPosition is invoked ~per frame.
-  private lastSentPriorityChunkX?: number
-  private lastSentPriorityChunkZ?: number
+  // Last viewer chunk-grid coords for which `onViewerChunkPositionChanged`
+  // fired — throttles the hook to chunk-grid changes.
+  private lastViewerChunkGridX?: number
+  private lastViewerChunkGridZ?: number
   lastCamUpdate = 0
   droppedFpsPercentage = 0
   initialChunkLoadWasStartedIn: number | undefined
@@ -553,24 +552,21 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       if (!value) continue
       this.updatePosDataChunk?.(key)
     }
-    this.maybeBroadcastPriorityCenter()
+    const gridX = Math.floor(pos.x / 16)
+    const gridZ = Math.floor(pos.z / 16)
+    if (gridX !== this.lastViewerChunkGridX || gridZ !== this.lastViewerChunkGridZ) {
+      this.lastViewerChunkGridX = gridX
+      this.lastViewerChunkGridZ = gridZ
+      this.onViewerChunkPositionChanged()
+    }
   }
 
   /**
-   * Broadcast current player chunk-position to WASM workers so they can
-   * process near columns first in `processColumnTick`. Throttled to
-   * chunk-grid changes (so per-frame movement does not spam workers).
-   * No-op for the legacy JS mesher path.
+   * Fired only when the viewer crosses a chunk-grid boundary.
+   * Three subclass overrides this to refresh the near-first reveal gate.
    */
-  private maybeBroadcastPriorityCenter() {
-    if (!this.worldRendererConfig.wasmMesher) return
-    if (!this.viewerChunkPosition || !this.workers.length) return
-    const chunkX = Math.floor(this.viewerChunkPosition.x / 16)
-    const chunkZ = Math.floor(this.viewerChunkPosition.z / 16)
-    if (this.lastSentPriorityChunkX === chunkX && this.lastSentPriorityChunkZ === chunkZ) return
-    this.lastSentPriorityChunkX = chunkX
-    this.lastSentPriorityChunkZ = chunkZ
-    this.sendWorkers({ type: 'priorityCenter', chunkX, chunkZ } as any)
+  protected onViewerChunkPositionChanged(): void {
+    // overridden by WorldRendererThree
   }
 
   sendWorkers(message: WorkerSend) {
@@ -595,9 +591,6 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       worker.terminate()
     }
     this.workers = []
-    // Workers were destroyed; force re-broadcast on next updateViewerPosition.
-    this.lastSentPriorityChunkX = undefined
-    this.lastSentPriorityChunkZ = undefined
   }
 
   async resetWorkers() {
@@ -663,11 +656,6 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
     this.logWorkerWork('# mesherData sent')
     console.log('textures loaded')
-    // Workers now have mesher data; (re)broadcast current player chunk
-    // coords so the first column tick can prioritize near columns. Safe
-    // when player position has not changed yet — the throttle inside
-    // `maybeBroadcastPriorityCenter` makes it a cheap no-op.
-    this.maybeBroadcastPriorityCenter()
   }
 
   getSectionHeight() {
@@ -743,6 +731,9 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.loadedChunks[`${x},${z}`] = true
     this.finishedChunks[`${x},${z}`] = true
     this.logWorkerWork(`-> markAsLoaded ${JSON.stringify({ x, z })}`)
+    // Mirror the main meshing path so the near-first reveal gate can
+    // re-evaluate any farther chunks blocked by this column.
+    this.renderUpdateEmitter.emit('chunkFinished', `${x},${z}`)
     this.checkAllFinished()
   }
 
@@ -1138,59 +1129,14 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       for (const workerIndex in this.toWorkerMessagesQueue) {
         const worker = this.workers[Number(workerIndex)]
         const messages = this.toWorkerMessagesQueue[workerIndex]
-        const ordered = this.maybeReorderForPriority(messages)
-        worker.postMessage(ordered)
-        for (const message of ordered) {
+        worker.postMessage(messages)
+        for (const message of messages) {
           this.logWorkerWork(`-> ${workerIndex} dispatchMessages ${message.type} ${JSON.stringify({ x: message.x, y: message.y, z: message.z, value: message.value })}`)
         }
       }
       this.toWorkerMessagesQueue = {}
       this.queueAwaited = false
     })
-  }
-
-  /**
-   * For WASM column meshing, reorder dirty messages by squared distance to
-   * the player chunk, so the worker enqueues near columns first.
-   *
-   * In practice this queue today contains only `dirty` messages
-   * (`_dispatchDirtyImmediate`). The two-pass shape below is defensive:
-   * if any non-dirty message is ever pushed here, it stays in original
-   * order and is emitted strictly before dirty messages. Rationale: the
-   * WASM worker requires column data to land before dirty notifications
-   * for that column, otherwise `setSectionDirty` short-circuits and emits
-   * sectionFinished without any geometry.
-   *
-   * Two-pass strategy:
-   *   1. emit all non-dirty messages in original order;
-   *   2. emit dirty messages sorted by distance to player chunk (stable,
-   *      so equal distances keep insertion order — avoids per-tick flicker).
-   */
-  private maybeReorderForPriority(messages: any[]): any[] {
-    if (!this.worldRendererConfig.wasmMesher) return messages
-    if (!this.viewerChunkPosition) return messages
-    if (messages.length < 2) return messages
-    const centerX = Math.floor(this.viewerChunkPosition.x / 16)
-    const centerZ = Math.floor(this.viewerChunkPosition.z / 16)
-    const nonDirty: any[] = []
-    const dirty: Array<{ msg: any, dist: number, idx: number }> = []
-    for (let i = 0; i < messages.length; i++) {
-      const m = messages[i]
-      if (m.type === 'dirty' && typeof m.x === 'number' && typeof m.z === 'number') {
-        const cx = Math.floor(m.x / 16)
-        const cz = Math.floor(m.z / 16)
-        const dx = cx - centerX
-        const dz = cz - centerZ
-        dirty.push({ msg: m, dist: dx * dx + dz * dz, idx: i })
-      } else {
-        nonDirty.push(m)
-      }
-    }
-    if (dirty.length < 2) return messages
-    dirty.sort((a, b) => (a.dist - b.dist) || (a.idx - b.idx))
-    const out = nonDirty
-    for (const e of dirty) out.push(e.msg)
-    return out
   }
 
   // Listen for chunk rendering updates emitted if a worker finished a render and resolve if the number
