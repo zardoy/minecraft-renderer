@@ -1,6 +1,7 @@
 use wasm_bindgen::prelude::*;
 
 mod chunk;
+mod dump_parser;
 mod geometry;
 mod lighting;
 mod mesher;
