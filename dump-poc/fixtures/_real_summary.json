@@ -1,0 +1,21 @@
+{
+  "version": "1.18.2",
+  "generatedAt": "2026-04-30T08:24:40.563Z",
+  "columns": [
+    {
+      "name": "real_paper_spawn",
+      "dumpBytes": 21087,
+      "numSections": 24
+    },
+    {
+      "name": "real_paper_far_x",
+      "dumpBytes": 21794,
+      "numSections": 24
+    },
+    {
+      "name": "real_paper_diagonal",
+      "dumpBytes": 20453,
+      "numSections": 24
+    }
+  ]
+}
