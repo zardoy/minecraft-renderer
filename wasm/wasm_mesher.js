@@ -1,6 +1,4 @@
-
-let imports = {};
-imports['__wbindgen_placeholder__'] = module.exports;
+let wasm;
 
 function addToExternrefTable0(obj) {
     const idx = wasm.__externref_table_alloc();
@@ -189,7 +187,15 @@ function passStringToWasm0(arg, malloc, realloc) {
 
 let cachedTextDecoder = new TextDecoder('utf-8', { ignoreBOM: true, fatal: true });
 cachedTextDecoder.decode();
+const MAX_SAFARI_DECODE_BYTES = 2146435072;
+let numBytesDecoded = 0;
 function decodeText(ptr, len) {
+    numBytesDecoded += len;
+    if (numBytesDecoded >= MAX_SAFARI_DECODE_BYTES) {
+        cachedTextDecoder = new TextDecoder('utf-8', { ignoreBOM: true, fatal: true });
+        cachedTextDecoder.decode();
+        numBytesDecoded = len;
+    }
     return cachedTextDecoder.decode(getUint8ArrayMemory0().subarray(ptr, ptr + len));
 }
 
@@ -243,7 +249,7 @@ let WASM_VECTOR_LEN = 0;
  * @param {number} sky_light_value
  * @returns {any}
  */
-function generateGeometryFromDump118(section_x, section_y, section_z, section_height, world_min_y, world_max_y, section_data_start_y, dump_buffer, sky_light_concat, block_light_concat, sky_light_mask, block_light_mask, empty_sky_light_mask, empty_block_light_mask, num_sections, max_bits_per_block, max_bits_per_biome, invisible_blocks, transparent_blocks, no_ao_blocks, cull_identical_blocks, occluding_blocks, enable_lighting, smooth_lighting, sky_light_value) {
+export function generateGeometryFromDump118(section_x, section_y, section_z, section_height, world_min_y, world_max_y, section_data_start_y, dump_buffer, sky_light_concat, block_light_concat, sky_light_mask, block_light_mask, empty_sky_light_mask, empty_block_light_mask, num_sections, max_bits_per_block, max_bits_per_biome, invisible_blocks, transparent_blocks, no_ao_blocks, cull_identical_blocks, occluding_blocks, enable_lighting, smooth_lighting, sky_light_value) {
     const ptr0 = passArray8ToWasm0(dump_buffer, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passArray8ToWasm0(sky_light_concat, wasm.__wbindgen_malloc);
@@ -271,7 +277,6 @@ function generateGeometryFromDump118(section_x, section_y, section_z, section_he
     const ret = wasm.generateGeometryFromDump118(section_x, section_y, section_z, section_height, world_min_y, world_max_y, section_data_start_y, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, num_sections, max_bits_per_block, max_bits_per_biome, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, ptr11, len11, enable_lighting, smooth_lighting, sky_light_value);
     return ret;
 }
-exports.generateGeometryFromDump118 = generateGeometryFromDump118;
 
 /**
  * Main entry point for generating geometry
@@ -299,7 +304,7 @@ exports.generateGeometryFromDump118 = generateGeometryFromDump118;
  * @param {number} sky_light_value
  * @returns {any}
  */
-function generate_geometry(section_x, section_y, section_z, section_height, world_min_y, world_max_y, section_data_start_y, block_states, block_light, sky_light, biomes, invisible_blocks, transparent_blocks, no_ao_blocks, cull_identical_blocks, occluding_blocks, enable_lighting, smooth_lighting, sky_light_value) {
+export function generate_geometry(section_x, section_y, section_z, section_height, world_min_y, world_max_y, section_data_start_y, block_states, block_light, sky_light, biomes, invisible_blocks, transparent_blocks, no_ao_blocks, cull_identical_blocks, occluding_blocks, enable_lighting, smooth_lighting, sky_light_value) {
     const ptr0 = passArray16ToWasm0(block_states, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passArray8ToWasm0(block_light, wasm.__wbindgen_malloc);
@@ -321,7 +326,6 @@ function generate_geometry(section_x, section_y, section_z, section_height, worl
     const ret = wasm.generate_geometry(section_x, section_y, section_z, section_height, world_min_y, world_max_y, section_data_start_y, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, enable_lighting, smooth_lighting, sky_light_value);
     return ret;
 }
-exports.generate_geometry = generate_geometry;
 
 /**
  * @param {number} section_x
@@ -347,7 +351,7 @@ exports.generate_geometry = generate_geometry;
  * @param {number} sky_light_value
  * @returns {any}
  */
-function generate_geometry_multi(section_x, section_y, section_z, section_height, world_min_y, world_max_y, section_data_start_y, chunk_xs, chunk_zs, block_states, block_light, sky_light, biomes, invisible_blocks, transparent_blocks, no_ao_blocks, cull_identical_blocks, occluding_blocks, enable_lighting, smooth_lighting, sky_light_value) {
+export function generate_geometry_multi(section_x, section_y, section_z, section_height, world_min_y, world_max_y, section_data_start_y, chunk_xs, chunk_zs, block_states, block_light, sky_light, biomes, invisible_blocks, transparent_blocks, no_ao_blocks, cull_identical_blocks, occluding_blocks, enable_lighting, smooth_lighting, sky_light_value) {
     const ptr0 = passArray32ToWasm0(chunk_xs, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passArray32ToWasm0(chunk_zs, wasm.__wbindgen_malloc);
@@ -373,7 +377,6 @@ function generate_geometry_multi(section_x, section_y, section_z, section_height
     const ret = wasm.generate_geometry_multi(section_x, section_y, section_z, section_height, world_min_y, world_max_y, section_data_start_y, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, enable_lighting, smooth_lighting, sky_light_value);
     return ret;
 }
-exports.generate_geometry_multi = generate_geometry_multi;
 
 /**
  * Parse a 1.18+ Minecraft chunk dump (column.dump() output).
@@ -386,13 +389,12 @@ exports.generate_geometry_multi = generate_geometry_multi;
  * @param {number} max_bits_per_biome
  * @returns {any}
  */
-function parseChunkDump118(buffer, num_sections, max_bits_per_block, max_bits_per_biome) {
+export function parseChunkDump118(buffer, num_sections, max_bits_per_block, max_bits_per_biome) {
     const ptr0 = passArray8ToWasm0(buffer, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.parseChunkDump118(ptr0, len0, num_sections, max_bits_per_block, max_bits_per_biome);
     return ret;
 }
-exports.parseChunkDump118 = parseChunkDump118;
 
 /**
  *   index = x + z*16 + y*256, where y goes 0..(num_sections*16).
@@ -410,13 +412,12 @@ exports.parseChunkDump118 = parseChunkDump118;
  * @param {number} max_bits_per_biome
  * @returns {any}
  */
-function parseChunkDump118FullColumn(buffer, num_sections, max_bits_per_block, max_bits_per_biome) {
+export function parseChunkDump118FullColumn(buffer, num_sections, max_bits_per_block, max_bits_per_biome) {
     const ptr0 = passArray8ToWasm0(buffer, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.parseChunkDump118FullColumn(ptr0, len0, num_sections, max_bits_per_block, max_bits_per_biome);
     return ret;
 }
-exports.parseChunkDump118FullColumn = parseChunkDump118FullColumn;
 
 /**
  * Full drop-in replacement for `convertChunkToWasm`: parses dump + assembles light into
@@ -443,7 +444,7 @@ exports.parseChunkDump118FullColumn = parseChunkDump118FullColumn;
  * @param {number} max_bits_per_biome
  * @returns {any}
  */
-function parseChunkDump118FullColumnAll(dump_buffer, sky_light_concat, block_light_concat, sky_light_mask, block_light_mask, empty_sky_light_mask, empty_block_light_mask, num_sections, max_bits_per_block, max_bits_per_biome) {
+export function parseChunkDump118FullColumnAll(dump_buffer, sky_light_concat, block_light_concat, sky_light_mask, block_light_mask, empty_sky_light_mask, empty_block_light_mask, num_sections, max_bits_per_block, max_bits_per_biome) {
     const ptr0 = passArray8ToWasm0(dump_buffer, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passArray8ToWasm0(sky_light_concat, wasm.__wbindgen_malloc);
@@ -461,7 +462,6 @@ function parseChunkDump118FullColumnAll(dump_buffer, sky_light_concat, block_lig
     const ret = wasm.parseChunkDump118FullColumnAll(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, num_sections, max_bits_per_block, max_bits_per_biome);
     return ret;
 }
-exports.parseChunkDump118FullColumnAll = parseChunkDump118FullColumnAll;
 
 /**
  * PoC bench helper: parse dump but return ONLY a checksum (no Uint16Array marshalling).
@@ -472,20 +472,19 @@ exports.parseChunkDump118FullColumnAll = parseChunkDump118FullColumnAll;
  * @param {number} max_bits_per_biome
  * @returns {number}
  */
-function parseChunkDump118NoMarshal(buffer, num_sections, max_bits_per_block, max_bits_per_biome) {
+export function parseChunkDump118NoMarshal(buffer, num_sections, max_bits_per_block, max_bits_per_biome) {
     const ptr0 = passArray8ToWasm0(buffer, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.parseChunkDump118NoMarshal(ptr0, len0, num_sections, max_bits_per_block, max_bits_per_biome);
     return ret;
 }
-exports.parseChunkDump118NoMarshal = parseChunkDump118NoMarshal;
 
 /**
  * Unpack a single light section (2048 bytes, BitArrayNoSpan bpv=4) into 4096 nibble values.
  * @param {Uint8Array} buffer
  * @returns {Uint8Array}
  */
-function unpackLightSection118(buffer) {
+export function unpackLightSection118(buffer) {
     const ptr0 = passArray8ToWasm0(buffer, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.unpackLightSection118(ptr0, len0);
@@ -493,107 +492,182 @@ function unpackLightSection118(buffer) {
     wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
     return v2;
 }
-exports.unpackLightSection118 = unpackLightSection118;
 
-exports.__wbg_Error_52673b7de5a0ca89 = function(arg0, arg1) {
-    const ret = Error(getStringFromWasm0(arg0, arg1));
-    return ret;
-};
+const EXPECTED_RESPONSE_TYPES = new Set(['basic', 'cors', 'default']);
 
-exports.__wbg___wbindgen_debug_string_adfb662ae34724b6 = function(arg0, arg1) {
-    const ret = debugString(arg1);
-    const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len1 = WASM_VECTOR_LEN;
-    getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
-    getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
-};
+async function __wbg_load(module, imports) {
+    if (typeof Response === 'function' && module instanceof Response) {
+        if (typeof WebAssembly.instantiateStreaming === 'function') {
+            try {
+                return await WebAssembly.instantiateStreaming(module, imports);
+            } catch (e) {
+                const validResponse = module.ok && EXPECTED_RESPONSE_TYPES.has(module.type);
 
-exports.__wbg___wbindgen_throw_dd24417ed36fc46e = function(arg0, arg1) {
-    throw new Error(getStringFromWasm0(arg0, arg1));
-};
+                if (validResponse && module.headers.get('Content-Type') !== 'application/wasm') {
+                    console.warn("`WebAssembly.instantiateStreaming` failed because your server does not serve Wasm with `application/wasm` MIME type. Falling back to `WebAssembly.instantiate` which is slower. Original error:\n", e);
 
-exports.__wbg_length_22ac23eaec9d8053 = function(arg0) {
-    const ret = arg0.length;
-    return ret;
-};
+                } else {
+                    throw e;
+                }
+            }
+        }
 
-exports.__wbg_length_497fc8f401ac8b1c = function(arg0) {
-    const ret = arg0.length;
-    return ret;
-};
+        const bytes = await module.arrayBuffer();
+        return await WebAssembly.instantiate(bytes, imports);
+    } else {
+        const instance = await WebAssembly.instantiate(module, imports);
 
-exports.__wbg_new_1ba21ce319a06297 = function() {
-    const ret = new Object();
-    return ret;
-};
+        if (instance instanceof WebAssembly.Instance) {
+            return { instance, module };
+        } else {
+            return instance;
+        }
+    }
+}
 
-exports.__wbg_new_25f239778d6112b9 = function() {
-    const ret = new Array();
-    return ret;
-};
+function __wbg_get_imports() {
+    const imports = {};
+    imports.wbg = {};
+    imports.wbg.__wbg_Error_52673b7de5a0ca89 = function(arg0, arg1) {
+        const ret = Error(getStringFromWasm0(arg0, arg1));
+        return ret;
+    };
+    imports.wbg.__wbg___wbindgen_debug_string_adfb662ae34724b6 = function(arg0, arg1) {
+        const ret = debugString(arg1);
+        const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
+        getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
+    };
+    imports.wbg.__wbg___wbindgen_throw_dd24417ed36fc46e = function(arg0, arg1) {
+        throw new Error(getStringFromWasm0(arg0, arg1));
+    };
+    imports.wbg.__wbg_length_22ac23eaec9d8053 = function(arg0) {
+        const ret = arg0.length;
+        return ret;
+    };
+    imports.wbg.__wbg_length_497fc8f401ac8b1c = function(arg0) {
+        const ret = arg0.length;
+        return ret;
+    };
+    imports.wbg.__wbg_new_1ba21ce319a06297 = function() {
+        const ret = new Object();
+        return ret;
+    };
+    imports.wbg.__wbg_new_25f239778d6112b9 = function() {
+        const ret = new Array();
+        return ret;
+    };
+    imports.wbg.__wbg_new_with_length_aa5eaf41d35235e5 = function(arg0) {
+        const ret = new Uint8Array(arg0 >>> 0);
+        return ret;
+    };
+    imports.wbg.__wbg_new_with_length_d7142aa2b68069a8 = function(arg0) {
+        const ret = new Uint16Array(arg0 >>> 0);
+        return ret;
+    };
+    imports.wbg.__wbg_set_169e13b608078b7b = function(arg0, arg1, arg2) {
+        arg0.set(getArrayU8FromWasm0(arg1, arg2));
+    };
+    imports.wbg.__wbg_set_3f1d0b984ed272ed = function(arg0, arg1, arg2) {
+        arg0[arg1] = arg2;
+    };
+    imports.wbg.__wbg_set_781438a03c0c3c81 = function() { return handleError(function (arg0, arg1, arg2) {
+        const ret = Reflect.set(arg0, arg1, arg2);
+        return ret;
+    }, arguments) };
+    imports.wbg.__wbg_set_7df433eea03a5c14 = function(arg0, arg1, arg2) {
+        arg0[arg1 >>> 0] = arg2;
+    };
+    imports.wbg.__wbg_set_bb0c6a7fe60d81b5 = function(arg0, arg1, arg2) {
+        arg0.set(getArrayU16FromWasm0(arg1, arg2));
+    };
+    imports.wbg.__wbindgen_cast_2241b6af4c4b2941 = function(arg0, arg1) {
+        // Cast intrinsic for `Ref(String) -> Externref`.
+        const ret = getStringFromWasm0(arg0, arg1);
+        return ret;
+    };
+    imports.wbg.__wbindgen_cast_4625c577ab2ec9ee = function(arg0) {
+        // Cast intrinsic for `U64 -> Externref`.
+        const ret = BigInt.asUintN(64, arg0);
+        return ret;
+    };
+    imports.wbg.__wbindgen_cast_d6cd19b81560fd6e = function(arg0) {
+        // Cast intrinsic for `F64 -> Externref`.
+        const ret = arg0;
+        return ret;
+    };
+    imports.wbg.__wbindgen_init_externref_table = function() {
+        const table = wasm.__wbindgen_externrefs;
+        const offset = table.grow(4);
+        table.set(0, undefined);
+        table.set(offset + 0, undefined);
+        table.set(offset + 1, null);
+        table.set(offset + 2, true);
+        table.set(offset + 3, false);
+    };
 
-exports.__wbg_new_with_length_aa5eaf41d35235e5 = function(arg0) {
-    const ret = new Uint8Array(arg0 >>> 0);
-    return ret;
-};
+    return imports;
+}
 
-exports.__wbg_new_with_length_d7142aa2b68069a8 = function(arg0) {
-    const ret = new Uint16Array(arg0 >>> 0);
-    return ret;
-};
+function __wbg_finalize_init(instance, module) {
+    wasm = instance.exports;
+    __wbg_init.__wbindgen_wasm_module = module;
+    cachedDataViewMemory0 = null;
+    cachedUint16ArrayMemory0 = null;
+    cachedUint32ArrayMemory0 = null;
+    cachedUint8ArrayMemory0 = null;
 
-exports.__wbg_set_169e13b608078b7b = function(arg0, arg1, arg2) {
-    arg0.set(getArrayU8FromWasm0(arg1, arg2));
-};
 
-exports.__wbg_set_3f1d0b984ed272ed = function(arg0, arg1, arg2) {
-    arg0[arg1] = arg2;
-};
+    wasm.__wbindgen_start();
+    return wasm;
+}
 
-exports.__wbg_set_781438a03c0c3c81 = function() { return handleError(function (arg0, arg1, arg2) {
-    const ret = Reflect.set(arg0, arg1, arg2);
-    return ret;
-}, arguments) };
+function initSync(module) {
+    if (wasm !== undefined) return wasm;
 
-exports.__wbg_set_7df433eea03a5c14 = function(arg0, arg1, arg2) {
-    arg0[arg1 >>> 0] = arg2;
-};
 
-exports.__wbg_set_bb0c6a7fe60d81b5 = function(arg0, arg1, arg2) {
-    arg0.set(getArrayU16FromWasm0(arg1, arg2));
-};
+    if (typeof module !== 'undefined') {
+        if (Object.getPrototypeOf(module) === Object.prototype) {
+            ({module} = module)
+        } else {
+            console.warn('using deprecated parameters for `initSync()`; pass a single object instead')
+        }
+    }
 
-exports.__wbindgen_cast_2241b6af4c4b2941 = function(arg0, arg1) {
-    // Cast intrinsic for `Ref(String) -> Externref`.
-    const ret = getStringFromWasm0(arg0, arg1);
-    return ret;
-};
+    const imports = __wbg_get_imports();
+    if (!(module instanceof WebAssembly.Module)) {
+        module = new WebAssembly.Module(module);
+    }
+    const instance = new WebAssembly.Instance(module, imports);
+    return __wbg_finalize_init(instance, module);
+}
 
-exports.__wbindgen_cast_4625c577ab2ec9ee = function(arg0) {
-    // Cast intrinsic for `U64 -> Externref`.
-    const ret = BigInt.asUintN(64, arg0);
-    return ret;
-};
+async function __wbg_init(module_or_path) {
+    if (wasm !== undefined) return wasm;
 
-exports.__wbindgen_cast_d6cd19b81560fd6e = function(arg0) {
-    // Cast intrinsic for `F64 -> Externref`.
-    const ret = arg0;
-    return ret;
-};
 
-exports.__wbindgen_init_externref_table = function() {
-    const table = wasm.__wbindgen_externrefs;
-    const offset = table.grow(4);
-    table.set(0, undefined);
-    table.set(offset + 0, undefined);
-    table.set(offset + 1, null);
-    table.set(offset + 2, true);
-    table.set(offset + 3, false);
-};
+    if (typeof module_or_path !== 'undefined') {
+        if (Object.getPrototypeOf(module_or_path) === Object.prototype) {
+            ({module_or_path} = module_or_path)
+        } else {
+            console.warn('using deprecated parameters for the initialization function; pass a single object instead')
+        }
+    }
 
-const wasmPath = `${__dirname}/wasm_mesher_bg.wasm`;
-const wasmBytes = require('fs').readFileSync(wasmPath);
-const wasmModule = new WebAssembly.Module(wasmBytes);
-const wasm = exports.__wasm = new WebAssembly.Instance(wasmModule, imports).exports;
+    if (typeof module_or_path === 'undefined') {
+        module_or_path = new URL('wasm_mesher_bg.wasm', import.meta.url);
+    }
+    const imports = __wbg_get_imports();
 
-wasm.__wbindgen_start();
+    if (typeof module_or_path === 'string' || (typeof Request === 'function' && module_or_path instanceof Request) || (typeof URL === 'function' && module_or_path instanceof URL)) {
+        module_or_path = fetch(module_or_path);
+    }
+
+    const { instance, module } = await __wbg_load(await module_or_path, imports);
+
+    return __wbg_finalize_init(instance, module);
+}
+
+export { initSync };
+export default __wbg_init;

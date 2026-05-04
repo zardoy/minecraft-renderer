@@ -1,10 +1,12 @@
 use wasm_bindgen::prelude::*;
 
 mod chunk;
+mod chunk_parser_common;
 mod dump_parser;
 mod geometry;
 mod lighting;
 mod mesher;
+mod parser_v18plus;
 mod utils;
 
 use chunk::ChunkData;
