@@ -1,0 +1,42 @@
+{
+  "version": "1.17.1",
+  "generatedAt": "2026-05-05T19:09:20.756Z",
+  "scenarios": [
+    {
+      "name": "empty",
+      "dumpBytes": 4096
+    },
+    {
+      "name": "single_block_stone",
+      "dumpBytes": 2056
+    },
+    {
+      "name": "indirect_palette_few_blocks",
+      "dumpBytes": 2062
+    },
+    {
+      "name": "indirect_palette_large_state_ids",
+      "dumpBytes": 2067
+    },
+    {
+      "name": "direct_palette_many_blocks",
+      "dumpBytes": 8197
+    },
+    {
+      "name": "with_light",
+      "dumpBytes": 2056
+    },
+    {
+      "name": "light_multi_sections",
+      "dumpBytes": 4096
+    },
+    {
+      "name": "mixed_biomes",
+      "dumpBytes": 4096
+    },
+    {
+      "name": "section_boundary",
+      "dumpBytes": 16448
+    }
+  ]
+}
