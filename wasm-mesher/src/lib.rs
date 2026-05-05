@@ -7,6 +7,7 @@ mod geometry;
 mod lighting;
 mod mesher;
 mod parser_v18plus;
+mod parser_v17;
 mod utils;
 
 use chunk::ChunkData;
