@@ -129,29 +129,31 @@ pub fn parse_map_chunk_v18plus(
         let _trust_edges = r.read_u8()?;
     }
 
-    let sky_light_mask = read_i64_array(&mut r)?;
-    let block_light_mask = read_i64_array(&mut r)?;
-    let empty_sky_light_mask = read_i64_array(&mut r)?;
-    let empty_block_light_mask = read_i64_array(&mut r)?;
+    let sky_light_mask = common::read_i64_array(&mut r)?;
+    let block_light_mask = common::read_i64_array(&mut r)?;
+    let empty_sky_light_mask = common::read_i64_array(&mut r)?;
+    let empty_block_light_mask = common::read_i64_array(&mut r)?;
 
-    let sky_light = read_light_arrays(&mut r)?;
-    let block_light = read_light_arrays(&mut r)?;
+    let sky_light = common::read_light_arrays(&mut r)?;
+    let block_light = common::read_light_arrays(&mut r)?;
 
     let bytes_read = r.position();
 
-    let sky_full = build_full_column_light(
+    let sky_full = common::build_full_column_light(
         &sky_light,
         &sky_light_mask,
         &empty_sky_light_mask,
         num_sections,
         0, // sections the server omitted entirely stay 0 (matches prismarine-chunk loadParsedLight)
+        true,
     )?;
-    let block_full = build_full_column_light(
+    let block_full = common::build_full_column_light(
         &block_light,
         &block_light_mask,
         &empty_block_light_mask,
         num_sections,
         0, // no skylight = no light
+        true,
     )?;
 
     Ok(MapChunkResult {
@@ -208,53 +210,6 @@ fn parse_chunk_sections(
         }
     }
     Ok((block_states, biomes))
-}
-
-fn read_i64_array(r: &mut common::PacketReader) -> io::Result<Vec<i64>> {
-    let n = r.read_varint()? as usize;
-    let mut out = Vec::with_capacity(n);
-    for _ in 0..n { out.push(r.read_i64_be()?); }
-    Ok(out)
-}
-
-/// Read sky/blockLight wire field: VarInt count + array of (VarInt size + bytes[size]).
-/// In practice each inner buffer is exactly 2048 bytes (one nibble per block).
-fn read_light_arrays(r: &mut common::PacketReader) -> io::Result<Vec<Vec<u8>>> {
-    let n = r.read_varint()? as usize;
-    let mut out = Vec::with_capacity(n);
-    for _ in 0..n {
-        let size = r.read_varint()? as usize;
-        out.push(r.read_bytes(size)?.to_vec());
-    }
-    Ok(out)
-}
-
-/// Convert mask (i64-array) + concatenated section buffers into a full-column array
-/// laid out as `index = x + z*16 + y_abs*256`.
-///
-/// `assemble_light_full_column` already does the heavy lifting (mask iteration,
-/// nibble unpacking, indexing) — we just translate the i64 masks to the [low, high]
-/// u32 form it expects, and concatenate the per-section buffers.
-fn build_full_column_light(
-    section_buffers: &[Vec<u8>],
-    mask: &[i64],
-    empty_mask: &[i64],
-    num_sections: usize,
-    default_value: u8,
-) -> io::Result<Vec<u8>> {
-    let mask_pairs = common::i64_mask_to_u32_pairs(mask);
-    let empty_pairs = common::i64_mask_to_u32_pairs(empty_mask);
-
-    let mut concat = Vec::with_capacity(section_buffers.len() * common::LIGHT_SECTION_BUFFER_BYTES);
-    for buf in section_buffers {
-        if buf.len() != common::LIGHT_SECTION_BUFFER_BYTES {
-            return Err(io::Error::new(io::ErrorKind::InvalidData,
-                format!("light buffer size {} != {}", buf.len(), common::LIGHT_SECTION_BUFFER_BYTES)));
-        }
-        concat.extend_from_slice(buf);
-    }
-
-    common::assemble_light_full_column(&concat, &mask_pairs, &empty_pairs, num_sections, default_value)
 }
 
 #[cfg(test)]

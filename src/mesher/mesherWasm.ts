@@ -18,6 +18,34 @@ import {
 let wasm: typeof import('../../wasm/wasm_mesher.js') | null = null
 let wasmInitialized = false
 
+// Pending raw `update_light` packets that arrived before WASM finished
+// loading. Parsed and drained once `initWasm` resolves. Without this queue
+// the very first batch of chunks (~40-50 in our smoke test) lose their
+// real lighting and fall back to fill(15) — which makes shadowed areas
+// (under trees, cliff edges) look brighter than vanilla, and after the
+// renderer interpolates with neighbour chunks that DO have real light,
+// the seams look like "local night".
+const pendingUpdateLightV17: Array<{ rawPacket: Uint8Array, numSections: number }> = []
+
+function processUpdateLightV17 (rawPacket: Uint8Array, numSections: number): void {
+  if (!wasm || !(wasm as any).parseUpdateLightV17) {
+    pendingUpdateLightV17.push({ rawPacket, numSections })
+    return
+  }
+  try {
+    const parsed: any = (wasm as any).parseUpdateLightV17(rawPacket, numSections)
+    const x = (parsed.x as number) * 16
+    const z = (parsed.z as number) * 16
+    updateLightV17Cache.set(rawCacheKey(x, z), {
+      skyLight: parsed.skyLight as Uint8Array,
+      blockLight: parsed.blockLight as Uint8Array,
+    })
+    invalidateConversion(x, z)
+  } catch (err) {
+    console.warn('[WASM Mesher] parseUpdateLightV17 failed:', err)
+  }
+}
+
 async function initWasm() {
   if (wasmInitialized) return
   try {
@@ -25,8 +53,11 @@ async function initWasm() {
     wasm = await import('../../wasm/wasm_mesher.js')
     await wasm.default('/wasm_mesher_bg.wasm') as any
 
-    // const result = await testChunkShared(wasm)
-    // console.log('result', result)
+    if (pendingUpdateLightV17.length > 0) {
+      console.log('[WASM Mesher] draining', pendingUpdateLightV17.length, 'pending update_light v17 packets')
+      const queue = pendingUpdateLightV17.splice(0, pendingUpdateLightV17.length)
+      for (const item of queue) processUpdateLightV17(item.rawPacket, item.numSections)
+    }
   } catch (err) {
     console.error('Failed to initialize WASM mesher:', err)
     wasmInitialized = true // Don't try to initialize again
@@ -159,6 +190,16 @@ interface ParsedV17Entry {
 }
 const parsedV17Cache = new Map<string, ParsedV17Entry>()
 
+// 1.17 light arrives in a separate `update_light` packet. We parse it via
+// WASM (`parseUpdateLightV17`) and cache per-block arrays keyed by the
+// chunk origin — the next mesh tick of that column merges them in instead
+// of the sky=15/block=0 fallback. May arrive before or after `map_chunk`.
+interface UpdateLightV17Entry {
+  skyLight: Uint8Array
+  blockLight: Uint8Array
+}
+const updateLightV17Cache = new Map<string, UpdateLightV17Entry>()
+
 // Mirrors `convertChunkToWasm`'s output (same layout: x + z*16 + y*256,
 // y outer) so it can be dropped straight into `generate_geometry`.
 const convertRawMapChunkToWasm = (
@@ -206,15 +247,20 @@ const convertRawMapChunkToWasm = (
   }
 }
 
-// 1.17 conversion: WASM gives us only blockStates (light arrives in a
-// separate `update_light` packet; not wired yet). We synthesise the
-// remaining buffers with safe defaults — full daylight (skyLight=15) and
-// no block light — so the renderer produces visible geometry.
+// 1.17 conversion: WASM now returns blockStates **and** per-block biomes
+// (expanded from the 4×4×4 cell layout). Light comes from the paired
+// `update_light` cache when available; otherwise we fall back to full
+// daylight (sky=15) and no block light so geometry stays visible.
 const convertParsedV17ToWasm = (
   entry: ParsedV17Entry,
+  lightEntry: UpdateLightV17Entry | undefined,
   version: string
 ): ChunkConversionResult | null => {
   if (!wasm || !(wasm as any).parseChunkSectionsV17) return null
+  // Empty `Int32Array` signals "no biomes captured" — WASM falls back to
+  // `default_biome` for every block. Plains (id 1) matches the JS path.
+  const biomesCells = entry.biomes ?? new Int32Array(0)
+  const DEFAULT_BIOME = 1
   let parsed: any
   try {
     parsed = (wasm as any).parseChunkSectionsV17(
@@ -222,6 +268,8 @@ const convertParsedV17ToWasm = (
       entry.bitMapLoHi,
       entry.numSections,
       entry.maxBitsPerBlock,
+      biomesCells,
+      DEFAULT_BIOME,
     )
   } catch (err) {
     console.warn('[WASM Mesher] parseChunkSectionsV17 failed, falling back:', err)
@@ -229,14 +277,17 @@ const convertParsedV17ToWasm = (
   }
   const blockStates: Uint16Array = parsed.blockStates
   const totalBlocks = blockStates.length
-  const blockLight = new Uint8Array(totalBlocks)
-  const skyLight = new Uint8Array(totalBlocks)
-  skyLight.fill(15)
-  // Default biome 1 (plains) — matches `convertChunkToWasm` fallback.
-  // TODO: expand entry.biomes (4×4×4 cells per column) to per-block once
-  // we have parity-tested 1.17 biome handling.
-  const biomesArray = new Uint8Array(totalBlocks)
-  biomesArray.fill(1)
+  let blockLight: Uint8Array
+  let skyLight: Uint8Array
+  if (lightEntry && lightEntry.skyLight.length === totalBlocks) {
+    skyLight = lightEntry.skyLight
+    blockLight = lightEntry.blockLight
+  } else {
+    blockLight = new Uint8Array(totalBlocks)
+    skyLight = new Uint8Array(totalBlocks)
+    skyLight.fill(15)
+  }
+  const biomesArray: Uint8Array = parsed.biomes
   let blockCount = 0
   for (let i = 0; i < totalBlocks; i++) {
     if (blockStates[i] !== 0) blockCount++
@@ -337,6 +388,7 @@ const handleMessage = async (data: any) => {
       invalidateConversion(data.x, data.z)
       rawMapChunkCache.delete(rawCacheKey(data.x, data.z))
       parsedV17Cache.delete(rawCacheKey(data.x, data.z))
+      updateLightV17Cache.delete(rawCacheKey(data.x, data.z))
       if (!world) break
       world.removeColumn(data.x, data.z)
       world.customBlockModels.delete(`${data.x},${data.z}`)
@@ -393,6 +445,17 @@ const handleMessage = async (data: any) => {
       invalidateConversion(data.x, data.z)
       break
     }
+    case 'setUpdateLightV17': {
+      // 1.17 path: parse the raw `update_light` packet via WASM. The
+      // (chunkX, chunkZ) come back inside the result — JS doesn't peek at
+      // varints. May arrive before or after the matching map_chunk; either
+      // way we cache and invalidate the column conversion so the next tick
+      // merges real lighting in.
+      // If WASM isn't ready yet, the packet is queued in
+      // `pendingUpdateLightV17` and replayed by `initWasm`.
+      processUpdateLightV17(data.rawPacket as Uint8Array, data.numSections as number)
+      break
+    }
     case 'reset': {
       world = undefined as any
       dirtySections.clear()
@@ -400,6 +463,7 @@ const handleMessage = async (data: any) => {
       clearConversionCache()
       rawMapChunkCache.clear()
       parsedV17Cache.clear()
+      updateLightV17Cache.clear()
       globalVar.mcData = null
       globalVar.loadedData = null
       allDataReady = false
@@ -554,6 +618,7 @@ function processColumnTick() {
           const cs = performance.now()
           const rawEntry = rawMapChunkCache.get(rawCacheKey(cx, cz))
           const v17Entry = parsedV17Cache.get(rawCacheKey(cx, cz))
+          const v17Light = updateLightV17Cache.get(rawCacheKey(cx, cz))
           const { result: conv, hit } = getOrConvertColumn(
             cx,
             cz,
@@ -571,7 +636,7 @@ function processColumnTick() {
               }
               // 1.17 path: pre-parsed sections from main thread.
               if (v17Entry) {
-                const fast = convertParsedV17ToWasm(v17Entry, version)
+                const fast = convertParsedV17ToWasm(v17Entry, v17Light, version)
                 if (fast) return fast
               }
               return convertChunkToWasm(

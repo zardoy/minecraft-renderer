@@ -73,6 +73,18 @@ export interface ParsedMapChunkV17Data {
   biomes?: Int32Array
 }
 
+/**
+ * Raw `update_light` payload for protocol 755/756 (1.17/1.17.1). The
+ * worker decodes (chunkX, chunkZ) out of the varints in `rawPacket` via
+ * `parseUpdateLightV17` — JS doesn't peek at coords, so the packet bytes
+ * are forwarded verbatim (with the leading packet-id varint included).
+ */
+export interface UpdateLightV17Data {
+  protocol: number
+  numSections: number
+  rawPacket: Uint8Array
+}
+
 /** Biome update event data */
 export interface BiomeUpdateData {
   biome: any
@@ -95,6 +107,7 @@ export type WorldViewEvents = {
   loadChunk: (data: LoadChunkData) => void
   setRawMapChunk: (data: RawMapChunkData) => void
   setParsedMapChunkV17: (data: ParsedMapChunkV17Data) => void
+  setUpdateLightV17: (data: UpdateLightV17Data) => void
   updateLight: (data: { pos: Vec3 }) => void
   onWorldSwitch: () => void
   end: () => void

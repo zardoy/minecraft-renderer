@@ -481,7 +481,8 @@ export function parseChunkDump118NoMarshal(buffer, num_sections, max_bits_per_bl
 
 /**
  * Parse a 1.17 chunk-section payload (the bytes inside `chunkData` of a
- * `map_chunk` packet) into a flat `Uint16Array` of block states.
+ * `map_chunk` packet) into a flat `Uint16Array` of block states **and** an
+ * expanded per-block biome `Uint8Array`.
  *
  * `chunk_data` — exactly the bytes between the `chunkData` length prefix and
  * the `blockEntities` count in the wire packet (i.e. what
@@ -493,26 +494,36 @@ export function parseChunkDump118NoMarshal(buffer, num_sections, max_bits_per_bl
  * ...]` u32 pairs. Bit `s` indicates that section index `s` is present in
  * `chunk_data`. Sections without a set bit decode to all-zeros.
  *
- * Returns `{ blockStates: Uint16Array(num_sections * 4096), bytesRead,
- *            bytesTotal }`.
- * Layout of `blockStates` is `(s * 4096) | (y_in << 8) | (z << 4) | x`,
+ * `biomes_cells` — the 1.17 wire `biomes` field (varint[num_sections * 64]),
+ * passed straight through as `Int32Array`. May be empty (`&[]`) when the
+ * caller didn't capture biomes — every block then gets `default_biome`
+ * (typically 1 = plains).
+ *
+ * Returns `{ blockStates: Uint16Array(num_sections * 4096),
+ *            biomes: Uint8Array(num_sections * 4096),
+ *            bytesRead, bytesTotal }`.
+ * Layout of both arrays is `(s * 4096) | (y_in << 8) | (z << 4) | x`,
  * matching what the WASM mesher already consumes for 1.18+ blocks.
  *
  * Light is **not** produced here — in 1.17 it arrives in a separate
- * `update_light` packet. The JS bridge fills in defaults (sky=15, block=0)
- * or merges real data from a paired `update_light` cache.
+ * `update_light` packet (see `parseUpdateLightV17`). The JS bridge fills in
+ * defaults (sky=15, block=0) or merges real data from a paired light cache.
  * @param {Uint8Array} chunk_data
  * @param {Uint32Array} bit_map_lo_hi
  * @param {number} num_sections
  * @param {number} max_bits_per_block
+ * @param {Int32Array} biomes_cells
+ * @param {number} default_biome
  * @returns {any}
  */
-export function parseChunkSectionsV17(chunk_data, bit_map_lo_hi, num_sections, max_bits_per_block) {
+export function parseChunkSectionsV17(chunk_data, bit_map_lo_hi, num_sections, max_bits_per_block, biomes_cells, default_biome) {
     const ptr0 = passArray8ToWasm0(chunk_data, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passArray32ToWasm0(bit_map_lo_hi, wasm.__wbindgen_malloc);
     const len1 = WASM_VECTOR_LEN;
-    const ret = wasm.parseChunkSectionsV17(ptr0, len0, ptr1, len1, num_sections, max_bits_per_block);
+    const ptr2 = passArray32ToWasm0(biomes_cells, wasm.__wbindgen_malloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ret = wasm.parseChunkSectionsV17(ptr0, len0, ptr1, len1, num_sections, max_bits_per_block, ptr2, len2, default_biome);
     return ret;
 }
 
@@ -538,6 +549,30 @@ export function parseMapChunkV18Plus(raw_packet, num_sections, max_bits_per_bloc
     const ptr0 = passArray8ToWasm0(raw_packet, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.parseMapChunkV18Plus(ptr0, len0, num_sections, max_bits_per_block, max_bits_per_biome, protocol);
+    return ret;
+}
+
+/**
+ * Parse a raw 1.17 `update_light` packet (as captured by
+ * `client.on('raw.update_light', ...)`) into flat per-block sky/block light
+ * arrays the WASM mesher consumes.
+ *
+ * `raw_packet` includes the leading packet-id varint (we skip it).
+ * `num_sections` should match the column the light is for (16 in 1.17).
+ *
+ * Returns `{ x, z, skyLight: Uint8Array(num_sections * 4096),
+ *            blockLight: Uint8Array(num_sections * 4096), bytesRead }`.
+ * Layout matches the existing 1.18+ light arrays
+ * (`x + z*16 + y_abs*256`); the JS-side worker reorders into per-section
+ * stack via the same path used for 1.18+ raw map_chunk parsing.
+ * @param {Uint8Array} raw_packet
+ * @param {number} num_sections
+ * @returns {any}
+ */
+export function parseUpdateLightV17(raw_packet, num_sections) {
+    const ptr0 = passArray8ToWasm0(raw_packet, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.parseUpdateLightV17(ptr0, len0, num_sections);
     return ret;
 }
 

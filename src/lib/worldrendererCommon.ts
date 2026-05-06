@@ -890,6 +890,20 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       }
     })
 
+    worldEmitter.on('setUpdateLightV17', (data) => {
+      // 1.17 path: forward the raw `update_light` packet so the worker can
+      // call `parseUpdateLightV17` and cache the per-block sky/block-light
+      // arrays for the next mesh tick of that column.
+      for (const worker of this.workers) {
+        worker.postMessage({
+          type: 'setUpdateLightV17',
+          protocol: data.protocol,
+          numSections: data.numSections,
+          rawPacket: data.rawPacket,
+        })
+      }
+    })
+
     worldEmitter.on('blockUpdate', ({ pos, stateId }) => {
       this.setBlockStateId(new Vec3(pos.x, pos.y, pos.z), stateId)
     })

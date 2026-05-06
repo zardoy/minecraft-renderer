@@ -300,6 +300,7 @@ pub fn assemble_light_full_column(
     empty_mask: &[u32],
     num_sections: usize,
     default_value: u8,
+    long_encoded: bool,
 ) -> io::Result<Vec<u8>> {
     let total = num_sections * BLOCK_SECTION_VOLUME;
     let mut out = vec![default_value; total];
@@ -336,17 +337,27 @@ pub fn assemble_light_full_column(
         if !in_chunk { continue; }
         let s = section_idx_in_chunk as usize;
         let base = s * 16 * 256;
-        // BitArrayNoSpan stores 16 nibbles per i64; prismarine writes longs as 8 bytes
-        // big-endian. So within each 8-byte run (one long), byte offset 0 holds nibble
-        // positions 14-15, byte offset 7 holds positions 0-1. We mirror that here.
+        // BitArrayNoSpan stores 16 nibbles per i64. For 1.18+ map_chunk and
+        // for 1.16 the wire writes those longs as 8 big-endian bytes — so
+        // within each 8-byte run, byte offset 0 holds nibble positions 14-15
+        // and byte offset 7 holds positions 0-1 (long_encoded = true). For
+        // 1.17 update_light the wire payload is the BitArrayNoSpan internal
+        // byte buffer in *natural* order: byte i holds blocks 2i (low nibble)
+        // and 2i+1 (high nibble) directly (long_encoded = false). Mismatching
+        // this produces X-mirrored light bands inside every Z-row, which the
+        // user sees as very dark shadows under trees / on slopes.
         for byte_idx in 0..LIGHT_SECTION_BUFFER_BYTES {
             let byte = section[byte_idx];
             let v0 = byte & 0x0F;
             let v1 = (byte >> 4) & 0x0F;
-            let long_idx = byte_idx >> 3;
-            let off_in_long = byte_idx & 0x7;
-            let pair_pos = 7 - off_in_long; // BE byte → nibble-pair position inside long
-            let block0 = long_idx * 16 + pair_pos * 2;
+            let block0 = if long_encoded {
+                let long_idx = byte_idx >> 3;
+                let off_in_long = byte_idx & 0x7;
+                let pair_pos = 7 - off_in_long; // BE byte → nibble-pair position inside long
+                long_idx * 16 + pair_pos * 2
+            } else {
+                byte_idx * 2
+            };
             let block1 = block0 + 1;
             for (block_local, value) in [(block0, v0), (block1, v1)] {
                 let y_in = block_local >> 8;
@@ -542,4 +553,114 @@ pub fn i64_mask_to_u32_pairs(mask: &[i64]) -> Vec<u32> {
         out.push((u >> 32) as u32);  // high
     }
     out
+}
+
+/// Read a wire `array` of i64s prefixed by a VarInt count.
+/// Used for the four light masks in both 1.17 `update_light` and 1.18+
+/// `map_chunk` packets.
+pub fn read_i64_array(r: &mut PacketReader) -> io::Result<Vec<i64>> {
+    let n = r.read_varint()? as usize;
+    let mut out = Vec::with_capacity(n);
+    for _ in 0..n { out.push(r.read_i64_be()?); }
+    Ok(out)
+}
+
+/// Read the sky/blockLight wire field: VarInt count + array of (VarInt size + bytes[size]).
+/// In practice each inner buffer is exactly 2048 bytes (one nibble per block).
+pub fn read_light_arrays(r: &mut PacketReader) -> io::Result<Vec<Vec<u8>>> {
+    let n = r.read_varint()? as usize;
+    let mut out = Vec::with_capacity(n);
+    for _ in 0..n {
+        let size = r.read_varint()? as usize;
+        out.push(r.read_bytes(size)?.to_vec());
+    }
+    Ok(out)
+}
+
+/// Convert (i64 mask, i64 empty_mask, per-section buffers) into a full-column
+/// light array laid out as `index = x + z*16 + y_abs*256`.
+///
+/// Wraps `assemble_light_full_column`: translates the i64 masks to the [low, high]
+/// u32 layout, concatenates the per-section buffers (each must be 2048 bytes),
+/// and delegates the heavy lifting (mask iteration, nibble unpacking, indexing).
+pub fn build_full_column_light(
+    section_buffers: &[Vec<u8>],
+    mask: &[i64],
+    empty_mask: &[i64],
+    num_sections: usize,
+    default_value: u8,
+    long_encoded: bool,
+) -> io::Result<Vec<u8>> {
+    let mask_pairs = i64_mask_to_u32_pairs(mask);
+    let empty_pairs = i64_mask_to_u32_pairs(empty_mask);
+
+    let mut concat = Vec::with_capacity(section_buffers.len() * LIGHT_SECTION_BUFFER_BYTES);
+    for buf in section_buffers {
+        if buf.len() != LIGHT_SECTION_BUFFER_BYTES {
+            return Err(io::Error::new(io::ErrorKind::InvalidData,
+                format!("light buffer size {} != {}", buf.len(), LIGHT_SECTION_BUFFER_BYTES)));
+        }
+        concat.extend_from_slice(buf);
+    }
+
+    assemble_light_full_column(&concat, &mask_pairs, &empty_pairs, num_sections, default_value, long_encoded)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// One present, non-empty section (mask_bit = 1, since bit 0 is the
+    /// border below the chunk). 16 bits: 0b10 = 2.
+    fn one_section_mask() -> Vec<u32> { vec![2u32, 0u32] }
+    fn empty_mask_zero() -> Vec<u32> { vec![0u32, 0u32] }
+
+    #[test]
+    fn long_encoded_true_mirrors_x_within_z_row() {
+        // Long_encoded=true: byte 0 of an 8-byte run holds blocks 14,15 (top X
+        // pair of the row); byte 7 holds blocks 0,1. We feed byte 0 = 0x21
+        // (low nibble 1, high nibble 2) and read back the row.
+        let mut section = vec![0u8; LIGHT_SECTION_BUFFER_BYTES];
+        section[0] = 0x21;
+        let out = assemble_light_full_column(
+            &section, &one_section_mask(), &empty_mask_zero(), 1, 0, true,
+        ).unwrap();
+        // Block 14 in row 0 (y=0,z=0,x=14) -> low nibble = 1
+        // Block 15 in row 0 (y=0,z=0,x=15) -> high nibble = 2
+        assert_eq!(out[0 * 256 + 0 * 16 + 14], 1, "long_encoded x=14 nibble");
+        assert_eq!(out[0 * 256 + 0 * 16 + 15], 2, "long_encoded x=15 nibble");
+        // Confirm block 0 NOT touched
+        assert_eq!(out[0], 0);
+    }
+
+    #[test]
+    fn long_encoded_false_is_sequential_for_v17() {
+        // Long_encoded=false: byte 0 holds blocks 0,1 directly.
+        let mut section = vec![0u8; LIGHT_SECTION_BUFFER_BYTES];
+        section[0] = 0x21;
+        let out = assemble_light_full_column(
+            &section, &one_section_mask(), &empty_mask_zero(), 1, 0, false,
+        ).unwrap();
+        // Block 0 -> low nibble 1; block 1 -> high nibble 2
+        assert_eq!(out[0 * 256 + 0 * 16 + 0], 1, "sequential x=0 nibble");
+        assert_eq!(out[0 * 256 + 0 * 16 + 1], 2, "sequential x=1 nibble");
+        // Block 14/15 untouched
+        assert_eq!(out[0 * 256 + 0 * 16 + 14], 0);
+        assert_eq!(out[0 * 256 + 0 * 16 + 15], 0);
+    }
+
+    #[test]
+    fn long_encoded_modes_differ() {
+        // Sanity check: a non-trivial pattern produces different output under
+        // each mode (proves the parameter actually has effect).
+        let mut section = vec![0u8; LIGHT_SECTION_BUFFER_BYTES];
+        for i in 0..8 { section[i] = (i as u8) << 4 | (i as u8); }
+        let a = assemble_light_full_column(
+            &section, &one_section_mask(), &empty_mask_zero(), 1, 0, true,
+        ).unwrap();
+        let b = assemble_light_full_column(
+            &section, &one_section_mask(), &empty_mask_zero(), 1, 0, false,
+        ).unwrap();
+        assert_ne!(a, b, "long_encoded modes must produce different layouts");
+    }
 }
