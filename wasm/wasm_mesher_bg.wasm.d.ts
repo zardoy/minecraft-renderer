@@ -10,7 +10,7 @@ export const parseChunkDump118FullColumnAll: (a: number, b: number, c: number, d
 export const generateGeometryFromDump118: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number, i1: number, j1: number, k1: number) => any;
 export const parseChunkDump118FullColumn: (a: number, b: number, c: number, d: number, e: number) => any;
 export const parseMapChunkV18Plus: (a: number, b: number, c: number, d: number, e: number, f: number) => any;
-export const parseChunkSectionsV17: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => any;
+export const parseChunkSectionsV16V17: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => any;
 export const parseUpdateLightV17: (a: number, b: number, c: number) => any;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

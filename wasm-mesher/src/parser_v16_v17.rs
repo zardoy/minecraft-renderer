@@ -63,7 +63,7 @@ pub const NUM_SECTIONS_V17: usize = 16;
 ///
 /// Also returns `bytes_read` so callers can sanity-check they consumed the
 /// whole `chunk_data` slice.
-pub fn parse_chunk_sections_v17(
+pub fn parse_chunk_sections_v16_v17(
     chunk_data: &[u8],
     bit_map: &[u32],
     num_sections: usize,
@@ -379,7 +379,7 @@ mod tests {
             biomes_cells[i] = i32::from_le_bytes([c[0], c[1], c[2], c[3]]);
         }
 
-        let result = parse_chunk_sections_v17(
+        let result = parse_chunk_sections_v16_v17(
             &chunk_data,
             &bit_map,
             fix.meta.num_sections,
@@ -433,6 +433,113 @@ mod tests {
             }
             panic!("{}: biomes mismatch ({} diffs)", fix.name, diffs);
         }
+    }
+
+    // ---- 1.16 parity ---------------------------------------------------
+    //
+    // The chunk_data wire format is byte-identical between 1.16 and 1.17, so
+    // we reuse `parse_chunk_sections_v16_v17` unchanged. Only the fixture
+    // shape differs: 1.16's `column.getMask()` returns a single number
+    // (sectionMask bitfield) instead of a long-array, so we deserialize
+    // `bitMap_int` and pack it into the `[lo, hi]` u32 pair the parser wants.
+
+    #[derive(Deserialize)]
+    struct FixtureV16 {
+        name: String,
+        meta: Meta,
+        #[serde(rename = "chunkData_b64")] chunk_data_b64: String,
+        #[serde(rename = "bitMap_int")] bit_map_int: i64,
+        #[serde(rename = "biomes_int_b64")] biomes_int_b64: String,
+        reference: Reference,
+    }
+
+    fn run_one_v16(path: &Path) {
+        let bytes = fs::read(path).expect("fixture read");
+        let fix: FixtureV16 = serde_json::from_slice(&bytes).expect("fixture parse");
+
+        let chunk_data = B64.decode(&fix.chunk_data_b64).expect("chunk_data b64");
+        // 1.16 sectionMask fits in 16 bits but we accept the full i64 the JSON
+        // carries to be robust. Pack into the flat `[lo, hi]` u32 layout.
+        let m = fix.bit_map_int as u64;
+        let bit_map: Vec<u32> = vec![m as u32, (m >> 32) as u32];
+
+        let biomes_int_bytes = B64.decode(&fix.biomes_int_b64).expect("biomes_int b64");
+        assert_eq!(biomes_int_bytes.len() % 4, 0,
+            "{}: biomes_int_b64 len not multiple of 4", fix.name);
+        let mut biomes_cells = vec![0i32; biomes_int_bytes.len() / 4];
+        for (i, c) in biomes_int_bytes.chunks_exact(4).enumerate() {
+            biomes_cells[i] = i32::from_le_bytes([c[0], c[1], c[2], c[3]]);
+        }
+
+        let result = parse_chunk_sections_v16_v17(
+            &chunk_data,
+            &bit_map,
+            fix.meta.num_sections,
+            fix.meta.max_bits_per_block,
+            Some(&biomes_cells),
+            1,
+        ).unwrap_or_else(|e| panic!("{}: parse failed: {}", fix.name, e));
+
+        let ref_bytes = B64.decode(&fix.reference.block_states_b64).expect("ref b64");
+        let mut ref_blocks = vec![0u16; ref_bytes.len() / 2];
+        for (i, c) in ref_bytes.chunks_exact(2).enumerate() {
+            ref_blocks[i] = u16::from_le_bytes([c[0], c[1]]);
+        }
+        let ref_reordered = reorder_reference_to_section_layout(&ref_blocks, fix.meta.num_sections);
+
+        assert_eq!(result.block_states.len(), ref_reordered.len(),
+            "{}: block_states length mismatch", fix.name);
+
+        if result.block_states != ref_reordered {
+            let mut diffs = 0;
+            for (i, (a, b)) in result.block_states.iter().zip(ref_reordered.iter()).enumerate() {
+                if a != b {
+                    if diffs < 10 {
+                        eprintln!("  {}: diff[{}]: ours={} ref={}", fix.name, i, a, b);
+                    }
+                    diffs += 1;
+                }
+            }
+            panic!("{}: block_states mismatch ({} diffs)", fix.name, diffs);
+        }
+
+        let biomes_ref_bytes = B64.decode(&fix.reference.biomes_per_block_b64)
+            .expect("biomesPerBlock b64");
+        assert_eq!(biomes_ref_bytes.len(), fix.meta.num_sections * common::BLOCK_SECTION_VOLUME,
+            "{}: biomesPerBlock length unexpected", fix.name);
+        let biomes_ref_reordered = reorder_reference_u8_to_section_layout(
+            &biomes_ref_bytes, fix.meta.num_sections);
+        assert_eq!(result.biomes.len(), biomes_ref_reordered.len(),
+            "{}: biomes length mismatch", fix.name);
+        if result.biomes != biomes_ref_reordered {
+            let mut diffs = 0;
+            for (i, (a, b)) in result.biomes.iter().zip(biomes_ref_reordered.iter()).enumerate() {
+                if a != b {
+                    if diffs < 10 {
+                        eprintln!("  {}: biome diff[{}]: ours={} ref={}", fix.name, i, a, b);
+                    }
+                    diffs += 1;
+                }
+            }
+            panic!("{}: biomes mismatch ({} diffs)", fix.name, diffs);
+        }
+    }
+
+    #[test]
+    fn parity_all_v16_fixtures() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../dump-poc/fixtures-1.16");
+        let entries = fs::read_dir(&dir)
+            .unwrap_or_else(|_| panic!("no fixtures dir {:?}", dir));
+        let mut count = 0;
+        for e in entries.flatten() {
+            let path = e.path();
+            let name = path.file_name().unwrap().to_string_lossy().to_string();
+            if !name.ends_with(".json") || name.starts_with('_') { continue; }
+            run_one_v16(&path);
+            count += 1;
+        }
+        assert!(count >= 9, "expected at least 9 fixtures, got {}", count);
+        eprintln!("[v16 parity] {} fixtures byte-perfect OK", count);
     }
 
     #[test]

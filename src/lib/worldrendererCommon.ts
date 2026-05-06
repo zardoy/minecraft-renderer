@@ -873,7 +873,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
     worldEmitter.on('setParsedMapChunkV17', (data) => {
       // 1.17 path: forward the pre-extracted section bytes + bit mask so the
-      // worker can call `parseChunkSectionsV17` instead of walking the JS
+      // worker can call `parseChunkSectionsV16V17` instead of walking the JS
       // column. Lighting is supplied later (or defaulted) — see worker.
       for (const worker of this.workers) {
         worker.postMessage({
@@ -899,6 +899,38 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
           type: 'setUpdateLightV17',
           protocol: data.protocol,
           numSections: data.numSections,
+          rawPacket: data.rawPacket,
+        })
+      }
+    })
+
+    worldEmitter.on('setParsedMapChunkV16', (data) => {
+      // 1.16 path: forward the pre-extracted section bytes + (single
+      // number) bit mask. Worker calls the shared `parseChunkSectionsV16V17`
+      // with a [bitMap,0] long-pair and num_sections=16 / max_bits=14.
+      for (const worker of this.workers) {
+        worker.postMessage({
+          type: 'setParsedMapChunkV16',
+          x: data.x,
+          z: data.z,
+          protocol: data.protocol,
+          chunkData: data.chunkData,
+          bitMap: data.bitMap,
+          biomes: data.biomes,
+        })
+      }
+    })
+
+    worldEmitter.on('setUpdateLightV16', (data) => {
+      // 1.16 path: same wire format as 1.17 update_light — worker uses
+      // the shared `parseUpdateLightV17` parser but caches the result in
+      // the v16-specific light map.
+      for (const worker of this.workers) {
+        worker.postMessage({
+          type: 'setUpdateLightV16',
+          x: data.x,
+          z: data.z,
+          protocol: data.protocol,
           rawPacket: data.rawPacket,
         })
       }

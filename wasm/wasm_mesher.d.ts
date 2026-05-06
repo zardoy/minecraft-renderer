@@ -95,7 +95,7 @@ export function parseChunkDump118NoMarshal(buffer: Uint8Array, num_sections: num
  * `update_light` packet (see `parseUpdateLightV17`). The JS bridge fills in
  * defaults (sky=15, block=0) or merges real data from a paired light cache.
  */
-export function parseChunkSectionsV17(chunk_data: Uint8Array, bit_map_lo_hi: Uint32Array, num_sections: number, max_bits_per_block: number, biomes_cells: Int32Array, default_biome: number): any;
+export function parseChunkSectionsV16V17(chunk_data: Uint8Array, bit_map_lo_hi: Uint32Array, num_sections: number, max_bits_per_block: number, biomes_cells: Int32Array, default_biome: number): any;
 
 /**
  * Stage-3 entry: parse a raw `map_chunk` packet (1.18+) into the same shape as
@@ -145,7 +145,7 @@ export interface InitOutput {
   readonly generateGeometryFromDump118: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number, i1: number, j1: number, k1: number) => any;
   readonly parseChunkDump118FullColumn: (a: number, b: number, c: number, d: number, e: number) => any;
   readonly parseMapChunkV18Plus: (a: number, b: number, c: number, d: number, e: number, f: number) => any;
-  readonly parseChunkSectionsV17: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => any;
+  readonly parseChunkSectionsV16V17: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => any;
   readonly parseUpdateLightV17: (a: number, b: number, c: number) => any;
   readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

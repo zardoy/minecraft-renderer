@@ -26,6 +26,10 @@ let wasmInitialized = false
 // renderer interpolates with neighbour chunks that DO have real light,
 // the seams look like "local night".
 const pendingUpdateLightV17: Array<{ rawPacket: Uint8Array, numSections: number }> = []
+// Separate v16 pending queue so 1.16 update_light packets that arrive
+// before WASM is initialised land in the v16 light cache (not v17) on
+// drain — the mesh hot path looks them up per protocol family.
+const pendingUpdateLightV16: Array<{ rawPacket: Uint8Array }> = []
 
 function processUpdateLightV17 (rawPacket: Uint8Array, numSections: number): void {
   if (!wasm || !(wasm as any).parseUpdateLightV17) {
@@ -46,6 +50,30 @@ function processUpdateLightV17 (rawPacket: Uint8Array, numSections: number): voi
   }
 }
 
+// 1.16 update_light shares the wire format (and the WASM parser) with
+// 1.17, but we keep a SEPARATE result cache to keep the two protocol
+// families fully isolated — the mesh tick picks v16 vs v17 by which raw
+// chunk cache has the entry, and crossing the streams could mismatch a
+// stale 1.17 column with 1.16 light or vice versa during version switches.
+function processUpdateLightV16 (rawPacket: Uint8Array): void {
+  if (!wasm || !(wasm as any).parseUpdateLightV17) {
+    pendingUpdateLightV16.push({ rawPacket })
+    return
+  }
+  try {
+    const parsed: any = (wasm as any).parseUpdateLightV17(rawPacket, 16)
+    const x = (parsed.x as number) * 16
+    const z = (parsed.z as number) * 16
+    updateLightV16Cache.set(rawCacheKey(x, z), {
+      skyLight: parsed.skyLight as Uint8Array,
+      blockLight: parsed.blockLight as Uint8Array,
+    })
+    invalidateConversion(x, z)
+  } catch (err) {
+    console.warn('[WASM Mesher] parseUpdateLightV17 (v16) failed:', err)
+  }
+}
+
 async function initWasm() {
   if (wasmInitialized) return
   try {
@@ -57,6 +85,12 @@ async function initWasm() {
       console.log('[WASM Mesher] draining', pendingUpdateLightV17.length, 'pending update_light v17 packets')
       const queue = pendingUpdateLightV17.splice(0, pendingUpdateLightV17.length)
       for (const item of queue) processUpdateLightV17(item.rawPacket, item.numSections)
+    }
+
+    if (pendingUpdateLightV16.length > 0) {
+      console.log('[WASM Mesher] draining', pendingUpdateLightV16.length, 'pending update_light v16 packets')
+      const queue = pendingUpdateLightV16.splice(0, pendingUpdateLightV16.length)
+      for (const item of queue) processUpdateLightV16(item.rawPacket)
     }
   } catch (err) {
     console.error('Failed to initialize WASM mesher:', err)
@@ -200,6 +234,26 @@ interface UpdateLightV17Entry {
 }
 const updateLightV17Cache = new Map<string, UpdateLightV17Entry>()
 
+// 1.16 path: pre-extracted section bytes + bit mask. Bit mask in 1.16
+// is a varint that fits in i32 (only 16 sections), so we accept it as a
+// single number and widen to a [lo,hi]=[bitMap,0] u32 pair when calling
+// the shared `parseChunkSectionsV16V17` parser. Held separately from the
+// v17 cache to keep the two protocol families isolated during version
+// switches; mesh tick picks v16 vs v17 by which cache holds the entry.
+interface ParsedV16Entry {
+  protocol: number
+  chunkData: Uint8Array
+  bitMap: number
+  biomes: Int32Array
+}
+const parsedV16Cache = new Map<string, ParsedV16Entry>()
+
+// 1.16 sky/block light cache — same shape as the v17 entry, populated by
+// `processUpdateLightV16` (which calls the shared `parseUpdateLightV17`
+// WASM export). Separate map for the same isolation reasons as
+// `parsedV16Cache` above.
+const updateLightV16Cache = new Map<string, UpdateLightV17Entry>()
+
 // Mirrors `convertChunkToWasm`'s output (same layout: x + z*16 + y*256,
 // y outer) so it can be dropped straight into `generate_geometry`.
 const convertRawMapChunkToWasm = (
@@ -256,14 +310,14 @@ const convertParsedV17ToWasm = (
   lightEntry: UpdateLightV17Entry | undefined,
   version: string
 ): ChunkConversionResult | null => {
-  if (!wasm || !(wasm as any).parseChunkSectionsV17) return null
+  if (!wasm || !(wasm as any).parseChunkSectionsV16V17) return null
   // Empty `Int32Array` signals "no biomes captured" — WASM falls back to
   // `default_biome` for every block. Plains (id 1) matches the JS path.
   const biomesCells = entry.biomes ?? new Int32Array(0)
   const DEFAULT_BIOME = 1
   let parsed: any
   try {
-    parsed = (wasm as any).parseChunkSectionsV17(
+    parsed = (wasm as any).parseChunkSectionsV16V17(
       entry.chunkData,
       entry.bitMapLoHi,
       entry.numSections,
@@ -272,7 +326,73 @@ const convertParsedV17ToWasm = (
       DEFAULT_BIOME,
     )
   } catch (err) {
-    console.warn('[WASM Mesher] parseChunkSectionsV17 failed, falling back:', err)
+    console.warn('[WASM Mesher] parseChunkSectionsV16V17 failed, falling back:', err)
+    return null
+  }
+  const blockStates: Uint16Array = parsed.blockStates
+  const totalBlocks = blockStates.length
+  let blockLight: Uint8Array
+  let skyLight: Uint8Array
+  if (lightEntry && lightEntry.skyLight.length === totalBlocks) {
+    skyLight = lightEntry.skyLight
+    blockLight = lightEntry.blockLight
+  } else {
+    blockLight = new Uint8Array(totalBlocks)
+    skyLight = new Uint8Array(totalBlocks)
+    skyLight.fill(15)
+  }
+  const biomesArray: Uint8Array = parsed.biomes
+  let blockCount = 0
+  for (let i = 0; i < totalBlocks; i++) {
+    if (blockStates[i] !== 0) blockCount++
+  }
+  const meta = getBlockMeta(version)
+  return {
+    blockStates,
+    blockLight,
+    skyLight,
+    biomesArray,
+    invisibleBlocks: meta.invisibleBlocks,
+    transparentBlocks: meta.transparentBlocks,
+    noAoBlocks: meta.noAoBlocks,
+    cullIdenticalBlocks: meta.cullIdenticalBlocks,
+    occludingBlocks: meta.occludingBlocks,
+    blockCount,
+  }
+}
+
+// 1.16 conversion: shares the WASM parser with 1.17 (chunk-section wire
+// format is identical between 1.16.x and 1.17). The fixed parameters
+// (16 sections, max_bits_per_block=14) match the prismarine-chunk@1.16
+// defaults — anything else means a non-vanilla server we don't support
+// on the fast path, in which case we return null and fall back to the
+// JS column-walk via `convertChunkToWasm`.
+const convertParsedV16ToWasm = (
+  entry: ParsedV16Entry,
+  lightEntry: UpdateLightV17Entry | undefined,
+  version: string
+): ChunkConversionResult | null => {
+  if (!wasm || !(wasm as any).parseChunkSectionsV16V17) return null
+  const NUM_SECTIONS = 16
+  const MAX_BITS_PER_BLOCK = 15
+  const DEFAULT_BIOME = 1
+  // 1.16 bit mask is a varint that fits in i32 (only 16 sections used);
+  // the WASM parser still expects [lo,hi] u32 pairs (one pair per long),
+  // so widen the single number to [bitMap, 0].
+  const bitMapLoHi = new Uint32Array([entry.bitMap >>> 0, 0])
+  const biomesCells = entry.biomes ?? new Int32Array(0)
+  let parsed: any
+  try {
+    parsed = (wasm as any).parseChunkSectionsV16V17(
+      entry.chunkData,
+      bitMapLoHi,
+      NUM_SECTIONS,
+      MAX_BITS_PER_BLOCK,
+      biomesCells,
+      DEFAULT_BIOME,
+    )
+  } catch (err) {
+    console.warn('[WASM Mesher] parseChunkSectionsV16V17 (v16) failed, falling back:', err)
     return null
   }
   const blockStates: Uint16Array = parsed.blockStates
@@ -389,6 +509,8 @@ const handleMessage = async (data: any) => {
       rawMapChunkCache.delete(rawCacheKey(data.x, data.z))
       parsedV17Cache.delete(rawCacheKey(data.x, data.z))
       updateLightV17Cache.delete(rawCacheKey(data.x, data.z))
+      parsedV16Cache.delete(rawCacheKey(data.x, data.z))
+      updateLightV16Cache.delete(rawCacheKey(data.x, data.z))
       if (!world) break
       world.removeColumn(data.x, data.z)
       world.customBlockModels.delete(`${data.x},${data.z}`)
@@ -411,6 +533,7 @@ const handleMessage = async (data: any) => {
       // the (now-updated) prismarine column instead.
       rawMapChunkCache.delete(rawCacheKey(chunkX, chunkZ))
       parsedV17Cache.delete(rawCacheKey(chunkX, chunkZ))
+      parsedV16Cache.delete(rawCacheKey(chunkX, chunkZ))
       const chunkKey = `${chunkX},${chunkZ}`
       if (data.customBlockModels) {
         world?.customBlockModels.set(chunkKey, data.customBlockModels)
@@ -456,6 +579,26 @@ const handleMessage = async (data: any) => {
       processUpdateLightV17(data.rawPacket as Uint8Array, data.numSections as number)
       break
     }
+    case 'setParsedMapChunkV16': {
+      // 1.16 path: pre-extracted section bytes + (single-number) bit mask
+      // from mineflayer. Stored separately from v17 to keep the two
+      // protocol families isolated during version switches.
+      parsedV16Cache.set(rawCacheKey(data.x, data.z), {
+        protocol: data.protocol as number,
+        chunkData: data.chunkData as Uint8Array,
+        bitMap: data.bitMap as number,
+        biomes: data.biomes as Int32Array,
+      })
+      invalidateConversion(data.x, data.z)
+      break
+    }
+    case 'setUpdateLightV16': {
+      // 1.16 path: shares the wire format / WASM parser with 1.17 but
+      // populates a separate `updateLightV16Cache`. Same pre-WASM queueing
+      // semantics as v17.
+      processUpdateLightV16(data.rawPacket as Uint8Array)
+      break
+    }
     case 'reset': {
       world = undefined as any
       dirtySections.clear()
@@ -464,6 +607,8 @@ const handleMessage = async (data: any) => {
       rawMapChunkCache.clear()
       parsedV17Cache.clear()
       updateLightV17Cache.clear()
+      parsedV16Cache.clear()
+      updateLightV16Cache.clear()
       globalVar.mcData = null
       globalVar.loadedData = null
       allDataReady = false
@@ -619,6 +764,8 @@ function processColumnTick() {
           const rawEntry = rawMapChunkCache.get(rawCacheKey(cx, cz))
           const v17Entry = parsedV17Cache.get(rawCacheKey(cx, cz))
           const v17Light = updateLightV17Cache.get(rawCacheKey(cx, cz))
+          const v16Entry = parsedV16Cache.get(rawCacheKey(cx, cz))
+          const v16Light = updateLightV16Cache.get(rawCacheKey(cx, cz))
           const { result: conv, hit } = getOrConvertColumn(
             cx,
             cz,
@@ -637,6 +784,12 @@ function processColumnTick() {
               // 1.17 path: pre-parsed sections from main thread.
               if (v17Entry) {
                 const fast = convertParsedV17ToWasm(v17Entry, v17Light, version)
+                if (fast) return fast
+              }
+              // 1.16 path: same WASM parser as v17 but separate cache —
+              // see `convertParsedV16ToWasm` for the parameter rationale.
+              if (v16Entry) {
+                const fast = convertParsedV16ToWasm(v16Entry, v16Light, version)
                 if (fast) return fast
               }
               return convertChunkToWasm(

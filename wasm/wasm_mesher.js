@@ -516,14 +516,14 @@ export function parseChunkDump118NoMarshal(buffer, num_sections, max_bits_per_bl
  * @param {number} default_biome
  * @returns {any}
  */
-export function parseChunkSectionsV17(chunk_data, bit_map_lo_hi, num_sections, max_bits_per_block, biomes_cells, default_biome) {
+export function parseChunkSectionsV16V17(chunk_data, bit_map_lo_hi, num_sections, max_bits_per_block, biomes_cells, default_biome) {
     const ptr0 = passArray8ToWasm0(chunk_data, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passArray32ToWasm0(bit_map_lo_hi, wasm.__wbindgen_malloc);
     const len1 = WASM_VECTOR_LEN;
     const ptr2 = passArray32ToWasm0(biomes_cells, wasm.__wbindgen_malloc);
     const len2 = WASM_VECTOR_LEN;
-    const ret = wasm.parseChunkSectionsV17(ptr0, len0, ptr1, len1, num_sections, max_bits_per_block, ptr2, len2, default_biome);
+    const ret = wasm.parseChunkSectionsV16V17(ptr0, len0, ptr1, len1, num_sections, max_bits_per_block, ptr2, len2, default_biome);
     return ret;
 }
 

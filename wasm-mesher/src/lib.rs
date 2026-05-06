@@ -7,7 +7,7 @@ mod geometry;
 mod lighting;
 mod mesher;
 mod parser_v18plus;
-mod parser_v17;
+mod parser_v16_v17;
 mod utils;
 
 use chunk::ChunkData;
@@ -475,8 +475,8 @@ pub fn parse_map_chunk_v18plus_js(
 /// Light is **not** produced here — in 1.17 it arrives in a separate
 /// `update_light` packet (see `parseUpdateLightV17`). The JS bridge fills in
 /// defaults (sky=15, block=0) or merges real data from a paired light cache.
-#[wasm_bindgen(js_name = parseChunkSectionsV17)]
-pub fn parse_chunk_sections_v17_js(
+#[wasm_bindgen(js_name = parseChunkSectionsV16V17)]
+pub fn parse_chunk_sections_v16_v17_js(
     chunk_data: &[u8],
     bit_map_lo_hi: &[u32],
     num_sections: u32,
@@ -485,7 +485,7 @@ pub fn parse_chunk_sections_v17_js(
     default_biome: u8,
 ) -> JsValue {
     let cells_opt: Option<&[i32]> = if biomes_cells.is_empty() { None } else { Some(biomes_cells) };
-    let result = match parser_v17::parse_chunk_sections_v17(
+    let result = match parser_v16_v17::parse_chunk_sections_v16_v17(
         chunk_data,
         bit_map_lo_hi,
         num_sections as usize,
@@ -494,7 +494,7 @@ pub fn parse_chunk_sections_v17_js(
         default_biome,
     ) {
         Ok(r) => r,
-        Err(e) => wasm_bindgen::throw_str(&format!("parseChunkSectionsV17 error: {}", e)),
+        Err(e) => wasm_bindgen::throw_str(&format!("parseChunkSectionsV16V17 error: {}", e)),
     };
 
     let obj = js_sys::Object::new();
@@ -528,7 +528,7 @@ pub fn parse_update_light_v17_js(
     raw_packet: &[u8],
     num_sections: u32,
 ) -> JsValue {
-    let result = match parser_v17::parse_update_light_v17(raw_packet, num_sections as usize) {
+    let result = match parser_v16_v17::parse_update_light_v17(raw_packet, num_sections as usize) {
         Ok(r) => r,
         Err(e) => wasm_bindgen::throw_str(&format!("parseUpdateLightV17 error: {}", e)),
     };

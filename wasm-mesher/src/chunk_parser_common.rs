@@ -1,7 +1,7 @@
 // Common Minecraft chunk-packet parsing primitives.
 //
 // Shared between the legacy 1.18+ dump parser (`dump_parser.rs`) and future
-// per-version `map_chunk` packet parsers (`parser_v18plus.rs`, `parser_v17.rs`, ...).
+// per-version `map_chunk` packet parsers (`parser_v18plus.rs`, `parser_v16_v17.rs`, ...).
 //
 // What lives here:
 //   - PacketReader: byte/u8/i16/u32/varint cursor over &[u8]
