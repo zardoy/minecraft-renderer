@@ -85,6 +85,36 @@ export interface UpdateLightV17Data {
   rawPacket: Uint8Array
 }
 
+/**
+ * Pre-parsed `map_chunk` payload for the 1.16.x family (protocols
+ * 735, 736, 751, 753, 754). Wire format for chunk sections is identical
+ * to 1.17, so the worker reuses `parseChunkSectionsV16V17`. The bit mask
+ * is a single varint in 1.16 (only 16 sections), forwarded as a plain
+ * number; the worker widens it to a [lo,hi] u32 pair.
+ */
+export interface ParsedMapChunkV16Data {
+  x: number
+  z: number
+  protocol: number
+  chunkData: Uint8Array
+  bitMap: number
+  /** Flat 1024-entry biome cells (4×4×4 per column). */
+  biomes: Int32Array
+}
+
+/**
+ * Raw `update_light` payload for the 1.16.x family. Same wire format as
+ * 1.17, so the worker calls `parseUpdateLightV17` on the bytes; the
+ * result lands in a separate v16 light cache to keep the two protocol
+ * families isolated.
+ */
+export interface UpdateLightV16Data {
+  x: number
+  z: number
+  protocol: number
+  rawPacket: Uint8Array
+}
+
 /** Biome update event data */
 export interface BiomeUpdateData {
   biome: any
@@ -108,6 +138,8 @@ export type WorldViewEvents = {
   setRawMapChunk: (data: RawMapChunkData) => void
   setParsedMapChunkV17: (data: ParsedMapChunkV17Data) => void
   setUpdateLightV17: (data: UpdateLightV17Data) => void
+  setParsedMapChunkV16: (data: ParsedMapChunkV16Data) => void
+  setUpdateLightV16: (data: UpdateLightV16Data) => void
   updateLight: (data: { pos: Vec3 }) => void
   onWorldSwitch: () => void
   end: () => void
