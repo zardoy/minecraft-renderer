@@ -121,6 +121,19 @@ export interface BiomeUpdateData {
 }
 
 /**
+ * Discriminated union forwarded to the WASM mesher workers via the
+ * `feedChunkPacket` backend method. `kind` matches the worker message
+ * `type` so the backend method can forward the payload verbatim to
+ * `worker.postMessage`.
+ */
+export type FeedChunkPacketPayload =
+  | ({ kind: 'setRawMapChunk' } & RawMapChunkData)
+  | ({ kind: 'setParsedMapChunkV17' } & ParsedMapChunkV17Data)
+  | ({ kind: 'setUpdateLightV17' } & UpdateLightV17Data)
+  | ({ kind: 'setParsedMapChunkV16' } & ParsedMapChunkV16Data)
+  | ({ kind: 'setUpdateLightV16' } & UpdateLightV16Data)
+
+/**
  * WorldView events emitted to the renderer.
  */
 export type WorldViewEvents = {
@@ -135,11 +148,6 @@ export type WorldViewEvents = {
   markAsLoaded: (data: ChunkPos) => void
   unloadChunk: (data: UnloadChunkData) => void
   loadChunk: (data: LoadChunkData) => void
-  setRawMapChunk: (data: RawMapChunkData) => void
-  setParsedMapChunkV17: (data: ParsedMapChunkV17Data) => void
-  setUpdateLightV17: (data: UpdateLightV17Data) => void
-  setParsedMapChunkV16: (data: ParsedMapChunkV16Data) => void
-  setUpdateLightV16: (data: UpdateLightV16Data) => void
   updateLight: (data: { pos: Vec3 }) => void
   onWorldSwitch: () => void
   end: () => void

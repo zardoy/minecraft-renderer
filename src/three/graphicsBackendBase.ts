@@ -15,6 +15,7 @@ import { WorldRendererThree } from './worldRendererThree'
 import { DocumentRenderer, isWebWorker, ThreeRendererMainData } from './documentRenderer'
 import { PanoramaRenderer } from './panorama'
 import { WorldViewWorker } from '../worldView'
+import type { FeedChunkPacketPayload } from '../worldView/types'
 
 // Disable Three.js color management for compatibility
 THREE.ColorManagement.enabled = false
@@ -79,6 +80,18 @@ export const getBackendMethods = (worldRenderer: WorldRendererThree): any => {
       // Import dynamically to avoid circular dependencies
       const { applyWorldGeometryExport } = await import('./worldGeometryExport')
       return applyWorldGeometryExport(worldRenderer, exportData)
+    },
+    feedChunkPacket(payload: FeedChunkPacketPayload) {
+      // Forward parsed/raw map_chunk + update_light packets from the
+      // web-client to all WASM mesher workers. The fan-out below uses
+      // structured clone (one Uint8Array can only be transferred to a
+      // single recipient); useWorkerProxy still gives zero-copy transfer
+      // from main into the off-thread renderer worker for free.
+      const { kind, ...rest } = payload
+      const message = { type: kind, ...rest }
+      for (const worker of worldRenderer.workers) {
+        worker.postMessage(message)
+      }
     }
   }
 }
