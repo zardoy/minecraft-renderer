@@ -996,6 +996,30 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   getWorkerNumber(pos: Vec3, updateAction = false) {
     const CHUNK_SIZE = 16
     const sectionHeight = this.getSectionHeight()
+    const dedicated = this.worldRendererConfig.dedicatedChangeWorker
+
+    if (dedicated && this.workers.length > 1) {
+      // WASM column meshing must keep all vertical sections of a chunk
+      // column on one worker — skip dedicated change worker to avoid
+      // concurrent column meshing across different workers.
+      if (this.worldRendererConfig.wasmMesher) {
+        return mod(Math.floor(pos.x / CHUNK_SIZE) + Math.floor(pos.z / CHUNK_SIZE), this.workers.length)
+      }
+      if (updateAction) {
+        const key = `${Math.floor(pos.x / CHUNK_SIZE) * CHUNK_SIZE},${Math.floor(pos.y / sectionHeight) * sectionHeight},${Math.floor(pos.z / CHUNK_SIZE) * CHUNK_SIZE}`
+        const busy = this.sectionsWaiting.get(key) && !this.finishedSections[key]
+        if (busy) {
+          // Section is already being meshed by a general worker — route
+          // the update to the same worker to avoid concurrent meshing.
+          const generalWorkers = this.workers.length - 1
+          return mod(Math.floor(pos.x / CHUNK_SIZE) + Math.floor(pos.y / sectionHeight) + Math.floor(pos.z / CHUNK_SIZE), generalWorkers)
+        }
+        return this.workers.length - 1
+      }
+      const generalWorkers = this.workers.length - 1
+      return mod(Math.floor(pos.x / CHUNK_SIZE) + Math.floor(pos.y / sectionHeight) + Math.floor(pos.z / CHUNK_SIZE), generalWorkers)
+    }
+
     if (this.worldRendererConfig.wasmMesher) {
       // WASM column meshing must keep all vertical sections of a chunk column
       // on one worker. Hash by x/z only and bypass the change-worker shortcut
@@ -1096,7 +1120,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     // Dispatch sections to workers based on position
     // This guarantees uniformity accross workers and that a given section
     // is always dispatched to the same worker
-    const hash = this.getWorkerNumber(pos, useChangeWorker && this.mesherLogger.active)
+    const hash = this.getWorkerNumber(pos, useChangeWorker && (this.mesherLogger.active || this.worldRendererConfig.dedicatedChangeWorker))
     this.sectionsWaiting.set(key, (this.sectionsWaiting.get(key) ?? 0) + 1)
     if (this.forceCallFromMesherReplayer) {
       this.workers[hash].postMessage({

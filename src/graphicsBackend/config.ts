@@ -34,6 +34,10 @@ export const defaultWorldRendererConfig = {
    * iOS Safari and other low-RAM environments). Trades performance for
    * lower per-worker RAM. */
   disableMesherConversionCache: false,
+  /** Whether to dedicate the last worker exclusively to block-update
+   * remeshing (change worker). When true, initial chunk meshing is
+   * distributed only across workers[0 .. n-2]. */
+  dedicatedChangeWorker: false,
 
   // Rendering engine settings
   /** Face shading: vanilla Minecraft vs higher-contrast client look */
