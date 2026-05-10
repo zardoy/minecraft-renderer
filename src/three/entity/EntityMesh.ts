@@ -56,21 +56,33 @@ interface JsonModel {
   bones: JsonBone[]
 }
 
+export type CustomModelMetadata = {
+  scale?: number
+  offset?: { x?: number, y?: number, z?: number }
+  texture?: string
+  textures?: Record<string, string>
+  animation?: string
+  animationLoop?: boolean
+}
+
+export type CustomModelPart = {
+  modelPath: string | ArrayBuffer
+  modelType: 'obj' | 'bedrock' | 'gltf'
+  metadata?: CustomModelMetadata
+}
+
+/** One part, or several (same idea as `models[]` on the custom-model-overlay). */
+export type EntityCustomModel = CustomModelPart | { parts: CustomModelPart[] }
+
 interface EntityOverrides {
   textures?: Record<string, string>
   rotation?: Record<string, { x?: number; y?: number; z?: number }>
-  customModel?: {
-    modelPath: string | ArrayBuffer
-    modelType: 'obj' | 'bedrock' | 'gltf'
-    metadata?: {
-      scale?: number
-      offset?: { x?: number, y?: number, z?: number }
-      texture?: string
-      textures?: Record<string, string>
-      animation?: string
-      animationLoop?: boolean
-    }
-  }
+  customModel?: EntityCustomModel
+}
+
+function normalizeCustomModelParts (custom: EntityCustomModel): CustomModelPart[] {
+  if ('parts' in custom && Array.isArray(custom.parts)) return custom.parts
+  return [custom as CustomModelPart]
 }
 
 const elemFaces: Record<string, ElemFace> = {
@@ -442,7 +454,7 @@ interface EntityGeometry {
 export type EntityModelType = 'obj' | 'bedrock' | 'gltf'
 
 export type EntityDebugFlags = {
-  type?: 'obj' | 'bedrock' | 'special'
+  type?: 'obj' | 'bedrock' | 'gltf' | 'special'
   tempMap?: string
   textureMap?: boolean
   errors?: string[]
@@ -452,9 +464,7 @@ export type EntityDebugFlags = {
 export class EntityMesh {
   mesh!: THREE.Object3D
   animations?: THREE.AnimationClip[]
-  private animationController?: ReturnType<typeof createAnimatedObject>
-  private initialAnimation?: string
-  private initialLoop?: boolean
+  private animationControllers: Array<ReturnType<typeof createAnimatedObject>> = []
 
   constructor(
     version: string,
@@ -470,145 +480,117 @@ export class EntityMesh {
       debugFlags.tempMap = mappedValue
     }
 
-    // Handle custom model override
+    // Handle custom model override (single or multiple parts)
     if (overrides.customModel) {
-      // empty mesh to allow "handled" entity and not pink box
+      const parts = normalizeCustomModelParts(overrides.customModel)
       this.mesh = new THREE.Object3D()
 
-      const { modelPath, modelType, metadata } = overrides.customModel
+      for (let i = 0; i < parts.length; i++) {
+        const { modelPath, modelType, metadata } = parts[i]
+        const partRoot = new THREE.Object3D()
+        partRoot.name = `custom_part_${i}`
 
-      switch (modelType) {
-        case 'gltf': {
-          const loader = new GLTFLoader()
-          const gltfData = loader.parseAsync(modelPath, '')
-
-          gltfData.then(gltf => {
-            this.mesh.add(gltf.scene)
-            this.animations = gltf.animations
-
-            // Apply metadata overrides if available
+        switch (modelType) {
+          case 'gltf': {
+            const loader = new GLTFLoader()
+            void loader.parseAsync(modelPath, '').then(gltf => {
+              partRoot.add(gltf.scene)
+              if (metadata?.scale) {
+                const s = metadata.scale
+                partRoot.scale.set(s, s, s)
+              }
+              if (metadata?.offset) {
+                const { x = 0, y = 0, z = 0 } = metadata.offset
+                partRoot.position.set(x, y, z)
+              }
+              if (metadata?.texture) {
+                const texture = new THREE.TextureLoader().load(metadata.texture)
+                texture.minFilter = THREE.NearestFilter
+                texture.magFilter = THREE.NearestFilter
+                partRoot.traverse((child) => {
+                  if (child instanceof THREE.Mesh) {
+                    child.material = new THREE.MeshBasicMaterial({
+                      map: texture,
+                      transparent: true,
+                      alphaTest: 0.1
+                    })
+                  }
+                })
+              }
+              if (gltf.animations?.length) {
+                this.animations = [...(this.animations ?? []), ...gltf.animations]
+                const controller = createAnimatedObject(partRoot, gltf.animations)
+                this.animationControllers.push(controller)
+                const animationName = metadata?.animation
+                const loop = metadata?.animationLoop ?? true
+                if (animationName) {
+                  controller.playAnimation(animationName, loop)
+                } else {
+                  controller.playAnimation(gltf.animations[0].name, loop)
+                }
+              }
+            }).catch(err => {
+              console.error('Failed to load GLTF model:', err)
+            })
+            break
+          }
+          case 'obj': {
+            const objLoader = new OBJLoader()
+            const obj = objLoader.parse(modelPath as string)
             if (metadata?.scale) {
               const { scale } = metadata
-              this.mesh.scale.set(scale, scale, scale)
+              obj.scale.set(scale, scale, scale)
             }
             if (metadata?.offset) {
               const { x = 0, y = 0, z = 0 } = metadata.offset
-              this.mesh.position.set(x, y, z)
+              obj.position.set(x, y, z)
             }
-
-            // Apply texture if provided
             if (metadata?.texture) {
               const texture = new THREE.TextureLoader().load(metadata.texture)
               texture.minFilter = THREE.NearestFilter
               texture.magFilter = THREE.NearestFilter
-              this.mesh.traverse((child) => {
+              const material = new THREE.MeshBasicMaterial({
+                map: texture,
+                transparent: true,
+                alphaTest: 0.1
+              })
+              obj.traverse((child) => {
                 if (child instanceof THREE.Mesh) {
-                  child.material = new THREE.MeshBasicMaterial({
-                    map: texture,
-                    transparent: true,
-                    alphaTest: 0.1
-                  })
+                  child.material = material
                 }
               })
             }
-
-            // Handle animations: play from config if provided, otherwise play first animation if present
-            if (gltf.animations && gltf.animations.length > 0) {
-              this.animations = gltf.animations
-              const animationName = metadata?.animation
-              const loop = metadata?.animationLoop ?? true
-
-              // Store initial animation settings for later use
-              this.initialAnimation = animationName
-              this.initialLoop = loop
-
-              // Create animation controller with onBeforeRender support
-              this.animationController = createAnimatedObject(this.mesh, gltf.animations)
-
-              if (animationName) {
-                // Play animation from config
-                this.playAnimation(animationName, loop)
-              } else {
-                // Play first animation
-                const clip = gltf.animations[0]
-                this.animationController.playAnimation(clip.name, loop)
-              }
+            partRoot.add(obj)
+            break
+          }
+          case 'bedrock': {
+            const modelData = JSON.parse(modelPath as string)
+            if (metadata?.scale) {
+              partRoot.scale.set(metadata.scale, metadata.scale, metadata.scale)
             }
-          }).catch(err => {
-            console.error('Failed to load GLTF model:', err)
-          })
-
-          // debugFlags.type = 'gltf'
-          return
+            if (metadata?.offset) {
+              const { x = 0, y = 0, z = 0 } = metadata.offset
+              partRoot.position.set(x, y, z)
+            }
+            for (const [name, jsonModel] of Object.entries(modelData.geometry)) {
+              const texture = metadata?.textures?.[name] ?? modelData.textures?.[name]
+              if (!texture) continue
+              const mesh = getMesh(worldRenderer,
+                texture.endsWith('.png') || texture.startsWith('data:image/') || texture.startsWith('block:')
+                  ? texture : texture + '.png',
+                jsonModel as JsonModel,
+                overrides,
+                debugFlags)
+              mesh.name = `geometry_${name}`
+              partRoot.add(mesh)
+            }
+            break
+          }
         }
-        case 'obj': {
-          const objLoader = new OBJLoader()
-          const obj = objLoader.parse(modelPath as string)
-
-          // Apply metadata overrides if available
-          if (metadata?.scale) {
-            const { scale } = metadata
-            obj.scale.set(scale, scale, scale)
-          }
-          if (metadata?.offset) {
-            const { x = 0, y = 0, z = 0 } = metadata.offset
-            obj.position.set(x, y, z)
-          }
-
-          // Apply texture if provided
-          if (metadata?.texture) {
-            const texture = new THREE.TextureLoader().load(metadata.texture)
-            texture.minFilter = THREE.NearestFilter
-            texture.magFilter = THREE.NearestFilter
-            const material = new THREE.MeshBasicMaterial({
-              map: texture,
-              transparent: true,
-              alphaTest: 0.1
-            })
-            obj.traverse((child) => {
-              if (child instanceof THREE.Mesh) {
-                child.material = material
-              }
-            })
-          }
-
-          this.mesh = obj
-          debugFlags.type = 'obj'
-          return
-        }
-        case 'bedrock': {
-          // Parse bedrock model JSON
-          const modelData = JSON.parse(modelPath as string)
-          this.mesh = new THREE.Object3D()
-
-          // Apply metadata overrides
-          if (metadata?.scale) {
-            this.mesh.scale.set(metadata.scale, metadata.scale, metadata.scale)
-          }
-          if (metadata?.offset) {
-            const { x = 0, y = 0, z = 0 } = metadata.offset
-            this.mesh.position.set(x, y, z)
-          }
-
-          // Create mesh from bedrock model
-          for (const [name, jsonModel] of Object.entries(modelData.geometry)) {
-            const texture = metadata?.textures?.[name] ?? modelData.textures?.[name]
-            if (!texture) continue
-
-            const mesh = getMesh(worldRenderer,
-              texture.endsWith('.png') || texture.startsWith('data:image/') || texture.startsWith('block:')
-                ? texture : texture + '.png',
-              jsonModel,
-              overrides,
-              debugFlags)
-            mesh.name = `geometry_${name}`
-            this.mesh.add(mesh)
-          }
-          debugFlags.type = 'bedrock'
-          return
-        }
-        // No default
+        this.mesh.add(partRoot)
       }
+      debugFlags.type = parts.length === 1 ? parts[0].modelType : 'special'
+      return
     }
 
     if (externalModels[type]) {
@@ -695,15 +677,16 @@ export class EntityMesh {
   }
 
   playAnimation(name: string, loop = false) {
-    if (!this.animationController || !this.animations) {
+    if (!this.animationControllers.length) {
       console.warn('No animation controller available')
       return
     }
-
-    // Play animation using the controller
-    const success = this.animationController.playAnimation(name, loop)
-    if (!success) {
-      console.warn(`Animation "${name}" not found`)
+    let ok = false
+    for (const c of this.animationControllers) {
+      if (c.playAnimation(name, loop)) ok = true
+    }
+    if (!ok) {
+      console.warn(`Animation "${name}" not found on any custom model part`)
     }
   }
 

@@ -27,6 +27,12 @@ import { WorldRendererThree } from './worldRendererThree'
 import { IndexedData } from 'minecraft-data'
 import { ItemSpecificContextProperties } from '../playerState/types'
 
+export type EntityModelOverridePart = {
+  modelPath: string | ArrayBuffer
+  modelType: Entity.EntityModelType
+  metadata?: any
+}
+
 // Type for entity metadata - simplified version
 type EntityMetadataVersions = {
   [key: string]: any
@@ -249,7 +255,7 @@ export class Entities {
   currentlyRendering = true
   cachedMapsImages = {} as Record<number, string>
   itemFrameMaps = {} as Record<number, Array<THREE.Mesh<THREE.PlaneGeometry, THREE.MeshLambertMaterial>>>
-  pendingModelOverrides = new Map<string, { modelPath: string, modelType: Entity.EntityModelType, metadata: any }>()
+  pendingModelOverrides = new Map<string, { parts: EntityModelOverridePart[] }>()
 
   private motionCache = new Map<string, { pos: THREE.Vector3, speed: number }>()
   private _wasThirdPerson = false
@@ -1379,8 +1385,8 @@ export class Entities {
   beforeEntityAdded(entity: import('prismarine-entity').Entity) {
     const override = this.pendingModelOverrides.get(entity.id.toString())
     if (override) {
-      const { modelPath, modelType, metadata } = override
-      entity['customModel'] = { modelPath, modelType, metadata }
+      const { parts } = override
+      entity['customModel'] = parts.length === 1 ? parts[0]! : { parts }
       this.pendingModelOverrides.delete(entity.id.toString())
     }
   }
@@ -1579,9 +1585,16 @@ export class Entities {
     return intersects[0]?.object
   }
 
-  updateEntityModel(entityId: string, modelPath: string, modelType: Entity.EntityModelType, metadata?: any) {
-    // Store override data for future entities
-    this.pendingModelOverrides.set(entityId, { modelPath, modelType, metadata })
+  updateEntityModel(
+    entityId: string,
+    modelPathOrParts: string | EntityModelOverridePart[],
+    modelType?: Entity.EntityModelType,
+    metadata?: any
+  ) {
+    const parts: EntityModelOverridePart[] = Array.isArray(modelPathOrParts)
+      ? modelPathOrParts
+      : [{ modelPath: modelPathOrParts, modelType: modelType!, metadata }]
+    this.pendingModelOverrides.set(entityId, { parts })
 
     // Force entity recreation if it exists
     const entity = this.entities[entityId]
