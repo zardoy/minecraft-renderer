@@ -86,6 +86,8 @@ export interface MesherMainEvents {
   };
   blockStateModelInfo: { type: 'blockStateModelInfo'; info: Record<string, BlockStateModelInfo> };
   heightmap: { type: 'heightmap'; key: string; heightmap: Int16Array };
+  /** Reply to `{ type: 'mc-web-ping', t?, workerIndex? }` from the main thread (not batched in worker). */
+  mcWebPong: { type: 'mc-web-pong'; workerIndex: number; t?: number; recvAt?: number };
 }
 
 export type MesherMainEvent = MesherMainEvents[keyof MesherMainEvents]

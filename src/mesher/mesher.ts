@@ -168,6 +168,16 @@ const handleMessage = data => {
 
       break
     }
+    case 'mc-web-ping': {
+      const replyWorkerIndex = typeof data.workerIndex === 'number' ? data.workerIndex : workerIndex
+      global.postMessage({
+        type: 'mc-web-pong',
+        workerIndex: replyWorkerIndex,
+        t: data.t,
+        recvAt: typeof performance !== 'undefined' ? performance.now() : undefined,
+      })
+      break
+    }
     // No default
   }
 }
