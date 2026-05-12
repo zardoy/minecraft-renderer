@@ -1,11 +1,11 @@
 import { Vec3 } from 'vec3'
-import { convertChunkToWasm, getBlockMeta, type ChunkConversionResult } from '../wasm-lib/convertChunk'
-import { extractColumnHeightmap, splitColumnWasmOutputToSections } from '../wasm-lib/render-from-wasm'
-import { setBlockStatesData as setMesherData } from './models'
-import { defaultMesherConfig, type MesherGeometryOutput, SECTION_HEIGHT } from './shared'
-import { worldColumnKey, World } from './world'
-import { handleGetHeightmap, EMPTY_COLUMN_HEIGHTMAP_SENTINEL } from './computeHeightmap'
-import { collectBlockEntityMetadata, type SignMeta, type HeadMeta, type BannerMeta } from './blockEntityMetadata'
+import { convertChunkToWasm, getBlockMeta, type ChunkConversionResult } from '../bridge/convertChunk'
+import { extractColumnHeightmap, splitColumnWasmOutputToSections } from '../bridge/render-from-wasm'
+import { setBlockStatesData as setMesherData } from '../../mesher-shared/models'
+import { defaultMesherConfig, type MesherGeometryOutput, SECTION_HEIGHT } from '../../mesher-shared/shared'
+import { worldColumnKey, World } from '../../mesher-shared/world'
+import { handleGetHeightmap, EMPTY_COLUMN_HEIGHTMAP_SENTINEL } from '../../mesher-shared/computeHeightmap'
+import { collectBlockEntityMetadata, type SignMeta, type HeadMeta, type BannerMeta } from '../../mesher-shared/blockEntityMetadata'
 import { SectionRequestTracker } from './mesherWasmRequestTracker'
 import {
   CONVERSION_CACHE_LIMIT,
@@ -15,7 +15,7 @@ import {
   setConversionCacheLimit,
 } from './mesherWasmConversionCache'
 
-let wasm: typeof import('../../wasm/wasm_mesher.js') | null = null
+let wasm: typeof import('../runtime-build/wasm_mesher.js') | null = null
 let wasmInitialized = false
 
 // Pending raw `update_light` packets that arrived before WASM finished
@@ -78,7 +78,7 @@ async function initWasm() {
   if (wasmInitialized) return
   try {
     wasmInitialized = true
-    wasm = await import('../../wasm/wasm_mesher.js')
+    wasm = await import('../runtime-build/wasm_mesher.js')
     await wasm.default('/wasm_mesher_bg.wasm') as any
 
     if (pendingUpdateLightV17.length > 0) {
@@ -730,7 +730,7 @@ function processColumnTick() {
     const { x, z, sections } = group
     const targetChunk = world.getColumn(x, z)
 
-    let exportedMap: Map<string, { exported: import('../three/worldGeometryExport').ExportedSection, blocksCount: number }> | null = null
+    let exportedMap: Map<string, { exported: import('../../three/worldGeometryExport').ExportedSection, blocksCount: number }> | null = null
     let processTime = 0
     let prePhase = 0
     let wasmPhase = 0

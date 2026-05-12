@@ -2,7 +2,7 @@ import ChunkLoader from 'prismarine-chunk'
 import { setup } from '../mesherTester'
 import { compareOrWriteSnapshot } from '../snapshotUtils'
 import { getChunk, VERSION } from './chunk'
-import { mesherGeometryToExportFormat } from '../../../wasm-lib/render-from-wasm'
+import { mesherGeometryToExportFormat } from '../../../wasm-mesher/bridge/render-from-wasm'
 import fs from 'fs'
 import { join } from 'path'
 

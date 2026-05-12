@@ -1,12 +1,12 @@
 // Test WASM mesher with real chunk data from test-snapshots
-import { compareOrWriteSnapshot } from '../src/mesher/test/snapshotUtils.js'
-import { getChunk, SNAPSHOT_FILE, VERSION } from '../src/mesher/test/run/chunk.js'
-import { convertChunkToWasm } from '../src/wasm-lib/convertChunk.js'
-import { wasmOutputToExportFormat } from '../src/wasm-lib/render-from-wasm.js'
+import { compareOrWriteSnapshot } from '../../src/mesher-legacy/test/snapshotUtils.js'
+import { getChunk, SNAPSHOT_FILE, VERSION } from '../../src/mesher-legacy/test/run/chunk.js'
+import { convertChunkToWasm } from '../../src/wasm-mesher/bridge/convertChunk.js'
+import { wasmOutputToExportFormat } from '../../src/wasm-mesher/bridge/render-from-wasm.js'
 
 export const WORLD_MIN_Y = 0
 
-export async function testChunkShared(wasm: typeof import('./pkg/wasm_mesher.js'), doWarmup = false) {
+export async function testChunkShared(wasm: typeof import('../pkg/wasm_mesher.js'), doWarmup = false) {
   console.log('Loading chunk...\n')
 
   // Get chunk using the shared chunk loader

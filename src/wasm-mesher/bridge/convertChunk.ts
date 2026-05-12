@@ -1,7 +1,7 @@
 import { Vec3 } from 'vec3'
 import MinecraftData from 'minecraft-data'
 import PrismarineBlockLoader from 'prismarine-block'
-import moreBlockDataGeneratedJson from '../lib/moreBlockDataGenerated.json'
+import moreBlockDataGeneratedJson from '../../lib/moreBlockDataGenerated.json'
 
 type BlockMeta = {
   invisibleBlocks: Uint16Array

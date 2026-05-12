@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest'
 import { versions } from 'minecraft-data'
-import { INVISIBLE_BLOCKS } from '../worldConstants'
+import { INVISIBLE_BLOCKS } from '../../mesher-shared/worldConstants'
 import { setup } from './mesherTester'
 
 const lastVersion = versions.pc.map(x => x.minecraftVersion).filter(version => !version.includes('w'))[0]

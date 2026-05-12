@@ -8,10 +8,10 @@ import blockStatesModels from 'mc-assets/dist/blockStatesModels.json'
 import MinecraftData from 'minecraft-data'
 import PrismarineBlockLoader from 'prismarine-block'
 import { Vec3 } from 'vec3'
-import { elemFaces, buildRotationMatrix, matmul3, matmulmat3, vecadd3, vecsub3 } from '../mesher/modelsGeometryCommon'
-import type { ExportedWorldGeometry, ExportedSection } from '../three/worldGeometryExport'
-import type { MesherGeometryOutput } from '../mesher/shared'
-import type { World } from '../mesher/world'
+import { elemFaces, buildRotationMatrix, matmul3, matmulmat3, vecadd3, vecsub3 } from '../../mesher-shared/modelsGeometryCommon'
+import type { ExportedWorldGeometry, ExportedSection } from '../../three/worldGeometryExport'
+import type { MesherGeometryOutput } from '../../mesher-shared/shared'
+import type { World } from '../../mesher-shared/world'
 
 // Handle both default and named export
 const worldBlockProvider = (worldBlockProviderModule as any).default || worldBlockProviderModule

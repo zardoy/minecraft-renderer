@@ -1,8 +1,8 @@
 import { Vec3 } from 'vec3'
-import { World } from './world'
-import { getSectionGeometry, setBlockStatesData as setMesherData } from './models'
-import { BlockStateModelInfo } from './shared'
-import { handleGetHeightmap, EMPTY_COLUMN_HEIGHTMAP_SENTINEL } from './computeHeightmap'
+import { World } from '../mesher-shared/world'
+import { getSectionGeometry, setBlockStatesData as setMesherData } from '../mesher-shared/models'
+import { BlockStateModelInfo } from '../mesher-shared/shared'
+import { handleGetHeightmap, EMPTY_COLUMN_HEIGHTMAP_SENTINEL } from '../mesher-shared/computeHeightmap'
 
 globalThis.structuredClone ??= (value) => JSON.parse(JSON.stringify(value))
 

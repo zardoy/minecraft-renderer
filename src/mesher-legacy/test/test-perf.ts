@@ -2,7 +2,7 @@ import PrismarineWorld from 'prismarine-world'
 import PrismarineChunk from 'prismarine-chunk'
 import { Vec3 } from 'vec3'
 import MinecraftData from 'minecraft-data'
-import { defaultMesherConfig } from '../shared'
+import { defaultMesherConfig } from '../../mesher-shared/shared'
 import { setup } from './mesherTester.js'
 import { generateSpiralMatrix } from '../../lib/spiral'
 

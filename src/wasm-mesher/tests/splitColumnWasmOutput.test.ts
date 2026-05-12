@@ -3,7 +3,7 @@ import {
   splitColumnWasmOutputToSections,
   renderWasmOutputToGeometry,
   WasmGeometryOutput,
-} from '../../wasm-lib/render-from-wasm'
+} from '../bridge/render-from-wasm'
 
 const VERSION = '1.16.5'
 const STONE = 1 // 1.16.5 stone state id

@@ -1,10 +1,10 @@
 import { fileURLToPath } from 'url'
 import { dirname as pathDirname, join } from 'path'
-import * as wasm from './pkg/wasm_mesher.js'
+import * as wasm from '../pkg/wasm_mesher.js'
 import { writeFileSync } from 'fs'
-import { SNAPSHOT_FILE, VERSION } from '../src/mesher/test/run/chunk'
-import { compareOrWriteSnapshot } from '../src/mesher/test/snapshotUtils'
-import { wasmOutputToExportFormat } from '../src/wasm-lib/render-from-wasm'
+import { SNAPSHOT_FILE, VERSION } from '../../src/mesher-legacy/test/run/chunk'
+import { compareOrWriteSnapshot } from '../../src/mesher-legacy/test/snapshotUtils'
+import { wasmOutputToExportFormat } from '../../src/wasm-mesher/bridge/render-from-wasm'
 import { testChunkShared, WORLD_MIN_Y } from './test-chunk-shared'
 
 const filename = typeof __filename === 'string' ? __filename : fileURLToPath(import.meta.url)
@@ -16,7 +16,7 @@ const main = async () => {
   // Compare or write snapshot
   console.log('Comparing with snapshot...')
   try {
-    const snapshotPath = join(dirname, '..', SNAPSHOT_FILE)
+    const snapshotPath = join(dirname, '..', '..', SNAPSHOT_FILE)
     compareOrWriteSnapshot(
       result,
       snapshotPath
@@ -48,8 +48,9 @@ const main = async () => {
   // Debug exports are opt-in (non-deterministic timestamps + large files would otherwise
   // dirty the working tree on every `pnpm test:wasm`). Set EXPORT_WASM_GEOMETRY=1 to enable.
   if (process.env.EXPORT_WASM_GEOMETRY) {
-    const exportPath = join(dirname, '..', 'public', 'world-geometry.json')
-    const exportPath2 = join(dirname, '..', 'public', 'world-geometry-wasm.json')
+    // dirname = wasm-mesher/tests; repo root public/ is two levels up
+    const exportPath = join(dirname, '..', '..', 'public', 'world-geometry.json')
+    const exportPath2 = join(dirname, '..', '..', 'public', 'world-geometry-wasm.json')
     writeFileSync(exportPath, JSON.stringify(exportData, null, 2), 'utf-8')
     writeFileSync(exportPath2, JSON.stringify(exportData, null, 2), 'utf-8')
     console.log(`✅ Export file created: ${exportPath}`)

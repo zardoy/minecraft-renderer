@@ -14,10 +14,10 @@
  */
 import ChunkLoader, { PCChunk } from 'prismarine-chunk'
 import { Vec3 } from 'vec3'
-import * as wasm from './pkg/wasm_mesher.js'
-import { convertChunkToWasm } from '../src/wasm-lib/convertChunk'
-import { World } from '../src/mesher/world'
-import { computeHeightmap, handleGetHeightmap } from '../src/mesher/computeHeightmap'
+import * as wasm from '../pkg/wasm_mesher.js'
+import { convertChunkToWasm } from '../../src/wasm-mesher/bridge/convertChunk'
+import { World } from '../../src/mesher-shared/world'
+import { computeHeightmap, handleGetHeightmap } from '../../src/mesher-shared/computeHeightmap'
 
 const VERSION = '1.16.5'
 const WORLD_MIN_Y = 0
@@ -209,25 +209,26 @@ function testHeightmapParity() {
   // computation stays the single source of truth.
   const fs = require('fs') as typeof import('fs')
   const path = require('path') as typeof import('path')
-  const checkHandler = (file: string, options?: { requireGetHeightmapCase?: boolean }) => {
+  const checkHandler = (relPath: string, options?: { requireGetHeightmapCase?: boolean }) => {
     const requireCase = options?.requireGetHeightmapCase ?? true
-    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'mesher', file), 'utf8')
+    // __dirname = wasm-mesher/tests; repo root = ../..
+    const src = fs.readFileSync(path.join(__dirname, '..', '..', relPath), 'utf8')
     if (requireCase && !/case\s+'getHeightmap'\s*:/.test(src)) {
-      throw new Error(`${file}: no 'getHeightmap' case found — handler may have been removed/renamed`)
+      throw new Error(`${relPath}: no 'getHeightmap' case found — handler may have been removed/renamed`)
     }
     if (!/handleGetHeightmap\s*\(\s*world\s*,/.test(src)) {
       throw new Error(
-        `${file}: handler no longer delegates to handleGetHeightmap(world, …). ` +
+        `${relPath}: handler no longer delegates to handleGetHeightmap(world, …). ` +
         `If you intentionally inlined the logic, update test-section-boundary.ts to assert the new path matches the independent reference.`
       )
     }
   }
-  checkHandler('mesher.ts')
-  checkHandler('mesherWasm.ts')
+  checkHandler('src/mesher-legacy/mesher.ts')
+  checkHandler('src/wasm-mesher/worker/mesherWasm.ts')
 
   console.log(`  ✅ 256/256 entries match independent reference`)
   console.log(`  ✅ handleGetHeightmap direct invocation matches reference (key="${handlerOut.key}")`)
-  console.log(`  ✅ both mesher.ts and mesherWasm.ts getHeightmap handlers still delegate to handleGetHeightmap`)
+  console.log(`  ✅ both mesher-legacy/mesher.ts and wasm-mesher/worker/mesherWasm.ts getHeightmap handlers still delegate to handleGetHeightmap`)
   console.log(`     sample: [0]=${helperHeightmap[0]} [42]=${helperHeightmap[42]} [255]=${helperHeightmap[255]}`)
 }
 

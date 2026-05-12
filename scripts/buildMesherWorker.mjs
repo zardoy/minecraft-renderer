@@ -68,13 +68,16 @@ let wasmPlugin = {
 }
 
 const buildOptions = createWorkerBuildOptions({
-  entryPoint: path.join(rootDir, './src/mesher/mesherWasm.ts'),
+  entryPoint: path.join(rootDir, './src/wasm-mesher/worker/mesherWasm.ts'),
   bundleMcData: mesherMcData,
   watch,
   esbuildOptions: {
     outfile: undefined,
     outdir: path.join(rootDir, './dist'),
-    entryPoints: [path.join(rootDir, './src/mesher/mesherWasm.ts'), path.join(rootDir, './src/mesher/mesher.ts')],
+    // Flatten output paths so worker bundles land at dist/mesherWasm.js (web-client contract)
+    // instead of dist/wasm-mesher/worker/mesherWasm.js.
+    entryNames: '[name]',
+    entryPoints: [path.join(rootDir, './src/wasm-mesher/worker/mesherWasm.ts'), path.join(rootDir, './src/mesher-legacy/mesher.ts')],
     plugins: [wasmPlugin],
   }
 })

@@ -20,7 +20,7 @@
 //   but changes content. The `blockUpdate` handler explicitly invalidates
 //   the affected `(chunkX, chunkZ)` to handle this.
 
-import type { ChunkConversionResult } from '../wasm-lib/convertChunk'
+import type { ChunkConversionResult } from '../bridge/convertChunk'
 
 // Hard cap on entries. A 12x12 visible area ≈ 144 columns; 64 keeps the hot
 // ~8x8 window resident. Tunable.

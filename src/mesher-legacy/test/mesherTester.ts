@@ -2,8 +2,8 @@ import ChunkLoader, { PCChunk } from 'prismarine-chunk'
 import { Vec3 } from 'vec3'
 import MinecraftData from 'minecraft-data'
 import blocksAtlasesJson from 'mc-assets/dist/blocksAtlases.json'
-import { World as MesherWorld } from '../world'
-import { setBlockStatesData, getSectionGeometry } from '../models'
+import { World as MesherWorld } from '../../mesher-shared/world'
+import { setBlockStatesData, getSectionGeometry } from '../../mesher-shared/models'
 
 interface Options {
   chunkOverride?: PCChunk

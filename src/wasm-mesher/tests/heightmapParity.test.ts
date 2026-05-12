@@ -2,10 +2,10 @@ import { test, expect } from 'vitest'
 import Chunks from 'prismarine-chunk'
 import MinecraftData from 'minecraft-data'
 import { Vec3 } from 'vec3'
-import { World } from '../world'
-import { computeHeightmap } from '../computeHeightmap'
-import { INVISIBLE_BLOCKS } from '../worldConstants'
-import { extractColumnHeightmap, WasmGeometryOutput } from '../../wasm-lib/render-from-wasm'
+import { World } from '../../mesher-shared/world'
+import { computeHeightmap } from '../../mesher-shared/computeHeightmap'
+import { INVISIBLE_BLOCKS } from '../../mesher-shared/worldConstants'
+import { extractColumnHeightmap, WasmGeometryOutput } from '../bridge/render-from-wasm'
 
 // ---------------------------------------------------------------------------
 // Heightmap parity test

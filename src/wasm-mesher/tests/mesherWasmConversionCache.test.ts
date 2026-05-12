@@ -5,8 +5,8 @@ import {
   clearConversionCache,
   getOrConvertColumn,
   invalidateConversion,
-} from '../mesherWasmConversionCache'
-import type { ChunkConversionResult } from '../../wasm-lib/convertChunk'
+} from '../worker/mesherWasmConversionCache'
+import type { ChunkConversionResult } from '../bridge/convertChunk'
 
 const makeResult = (tag: number): ChunkConversionResult => ({
   blockStates: new Uint16Array([tag]),
