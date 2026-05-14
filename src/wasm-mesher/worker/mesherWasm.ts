@@ -705,6 +705,36 @@ const handleMessage = async (data: any) => {
       allDataReady = false
       break
     }
+    case 'mc-web-ping': {
+      const replyWorkerIndex = typeof data.workerIndex === 'number' ? data.workerIndex : workerIndex
+      global.postMessage({
+        type: 'mc-web-pong',
+        workerIndex: replyWorkerIndex,
+        t: data.t,
+        recvAt: typeof performance !== 'undefined' ? performance.now() : undefined,
+      })
+      break
+    }
+    case 'mc-web-ping': {
+      const replyWorkerIndex = typeof data.workerIndex === 'number' ? data.workerIndex : workerIndex
+      global.postMessage({
+        type: 'mc-web-pong',
+        workerIndex: replyWorkerIndex,
+        t: data.t,
+        recvAt: typeof performance !== 'undefined' ? performance.now() : undefined,
+      })
+      break
+    }
+    case 'mc-web-ping': {
+      const replyWorkerIndex = typeof data.workerIndex === 'number' ? data.workerIndex : workerIndex
+      global.postMessage({
+        type: 'mc-web-pong',
+        workerIndex: replyWorkerIndex,
+        t: data.t,
+        recvAt: typeof performance !== 'undefined' ? performance.now() : undefined,
+      })
+      break
+    }
     case 'getHeightmap': {
       // Fallback path. With WASM column mesher as the sole path, the main
       // thread should be receiving heightmaps as `'heightmap'` push messages

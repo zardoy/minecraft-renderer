@@ -25,6 +25,7 @@ import { getInitialPlayerState } from './playerState'
 import { defaultWorldRendererConfig, defaultGraphicsBackendConfig, getDefaultRendererState, WorldRendererConfig } from './config'
 import { PlayerStateReactive } from '../playerState/playerState'
 import { ResourcesManager, ResourcesManagerTransferred } from '../resourcesManager'
+import { preloadMesherWorkerScript } from './preloadWorkers'
 
 export interface AppViewerOptions {
   config?: Partial<GraphicsBackendConfig>
@@ -98,6 +99,15 @@ export class AppViewer {
     const { promise, resolve } = Promise.withResolvers<void>()
     this.worldReady = promise
     this.resolveWorldReady = resolve
+  }
+
+  /**
+   * Preload mesher worker script (HTTP validate + ephemeral Worker + `mc-web-ping` / `mc-web-pong`).
+   * Chooses `/mesherWasm.js` vs `/mesher.js` from `inWorldRenderingConfig.wasmMesher`.
+   */
+  preloadWorkers (): Promise<void> {
+    const script = this.inWorldRenderingConfig.wasmMesher ? 'mesherWasm.js' : 'mesher.js'
+    return preloadMesherWorkerScript({ script })
   }
 
   /**
