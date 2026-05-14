@@ -71,6 +71,11 @@ function debugString(val) {
     return className;
 }
 
+function getArrayI32FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getInt32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
+}
+
 function getArrayU16FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return getUint16ArrayMemory0().subarray(ptr / 2, ptr / 2 + len);
@@ -87,6 +92,14 @@ function getDataViewMemory0() {
         cachedDataViewMemory0 = new DataView(wasm.memory.buffer);
     }
     return cachedDataViewMemory0;
+}
+
+let cachedInt32ArrayMemory0 = null;
+function getInt32ArrayMemory0() {
+    if (cachedInt32ArrayMemory0 === null || cachedInt32ArrayMemory0.byteLength === 0) {
+        cachedInt32ArrayMemory0 = new Int32Array(wasm.memory.buffer);
+    }
+    return cachedInt32ArrayMemory0;
 }
 
 function getStringFromWasm0(ptr, len) {
@@ -329,6 +342,66 @@ export function generateGeometryFromMapChunkV18Plus(raw_packet, num_sections, ma
 }
 
 /**
+ * Fused multi-column parse+mesh for 1.18+ raw map_chunk.
+ *
+ * Parses multiple raw packets inside Rust and meshes them in a single
+ * `mesher.generate_multi` call with correct per-neighbor AO/lighting.
+ * No typed arrays are materialised on the JS heap.
+ *
+ * `raw_packets` — `Array<Uint8Array>`, one raw packet per column.
+ * Reuses the existing JS-side per-column buffers (zero concat, zero alloc).
+ *
+ * `num_sections_list` — per-column section count (terrain height varies).
+ *
+ * Invariant: `chunk_xs[0]` / `chunk_zs[0]` is the **target** column whose
+ * geometry is emitted. Neighbour columns provide border data to the mesher
+ * but do not contribute directly to the output.
+ * @param {Array<any>} raw_packets
+ * @param {Uint32Array} num_sections_list
+ * @param {number} max_bits_per_block
+ * @param {number} max_bits_per_biome
+ * @param {number} protocol
+ * @param {Int32Array} chunk_xs
+ * @param {Int32Array} chunk_zs
+ * @param {number} section_x
+ * @param {number} section_y
+ * @param {number} section_z
+ * @param {number} section_height
+ * @param {number} world_min_y
+ * @param {number} world_max_y
+ * @param {number} section_data_start_y
+ * @param {Uint16Array} invisible_blocks
+ * @param {Uint16Array} transparent_blocks
+ * @param {Uint16Array} no_ao_blocks
+ * @param {Uint16Array} cull_identical_blocks
+ * @param {Uint16Array} occluding_blocks
+ * @param {boolean} enable_lighting
+ * @param {boolean} smooth_lighting
+ * @param {number} sky_light_value
+ * @returns {any}
+ */
+export function generateGeometryFromMapChunkV18PlusMulti(raw_packets, num_sections_list, max_bits_per_block, max_bits_per_biome, protocol, chunk_xs, chunk_zs, section_x, section_y, section_z, section_height, world_min_y, world_max_y, section_data_start_y, invisible_blocks, transparent_blocks, no_ao_blocks, cull_identical_blocks, occluding_blocks, enable_lighting, smooth_lighting, sky_light_value) {
+    const ptr0 = passArray32ToWasm0(num_sections_list, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray32ToWasm0(chunk_xs, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray32ToWasm0(chunk_zs, wasm.__wbindgen_malloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ptr3 = passArray16ToWasm0(invisible_blocks, wasm.__wbindgen_malloc);
+    const len3 = WASM_VECTOR_LEN;
+    const ptr4 = passArray16ToWasm0(transparent_blocks, wasm.__wbindgen_malloc);
+    const len4 = WASM_VECTOR_LEN;
+    const ptr5 = passArray16ToWasm0(no_ao_blocks, wasm.__wbindgen_malloc);
+    const len5 = WASM_VECTOR_LEN;
+    const ptr6 = passArray16ToWasm0(cull_identical_blocks, wasm.__wbindgen_malloc);
+    const len6 = WASM_VECTOR_LEN;
+    const ptr7 = passArray16ToWasm0(occluding_blocks, wasm.__wbindgen_malloc);
+    const len7 = WASM_VECTOR_LEN;
+    const ret = wasm.generateGeometryFromMapChunkV18PlusMulti(raw_packets, ptr0, len0, max_bits_per_block, max_bits_per_biome, protocol, ptr1, len1, ptr2, len2, section_x, section_y, section_z, section_height, world_min_y, world_max_y, section_data_start_y, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, enable_lighting, smooth_lighting, sky_light_value);
+    return ret;
+}
+
+/**
  * Fused parse+mesh for 1.16 / 1.17 chunk sections.
  *
  * Parses `chunk_data` (the raw section bytes from a `map_chunk` packet) inside
@@ -386,6 +459,74 @@ export function generateGeometryFromParsedV16V17(chunk_data, bit_map_lo_hi, num_
     const ptr9 = passArray16ToWasm0(occluding_blocks, wasm.__wbindgen_malloc);
     const len9 = WASM_VECTOR_LEN;
     const ret = wasm.generateGeometryFromParsedV16V17(ptr0, len0, ptr1, len1, num_sections, max_bits_per_block, ptr2, len2, default_biome, ptr3, len3, ptr4, len4, section_x, section_y, section_z, section_height, world_min_y, world_max_y, section_data_start_y, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, ptr9, len9, enable_lighting, smooth_lighting, sky_light_value);
+    return ret;
+}
+
+/**
+ * Fused multi-column parse+mesh for 1.16 / 1.17 chunk sections.
+ *
+ * Parses multiple columns inside Rust and meshes them in one
+ * `mesher.generate_multi` call.  Block states and biomes never leave WASM
+ * memory; light arrays are passed by reference from the JS-side
+ * update-light caches.
+ *
+ * `chunk_data_list` — `Array<Uint8Array>`, one chunk_data buffer per column.
+ * `bit_map_lo_hi` — flat `&[u32]` of length `chunkCount * 2`; each pair
+ *                    (lo, hi) is the section mask for one column.
+ * `num_sections_list` — per-column section count.
+ * `biomes_cells_list` — `Array<Int32Array>`, may contain empty arrays for
+ *                        columns without captured biomes.
+ * `sky_light_list` / `block_light_list` — `Array<Uint8Array>`, may contain
+ *   empty arrays for columns where update_light has not arrived yet.
+ *
+ * Invariant: `chunk_xs[0]` / `chunk_zs[0]` is the target column.
+ * @param {Array<any>} chunk_data_list
+ * @param {Uint32Array} bit_map_lo_hi
+ * @param {Uint32Array} num_sections_list
+ * @param {number} max_bits_per_block
+ * @param {Array<any>} biomes_cells_list
+ * @param {number} default_biome
+ * @param {Array<any>} sky_light_list
+ * @param {Array<any>} block_light_list
+ * @param {Int32Array} chunk_xs
+ * @param {Int32Array} chunk_zs
+ * @param {number} section_x
+ * @param {number} section_y
+ * @param {number} section_z
+ * @param {number} section_height
+ * @param {number} world_min_y
+ * @param {number} world_max_y
+ * @param {number} section_data_start_y
+ * @param {Uint16Array} invisible_blocks
+ * @param {Uint16Array} transparent_blocks
+ * @param {Uint16Array} no_ao_blocks
+ * @param {Uint16Array} cull_identical_blocks
+ * @param {Uint16Array} occluding_blocks
+ * @param {boolean} enable_lighting
+ * @param {boolean} smooth_lighting
+ * @param {number} sky_light_value
+ * @returns {any}
+ */
+export function generateGeometryFromParsedV16V17Multi(chunk_data_list, bit_map_lo_hi, num_sections_list, max_bits_per_block, biomes_cells_list, default_biome, sky_light_list, block_light_list, chunk_xs, chunk_zs, section_x, section_y, section_z, section_height, world_min_y, world_max_y, section_data_start_y, invisible_blocks, transparent_blocks, no_ao_blocks, cull_identical_blocks, occluding_blocks, enable_lighting, smooth_lighting, sky_light_value) {
+    const ptr0 = passArray32ToWasm0(bit_map_lo_hi, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray32ToWasm0(num_sections_list, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passArray32ToWasm0(chunk_xs, wasm.__wbindgen_malloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ptr3 = passArray32ToWasm0(chunk_zs, wasm.__wbindgen_malloc);
+    const len3 = WASM_VECTOR_LEN;
+    const ptr4 = passArray16ToWasm0(invisible_blocks, wasm.__wbindgen_malloc);
+    const len4 = WASM_VECTOR_LEN;
+    const ptr5 = passArray16ToWasm0(transparent_blocks, wasm.__wbindgen_malloc);
+    const len5 = WASM_VECTOR_LEN;
+    const ptr6 = passArray16ToWasm0(no_ao_blocks, wasm.__wbindgen_malloc);
+    const len6 = WASM_VECTOR_LEN;
+    const ptr7 = passArray16ToWasm0(cull_identical_blocks, wasm.__wbindgen_malloc);
+    const len7 = WASM_VECTOR_LEN;
+    const ptr8 = passArray16ToWasm0(occluding_blocks, wasm.__wbindgen_malloc);
+    const len8 = WASM_VECTOR_LEN;
+    const ret = wasm.generateGeometryFromParsedV16V17Multi(chunk_data_list, ptr0, len0, ptr1, len1, max_bits_per_block, biomes_cells_list, default_biome, sky_light_list, block_light_list, ptr2, len2, ptr3, len3, section_x, section_y, section_z, section_height, world_min_y, world_max_y, section_data_start_y, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, enable_lighting, smooth_lighting, sky_light_value);
     return ret;
 }
 
@@ -750,11 +891,39 @@ function __wbg_get_imports() {
     imports.wbg.__wbg___wbindgen_throw_dd24417ed36fc46e = function(arg0, arg1) {
         throw new Error(getStringFromWasm0(arg0, arg1));
     };
+    imports.wbg.__wbg_get_6b7bd52aca3f9671 = function(arg0, arg1) {
+        const ret = arg0[arg1 >>> 0];
+        return ret;
+    };
+    imports.wbg.__wbg_instanceof_Int32Array_b6281022039fba32 = function(arg0) {
+        let result;
+        try {
+            result = arg0 instanceof Int32Array;
+        } catch (_) {
+            result = false;
+        }
+        const ret = result;
+        return ret;
+    };
+    imports.wbg.__wbg_instanceof_Uint8Array_da54ccc9d3e09434 = function(arg0) {
+        let result;
+        try {
+            result = arg0 instanceof Uint8Array;
+        } catch (_) {
+            result = false;
+        }
+        const ret = result;
+        return ret;
+    };
     imports.wbg.__wbg_length_22ac23eaec9d8053 = function(arg0) {
         const ret = arg0.length;
         return ret;
     };
     imports.wbg.__wbg_length_497fc8f401ac8b1c = function(arg0) {
+        const ret = arg0.length;
+        return ret;
+    };
+    imports.wbg.__wbg_length_ab53989976907f11 = function(arg0) {
         const ret = arg0.length;
         return ret;
     };
@@ -766,6 +935,10 @@ function __wbg_get_imports() {
         const ret = new Array();
         return ret;
     };
+    imports.wbg.__wbg_new_with_length_1e8603a5c71d4e06 = function(arg0) {
+        const ret = new Int32Array(arg0 >>> 0);
+        return ret;
+    };
     imports.wbg.__wbg_new_with_length_aa5eaf41d35235e5 = function(arg0) {
         const ret = new Uint8Array(arg0 >>> 0);
         return ret;
@@ -773,6 +946,12 @@ function __wbg_get_imports() {
     imports.wbg.__wbg_new_with_length_d7142aa2b68069a8 = function(arg0) {
         const ret = new Uint16Array(arg0 >>> 0);
         return ret;
+    };
+    imports.wbg.__wbg_prototypesetcall_dd07c344a74d4bfd = function(arg0, arg1, arg2) {
+        Int32Array.prototype.set.call(getArrayI32FromWasm0(arg0, arg1), arg2);
+    };
+    imports.wbg.__wbg_prototypesetcall_dfe9b766cdc1f1fd = function(arg0, arg1, arg2) {
+        Uint8Array.prototype.set.call(getArrayU8FromWasm0(arg0, arg1), arg2);
     };
     imports.wbg.__wbg_set_169e13b608078b7b = function(arg0, arg1, arg2) {
         arg0.set(getArrayU8FromWasm0(arg1, arg2));
@@ -822,6 +1001,7 @@ function __wbg_finalize_init(instance, module) {
     wasm = instance.exports;
     __wbg_init.__wbindgen_wasm_module = module;
     cachedDataViewMemory0 = null;
+    cachedInt32ArrayMemory0 = null;
     cachedUint16ArrayMemory0 = null;
     cachedUint32ArrayMemory0 = null;
     cachedUint8ArrayMemory0 = null;

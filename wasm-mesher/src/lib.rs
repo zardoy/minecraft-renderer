@@ -1,4 +1,5 @@
 use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast;
 
 mod chunk;
 mod chunk_parser_common;
@@ -11,7 +12,7 @@ mod parser_v16_v17;
 mod utils;
 
 use chunk::ChunkData;
-use mesher::Mesher;
+use mesher::{GeometryOutput, Mesher};
 
 // Optional: Use wee_alloc for smaller binary size
 // #[cfg(feature = "wee_alloc")]
@@ -419,7 +420,6 @@ pub fn generate_geometry_from_map_chunk_v18plus(
     max_bits_per_block: u8,
     max_bits_per_biome: u8,
     protocol: i32,
-    // --- mesh config (same as generate_geometry) ---
     section_x: i32,
     section_y: i32,
     section_z: i32,
@@ -436,13 +436,43 @@ pub fn generate_geometry_from_map_chunk_v18plus(
     smooth_lighting: bool,
     sky_light_value: u8,
 ) -> JsValue {
-    let flags = parser_v18plus::McVersionFlags::for_protocol(protocol);
-    let parsed = match parser_v18plus::parse_map_chunk_v18plus(
-        raw_packet, num_sections as usize, max_bits_per_block, max_bits_per_biome, flags,
+    match generate_geometry_from_map_chunk_v18plus_inner(
+        raw_packet, num_sections, max_bits_per_block, max_bits_per_biome, protocol,
+        section_x, section_y, section_z, section_height, world_min_y, world_max_y, section_data_start_y,
+        invisible_blocks, transparent_blocks, no_ao_blocks, cull_identical_blocks, occluding_blocks,
+        enable_lighting, smooth_lighting, sky_light_value,
     ) {
-        Ok(r) => r,
-        Err(e) => wasm_bindgen::throw_str(&format!("generateGeometryFromMapChunkV18Plus: parse error: {}", e)),
-    };
+        Ok(result) => serde_wasm_bindgen::to_value(&result).expect("serialize"),
+        Err(e) => wasm_bindgen::throw_str(&e),
+    }
+}
+
+fn generate_geometry_from_map_chunk_v18plus_inner(
+    raw_packet: &[u8],
+    num_sections: u32,
+    max_bits_per_block: u8,
+    max_bits_per_biome: u8,
+    protocol: i32,
+    section_x: i32,
+    section_y: i32,
+    section_z: i32,
+    section_height: i32,
+    world_min_y: i32,
+    world_max_y: i32,
+    section_data_start_y: i32,
+    invisible_blocks: &[u16],
+    transparent_blocks: &[u16],
+    no_ao_blocks: &[u16],
+    cull_identical_blocks: &[u16],
+    occluding_blocks: &[u16],
+    enable_lighting: bool,
+    smooth_lighting: bool,
+    sky_light_value: u8,
+) -> Result<GeometryOutput, String> {
+    let flags = parser_v18plus::McVersionFlags::for_protocol(protocol);
+    let parsed = parser_v18plus::parse_map_chunk_v18plus(
+        raw_packet, num_sections as usize, max_bits_per_block, max_bits_per_biome, flags,
+    ).map_err(|e| format!("generateGeometryFromMapChunkV18Plus: parse error: {}", e))?;
 
     let mesher = Mesher::new(
         section_x, section_y, section_z,
@@ -463,7 +493,7 @@ pub fn generate_geometry_from_map_chunk_v18plus(
         occluding_blocks,
     );
 
-    serde_wasm_bindgen::to_value(&result).expect("Failed to serialize geometry output to JS value")
+    Ok(result)
 }
 
 /// Stage-3 entry: parse a raw `map_chunk` packet (1.18+) into the same shape as
@@ -595,7 +625,6 @@ pub fn generate_geometry_from_parsed_v16_v17(
     default_biome: u8,
     sky_light: &[u8],
     block_light: &[u8],
-    // --- mesh config (same as generate_geometry) ---
     section_x: i32,
     section_y: i32,
     section_z: i32,
@@ -612,18 +641,54 @@ pub fn generate_geometry_from_parsed_v16_v17(
     smooth_lighting: bool,
     sky_light_value: u8,
 ) -> JsValue {
+    match generate_geometry_from_parsed_v16_v17_inner(
+        chunk_data, bit_map_lo_hi, num_sections, max_bits_per_block,
+        biomes_cells, default_biome, sky_light, block_light,
+        section_x, section_y, section_z, section_height,
+        world_min_y, world_max_y, section_data_start_y,
+        invisible_blocks, transparent_blocks, no_ao_blocks,
+        cull_identical_blocks, occluding_blocks,
+        enable_lighting, smooth_lighting, sky_light_value,
+    ) {
+        Ok(result) => serde_wasm_bindgen::to_value(&result).expect("serialize"),
+        Err(e) => wasm_bindgen::throw_str(&e),
+    }
+}
+
+fn generate_geometry_from_parsed_v16_v17_inner(
+    chunk_data: &[u8],
+    bit_map_lo_hi: &[u32],
+    num_sections: u32,
+    max_bits_per_block: u8,
+    biomes_cells: &[i32],
+    default_biome: u8,
+    sky_light: &[u8],
+    block_light: &[u8],
+    section_x: i32,
+    section_y: i32,
+    section_z: i32,
+    section_height: i32,
+    world_min_y: i32,
+    world_max_y: i32,
+    section_data_start_y: i32,
+    invisible_blocks: &[u16],
+    transparent_blocks: &[u16],
+    no_ao_blocks: &[u16],
+    cull_identical_blocks: &[u16],
+    occluding_blocks: &[u16],
+    enable_lighting: bool,
+    smooth_lighting: bool,
+    sky_light_value: u8,
+) -> Result<GeometryOutput, String> {
     let cells_opt: Option<&[i32]> = if biomes_cells.is_empty() { None } else { Some(biomes_cells) };
-    let parsed = match parser_v16_v17::parse_chunk_sections_v16_v17(
+    let parsed = parser_v16_v17::parse_chunk_sections_v16_v17(
         chunk_data,
         bit_map_lo_hi,
         num_sections as usize,
         max_bits_per_block,
         cells_opt,
         default_biome,
-    ) {
-        Ok(r) => r,
-        Err(e) => wasm_bindgen::throw_str(&format!("generateGeometryFromParsedV16V17: parse error: {}", e)),
-    };
+    ).map_err(|e| format!("generateGeometryFromParsedV16V17: parse error: {}", e))?;
 
     let total_blocks = parsed.block_states.len();
     let sky_fill: Vec<u8>;
@@ -660,7 +725,327 @@ pub fn generate_geometry_from_parsed_v16_v17(
         occluding_blocks,
     );
 
-    serde_wasm_bindgen::to_value(&result).expect("Failed to serialize geometry output to JS value")
+    Ok(result)
+}
+
+/// Fused multi-column parse+mesh for 1.18+ raw map_chunk.
+///
+/// Parses multiple raw packets inside Rust and meshes them in a single
+/// `mesher.generate_multi` call with correct per-neighbor AO/lighting.
+/// No typed arrays are materialised on the JS heap.
+///
+/// `raw_packets` — `Array<Uint8Array>`, one raw packet per column.
+/// Reuses the existing JS-side per-column buffers (zero concat, zero alloc).
+///
+/// `num_sections_list` — per-column section count (terrain height varies).
+///
+/// Invariant: `chunk_xs[0]` / `chunk_zs[0]` is the **target** column whose
+/// geometry is emitted. Neighbour columns provide border data to the mesher
+/// but do not contribute directly to the output.
+#[wasm_bindgen(js_name = generateGeometryFromMapChunkV18PlusMulti)]
+#[allow(non_snake_case)]
+pub fn generate_geometry_from_map_chunk_v18plus_multi(
+    raw_packets: js_sys::Array,
+    num_sections_list: &[u32],
+    max_bits_per_block: u8,
+    max_bits_per_biome: u8,
+    protocol: i32,
+    chunk_xs: &[i32],
+    chunk_zs: &[i32],
+    // --- mesh config (same as generate_geometry_multi) ---
+    section_x: i32,
+    section_y: i32,
+    section_z: i32,
+    section_height: i32,
+    world_min_y: i32,
+    world_max_y: i32,
+    section_data_start_y: i32,
+    invisible_blocks: &[u16],
+    transparent_blocks: &[u16],
+    no_ao_blocks: &[u16],
+    cull_identical_blocks: &[u16],
+    occluding_blocks: &[u16],
+    enable_lighting: bool,
+    smooth_lighting: bool,
+    sky_light_value: u8,
+) -> JsValue {
+    let count = chunk_xs.len();
+    let mut raw_bufs: Vec<Vec<u8>> = Vec::with_capacity(count);
+    for i in 0..count {
+        let raw: js_sys::Uint8Array = raw_packets
+            .get(i as u32)
+            .dyn_into()
+            .unwrap_or_else(|_| wasm_bindgen::throw_str("generateGeometryFromMapChunkV18PlusMulti: element is not Uint8Array"));
+        raw_bufs.push(raw.to_vec());
+    }
+
+    match generate_geometry_from_map_chunk_v18plus_multi_inner(
+        &raw_bufs, num_sections_list, max_bits_per_block, max_bits_per_biome, protocol,
+        chunk_xs, chunk_zs,
+        section_x, section_y, section_z, section_height,
+        world_min_y, world_max_y, section_data_start_y,
+        invisible_blocks, transparent_blocks, no_ao_blocks,
+        cull_identical_blocks, occluding_blocks,
+        enable_lighting, smooth_lighting, sky_light_value,
+    ) {
+        Ok(result) => serde_wasm_bindgen::to_value(&result).expect("serialize"),
+        Err(e) => wasm_bindgen::throw_str(&e),
+    }
+}
+
+fn generate_geometry_from_map_chunk_v18plus_multi_inner(
+    raw_packets: &[Vec<u8>],
+    num_sections_list: &[u32],
+    max_bits_per_block: u8,
+    max_bits_per_biome: u8,
+    protocol: i32,
+    chunk_xs: &[i32],
+    chunk_zs: &[i32],
+    section_x: i32,
+    section_y: i32,
+    section_z: i32,
+    section_height: i32,
+    world_min_y: i32,
+    world_max_y: i32,
+    section_data_start_y: i32,
+    invisible_blocks: &[u16],
+    transparent_blocks: &[u16],
+    no_ao_blocks: &[u16],
+    cull_identical_blocks: &[u16],
+    occluding_blocks: &[u16],
+    enable_lighting: bool,
+    smooth_lighting: bool,
+    sky_light_value: u8,
+) -> Result<GeometryOutput, String> {
+    let flags = parser_v18plus::McVersionFlags::for_protocol(protocol);
+    let count = chunk_xs.len();
+
+    let mut parsed_all: Vec<parser_v18plus::MapChunkResult> = Vec::with_capacity(count);
+    for i in 0..count {
+        let parsed = parser_v18plus::parse_map_chunk_v18plus(
+            &raw_packets[i],
+            num_sections_list[i] as usize,
+            max_bits_per_block,
+            max_bits_per_biome,
+            flags,
+        ).map_err(|e| format!("generateGeometryFromMapChunkV18PlusMulti: parse error at index {}: {}", i, e))?;
+        parsed_all.push(parsed);
+    }
+
+    let chunks: Vec<ChunkData> = parsed_all
+        .iter()
+        .zip(chunk_xs.iter().zip(chunk_zs.iter()).zip(num_sections_list.iter()))
+        .map(|(p, ((&cx, &cz), &ns))| {
+            let world_height = (ns as usize * 4096 / 256) as i32;
+            ChunkData {
+                block_states: &p.block_states,
+                block_light: &p.block_light,
+                sky_light: &p.sky_light,
+                biomes: &p.biomes,
+                chunk_x: cx,
+                chunk_z: cz,
+                world_min_y: section_data_start_y,
+                world_height,
+            }
+        })
+        .collect();
+
+    let mesher = Mesher::new(
+        section_x, section_y, section_z,
+        section_height, section_data_start_y,
+        world_min_y, world_max_y,
+        enable_lighting, smooth_lighting, sky_light_value,
+    );
+
+    Ok(mesher.generate_multi(
+        chunks,
+        invisible_blocks,
+        transparent_blocks,
+        no_ao_blocks,
+        cull_identical_blocks,
+        occluding_blocks,
+    ))
+}
+
+/// Fused multi-column parse+mesh for 1.16 / 1.17 chunk sections.
+///
+/// Parses multiple columns inside Rust and meshes them in one
+/// `mesher.generate_multi` call.  Block states and biomes never leave WASM
+/// memory; light arrays are passed by reference from the JS-side
+/// update-light caches.
+///
+/// `chunk_data_list` — `Array<Uint8Array>`, one chunk_data buffer per column.
+/// `bit_map_lo_hi` — flat `&[u32]` of length `chunkCount * 2`; each pair
+///                    (lo, hi) is the section mask for one column.
+/// `num_sections_list` — per-column section count.
+/// `biomes_cells_list` — `Array<Int32Array>`, may contain empty arrays for
+///                        columns without captured biomes.
+/// `sky_light_list` / `block_light_list` — `Array<Uint8Array>`, may contain
+///   empty arrays for columns where update_light has not arrived yet.
+///
+/// Invariant: `chunk_xs[0]` / `chunk_zs[0]` is the target column.
+#[wasm_bindgen(js_name = generateGeometryFromParsedV16V17Multi)]
+#[allow(non_snake_case)]
+pub fn generate_geometry_from_parsed_v16_v17_multi(
+    chunk_data_list: js_sys::Array,
+    bit_map_lo_hi: &[u32],
+    num_sections_list: &[u32],
+    max_bits_per_block: u8,
+    biomes_cells_list: js_sys::Array,
+    default_biome: u8,
+    sky_light_list: js_sys::Array,
+    block_light_list: js_sys::Array,
+    chunk_xs: &[i32],
+    chunk_zs: &[i32],
+    // --- mesh config ---
+    section_x: i32,
+    section_y: i32,
+    section_z: i32,
+    section_height: i32,
+    world_min_y: i32,
+    world_max_y: i32,
+    section_data_start_y: i32,
+    invisible_blocks: &[u16],
+    transparent_blocks: &[u16],
+    no_ao_blocks: &[u16],
+    cull_identical_blocks: &[u16],
+    occluding_blocks: &[u16],
+    enable_lighting: bool,
+    smooth_lighting: bool,
+    sky_light_value: u8,
+) -> JsValue {
+    let count = chunk_xs.len();
+    let mut chunk_data_bufs: Vec<Vec<u8>> = Vec::with_capacity(count);
+    let mut biomes_bufs: Vec<Vec<i32>> = Vec::with_capacity(count);
+    let mut sky_bufs: Vec<Vec<u8>> = Vec::with_capacity(count);
+    let mut block_bufs: Vec<Vec<u8>> = Vec::with_capacity(count);
+    for i in 0..count {
+        let chunk_data: js_sys::Uint8Array = chunk_data_list
+            .get(i as u32)
+            .dyn_into()
+            .unwrap_or_else(|_| wasm_bindgen::throw_str("generateGeometryFromParsedV16V17Multi: chunk_data element is not Uint8Array"));
+        chunk_data_bufs.push(chunk_data.to_vec());
+
+        let biomes: js_sys::Int32Array = biomes_cells_list.get(i as u32).dyn_into().unwrap_or_else(|_| {
+            js_sys::Int32Array::new_with_length(0)
+        });
+        biomes_bufs.push(biomes.to_vec());
+
+        let sky_arr: js_sys::Uint8Array = sky_light_list.get(i as u32).dyn_into().unwrap_or_else(|_| {
+            js_sys::Uint8Array::new_with_length(0)
+        });
+        sky_bufs.push(sky_arr.to_vec());
+
+        let block_arr: js_sys::Uint8Array = block_light_list.get(i as u32).dyn_into().unwrap_or_else(|_| {
+            js_sys::Uint8Array::new_with_length(0)
+        });
+        block_bufs.push(block_arr.to_vec());
+    }
+
+    match generate_geometry_from_parsed_v16_v17_multi_inner(
+        &chunk_data_bufs, bit_map_lo_hi, num_sections_list, max_bits_per_block,
+        &biomes_bufs, default_biome,
+        &sky_bufs, &block_bufs,
+        chunk_xs, chunk_zs,
+        section_x, section_y, section_z, section_height,
+        world_min_y, world_max_y, section_data_start_y,
+        invisible_blocks, transparent_blocks, no_ao_blocks,
+        cull_identical_blocks, occluding_blocks,
+        enable_lighting, smooth_lighting, sky_light_value,
+    ) {
+        Ok(result) => serde_wasm_bindgen::to_value(&result).expect("serialize"),
+        Err(e) => wasm_bindgen::throw_str(&e),
+    }
+}
+
+fn generate_geometry_from_parsed_v16_v17_multi_inner(
+    chunk_data_list: &[Vec<u8>],
+    bit_map_lo_hi: &[u32],
+    num_sections_list: &[u32],
+    max_bits_per_block: u8,
+    biomes_cells_list: &[Vec<i32>],
+    default_biome: u8,
+    sky_light_list: &[Vec<u8>],
+    block_light_list: &[Vec<u8>],
+    chunk_xs: &[i32],
+    chunk_zs: &[i32],
+    section_x: i32,
+    section_y: i32,
+    section_z: i32,
+    section_height: i32,
+    world_min_y: i32,
+    world_max_y: i32,
+    section_data_start_y: i32,
+    invisible_blocks: &[u16],
+    transparent_blocks: &[u16],
+    no_ao_blocks: &[u16],
+    cull_identical_blocks: &[u16],
+    occluding_blocks: &[u16],
+    enable_lighting: bool,
+    smooth_lighting: bool,
+    sky_light_value: u8,
+) -> Result<GeometryOutput, String> {
+    let count = chunk_xs.len();
+
+    let mut parsed_all: Vec<parser_v16_v17::ChunkSectionsResult> = Vec::with_capacity(count);
+    let mut light_data: Vec<(Vec<u8>, Vec<u8>)> = Vec::with_capacity(count);
+
+    for i in 0..count {
+        let cells_opt: Option<&[i32]> = if biomes_cells_list[i].is_empty() { None } else { Some(&biomes_cells_list[i]) };
+
+        let parsed = parser_v16_v17::parse_chunk_sections_v16_v17(
+            &chunk_data_list[i],
+            &bit_map_lo_hi[i * 2..i * 2 + 2],
+            num_sections_list[i] as usize,
+            max_bits_per_block,
+            cells_opt,
+            default_biome,
+        ).map_err(|e| format!("generateGeometryFromParsedV16V17Multi: parse error at index {}: {}", i, e))?;
+        let total_blocks = parsed.block_states.len();
+
+        let sky_in = &sky_light_list[i];
+        let sky = if sky_in.len() == total_blocks { sky_in.clone() } else { vec![15u8; total_blocks] };
+        let block_in = &block_light_list[i];
+        let block = if block_in.len() == total_blocks { block_in.clone() } else { vec![0u8; total_blocks] };
+
+        parsed_all.push(parsed);
+        light_data.push((sky, block));
+    }
+
+    let chunks: Vec<ChunkData> = (0..count)
+        .map(|i| {
+            let p = &parsed_all[i];
+            let (ref sky, ref block) = light_data[i];
+            let ns = num_sections_list[i];
+            let world_height = (ns as usize * 4096 / 256) as i32;
+            ChunkData {
+                block_states: &p.block_states,
+                block_light: block,
+                sky_light: sky,
+                biomes: &p.biomes,
+                chunk_x: chunk_xs[i],
+                chunk_z: chunk_zs[i],
+                world_min_y: section_data_start_y,
+                world_height,
+            }
+        })
+        .collect();
+
+    let mesher = Mesher::new(
+        section_x, section_y, section_z,
+        section_height, section_data_start_y,
+        world_min_y, world_max_y,
+        enable_lighting, smooth_lighting, sky_light_value,
+    );
+
+    Ok(mesher.generate_multi(
+        chunks,
+        invisible_blocks,
+        transparent_blocks,
+        no_ao_blocks,
+        cull_identical_blocks,
+        occluding_blocks,
+    ))
 }
 
 /// Parse a raw 1.17 `update_light` packet (as captured by
@@ -697,4 +1082,254 @@ pub fn parse_update_light_v17_js(
     js_sys::Reflect::set(&obj, &JsValue::from_str("bytesRead"),
         &JsValue::from_f64(result.bytes_read as f64)).unwrap();
     obj.into()
+}
+
+// ---------------------------------------------------------------------------
+// Round-trip tests: fused path vs split path (parse → mesh in two steps).
+// Verifies that the parser→mesher integration inside each fused function
+// produces identical geometry to the existing split pipeline.
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const NO_BLOCKS: &[u16] = &[];
+
+    fn mesher_config(fixture_num_sections: usize) -> (i32, i32, i32, i32, i32, i32) {
+        let world_min = -64;
+        let world_max = 320;
+        let col_height = fixture_num_sections as i32 * 16;
+        (0, world_min, 0, col_height, world_min, world_max)
+    }
+
+    fn mesh_split_v18plus(parsed: &parser_v18plus::MapChunkResult, ns: u32) -> GeometryOutput {
+        let (sx, sy, sz, sh, wmin, wmax) = mesher_config(ns as usize);
+        Mesher::new(sx, sy, sz, sh, wmin, wmin, wmax, true, true, 15).generate(
+            &parsed.block_states, &parsed.block_light, &parsed.sky_light, &parsed.biomes,
+            NO_BLOCKS, NO_BLOCKS, NO_BLOCKS, NO_BLOCKS, NO_BLOCKS,
+        )
+    }
+
+    fn mesh_split_v17(parsed: &parser_v16_v17::ChunkSectionsResult, sky: &[u8], blk: &[u8], ns: u32) -> GeometryOutput {
+        let (sx, sy, sz, sh, wmin, wmax) = mesher_config(ns as usize);
+        Mesher::new(sx, sy, sz, sh, wmin, wmin, wmax, true, true, 15).generate(
+            &parsed.block_states, blk, sky, &parsed.biomes,
+            NO_BLOCKS, NO_BLOCKS, NO_BLOCKS, NO_BLOCKS, NO_BLOCKS,
+        )
+    }
+
+    #[test]
+    fn roundtrip_fused_v18plus_single() {
+        let fixture = "../chunk-packet-fixtures/fixtures/map_chunk/1.18.2/0_0.map_chunk.bin";
+        let raw = std::fs::read(fixture).expect("read fixture");
+        let flags = parser_v18plus::McVersionFlags::for_protocol(758);
+        let ns: u32 = 24;
+        let (sx, sy, sz, sh, wmin, wmax) = mesher_config(ns as usize);
+
+        let parsed = parser_v18plus::parse_map_chunk_v18plus(
+            &raw, ns as usize, 8, 3, flags,
+        ).expect("parse");
+        let split = mesh_split_v18plus(&parsed, ns);
+
+        let fused = generate_geometry_from_map_chunk_v18plus_inner(
+            &raw, ns, 8, 3, 758,
+            sx, sy, sz, sh, wmin, wmax, wmin,
+            NO_BLOCKS, NO_BLOCKS, NO_BLOCKS, NO_BLOCKS, NO_BLOCKS,
+            true, true, 15,
+        ).expect("fused");
+
+        assert_eq!(fused.blocks.len(), split.blocks.len(), "blocks.len");
+        assert_eq!(fused.block_count, split.block_count, "block_count");
+
+        for (i, (fb, sb)) in fused.blocks.iter().zip(split.blocks.iter()).enumerate() {
+            assert_eq!(fb.position, sb.position, "block[{}].position", i);
+            assert_eq!(fb.block_state_id, sb.block_state_id, "block[{}].state_id", i);
+            assert_eq!(fb.visible_faces, sb.visible_faces, "block[{}].faces", i);
+            assert_eq!(fb.ao_data.len(), sb.ao_data.len(), "block[{}].ao_data.len", i);
+            assert_eq!(fb.light_data.len(), sb.light_data.len(), "block[{}].light_data.len", i);
+        }
+    }
+
+    #[test]
+    fn roundtrip_fused_v17_single() {
+        let fixture_path = "../chunk-packet-fixtures/fixtures-1.17/with_light.json";
+        let json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(fixture_path).expect("read fixture"))
+                .expect("parse json");
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD;
+
+        let chunk_data = b64.decode(json["chunkData_b64"].as_str().expect("chunkData_b64")).expect("decode chunkData");
+        let bit_map_raw = json["bitMap_long"]
+            .as_array().expect("bitMap_long")
+            .iter()
+            .map(|v| {
+                let pair = v.as_array().expect("bitMap_long pair");
+                [pair[0].as_u64().unwrap() as u32, pair[1].as_u64().unwrap() as u32]
+            })
+            .collect::<Vec<[u32; 2]>>();
+        let bit_map: Vec<u32> = {
+            let mut out = Vec::with_capacity(bit_map_raw.len() * 2);
+            for &[hi, lo] in &bit_map_raw {
+                out.push(lo);
+                out.push(hi);
+            }
+            out
+        };
+        let biomes_str = json["biomes_int_b64"].as_str().unwrap_or("");
+        let biomes_ints: Vec<i32> = if biomes_str.is_empty() {
+            vec![]
+        } else {
+            let bytes = b64.decode(biomes_str).expect("decode biomes");
+            bytes.chunks_exact(4).map(|c| i32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()
+        };
+        let sky_b64 = json["light"]["sky_b64"].as_str().unwrap_or("");
+        let sky_light = if sky_b64.is_empty() { vec![] } else { b64.decode(sky_b64).expect("decode sky") };
+        let blk_b64 = json["light"]["block_b64"].as_str().unwrap_or("");
+        let block_light = if blk_b64.is_empty() { vec![] } else { b64.decode(blk_b64).expect("decode block") };
+        let ns: u32 = json["meta"]["numSections"].as_u64().unwrap() as u32;
+        let default_biome: u8 = 1;
+        let (sx, sy, sz, sh, wmin, wmax) = mesher_config(ns as usize);
+
+        let cells_opt: Option<&[i32]> = if biomes_ints.is_empty() { None } else { Some(&biomes_ints) };
+        let parsed = parser_v16_v17::parse_chunk_sections_v16_v17(
+            &chunk_data, &bit_map, ns as usize, 15, cells_opt, default_biome,
+        ).expect("parse v17");
+        let total = parsed.block_states.len();
+        let sky = if sky_light.len() == total { sky_light.clone() } else { vec![15u8; total] };
+        let blk = if block_light.len() == total { block_light.clone() } else { vec![0u8; total] };
+
+        let split = mesh_split_v17(&parsed, &sky, &blk, ns);
+
+        let fused = generate_geometry_from_parsed_v16_v17_inner(
+            &chunk_data, &bit_map, ns, 15,
+            &biomes_ints, default_biome,
+            &sky_light, &block_light,
+            sx, sy, sz, sh, wmin, wmax, wmin,
+            NO_BLOCKS, NO_BLOCKS, NO_BLOCKS, NO_BLOCKS, NO_BLOCKS,
+            true, true, 15,
+        ).expect("fused");
+
+        assert_eq!(fused.blocks.len(), split.blocks.len(), "blocks.len");
+        assert_eq!(fused.block_count, split.block_count, "block_count");
+
+        for (i, (fb, sb)) in fused.blocks.iter().zip(split.blocks.iter()).enumerate() {
+            assert_eq!(fb.position, sb.position, "block[{}].position", i);
+            assert_eq!(fb.block_state_id, sb.block_state_id, "block[{}].state_id", i);
+            assert_eq!(fb.visible_faces, sb.visible_faces, "block[{}].faces", i);
+        }
+    }
+
+    #[test]
+    fn roundtrip_fused_v18plus_multi_n1() {
+        // Multi-fused with a single column must produce identical geometry
+        // to single-fused (which is itself round-trip-validated against
+        // the split path above).  This exercises the multi loop end-to-end.
+        let fixture = "../chunk-packet-fixtures/fixtures/map_chunk/1.18.2/0_0.map_chunk.bin";
+        let raw = std::fs::read(fixture).expect("read fixture");
+        let ns: u32 = 24;
+        let (sx, sy, sz, sh, wmin, wmax) = mesher_config(ns as usize);
+
+        let single = generate_geometry_from_map_chunk_v18plus_inner(
+            &raw, ns, 8, 3, 758,
+            sx, sy, sz, sh, wmin, wmax, wmin,
+            NO_BLOCKS, NO_BLOCKS, NO_BLOCKS, NO_BLOCKS, NO_BLOCKS,
+            true, true, 15,
+        ).expect("single fused");
+
+        let raw_packets = vec![raw.clone()];
+        let multi = generate_geometry_from_map_chunk_v18plus_multi_inner(
+            &raw_packets,
+            &[ns], 8, 3, 758,
+            &[0], &[0],
+            sx, sy, sz, sh, wmin, wmax, wmin,
+            NO_BLOCKS, NO_BLOCKS, NO_BLOCKS, NO_BLOCKS, NO_BLOCKS,
+            true, true, 15,
+        ).expect("multi fused");
+
+        assert_eq!(multi.blocks.len(), single.blocks.len(), "blocks.len");
+        assert_eq!(multi.block_count, single.block_count, "block_count");
+        for (i, (mb, sb)) in multi.blocks.iter().zip(single.blocks.iter()).enumerate() {
+            assert_eq!(mb.position, sb.position, "block[{}].position", i);
+            assert_eq!(mb.block_state_id, sb.block_state_id, "block[{}].state_id", i);
+            assert_eq!(mb.visible_faces, sb.visible_faces, "block[{}].faces", i);
+            assert_eq!(mb.ao_data.len(), sb.ao_data.len(), "block[{}].ao_data.len", i);
+            assert_eq!(mb.light_data.len(), sb.light_data.len(), "block[{}].light_data.len", i);
+        }
+    }
+
+    #[test]
+    fn roundtrip_fused_v17_multi_n1() {
+        let fixture_path = "../chunk-packet-fixtures/fixtures-1.17/with_light.json";
+        let json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(fixture_path).expect("read fixture"))
+                .expect("parse json");
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD;
+
+        let chunk_data = b64.decode(json["chunkData_b64"].as_str().expect("chunkData_b64")).expect("decode chunkData");
+        let bit_map_raw = json["bitMap_long"]
+            .as_array().expect("bitMap_long")
+            .iter()
+            .map(|v| {
+                let pair = v.as_array().expect("bitMap_long pair");
+                [pair[0].as_u64().unwrap() as u32, pair[1].as_u64().unwrap() as u32]
+            })
+            .collect::<Vec<[u32; 2]>>();
+        let bit_map: Vec<u32> = {
+            let mut out = Vec::with_capacity(bit_map_raw.len() * 2);
+            for &[hi, lo] in &bit_map_raw {
+                out.push(lo);
+                out.push(hi);
+            }
+            out
+        };
+        let biomes_str = json["biomes_int_b64"].as_str().unwrap_or("");
+        let biomes_ints: Vec<i32> = if biomes_str.is_empty() {
+            vec![]
+        } else {
+            let bytes = b64.decode(biomes_str).expect("decode biomes");
+            bytes.chunks_exact(4).map(|c| i32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()
+        };
+        let sky_b64 = json["light"]["sky_b64"].as_str().unwrap_or("");
+        let sky_light = if sky_b64.is_empty() { vec![] } else { b64.decode(sky_b64).expect("decode sky") };
+        let blk_b64 = json["light"]["block_b64"].as_str().unwrap_or("");
+        let block_light = if blk_b64.is_empty() { vec![] } else { b64.decode(blk_b64).expect("decode block") };
+        let ns: u32 = json["meta"]["numSections"].as_u64().unwrap() as u32;
+        let default_biome: u8 = 1;
+        let (sx, sy, sz, sh, wmin, wmax) = mesher_config(ns as usize);
+
+        let single = generate_geometry_from_parsed_v16_v17_inner(
+            &chunk_data, &bit_map, ns, 15,
+            &biomes_ints, default_biome,
+            &sky_light, &block_light,
+            sx, sy, sz, sh, wmin, wmax, wmin,
+            NO_BLOCKS, NO_BLOCKS, NO_BLOCKS, NO_BLOCKS, NO_BLOCKS,
+            true, true, 15,
+        ).expect("single fused");
+
+        let chunk_data_list = vec![chunk_data.clone()];
+        let biomes_list = vec![biomes_ints.clone()];
+        let sky_list = vec![sky_light.clone()];
+        let block_list = vec![block_light.clone()];
+
+        let multi = generate_geometry_from_parsed_v16_v17_multi_inner(
+            &chunk_data_list, &bit_map, &[ns], 15,
+            &biomes_list, default_biome,
+            &sky_list, &block_list,
+            &[0], &[0],
+            sx, sy, sz, sh, wmin, wmax, wmin,
+            NO_BLOCKS, NO_BLOCKS, NO_BLOCKS, NO_BLOCKS, NO_BLOCKS,
+            true, true, 15,
+        ).expect("multi fused");
+
+        assert_eq!(multi.blocks.len(), single.blocks.len(), "blocks.len");
+        assert_eq!(multi.block_count, single.block_count, "block_count");
+        for (i, (mb, sb)) in multi.blocks.iter().zip(single.blocks.iter()).enumerate() {
+            assert_eq!(mb.position, sb.position, "block[{}].position", i);
+            assert_eq!(mb.block_state_id, sb.block_state_id, "block[{}].state_id", i);
+            assert_eq!(mb.visible_faces, sb.visible_faces, "block[{}].faces", i);
+        }
+    }
 }
