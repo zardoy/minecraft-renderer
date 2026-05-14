@@ -24,7 +24,7 @@ export const defaultWorldRendererConfig = {
   futuristicReveal: false,
 
   // Performance settings
-  wasmMesher: false,
+  wasmMesher: true,
   mesherWorkers: 1,
   addChunksBatchWaitTime: 200,
   _experimentalSmoothChunkLoading: true,

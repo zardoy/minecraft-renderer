@@ -50,8 +50,8 @@ else
   echo "🔧 Building in RELEASE mode (optimized, smaller binary)"
 fi
 
-# Output dir: repo root / wasm (one level up from wasm-mesher)
-OUT_DIR="$(cd .. && pwd)/wasm"
+# Output dir: src/wasm-mesher/runtime-build (consumed by worker via dynamic import)
+OUT_DIR="$(cd .. && pwd)/src/wasm-mesher/runtime-build"
 # Node test expects wasm in wasm-mesher/pkg (nodejs target for require())
 PKG_DIR="$(pwd)/pkg"
 

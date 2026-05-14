@@ -1,0 +1,9 @@
+{
+  "version": "1.17.1",
+  "protocolVersion": 756,
+  "x": 7,
+  "z": 0,
+  "packetName": "update_light",
+  "capturedAt": "2026-05-04T19:37:58.405Z",
+  "byteLength": 18
+}

@@ -1,0 +1,20 @@
+{
+  "version": "1.17.1",
+  "protocolVersion": 756,
+  "host": "grim.mcraft.fun",
+  "capturedAt": "2026-05-04T19:37:58.405Z",
+  "chunks": [
+    {
+      "x": 7,
+      "z": 0,
+      "mapChunk": 3744,
+      "updateLight": 18
+    },
+    {
+      "x": 5,
+      "z": 0,
+      "mapChunk": 5799,
+      "updateLight": 18
+    }
+  ]
+}

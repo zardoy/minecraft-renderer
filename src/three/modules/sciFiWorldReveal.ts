@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import type { WorldRendererThree } from '../worldRendererThree'
 import type { RendererModuleController, RendererModuleManifest } from '../rendererModuleSystem'
-import type { MesherGeometryOutput } from '../../mesher/shared'
+import type { MesherGeometryOutput } from '../../mesher-shared/shared'
 
 const SCI_FI_CYAN = new THREE.Color(13 / 255, 234 / 255, 238 / 255)
 const CHUNKS_THRESHOLD = 9
