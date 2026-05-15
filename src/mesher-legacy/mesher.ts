@@ -1,6 +1,6 @@
 import { Vec3 } from 'vec3'
 import { World } from '../mesher-shared/world'
-import { getSectionGeometry, setBlockStatesData as setMesherData } from '../mesher-shared/models'
+import { getSectionGeometry, setBlockStatesData as setMesherData, computeWireframeEdgesJS } from '../mesher-shared/models'
 import { BlockStateModelInfo } from '../mesher-shared/shared'
 import { handleGetHeightmap, EMPTY_COLUMN_HEIGHTMAP_SENTINEL } from '../mesher-shared/computeHeightmap'
 
@@ -207,7 +207,16 @@ setInterval(() => {
     if (chunk?.getSection(new Vec3(x, y, z))) {
       const start = performance.now()
       const geometry = getSectionGeometry(x, y, z, world)
+      if (geometry.positions.length > 0 && geometry.indices.length > 0 && world.config.computeWireframeEdges) {
+        const wireframeF32 = computeWireframeEdgesJS(geometry.positions as number[], geometry.indices as number[])
+        if (wireframeF32.length > 0) {
+          geometry.wireframePositions = wireframeF32
+        }
+      }
       const transferable = [geometry.positions?.buffer, geometry.normals?.buffer, geometry.colors?.buffer, geometry.uvs?.buffer].filter(Boolean)
+      if (geometry.wireframePositions) {
+        transferable.push(geometry.wireframePositions.buffer)
+      }
       //@ts-expect-error
       postMessage({ type: 'geometry', key, geometry, workerIndex }, transferable)
       processTime = performance.now() - start

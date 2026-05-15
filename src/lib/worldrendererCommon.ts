@@ -627,6 +627,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       worldMinY: this.worldMinYRender,
       worldMaxY: this.worldMinYRender + this.worldSizeParams.worldHeight,
       disableConversionCache: this.worldRendererConfig.disableMesherConversionCache,
+      computeWireframeEdges: this.worldRendererConfig.futuristicReveal === true,
     }
   }
 

@@ -18,6 +18,7 @@ export const defaultMesherConfig = {
   clipWorldBelowY: undefined as undefined | number,
   disableBlockEntityTextures: false,
   disableConversionCache: false,
+  computeWireframeEdges: false,
 }
 
 export type CustomBlockModels = {
@@ -59,6 +60,7 @@ export type MesherGeometryOutput = {
   // isFull: boolean
   hadErrors: boolean
   blocksCount: number
+  wireframePositions?: Float32Array
   customBlockModels?: CustomBlockModels
 }
 

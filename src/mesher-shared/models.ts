@@ -793,3 +793,44 @@ export const setBlockStatesData = (blockstatesModels, blocksAtlas: any, _needTil
     }
   }
 }
+
+export function computeWireframeEdgesJS(positions: Float32Array | number[], indices: Uint32Array | Uint16Array | number[]): Float32Array {
+  const pos = positions instanceof Float32Array ? positions : new Float32Array(positions as number[])
+  const idx = indices instanceof Uint32Array ? indices : (indices instanceof Uint16Array ? new Uint32Array(indices) : new Uint32Array(indices as number[]))
+
+  const linePositions: number[] = []
+  const edgeSet = new Set<number>()
+
+  for (let i = 0; i < idx.length; i += 3) {
+    const i0 = idx[i]!
+    const i1 = idx[i + 1]!
+    const i2 = idx[i + 2]!
+
+    addEdgeJS(pos, i0, i1, linePositions, edgeSet)
+    addEdgeJS(pos, i1, i2, linePositions, edgeSet)
+    addEdgeJS(pos, i2, i0, linePositions, edgeSet)
+  }
+
+  return new Float32Array(linePositions)
+}
+
+function addEdgeJS(
+  positions: Float32Array,
+  i0: number,
+  i1: number,
+  linePositions: number[],
+  edgeSet: Set<number>
+): void {
+  const minI = i0 < i1 ? i0 : i1
+  const maxI = i0 < i1 ? i1 : i0
+  // Pack two indices into a single number (safe while indices < 2^24 — far above per-section vertex counts).
+  const key = minI * 0x1000000 + maxI
+
+  if (edgeSet.has(key)) return
+  edgeSet.add(key)
+
+  linePositions.push(
+    positions[i0 * 3]!, positions[i0 * 3 + 1]!, positions[i0 * 3 + 2]!,
+    positions[i1 * 3]!, positions[i1 * 3 + 1]!, positions[i1 * 3 + 2]!
+  )
+}

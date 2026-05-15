@@ -2,6 +2,29 @@
 /* eslint-disable */
 
 /**
+ * Compute wireframe edge positions from a triangle mesh.
+ *
+ * Takes flat position and index arrays from an assembled mesh and returns a
+ * flat array of line-segment positions (x1,y1,z1,x2,y2,z2, ...) representing
+ * the unique edges of the mesh. Edge deduplication uses a `HashSet<(u32,u32)>`
+ * keyed on (min_vertex_index, max_vertex_index).
+ *
+ * `positions` — flat `Float32Array` of vertex positions (3 floats per vertex).
+ * `indices`  — flat `Uint32Array` of triangle indices (3 indices per triangle).
+ *              For 16-bit index arrays, prefer [`compute_wireframe_edges_u16`]
+ *              to avoid an extra JS-side `Uint32Array` allocation.
+ */
+export function computeWireframeEdges(positions: Float32Array, indices: Uint32Array): Float32Array;
+
+/**
+ * Same as [`compute_wireframe_edges`] but accepts a `Uint16Array` of indices.
+ *
+ * Avoids the JS-side `new Uint32Array(uint16)` allocation when the assembled
+ * section uses 16-bit indices (typical for sections with < 65k vertices).
+ */
+export function computeWireframeEdgesU16(positions: Float32Array, indices: Uint16Array): Float32Array;
+
+/**
  * VITALY's path: parse 1.18+ dump + light → run the mesher → return ONLY the final
  * geometry. Avoids marshalling the intermediate ~300KB block_states/biomes/lights
  * arrays back to JS.
@@ -217,6 +240,8 @@ export interface InitOutput {
   readonly generateGeometryFromParsedV16V17: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number) => any;
   readonly generateGeometryFromMapChunkV18PlusMulti: (a: any, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number) => any;
   readonly generateGeometryFromParsedV16V17Multi: (a: any, b: number, c: number, d: number, e: number, f: number, g: any, h: number, i: any, j: any, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number) => any;
+  readonly computeWireframeEdges: (a: number, b: number, c: number, d: number) => [number, number];
+  readonly computeWireframeEdgesU16: (a: number, b: number, c: number, d: number) => [number, number];
   readonly parseUpdateLightV17: (a: number, b: number, c: number) => any;
   readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

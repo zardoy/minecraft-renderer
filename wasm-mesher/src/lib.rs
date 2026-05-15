@@ -11,6 +11,8 @@ mod parser_v18plus;
 mod parser_v16_v17;
 mod utils;
 
+use std::collections::HashSet;
+
 use chunk::ChunkData;
 use mesher::{GeometryOutput, Mesher};
 
@@ -1048,6 +1050,84 @@ fn generate_geometry_from_parsed_v16_v17_multi_inner(
     ))
 }
 
+/// Compute wireframe edge positions from a triangle mesh.
+///
+/// Takes flat position and index arrays from an assembled mesh and returns a
+/// flat array of line-segment positions (x1,y1,z1,x2,y2,z2, ...) representing
+/// the unique edges of the mesh. Edge deduplication uses a `HashSet<(u32,u32)>`
+/// keyed on (min_vertex_index, max_vertex_index).
+///
+/// `positions` — flat `Float32Array` of vertex positions (3 floats per vertex).
+/// `indices`  — flat `Uint32Array` of triangle indices (3 indices per triangle).
+///              For 16-bit index arrays, prefer [`compute_wireframe_edges_u16`]
+///              to avoid an extra JS-side `Uint32Array` allocation.
+#[wasm_bindgen(js_name = computeWireframeEdges)]
+pub fn compute_wireframe_edges(positions: &[f32], indices: &[u32]) -> Vec<f32> {
+    let tri_count = indices.len() / 3;
+    let mut line_positions: Vec<f32> = Vec::with_capacity(tri_count * 3 * 6); // ~3 edges * 6 floats
+    let mut edge_set: HashSet<(u32, u32)> = HashSet::with_capacity(tri_count * 3);
+
+    for chunk in indices.chunks_exact(3) {
+        let i0 = chunk[0];
+        let i1 = chunk[1];
+        let i2 = chunk[2];
+
+        add_wireframe_edge(positions, i0, i1, &mut line_positions, &mut edge_set);
+        add_wireframe_edge(positions, i1, i2, &mut line_positions, &mut edge_set);
+        add_wireframe_edge(positions, i2, i0, &mut line_positions, &mut edge_set);
+    }
+
+    line_positions
+}
+
+/// Same as [`compute_wireframe_edges`] but accepts a `Uint16Array` of indices.
+///
+/// Avoids the JS-side `new Uint32Array(uint16)` allocation when the assembled
+/// section uses 16-bit indices (typical for sections with < 65k vertices).
+#[wasm_bindgen(js_name = computeWireframeEdgesU16)]
+pub fn compute_wireframe_edges_u16(positions: &[f32], indices: &[u16]) -> Vec<f32> {
+    let tri_count = indices.len() / 3;
+    let mut line_positions: Vec<f32> = Vec::with_capacity(tri_count * 3 * 6);
+    let mut edge_set: HashSet<(u32, u32)> = HashSet::with_capacity(tri_count * 3);
+
+    for chunk in indices.chunks_exact(3) {
+        let i0 = chunk[0] as u32;
+        let i1 = chunk[1] as u32;
+        let i2 = chunk[2] as u32;
+
+        add_wireframe_edge(positions, i0, i1, &mut line_positions, &mut edge_set);
+        add_wireframe_edge(positions, i1, i2, &mut line_positions, &mut edge_set);
+        add_wireframe_edge(positions, i2, i0, &mut line_positions, &mut edge_set);
+    }
+
+    line_positions
+}
+
+fn add_wireframe_edge(
+    positions: &[f32],
+    i0: u32,
+    i1: u32,
+    line_positions: &mut Vec<f32>,
+    edge_set: &mut HashSet<(u32, u32)>,
+) {
+    let min_i = i0.min(i1);
+    let max_i = i0.max(i1);
+
+    if !edge_set.insert((min_i, max_i)) {
+        return;
+    }
+
+    let i0_base = (i0 as usize) * 3;
+    let i1_base = (i1 as usize) * 3;
+
+    line_positions.push(positions[i0_base]);
+    line_positions.push(positions[i0_base + 1]);
+    line_positions.push(positions[i0_base + 2]);
+    line_positions.push(positions[i1_base]);
+    line_positions.push(positions[i1_base + 1]);
+    line_positions.push(positions[i1_base + 2]);
+}
+
 /// Parse a raw 1.17 `update_light` packet (as captured by
 /// `client.on('raw.update_light', ...)`) into flat per-block sky/block light
 /// arrays the WASM mesher consumes.
@@ -1331,5 +1411,80 @@ mod tests {
             assert_eq!(mb.block_state_id, sb.block_state_id, "block[{}].state_id", i);
             assert_eq!(mb.visible_faces, sb.visible_faces, "block[{}].faces", i);
         }
+    }
+
+    #[test]
+    fn test_compute_wireframe_empty() {
+        let result = compute_wireframe_edges(&[], &[]);
+        assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn test_compute_wireframe_single_triangle() {
+        let positions = vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+        let indices = vec![0u32, 1, 2];
+        let result = compute_wireframe_edges(&positions, &indices);
+        assert_eq!(result.len(), 18); // 3 edges * 6 floats
+    }
+
+    #[test]
+    fn test_compute_wireframe_quad() {
+        let positions = vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0];
+        let indices = vec![0u32, 1, 2, 0, 2, 3];
+        let result = compute_wireframe_edges(&positions, &indices);
+        assert_eq!(result.len(), 30); // 5 unique edges
+    }
+
+    #[test]
+    fn test_compute_wireframe_cube() {
+        let positions = vec![
+            0.0, 0.0, 0.0, // 0: front-bottom-left
+            1.0, 0.0, 0.0, // 1: front-bottom-right
+            1.0, 1.0, 0.0, // 2: front-top-right
+            0.0, 1.0, 0.0, // 3: front-top-left
+            0.0, 0.0, 1.0, // 4: back-bottom-left
+            1.0, 0.0, 1.0, // 5: back-bottom-right
+            1.0, 1.0, 1.0, // 6: back-top-right
+            0.0, 1.0, 1.0, // 7: back-top-left
+        ];
+        let indices = vec![
+            0u32, 1, 2, 2, 3, 0, // front
+            1, 5, 6, 6, 2, 1, // right
+            5, 4, 7, 7, 6, 5, // back
+            4, 0, 3, 3, 7, 4, // left
+            1, 0, 4, 4, 5, 1, // bottom
+            3, 2, 6, 6, 7, 3, // top
+        ];
+        let result = compute_wireframe_edges(&positions, &indices);
+        // 12 outer edges + 6 face diagonals = 18 unique edges = 108 floats
+        assert_eq!(result.len(), 108);
+    }
+
+    #[test]
+    fn test_compute_wireframe_positions_unchanged() {
+        let positions = vec![0.0, 0.0, 0.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0];
+        let indices = vec![0u32, 1, 2];
+        let result = compute_wireframe_edges(&positions, &indices);
+        assert_eq!(result[0], 0.0);
+        assert_eq!(result[1], 0.0);
+        assert_eq!(result[2], 0.0);
+        assert_eq!(result[3], 2.0);
+        assert_eq!(result[4], 3.0);
+        assert_eq!(result[5], 4.0);
+    }
+
+    #[test]
+    fn test_compute_wireframe_u16_matches_u32() {
+        let positions = vec![
+            0.0, 0.0, 0.0,
+            1.0, 0.0, 0.0,
+            1.0, 1.0, 0.0,
+            0.0, 1.0, 0.0,
+        ];
+        let indices_u32 = vec![0u32, 1, 2, 0, 2, 3];
+        let indices_u16 = vec![0u16, 1, 2, 0, 2, 3];
+        let r32 = compute_wireframe_edges(&positions, &indices_u32);
+        let r16 = compute_wireframe_edges_u16(&positions, &indices_u16);
+        assert_eq!(r32, r16);
     }
 }

@@ -71,6 +71,11 @@ function debugString(val) {
     return className;
 }
 
+function getArrayF32FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getFloat32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
+}
+
 function getArrayI32FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return getInt32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
@@ -92,6 +97,14 @@ function getDataViewMemory0() {
         cachedDataViewMemory0 = new DataView(wasm.memory.buffer);
     }
     return cachedDataViewMemory0;
+}
+
+let cachedFloat32ArrayMemory0 = null;
+function getFloat32ArrayMemory0() {
+    if (cachedFloat32ArrayMemory0 === null || cachedFloat32ArrayMemory0.byteLength === 0) {
+        cachedFloat32ArrayMemory0 = new Float32Array(wasm.memory.buffer);
+    }
+    return cachedFloat32ArrayMemory0;
 }
 
 let cachedInt32ArrayMemory0 = null;
@@ -161,6 +174,13 @@ function passArray8ToWasm0(arg, malloc) {
     return ptr;
 }
 
+function passArrayF32ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 4, 4) >>> 0;
+    getFloat32ArrayMemory0().set(arg, ptr / 4);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
+}
+
 function passStringToWasm0(arg, malloc, realloc) {
     if (realloc === undefined) {
         const buf = cachedTextEncoder.encode(arg);
@@ -226,6 +246,53 @@ if (!('encodeInto' in cachedTextEncoder)) {
 }
 
 let WASM_VECTOR_LEN = 0;
+
+/**
+ * Compute wireframe edge positions from a triangle mesh.
+ *
+ * Takes flat position and index arrays from an assembled mesh and returns a
+ * flat array of line-segment positions (x1,y1,z1,x2,y2,z2, ...) representing
+ * the unique edges of the mesh. Edge deduplication uses a `HashSet<(u32,u32)>`
+ * keyed on (min_vertex_index, max_vertex_index).
+ *
+ * `positions` — flat `Float32Array` of vertex positions (3 floats per vertex).
+ * `indices`  — flat `Uint32Array` of triangle indices (3 indices per triangle).
+ *              For 16-bit index arrays, prefer [`compute_wireframe_edges_u16`]
+ *              to avoid an extra JS-side `Uint32Array` allocation.
+ * @param {Float32Array} positions
+ * @param {Uint32Array} indices
+ * @returns {Float32Array}
+ */
+export function computeWireframeEdges(positions, indices) {
+    const ptr0 = passArrayF32ToWasm0(positions, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray32ToWasm0(indices, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.computeWireframeEdges(ptr0, len0, ptr1, len1);
+    var v3 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+    return v3;
+}
+
+/**
+ * Same as [`compute_wireframe_edges`] but accepts a `Uint16Array` of indices.
+ *
+ * Avoids the JS-side `new Uint32Array(uint16)` allocation when the assembled
+ * section uses 16-bit indices (typical for sections with < 65k vertices).
+ * @param {Float32Array} positions
+ * @param {Uint16Array} indices
+ * @returns {Float32Array}
+ */
+export function computeWireframeEdgesU16(positions, indices) {
+    const ptr0 = passArrayF32ToWasm0(positions, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray16ToWasm0(indices, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.computeWireframeEdgesU16(ptr0, len0, ptr1, len1);
+    var v3 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+    return v3;
+}
 
 /**
  * VITALY's path: parse 1.18+ dump + light → run the mesher → return ONLY the final
@@ -1001,6 +1068,7 @@ function __wbg_finalize_init(instance, module) {
     wasm = instance.exports;
     __wbg_init.__wbindgen_wasm_module = module;
     cachedDataViewMemory0 = null;
+    cachedFloat32ArrayMemory0 = null;
     cachedInt32ArrayMemory0 = null;
     cachedUint16ArrayMemory0 = null;
     cachedUint32ArrayMemory0 = null;

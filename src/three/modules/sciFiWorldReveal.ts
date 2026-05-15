@@ -432,6 +432,12 @@ export class SciFiWorldRevealModule implements RendererModuleController {
    * Create wireframe geometry from mesh geometry
    */
   private createWireframeGeometry(geometry: MesherGeometryOutput): THREE.BufferGeometry {
+    if (geometry.wireframePositions && geometry.wireframePositions.length > 0) {
+      const wireframeGeom = new THREE.BufferGeometry()
+      wireframeGeom.setAttribute('position', new THREE.Float32BufferAttribute(geometry.wireframePositions, 3))
+      return wireframeGeom
+    }
+
     const positions = geometry.positions as Float32Array
     const indices = geometry.indices as Uint32Array | Uint16Array
 
