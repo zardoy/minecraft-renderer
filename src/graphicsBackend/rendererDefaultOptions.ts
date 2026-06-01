@@ -5,9 +5,9 @@ import {
   FUTURISTIC_SCENE_LABELS,
   MINECRAFT_BLOCK_GROUP_IDS,
   MINECRAFT_BLOCK_GROUP_LABELS
-} from './futuristicMeta'
-import { MENU_BACKGROUND_OPTION_DEFAULTS } from './config'
-import type { RendererGpuPreference } from './gpuPreference'
+} from '../three/menuBackground/futuristicMeta'
+import { MENU_BACKGROUND_OPTION_DEFAULTS } from '../three/menuBackground/config'
+import type { RendererGpuPreference } from '../three/menuBackground/gpuPreference'
 
 export type RendererOptionMeta = {
   possibleValues?: string[] | Array<[string, string]>

@@ -31,15 +31,15 @@ export {
   RENDERER_DEFAULT_OPTIONS,
   RENDERER_OPTIONS_META,
   RENDERER_RENDER_GUI_SECTIONS,
-  migrateRendererOptions
-} from './defaultOptions'
+  migrateRendererOptions,
+  rendererShaderCubeDebugModeToValue
+} from '../../graphicsBackend/rendererDefaultOptions'
 export type {
   RendererDefaultOptionKey,
   RendererMesherPipeline,
   RendererShaderCubeDebugMode,
   RendererOptionMeta,
   RendererStorageOptions
-} from './defaultOptions'
+} from '../../graphicsBackend/rendererDefaultOptions'
 export { gpuPreferenceToWebGLPowerPreference } from './gpuPreference'
 export type { RendererGpuPreference } from './gpuPreference'
-export { rendererShaderCubeDebugModeToValue } from './defaultOptions'

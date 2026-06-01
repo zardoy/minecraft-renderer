@@ -22,7 +22,7 @@ export interface SoundSystem {
 }
 
 import type { MenuBackgroundOptions } from '../three/menuBackground/types'
-import type { RendererStorageOptions } from '../three/menuBackground/defaultOptions'
+import type { RendererStorageOptions } from './rendererDefaultOptions'
 import type { MenuBackgroundRenderer } from '../three/menuBackground/renderer'
 import type { PerformanceInstabilityFactors } from '../performanceMonitor'
 

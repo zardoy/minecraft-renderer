@@ -27,7 +27,7 @@ import { PlayerStateReactive } from '../playerState/playerState'
 import { ResourcesManager, ResourcesManagerTransferred } from '../resourcesManager'
 import { preloadMesherWorkerScript } from './preloadWorkers'
 import type { MenuBackgroundOptions } from '../three/menuBackground/types'
-import type { RendererStorageOptions } from '../three/menuBackground/defaultOptions'
+import type { RendererStorageOptions } from './rendererDefaultOptions'
 
 export interface AppViewerOptions {
   config?: Partial<GraphicsBackendConfig>

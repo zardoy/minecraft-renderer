@@ -5,15 +5,15 @@
 
 import { subscribe } from 'valtio/vanilla'
 import type { AppViewer } from './appViewer'
-import type { RendererStorageOptions } from '../three/menuBackground/defaultOptions'
-import { rendererShaderCubeDebugModeToValue } from '../three/menuBackground/defaultOptions'
+import type { RendererStorageOptions } from './rendererDefaultOptions'
+import { rendererShaderCubeDebugModeToValue } from './rendererDefaultOptions'
 import type { MenuBackgroundOptions } from '../three/menuBackground/types'
 import type { MenuBackgroundRenderer } from '../three/menuBackground/renderer'
 import { menuBackgroundSpeedToMultiplier } from '../three/menuBackground/config'
 import type { FuturisticCameraId, FuturisticSceneId, MinecraftBlockGroupId } from '../three/menuBackground/futuristic'
 import { setSkinsConfig } from '../lib/utils/skins'
 
-export type { RendererStorageOptions } from '../three/menuBackground/defaultOptions'
+export type { RendererStorageOptions } from './rendererDefaultOptions'
 
 export interface ApplyRendererOptionsContext {
   isSafari?: boolean

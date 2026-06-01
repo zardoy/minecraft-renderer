@@ -85,7 +85,7 @@ viewer.updateCamera(position, yaw, pitch)
 
 ### Settings flow (app integration)
 
-Renderer-owned options live in `RENDERER_DEFAULT_OPTIONS` and `RENDERER_OPTIONS_META` (`src/three/menuBackground/defaultOptions.ts`).
+Renderer-owned options live in `RENDERER_DEFAULT_OPTIONS` and `RENDERER_OPTIONS_META` (`src/graphicsBackend/rendererDefaultOptions.ts`).
 
 1. **Defaults** — spread `RENDERER_DEFAULT_OPTIONS` into your app options store (e.g. valtio `options`).
 2. **Migration** — call `migrateRendererOptions(saved)` when loading persisted settings (legacy mesher/GPU keys → current renderer option names).
