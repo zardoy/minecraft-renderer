@@ -631,6 +631,9 @@ export class FuturisticMenuBackground implements MenuBackgroundView {
     const resourcesManager = this.resourcesManager ?? new ResourcesManager()
     const needsAssetUpdate = !resourcesManager.currentResources?.blocksAtlasImage
     if (needsAssetUpdate) {
+      if (typeof document === 'undefined') {
+        throw new Error('Menu atlas missing in worker; pass resourcesManager from main thread')
+      }
       resourcesManager.currentConfig = {
         ...resourcesManager.currentConfig,
         version: MENU_BACKGROUND_MC_VERSION,

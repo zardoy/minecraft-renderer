@@ -116,6 +116,10 @@ const getSyncId = () => {
   return Math.random().toString(36).slice(2, 15) + Math.random().toString(36).slice(2, 15)
 }
 
+const applySyncPatch = (target: any, patch: any, worker: Worker) => {
+  Object.assign(target, restoreTransferred(patch, [], worker, false))
+}
+
 const setupObjectSync = (obj: any, originalObj: any, worker: Worker, isValtio: boolean, debugKey: string) => {
   if (!obj['__syncToWorker'] && !obj['__syncFromWorker'] && !isValtio) return
 
@@ -140,13 +144,45 @@ const setupObjectSync = (obj: any, originalObj: any, worker: Worker, isValtio: b
     worker.addEventListener('message', (event: any) => {
       if (event.data.type === 'sync' && event.data.syncId === syncId) {
         currentWorkerSyncStats.fromWorker++
-        Object.assign(originalObj, event.data.value)
+        applySyncPatch(originalObj, event.data.value, worker)
       }
     })
   }
 }
 
+const serializeMapForTransfer = (map: Map<unknown, unknown>) => ({
+  __restorer: 'Map',
+  __mapEntries: Array.from(map.entries()),
+})
+
+const serializeSetForTransfer = (set: Set<unknown>) => ({
+  __restorer: 'Set',
+  __setValues: [...set],
+})
+
+const isSetLike = (value: unknown): value is Set<unknown> => {
+  return value instanceof Set || Object.prototype.toString.call(value) === '[object Set]'
+}
+
+const isMapLike = (value: unknown): value is Map<unknown, unknown> => {
+  return value instanceof Map || Object.prototype.toString.call(value) === '[object Map]'
+}
+
+const iterableFromPlainObject = (obj: Record<string, unknown>) => {
+  return Object.keys(obj)
+    .filter(k => !k.startsWith('__'))
+    .sort((a, b) => Number(a) - Number(b))
+    .map(k => obj[k])
+}
+
 const cloneValtioObject = (obj: any) => {
+  if (isMapLike(obj)) {
+    return serializeMapForTransfer(obj)
+  }
+  if (isSetLike(obj)) {
+    return serializeSetForTransfer(obj)
+  }
+
   if (getVersion(obj) === undefined) {
     return obj
   }
@@ -178,16 +214,19 @@ export const deepPrepareForTransfer = (obj: any, worker: Worker, autoRemoveMetho
         continue
       }
 
-      // print a warning for Date, RegExp, Map, WeakMap, WeakSet
-      if (obj[key] instanceof Date || obj[key] instanceof RegExp || obj[key] instanceof Map || obj[key] instanceof WeakMap || obj[key] instanceof WeakSet) {
+      // print a warning for Date, RegExp, WeakMap, WeakSet
+      if (obj[key] instanceof Date || obj[key] instanceof RegExp || obj[key] instanceof WeakMap || obj[key] instanceof WeakSet) {
         console.warn(`Warning: ${key} is a ${typeof obj[key]}, which is not supported for transfer.`)
       }
 
       // default restorers main -> worker
+      if (isMapLike(obj[key])) {
+        newObj[key] = serializeMapForTransfer(obj[key])
+        continue
+      }
       // Set (only primitive values)
-      if (obj[key] instanceof Set) {
-        newObj[key] = [...obj[key]]
-        newObj[key]['__restorer'] = 'Set'
+      if (isSetLike(obj[key])) {
+        newObj[key] = serializeSetForTransfer(obj[key])
         continue
       }
       if (obj[key] instanceof Vec3) {
@@ -252,7 +291,7 @@ const receiveSyncedObject = (obj: any, worker: Worker, debugKey: string) => {
   if (obj['__syncToWorker']) {
     worker.addEventListener('message', (event: any) => {
       if (event.data.type === 'sync' && event.data.syncId === syncId) {
-        Object.assign(obj, event.data.value)
+        applySyncPatch(obj, event.data.value, worker)
       }
     })
   }
@@ -275,9 +314,35 @@ const receiveSyncedObject = (obj: any, worker: Worker, debugKey: string) => {
 
 const defaultRestorers = [
   {
+    restorerName: 'Map',
+    restoreTransferred(obj, _worker: Worker) {
+      if (Array.isArray(obj)) {
+        return new Map(obj)
+      }
+      const raw = obj.__mapEntries ?? obj.entries
+      if (Array.isArray(raw)) {
+        return new Map(raw)
+      }
+      if (raw != null && typeof raw === 'object' && typeof raw !== 'function') {
+        return new Map(Object.entries(raw as Record<string, unknown>))
+      }
+      return new Map()
+    }
+  },
+  {
     restorerName: 'Set',
-    restoreTransferred(obj, worker: Worker) {
-      return new Set(obj)
+    restoreTransferred(obj, _worker: Worker) {
+      if (Array.isArray(obj)) {
+        return new Set(obj)
+      }
+      const raw = obj.__setValues ?? obj.values
+      if (Array.isArray(raw)) {
+        return new Set(raw)
+      }
+      if (raw != null && typeof raw === 'object' && typeof raw !== 'function') {
+        return new Set(iterableFromPlainObject(raw as Record<string, unknown>))
+      }
+      return new Set()
     }
   },
   {
@@ -295,41 +360,50 @@ export const addDefaultRestorer = (restorer: { restorerName: string, restoreTran
 export const restoreTransferred = (obj: any, restorersArg: any[], worker: Worker, errorHandler: ((error: Error) => void) | boolean = true) => {
   const restorers = [...defaultRestorers, ...restorersArg]
 
-  for (const key in obj) {
-    if (Object.prototype.hasOwnProperty.call(obj, key)) {
-      if (!obj[key]) continue
-
-      if (typeof obj[key] === 'object' && obj[key] !== null) {
-        restoreTransferred(obj[key], restorers, worker, errorHandler)
-      }
-
-      if (obj[key]['__restorer']) {
-        // find restorer
-        const restorer = restorers.find(restorer => {
-          return restorer.restorerName ? restorer.restorerName === obj[key]['__restorer'] : restorer.name === obj[key]['__restorer']
-        })
-        if (restorer) {
-          obj[key] = restorer.restoreTransferred(obj[key], worker)
-        } else {
-          const error = new Error(`Restorer ${obj[key]['__restorer']} not found`)
-          if (typeof errorHandler === 'function') {
-            errorHandler(error)
-          } else if (errorHandler) {
-            throw error
-          } else {
-            console.error(error)
-          }
-        }
-      }
-
-      if (obj[key]['__valtio']) {
-        obj[key] = proxy(obj[key])
-      }
-
-      receiveSyncedObject(obj[key], worker, key)
+  const restoreValue = (value: any, debugKey: string): any => {
+    if (value == null || typeof value !== 'object') {
+      return value
     }
+
+    if (value['__restorer']) {
+      const restorer = restorers.find(r => {
+        return r.restorerName ? r.restorerName === value['__restorer'] : r.name === value['__restorer']
+      })
+      if (restorer) {
+        return restorer.restoreTransferred(value, worker)
+      }
+      const error = new Error(`Restorer ${value['__restorer']} not found`)
+      if (typeof errorHandler === 'function') {
+        errorHandler(error)
+      } else if (errorHandler) {
+        throw error
+      } else {
+        console.error(error)
+      }
+      return value
+    }
+
+    if (Array.isArray(value)) {
+      return value.map((item, index) => restoreValue(item, `${debugKey}[${index}]`))
+    }
+
+    for (const key in value) {
+      if (!Object.prototype.hasOwnProperty.call(value, key)) continue
+      const child = value[key]
+      if (child != null && typeof child === 'object') {
+        value[key] = restoreValue(child, `${debugKey}.${key}`)
+      }
+    }
+
+    if (value['__valtio']) {
+      value = proxy(value)
+    }
+
+    receiveSyncedObject(value, worker, debugKey)
+    return value
   }
-  return obj
+
+  return restoreValue(obj, 'root')
 }
 
 // const workerProxy = createWorkerProxy({

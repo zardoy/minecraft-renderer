@@ -11,6 +11,7 @@ import itemsAtlasLegacy from 'mc-assets/dist/itemsAtlasLegacy.png'
 import christmasPack from 'mc-assets/dist/textureReplacements/christmas'
 import { AtlasParser, ItemsAtlasesOutputJson } from 'mc-assets/dist/atlasParser'
 import worldBlockProvider, { WorldBlockProvider } from 'mc-assets/dist/worldBlockProvider'
+import { isWebWorker } from '../three/documentRenderer'
 import { ItemsRenderer } from 'mc-assets/dist/itemsRenderer'
 import { getLoadedItemDefinitionsStore } from 'mc-assets'
 
@@ -54,7 +55,15 @@ export class LoadedResourcesTransferrable {
   constructor(data?: any) {
     if (data) {
       Object.assign(this, data)
-      this.mcData = MinecraftData(this.version)
+    }
+    if (this.version) {
+      const globalMc = (globalThis as { loadedData?: IndexedData, mcData?: IndexedData }).loadedData
+        ?? (globalThis as { mcData?: IndexedData }).mcData
+      if (isWebWorker && globalMc?.entitiesByName) {
+        this.mcData = globalMc
+      } else {
+        this.mcData = MinecraftData(this.version)
+      }
       // this.itemsRenderer = new ItemsRenderer(
       //   this.version,
       //   this.blockstatesModels,
@@ -69,8 +78,10 @@ export class LoadedResourcesTransferrable {
     for (const key in this) {
       if (!Object.prototype.hasOwnProperty.call(this, key)) continue
       if (typeof this[key] === 'function') continue
-      if (key === 'itemsRenderer' || key === 'worldBlockProvider' || key === 'mcData') {
-        // Skip these fields
+      if (
+        key === 'itemsRenderer' || key === 'worldBlockProvider' || key === 'mcData'
+        || key === 'itemsDefinitionsStore' || key === 'sourceItemDefinitionsJson'
+      ) {
         continue
       }
       cloned[key] = this[key as keyof this]

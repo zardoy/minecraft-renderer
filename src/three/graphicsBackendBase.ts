@@ -148,23 +148,33 @@ export const createGraphicsBackendBase = () => {
 
   const startMenuBackground = async (menuBackgroundStartOptions?: MenuBackgroundOptions) => {
     if (!documentRenderer) throw new Error('Document renderer not initialized')
-    if (worldRenderer) return
 
-    if (!menuBackgroundRenderer) {
-      const mergedOptions: MenuBackgroundOptions = {
-        ...initOptions.config.menuBackground,
-        ...menuBackgroundStartOptions
-      }
-      menuBackgroundRenderer = new MenuBackgroundRenderer(
-        documentRenderer,
-        { ...initOptions },
-        mergedOptions,
-        !!process.env.SINGLE_FILE_BUILD_MODE
-      )
-      callModsMethod('menuBackgroundCreated', menuBackgroundRenderer)
-      await menuBackgroundRenderer.start(mergedOptions)
-      callModsMethod('menuBackgroundReady', menuBackgroundRenderer)
+    if (worldRenderer) {
+      worldRenderer.destroy()
+      worldRenderer = null
+      frameTimingCollector = null
+      ;(globalThis as any).world = undefined
+      ;(globalThis as any).frameTimingCollector = undefined
     }
+
+    if (menuBackgroundRenderer) {
+      menuBackgroundRenderer.dispose()
+      menuBackgroundRenderer = null
+    }
+
+    const mergedOptions: MenuBackgroundOptions = {
+      ...initOptions.config.menuBackground,
+      ...menuBackgroundStartOptions
+    }
+    menuBackgroundRenderer = new MenuBackgroundRenderer(
+      documentRenderer,
+      { ...initOptions },
+      mergedOptions,
+      !!process.env.SINGLE_FILE_BUILD_MODE
+    )
+    callModsMethod('menuBackgroundCreated', menuBackgroundRenderer)
+    await menuBackgroundRenderer.start(mergedOptions)
+    callModsMethod('menuBackgroundReady', menuBackgroundRenderer)
   }
 
   const startWorld = async (displayOptionsArg: DisplayWorldOptions) => {

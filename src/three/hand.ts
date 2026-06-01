@@ -1,12 +1,12 @@
 import * as THREE from 'three'
-import { loadSkinFromUsername, loadSkinImage } from '../lib/utils/skins'
-import { steveTexture } from './entities'
+import { loadSkinFromUsername, loadSkinImage, stevePngUrl } from '../lib/utils/skins'
 
 
 export const getMyHand = async (image?: string, userName?: string) => {
   let newMap: THREE.Texture
   if (!image && !userName) {
-    newMap = await steveTexture
+    const { canvas } = await loadSkinImage(stevePngUrl)
+    newMap = new THREE.CanvasTexture(canvas)
   } else {
     if (!image) {
       image = await loadSkinFromUsername(userName!, 'skin')

@@ -1294,3 +1294,28 @@ export const meshersSendMcData = (workers: Worker[], version: string, mcDataKeys
     worker.postMessage({ type: 'mcData', mcData })
   }
 }
+
+/** Wait for worker `mcDataApplied` after {@link meshersSendMcData}. */
+export const meshersSendMcDataAwait = (
+  workers: Worker[],
+  version: string,
+  mcDataKeys = dynamicMcDataFiles,
+  mcDataFull: IndexedData,
+  timeoutMs = 10_000
+): Promise<void> => {
+  return Promise.all(workers.map(worker => new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      worker.removeEventListener('message', handler as EventListener)
+      reject(new Error(`mcData transfer timeout (${timeoutMs}ms)`))
+    }, timeoutMs)
+    const handler = ({ data }: MessageEvent) => {
+      if (data?.type === 'mcDataApplied') {
+        clearTimeout(timeout)
+        worker.removeEventListener('message', handler as EventListener)
+        resolve()
+      }
+    }
+    worker.addEventListener('message', handler as EventListener)
+    meshersSendMcData([worker], version, mcDataKeys, mcDataFull)
+  }))).then(() => undefined)
+}

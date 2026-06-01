@@ -1509,6 +1509,13 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.chunkMeshManager.onChunkRemovedFromGate(`${x},${z}`)
   }
 
+  updateViewerPosition(pos: Vec3) {
+    super.updateViewerPosition(pos)
+    if (this.chunkMeshManager.pendingNearReveal.size > 0) {
+      this.chunkMeshManager.tryRevealPending()
+    }
+  }
+
   protected onViewerChunkPositionChanged(): void {
     this.chunkMeshManager.tryRevealPending()
   }

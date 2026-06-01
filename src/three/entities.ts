@@ -705,7 +705,7 @@ export class Entities {
   uuidPerSkinUrlsCache = {} as Record<string, { skinUrl?: string, capeUrl?: string }>
   currentSkinUrls = {} as Record<string, string>
 
-  private isCanvasBlank(canvas: HTMLCanvasElement): boolean {
+  private isCanvasBlank(canvas: HTMLCanvasElement | OffscreenCanvas): boolean {
     return !canvas.getContext('2d')
       ?.getImageData(0, 0, canvas.width, canvas.height).data
       .some(channel => channel !== 0)
@@ -801,12 +801,10 @@ export class Entities {
       let skinTexture: THREE.Texture
       let skinCanvas: OffscreenCanvas
       if (skinUrl === stevePngUrl) {
-        skinTexture = await steveTexture
-        const canvas = createCanvas(64, 64)
-        const ctx = canvas.getContext('2d')
-        if (!ctx) throw new Error('Failed to get context')
-        ctx.drawImage(skinTexture.image, 0, 0)
-        skinCanvas = canvas
+        const steveSkin = await loadSkinImage(stevePngUrl)
+        playerCustomSkinImage = steveSkin.image
+        skinTexture = new THREE.CanvasTexture(steveSkin.canvas)
+        skinCanvas = steveSkin.canvas
       } else {
         const { canvas, image } = await loadSkinImage(skinUrl)
         playerCustomSkinImage = image
@@ -821,12 +819,12 @@ export class Entities {
       playerObject.skin.modelType = inferModelType(skinCanvas)
       playerObject.skin['isCustom'] = skinUrl !== stevePngUrl
 
-      let earsCanvas: HTMLCanvasElement | undefined
+      let earsCanvas: OffscreenCanvas | undefined
       if (!playerCustomSkinImage) {
         renderEars = false
       } else if (renderEars) {
-        earsCanvas = document.createElement('canvas')
-        loadEarsToCanvasFromSkin(earsCanvas, playerCustomSkinImage)
+        earsCanvas = createCanvas(64, 64)
+        loadEarsToCanvasFromSkin(earsCanvas as unknown as HTMLCanvasElement, playerCustomSkinImage)
         renderEars = !this.isCanvasBlank(earsCanvas)
       }
       if (renderEars) {

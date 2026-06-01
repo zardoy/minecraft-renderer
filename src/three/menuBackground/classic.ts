@@ -1,10 +1,11 @@
-import { join } from 'path'
 import * as THREE from 'three'
 import { EntityMesh } from '../entity/EntityMesh'
+import { loadImageFromUrl } from '../../lib/utils'
 import type { DocumentRenderer } from '../documentRenderer'
-import { loadThreeJsTextureFromUrl, loadThreeJsTextureFromUrlSync } from '../threeJsUtils'
+import { loadThreeJsTextureFromBitmap } from '../threeJsUtils'
 import type { MenuBackgroundView } from './activeView'
 import { resizeMenuBackgroundCamera } from './activeView'
+import { menuBackgroundAssetUrl } from './assetUrl'
 
 const date = new Date()
 const isChristmas = date.getMonth() === 11 && date.getDate() >= 24 && date.getDate() <= 26
@@ -74,7 +75,9 @@ export class ClassicMenuBackground implements MenuBackgroundView {
 
     for (const file of panoramaFiles) {
       const load = async () => {
-        const { texture } = loadThreeJsTextureFromUrlSync(join('background', isChristmas ? 'christmas' : '', file))
+        const url = menuBackgroundAssetUrl('background', isChristmas ? 'christmas' : '', file)
+        const bitmap = await loadImageFromUrl(url)
+        const texture = loadThreeJsTextureFromBitmap(bitmap)
 
         texture.matrixAutoUpdate = false
         texture.matrix.set(-1, 0, 1, 0, 1, 0, 0, 0, 1)
@@ -95,7 +98,9 @@ export class ClassicMenuBackground implements MenuBackgroundView {
         panorMaterials.push(material)
       }
 
-      void load()
+      void load().catch(err => {
+        console.warn('[ClassicMenuBackground] Failed to load panorama face:', file, err)
+      })
     }
 
     const panoramaBox = new THREE.Mesh(panorGeo, panorMaterials)
@@ -136,7 +141,8 @@ export class ClassicMenuBackground implements MenuBackgroundView {
 
   /** Debug helper: flat cubemap face in front of the camera. */
   async debugImageInFrontOfCamera() {
-    const image = await loadThreeJsTextureFromUrl(join('background', 'panorama_0.webp'))
+    const bitmap = await loadImageFromUrl(menuBackgroundAssetUrl('background', 'panorama_0.webp'))
+    const image = loadThreeJsTextureFromBitmap(bitmap)
     const mesh = new THREE.Mesh(
       new THREE.PlaneGeometry(1000, 1000),
       new THREE.MeshBasicMaterial({ map: image })

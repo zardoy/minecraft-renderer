@@ -42,6 +42,7 @@ const buildOptions = createWorkerBuildOptions({
           build.onResolve({
             filter: /^mc-assets\/dist\/.*\.(json|png)$/,
           }, (args) => {
+            if (/steve\.png$/.test(args.path)) return
             return {
               path: args.path,
               namespace: 'empty-mc-assets'

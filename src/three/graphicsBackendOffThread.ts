@@ -1,9 +1,11 @@
 import * as THREE from 'three'
 import { GraphicsBackend, GraphicsBackendLoader } from '../graphicsBackend'
 import { useWorkerProxy, deepPrepareForTransfer, findProblemTransfer } from '../lib/workerProxy'
-import { meshersSendMcData } from '../lib/worldrendererCommon'
+import { meshersSendMcDataAwait } from '../lib/worldrendererCommon'
 import { dynamicMcDataFiles } from '../lib/buildSharedConfig.mjs'
 import { addNewStat } from '../lib/ui/newStats'
+import type { MenuBackgroundOptions } from './menuBackground/types'
+import { MENU_BACKGROUND_MC_VERSION } from './menuBackground/shared'
 import { createGraphicsBackendBase, type ThreeJsBackendMethods } from './graphicsBackendBase'
 import { addCanvasForWorker } from './documentRenderer'
 
@@ -57,14 +59,36 @@ export const createGraphicsBackendOffThread: GraphicsBackendLoader = async (init
   const backend: GraphicsBackend = {
     id: 'threejs',
     displayName: `three.js ${THREE.REVISION}`,
-    async startMenuBackground() { },
+    async startMenuBackground(menuBackgroundStartOptions?: MenuBackgroundOptions) {
+      const mcData = menuBackgroundStartOptions?.resourcesManager?.currentResources?.mcData
+      if (mcData) {
+        const workerThreeSendData = {
+          ...dynamicMcDataFiles,
+          items: 'itemsArray',
+          entities: 'entitiesArray',
+        }
+        await meshersSendMcDataAwait([worker], MENU_BACKGROUND_MC_VERSION, workerThreeSendData, mcData)
+      }
+      const prepared = deepPrepareForTransfer(menuBackgroundStartOptions ?? {}, worker)
+      try {
+        await proxy.startMenuBackground(structuredClone(prepared))
+      } catch (err) {
+        findProblemTransfer(prepared)
+        throw err
+      }
+    },
     async startWorld(options) {
       const workerThreeSendData = {
         ...dynamicMcDataFiles,
         items: 'itemsArray',
         entities: 'entitiesArray',
       }
-      meshersSendMcData([worker], options.version, workerThreeSendData, options.resourcesManager.currentResources.mcData)
+      await meshersSendMcDataAwait(
+        [worker],
+        options.version,
+        workerThreeSendData,
+        options.resourcesManager.currentResources.mcData
+      )
       console.log('mc data sent to three worker')
 
       options.inWorldRenderingConfig['__syncToWorker'] = true

@@ -543,6 +543,7 @@ export class ChunkMeshManager {
       this.pendingNearReveal.set(chunkKey, Date.now())
       this.armNearRevealTimer(chunkKey)
       this.armExpectedGraceTimer(chunkKey)
+      this.tryRevealPending()
       return
     }
     this.flushChunkDisplay(chunkKey)
@@ -597,9 +598,8 @@ export class ChunkMeshManager {
    * `chunkKey` is not yet `finishedChunks=true`.
    *
    * Two regimes by `ageMs` (time spent in `pendingNearReveal`):
-   * - Within `EXPECTED_NEAR_GRACE_MS`: walks every expected position in
-   *   the view-distance circle; missing-and-not-finished counts as a
-   *   blocker (catches "far worker beats near worker").
+   * - Within `EXPECTED_NEAR_GRACE_MS`: nearer columns in the circle that are
+   *   loaded but not finished block (far worker beats near worker).
    * - After grace: only actually-loaded-but-not-finished columns block,
    *   so a never-arriving column does not freeze the view.
    */
@@ -632,6 +632,7 @@ export class ChunkMeshManager {
           const oz = (playerCz + dCz) << 4
           const otherKey = `${ox},${oz}`
           if (otherKey === chunkKey) continue
+          if (!loadedChunks[otherKey]) continue
           if (!finishedChunks[otherKey]) return true
         }
       }
