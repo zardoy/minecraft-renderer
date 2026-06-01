@@ -173,7 +173,9 @@ export class ChunkMeshManager {
     if (!mat) return
     const atlas = (this.material as THREE.MeshBasicMaterial).map ?? null
     mat.uniforms.u_atlas.value = atlas
-    const { tintPalette } = getShaderCubeResources()
+    const resources = getShaderCubeResources()
+    if (!resources) return
+    const { tintPalette } = resources
     if (!tintPalette.isReady()) {
       tintPalette.createTexture()
     }

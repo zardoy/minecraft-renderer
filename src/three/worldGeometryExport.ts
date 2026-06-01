@@ -122,7 +122,9 @@ function shaderMaterialForExport(legacyMaterial: THREE.Material): THREE.ShaderMa
   if (!atlas) return null
   const shaderMat = createCubeBlockMaterial()
   shaderMat.uniforms.u_atlas.value = atlas
-  const { tintPalette } = getShaderCubeResources()
+  const resources = getShaderCubeResources()
+  if (!resources) return null
+  const { tintPalette } = resources
   if (!tintPalette.isReady()) tintPalette.createTexture()
   shaderMat.uniforms.u_tintPalette.value = tintPalette.getTexture()
   return shaderMat

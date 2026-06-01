@@ -357,3 +357,12 @@ test('GlobalBlockBuffer: free-list reuses slot with EMPTY sentinel', () => {
   buffer.dispose()
   mat.dispose()
 })
+
+test('getShaderCubeResources: returns null without loadedData.tints (no throw)', () => {
+  const prev = (globalThis as any).loadedData
+  ;(globalThis as any).loadedData = {}
+  resetShaderCubeResources()
+  expect(getShaderCubeResources()).toBeNull()
+  ;(globalThis as any).loadedData = prev
+  resetShaderCubeResources()
+})

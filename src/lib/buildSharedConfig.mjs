@@ -1,5 +1,6 @@
 export const dynamicMcDataFiles = {
     'blocks': 'blocksArray',
     'blockCollisionShapes': 'blockCollisionShapes',
-    'biomes': 'biomesArray'
+    'biomes': 'biomesArray',
+    'tints': 'tints',
 }

@@ -1276,12 +1276,18 @@ export const initMesherWorker = (onGotMessage: (data: any) => void, workerName =
   return worker
 }
 
+let mesherMcDataTintsMissingWarned = false
+
 export const meshersSendMcData = (workers: Worker[], version: string, mcDataKeys = dynamicMcDataFiles, mcDataFull: IndexedData) => {
   const mcData = {
     version: JSON.parse(JSON.stringify(mcDataFull.version))
   }
   for (const [finalKey, sourceKey] of Object.entries(mcDataKeys)) {
     mcData[finalKey] = mcDataFull[sourceKey]
+  }
+  if ('tints' in mcDataKeys && !mcData.tints && !mesherMcDataTintsMissingWarned) {
+    mesherMcDataTintsMissingWarned = true
+    console.warn(`[meshersSendMcData] mcData.tints missing for version ${version}; shader cubes will use legacy path in worker`)
   }
 
   for (const worker of workers) {

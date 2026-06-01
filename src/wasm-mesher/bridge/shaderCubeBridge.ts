@@ -80,6 +80,7 @@ export interface ShaderCubeModelInput {
 
 let tintPalette: TintPalette | null = null
 let textureIndexMapping: TextureIndexMapping | null = null
+let tintsMissingWarned = false
 
 /** Convert mc-assets texture scales (normalized or negative) to pixel tile size for index lookup. */
 function normalizeTextureEntryForTileIndex(
@@ -121,10 +122,14 @@ export function resolveFaceTileIndex(
 }
 
 /** Main thread + worker: use `loadedData` set by the app / mesher (see mesherWasm). */
-function getTintsJson(): Record<string, any> {
+function getTintsJson(): Record<string, any> | null {
   const tints = (globalThis as any).loadedData?.tints
   if (!tints) {
-    throw new Error('shaderCubeBridge: globalThis.loadedData.tints is not available yet')
+    if (!tintsMissingWarned) {
+      tintsMissingWarned = true
+      console.warn('[shaderCubeBridge] loadedData.tints missing; shader cubes use legacy path')
+    }
+    return null
   }
   return tints
 }
@@ -132,9 +137,13 @@ function getTintsJson(): Record<string, any> {
 export function getShaderCubeResources(): {
   tintPalette: TintPalette
   textureIndexMapping: TextureIndexMapping
-} {
+} | null {
+  const tintsData = getTintsJson()
+  if (!tintsData) {
+    return null
+  }
   if (!tintPalette) {
-    tintPalette = TintPalette.fromTintsData(getTintsJson())
+    tintPalette = TintPalette.fromTintsData(tintsData)
     tintPalette.createTexture()
   }
   if (!textureIndexMapping) {
@@ -154,6 +163,7 @@ export function getShaderCubeResources(): {
 export function resetShaderCubeResources(): void {
   tintPalette = null
   textureIndexMapping = null
+  tintsMissingWarned = false
 }
 
 /**
