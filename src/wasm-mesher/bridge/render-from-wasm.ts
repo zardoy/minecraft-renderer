@@ -12,6 +12,8 @@ import { elemFaces, buildRotationMatrix, matmul3, matmulmat3, vecadd3, vecsub3 }
 import type { ExportedWorldGeometry, ExportedSection } from '../../three/worldGeometryExport'
 import type { MesherGeometryOutput } from '../../mesher-shared/shared'
 import type { World } from '../../mesher-shared/world'
+import { resolveBlockPropertiesForMeshing } from '../../mesher-shared/models'
+import { getSideShading, vertexLightFromAo } from '../../mesher-shared/vertexShading'
 
 // Handle both default and named export
 const worldBlockProvider = (worldBlockProviderModule as any).default || worldBlockProviderModule
@@ -133,6 +135,18 @@ export function extractColumnHeightmap(
   return out
 }
 
+function computeMesherVertexLight(
+  world: World | undefined,
+  ao: number,
+  cornerLight15: number,
+  faceDir: [number, number, number]
+): number {
+  const shadingTheme = world?.config.shadingTheme ?? 'high-contrast'
+  const cardinalLight = world?.config.cardinalLight ?? 'default'
+  const sideShading = getSideShading(faceDir, shadingTheme, cardinalLight)
+  return vertexLightFromAo(ao, cornerLight15, sideShading, shadingTheme)
+}
+
 /**
  * Get or create cached block model with precomputed matrices
  */
@@ -140,10 +154,32 @@ function getCachedBlockModel(
   blockStateId: number,
   version: string,
   blockProvider: WorldBlockProvider,
-  PrismarineBlock: any
+  PrismarineBlock: any,
+  world?: World,
+  blockPos?: { x: number, y: number, z: number }
 ): CachedBlockModel | null {
-  // Use a module-level cache
-  const cacheKey = `${version}:${blockStateId}`
+  const usePreflat = !!(world?.preflat && blockPos)
+  let blockName: string
+  let blockProps: Record<string, unknown>
+  if (usePreflat) {
+    const resolved = resolveBlockPropertiesForMeshing(
+      world,
+      new Vec3(blockPos!.x, blockPos!.y, blockPos!.z),
+      blockProvider,
+      blockStateId,
+      PrismarineBlock
+    )
+    blockName = resolved.name
+    blockProps = resolved.properties
+  } else {
+    const blockObj = PrismarineBlock.fromStateId(blockStateId, 1)
+    blockName = blockObj.name
+    blockProps = blockObj.getProperties()
+  }
+
+  const cacheKey = usePreflat
+    ? `${version}:${blockStateId}:${blockName}:${JSON.stringify(blockProps)}`
+    : `${version}:${blockStateId}`
   if (!(globalThis as any).__wasmBlockModelCache) {
     (globalThis as any).__wasmBlockModelCache = new Map()
   }
@@ -155,11 +191,13 @@ function getCachedBlockModel(
 
   try {
     const blockObj = PrismarineBlock.fromStateId(blockStateId, 1)
-    const blockName = blockObj.name
-    const blockProps = blockObj.getProperties()
+    if (!usePreflat) {
+      blockName = blockObj.name
+      blockProps = blockObj.getProperties()
+    }
 
     const models = blockProvider.getAllResolvedModels0_1(
-      { name: blockName, properties: blockProps },
+      { name: blockName, properties: blockProps as Record<string, string | number | boolean> },
       false
     )
 
@@ -504,7 +542,14 @@ export function renderWasmOutputToGeometry(
       }
     }
 
-    const cachedModel = getCachedBlockModel(blockStateId, version, blockProvider, PrismarineBlock)
+    const cachedModel = getCachedBlockModel(
+      blockStateId,
+      version,
+      blockProvider,
+      PrismarineBlock,
+      world,
+      { x: bx, y: by, z: bz }
+    )
     if (!cachedModel) continue
 
     if (false) {
@@ -653,10 +698,9 @@ export function renderWasmOutputToGeometry(
             // But WASM light calculation seems to return 0.0, so we need to handle that
             // In the test case, TypeScript gets baseLight = 1.0 (full brightness)
             // So we should use 1.0 as the base light value when WASM returns 0
-            const baseLight = lightValues[cornerIdx]
-            const cornerLightResult = baseLight * 15
-
-            const light = (ao + 1) / 4 * (cornerLightResult / 15)
+            const cornerLight15 = (lightValues[cornerIdx] ?? 1) * 15
+            const faceDir = transformedDir as [number, number, number]
+            const light = computeMesherVertexLight(world, ao, cornerLight15, faceDir)
 
             colors.push(tint[0] * light, tint[1] * light, tint[2] * light)
 
@@ -906,7 +950,8 @@ export function renderWasmOutputToGeometry(
             }
 
             if (doAO) {
-              light = (ao + 1) / 4 * (cornerLightResult / 15)
+              const faceDir = transformedDirI as [number, number, number]
+              light = computeMesherVertexLight(world, ao, cornerLightResult, faceDir)
             }
 
             colors.push(tint[0] * light!, tint[1] * light!, tint[2] * light!)

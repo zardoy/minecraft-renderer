@@ -5,6 +5,7 @@ import legacyJson from '../lib/preflatMap.json'
 import { BlockType } from '../playground/shared'
 import { World, BlockModelPartsResolved, WorldBlock as Block, WorldBlock, worldColumnKey } from './world'
 import { BlockElement, buildRotationMatrix, elemFaces, matmul3, matmulmat3, vecadd3, vecsub3 } from './modelsGeometryCommon'
+import { getSideShading, vertexLightFromAo } from './vertexShading'
 import { INVISIBLE_BLOCKS } from './worldConstants'
 import { MesherGeometryOutput, HighestBlockInfo } from './shared'
 import { collectBlockEntityMetadata } from './blockEntityMetadata'
@@ -50,6 +51,31 @@ function prepareTints(tints) {
 }
 
 const calculatedBlocksEntries = Object.entries(legacyJson.clientCalculatedBlocks)
+
+/**
+ * Block name + properties for model lookup. Only runs neighbor/preflat work when
+ * `world.preflat` (legacy); modern block-state worlds use `fromStateId` only.
+ */
+export function resolveBlockPropertiesForMeshing(
+  world: World | undefined,
+  cursor: Vec3,
+  blockProvider: WorldBlockProvider,
+  blockStateId: number,
+  PrismarineBlockCtor: { fromStateId: (id: number, biome: number) => Block }
+): { name: string, properties: Record<string, unknown> } {
+  if (world?.preflat) {
+    const block = world.getBlock(cursor, blockProvider, {})
+    if (block) {
+      let properties: Record<string, unknown> = { ...block.getProperties() }
+      const patch = preflatBlockCalculation(block, world, cursor)
+      if (patch) properties = { ...properties, ...patch }
+      return { name: block.name, properties }
+    }
+  }
+  const fromState = PrismarineBlockCtor.fromStateId(blockStateId, 1)
+  return { name: fromState.name, properties: fromState.getProperties() }
+}
+
 export function preflatBlockCalculation(block: Block, world: World, position: Vec3) {
   const type = calculatedBlocksEntries.find(([name, blocks]) => blocks.includes(block.name))?.[0]
   if (!type) return
@@ -397,13 +423,7 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
     // 10%
     const { smoothLighting, shadingTheme, cardinalLight } = world.config
     const faceLight = world.getLight(neighborPos, undefined, undefined, block.name)
-    const sideShading = (shadingTheme === 'high-contrast')
-      ? (0.8 + 0.5 * Math.max(0, 0.66 * dir[0] + 0.66 * dir[1] + 0.33 * dir[2])) // old directional light behavior
-      : (
-          cardinalLight === 'nether'
-            ? (0.5 + Math.abs(0.1 * dir[0] + 0.4 * dir[1] + 0.3 * dir[2]))
-            : (0.75 + 0.25 * dir[1] + 0.05 * (Math.abs(dir[2]) - 3 * Math.abs(dir[0])))
-        )
+    const sideShading = getSideShading(dir, shadingTheme, cardinalLight)
     const baseLight = sideShading * faceLight / 15
     for (const pos of corners) {
       let vertex = [
@@ -477,10 +497,7 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
         // TODO: correctly interpolate ao light based on pos (evaluate once for each corner of the block)
 
         const ao = (side1Block && side2Block) ? 0 : (3 - (side1Block + side2Block + cornerBlock))
-        const ao_bias = (shadingTheme === 'high-contrast') ? 0.25 : 0.4
-        const ao_scale = (shadingTheme === 'high-contrast') ? 0.25 : 0.2
-        // todo light should go upper on lower blocks
-        light = sideShading * (ao * ao_scale + ao_bias) * (cornerLightResult / 15)
+        light = vertexLightFromAo(ao, cornerLightResult, sideShading, shadingTheme)
         aos.push(ao)
 
         // Log AO and light for this corner (corner index is aos.length - 1)
