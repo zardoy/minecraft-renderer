@@ -18,6 +18,7 @@ export type RendererOptionMeta = {
   text?: string
   tooltip?: string
   requiresRestart?: boolean
+  requiresChunksReload?: boolean
 }
 
 export type RendererMesherPipeline = 'wasm' | 'legacy-js'
@@ -61,6 +62,7 @@ export const RENDERER_DEFAULT_OPTIONS = {
   rendererPerfDebugOverlay: false as boolean,
   disableBlockEntityTextures: false as boolean,
   rendererMesher: 'wasm' as RendererMesherPipeline,
+  rendererShaderCubeBlocks: false as boolean,
   rendererShaderCubeDebugMode: 'off' as RendererShaderCubeDebugMode,
   showChunkBorders: false as boolean,
   renderEntities: true as boolean,
@@ -175,6 +177,11 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
     text: 'Mesher pipeline',
     tooltip: 'WASM is faster. Use JS if WASM is not working. Requires reload.',
     requiresRestart: true
+  },
+  rendererShaderCubeBlocks: {
+    text: 'Instanced shader cubes',
+    tooltip: 'Render full blocks through the global GPU instanced path. Requires WASM mesher and WebGL2.',
+    requiresChunksReload: true,
   },
   rendererShaderCubeDebugMode: {
     text: 'Shader cube debug',
@@ -316,7 +323,7 @@ export const RENDERER_RENDER_GUI_SECTIONS: ReadonlyArray<{
     },
     {
       title: 'Mesher',
-      keys: ['rendererMesher']
+      keys: ['rendererMesher', 'rendererShaderCubeBlocks']
     },
     {
       title: 'Renderer debug',

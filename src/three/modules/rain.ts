@@ -154,7 +154,8 @@ export class RainModule implements RendererModuleController {
       color: 0xcc_dd_ee,
       transparent: true,
       opacity: 0.35,
-      depthWrite: false,
+      // Must write depth so log-depth blocks occlude rain correctly (see cubeBlockShader).
+      depthWrite: true,
       fog: true,
     })
 
