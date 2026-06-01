@@ -120,10 +120,13 @@ export function resolveFaceTileIndex(
   return texMapping.tileIndexFromTextureEntry(entry)
 }
 
-/** Tints via esbuild-data (worker plugin, web-client rsbuild alias, vitest alias). */
+/** Main thread + worker: use `loadedData` set by the app / mesher (see mesherWasm). */
 function getTintsJson(): Record<string, any> {
-  const mod = require('esbuild-data') as { tints?: Record<string, any>, default?: { tints?: Record<string, any> } }
-  return mod.tints ?? mod.default?.tints ?? {}
+  const tints = (globalThis as any).loadedData?.tints
+  if (!tints) {
+    throw new Error('shaderCubeBridge: globalThis.loadedData.tints is not available yet')
+  }
+  return tints
 }
 
 export function getShaderCubeResources(): {

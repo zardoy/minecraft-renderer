@@ -25,6 +25,26 @@ export type RendererMesherPipeline = 'wasm' | 'legacy-js'
 
 export type RendererGpuPreference = 'default' | 'high-performance' | 'low-power'
 
+export type RendererShaderCubeDebugMode =
+  | 'off'
+  | 'holes'
+  | 'texIndex'
+  | 'faces'
+  | 'atlasAlpha'
+
+const SHADER_CUBE_DEBUG_MODE_TO_VALUE: Record<RendererShaderCubeDebugMode, number> = {
+  off: 0,
+  holes: 1,
+  texIndex: 2,
+  faces: 3,
+  atlasAlpha: 4,
+}
+
+/** Maps stored option → `inWorldRenderingConfig.shaderCubeDebugMode` (0–4). */
+export function rendererShaderCubeDebugModeToValue(mode: RendererShaderCubeDebugMode): number {
+  return SHADER_CUBE_DEBUG_MODE_TO_VALUE[mode]
+}
+
 /** Maps stored `gpuPreference` to WebGL `powerPreference` (undefined = browser default). */
 export function gpuPreferenceToWebGLPowerPreference(
   preference: RendererGpuPreference
@@ -53,6 +73,7 @@ export const RENDERER_DEFAULT_OPTIONS = {
   rendererPerfDebugOverlay: false as boolean,
   disableBlockEntityTextures: false as boolean,
   rendererMesher: 'wasm' as RendererMesherPipeline,
+  rendererShaderCubeDebugMode: 'off' as RendererShaderCubeDebugMode,
   showChunkBorders: false as boolean,
   renderEntities: true as boolean,
   renderDebug: 'basic' as 'none' | 'basic' | 'advanced',
@@ -164,6 +185,17 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
     text: 'Mesher pipeline',
     tooltip: 'WASM is faster. Use JS if WASM is not working. Requires reload.',
     requiresRestart: true
+  },
+  rendererShaderCubeDebugMode: {
+    text: 'Shader cube debug',
+    tooltip: 'Instanced cube path visualization (requires shader cubes enabled).',
+    possibleValues: [
+      ['off', 'Off'],
+      ['holes', 'Hole test (red)'],
+      ['texIndex', 'Tile index colors'],
+      ['faces', 'Face id colors'],
+      ['atlasAlpha', 'Atlas alpha'],
+    ],
   },
   showChunkBorders: {
     text: 'Chunk borders'
@@ -300,7 +332,8 @@ export const RENDERER_RENDER_GUI_SECTIONS: ReadonlyArray<{
       title: 'Renderer debug',
       keys: [
         'rendererFuturisticReveal',
-        'rendererPerfDebugOverlay'
+        'rendererPerfDebugOverlay',
+        'rendererShaderCubeDebugMode',
       ]
     }
   ]

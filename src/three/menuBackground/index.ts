@@ -37,7 +37,11 @@ export type {
   RendererDefaultOptionKey,
   RendererGpuPreference,
   RendererMesherPipeline,
+  RendererShaderCubeDebugMode,
   RendererOptionMeta,
   RendererStorageOptions
 } from './defaultOptions'
-export { gpuPreferenceToWebGLPowerPreference } from './defaultOptions'
+export {
+  gpuPreferenceToWebGLPowerPreference,
+  rendererShaderCubeDebugModeToValue
+} from './defaultOptions'

@@ -6,6 +6,7 @@
 import { subscribe } from 'valtio/vanilla'
 import type { AppViewer } from './appViewer'
 import type { RendererStorageOptions } from '../three/menuBackground/defaultOptions'
+import { rendererShaderCubeDebugModeToValue } from '../three/menuBackground/defaultOptions'
 import type { MenuBackgroundOptions } from '../three/menuBackground/types'
 import type { MenuBackgroundRenderer } from '../three/menuBackground/renderer'
 import { menuBackgroundSpeedToMultiplier } from '../three/menuBackground/config'
@@ -170,6 +171,7 @@ export function applyRendererOptions(
   cfg.starfield = o.starfieldRendering
   cfg.defaultSkybox = o.defaultSkybox
   cfg.fov = o.fov
+  cfg.shaderCubeDebugMode = rendererShaderCubeDebugModeToValue(o.rendererShaderCubeDebugMode)
 }
 
 /** World-view + hand/camera options (call when WorldView is ready). */
