@@ -38,6 +38,7 @@ export const getInitialPlayerState = (): PlayerStateReactive => proxy({
   heldItemOff: undefined,
   perspective: 'first_person',
   onFire: false,
+  fovMultiplier: 1,
   cameraSpectatingEntity: undefined,
   team: undefined,
 })
