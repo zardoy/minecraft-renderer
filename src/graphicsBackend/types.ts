@@ -59,6 +59,7 @@ export interface NonReactiveState {
   world: {
     chunksLoadedCount: number
     chunksTotalNumber: number
+    chunksFullInfo: string
     allChunksLoaded?: boolean
   }
   renderer: {

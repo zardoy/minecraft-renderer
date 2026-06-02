@@ -93,6 +93,18 @@ export const getBackendMethods = (worldRenderer: WorldRendererThree): any => {
       for (const worker of worldRenderer.workers) {
         worker.postMessage(message)
       }
+    },
+    getChunksDebugState() {
+      const loadedSectionsChunks: Record<string, true> = {}
+      for (const sectionPos of Object.keys(worldRenderer.sectionObjects)) {
+        const [x, , z] = sectionPos.split(',').map(Number)
+        loadedSectionsChunks[`${x},${z}`] = true
+      }
+      return {
+        loadedSectionsChunks,
+        loadedChunks: { ...worldRenderer.loadedChunks },
+        finishedChunks: { ...worldRenderer.finishedChunks },
+      }
     }
   }
 }

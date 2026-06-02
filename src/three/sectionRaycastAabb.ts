@@ -13,6 +13,13 @@ export type ShaderSectionRaycastBox = {
   cz: number
 }
 
+export type ShaderSectionRaycastEntry = {
+  box: ShaderSectionRaycastBox
+  sectionCenterX: number
+  sectionCenterY: number
+  sectionCenterZ: number
+}
+
 /**
  * Tight world-space AABB covering occupied shader-cube blocks in a section.
  * `sectionCenter*` is geometryData.sx/sy/sz (section base + 8).
@@ -73,7 +80,7 @@ export function computeShaderSectionRaycastAabb (
   }
 }
 
-function isPointInsideAabb (
+export function isPointInsideAabb (
   ox: number,
   oy: number,
   oz: number,
@@ -147,6 +154,99 @@ export function raycastAabb (
   }
 
   return tmin <= tmax && tmin >= 0 ? tmin : undefined
+}
+
+/** Ray origin inside AABB: distance to exit face along the ray. */
+export function raycastAabbFromInside (
+  ox: number,
+  oy: number,
+  oz: number,
+  dx: number,
+  dy: number,
+  dz: number,
+  minX: number,
+  minY: number,
+  minZ: number,
+  maxX: number,
+  maxY: number,
+  maxZ: number,
+  maxDist: number,
+): number | undefined {
+  let tExit = maxDist
+
+  if (Math.abs(dx) >= 1e-8) {
+    const t = dx > 0 ? (maxX - ox) / dx : (minX - ox) / dx
+    if (t > 1e-6) tExit = Math.min(tExit, t)
+  } else if (ox < minX || ox > maxX) return undefined
+
+  if (Math.abs(dy) >= 1e-8) {
+    const t = dy > 0 ? (maxY - oy) / dy : (minY - oy) / dy
+    if (t > 1e-6) tExit = Math.min(tExit, t)
+  } else if (oy < minY || oy > maxY) return undefined
+
+  if (Math.abs(dz) >= 1e-8) {
+    const t = dz > 0 ? (maxZ - oz) / dz : (minZ - oz) / dz
+    if (t > 1e-6) tExit = Math.min(tExit, t)
+  } else if (oz < minZ || oz > maxZ) return undefined
+
+  return tExit <= maxDist ? tExit : undefined
+}
+
+/** Per-block raycast; `word0Stride` 1 = GlobalBlockBuffer SoA, 4 = deferred AoS. */
+export function raycastShaderBlocksAabb (
+  w0Source: Uint32Array,
+  start: number,
+  faceCount: number,
+  word0Stride: number,
+  sectionCenterX: number,
+  sectionCenterY: number,
+  sectionCenterZ: number,
+  ox: number,
+  oy: number,
+  oz: number,
+  dx: number,
+  dy: number,
+  dz: number,
+  maxDist: number,
+  visitGen: Uint16Array,
+  visitStamp: number,
+): number | undefined {
+  const baseX = sectionCenterX - 8
+  const baseY = sectionCenterY - 8
+  const baseZ = sectionCenterZ - 8
+
+  let closest = maxDist
+  let found = false
+
+  for (let i = 0; i < faceCount; i++) {
+    const w0 = w0Source[start + i * word0Stride]!
+    const lx = w0 & ((1 << WORD0.LX_BITS) - 1)
+    const ly = (w0 >> WORD0.LY_SHIFT) & ((1 << WORD0.LY_BITS) - 1)
+    const lz = (w0 >> WORD0.LZ_SHIFT) & ((1 << WORD0.LZ_BITS) - 1)
+    const visitIdx = lx + (ly << 4) + (lz << 8)
+    if (visitGen[visitIdx] === visitStamp) continue
+    visitGen[visitIdx] = visitStamp
+
+    const minX = baseX + lx
+    const minY = baseY + ly
+    const minZ = baseZ + lz
+    const maxX = minX + 1
+    const maxY = minY + 1
+    const maxZ = minZ + 1
+
+    let t: number | undefined
+    if (isPointInsideAabb(ox, oy, oz, minX, minY, minZ, maxX, maxY, maxZ)) {
+      t = raycastAabbFromInside(ox, oy, oz, dx, dy, dz, minX, minY, minZ, maxX, maxY, maxZ, closest)
+    } else {
+      t = raycastAabb(ox, oy, oz, dx, dy, dz, minX, minY, minZ, maxX, maxY, maxZ, closest)
+    }
+    if (t !== undefined && t < closest) {
+      closest = t
+      found = true
+    }
+  }
+
+  return found ? closest : undefined
 }
 
 /** 16³ section box centered at (cx, cy, cz) — tests / legacy helper. */

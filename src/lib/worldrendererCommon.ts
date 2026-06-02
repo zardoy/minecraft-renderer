@@ -692,6 +692,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
     const text = `Q: ${this.messageQueue.length} ${Object.keys(this.loadedChunks).length}/${Object.keys(this.finishedChunks).length}/${this.chunksLength} chunks (${this.workers.length}:${this.workersProcessAverageTime.toFixed(0)}ms/${this.geometryReceiveCountPerSec}ss/${this.allLoadedIn?.toFixed(1) ?? '-'}s)`
     this.chunksFullInfo = text
+    this.displayOptions.nonReactiveState.world.chunksFullInfo = text
     updateStatText('downloaded-chunks', text)
   }
 
