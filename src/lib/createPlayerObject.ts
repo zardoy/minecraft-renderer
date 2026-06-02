@@ -9,6 +9,22 @@ export type PlayerObjectType = PlayerObject & {
   realUsername: string
 }
 
+/** Starfield + log-depth world: cutout skin mats need alphaTest and depthWrite (not mesh traverse). */
+export function configurePlayerSkinMaterials (playerObject: PlayerObject): void {
+  const skin = playerObject.skin
+  const materials = [
+    skin.layer1Material,
+    skin.layer1MaterialBiased,
+    skin.layer2Material,
+    skin.layer2MaterialBiased,
+  ]
+  for (const mat of materials) {
+    mat.transparent = true
+    mat.alphaTest = 0.1
+    mat.depthWrite = true
+  }
+}
+
 export function createPlayerObject (options: {
   username?: string
   uuid?: string
@@ -24,12 +40,7 @@ export function createPlayerObject (options: {
   playerObject.realUsername = options.username ?? ''
   playerObject.position.set(0, 16, 0)
 
-  // fix issues with starfield
-  playerObject.traverse((obj) => {
-    if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshStandardMaterial) {
-      obj.material.transparent = true
-    }
-  })
+  configurePlayerSkinMaterials(playerObject)
 
   wrapper.add(playerObject as any)
   const scale = options.scale ?? (1 / 16)

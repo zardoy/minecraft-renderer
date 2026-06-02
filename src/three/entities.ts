@@ -15,7 +15,7 @@ import PrismarineChatLoader from 'prismarine-chat'
 import { loadSkinFromUsername, loadSkinImage, stevePngUrl } from '../lib/utils/skins'
 import { renderComponent } from '../sign-renderer'
 import { createCanvas } from '../lib/utils'
-import { PlayerObjectType } from '../lib/createPlayerObject'
+import { configurePlayerSkinMaterials, PlayerObjectType } from '../lib/createPlayerObject'
 import { getBlockMeshFromModel } from './holdingBlock'
 import { createItemMesh } from './itemMesh'
 import * as Entity from './entity/EntityMesh'
@@ -831,6 +831,7 @@ export class Entities {
       playerObject.skin.map = skinTexture as any
       playerObject.skin.modelType = inferModelType(skinCanvas)
       playerObject.skin['isCustom'] = skinUrl !== stevePngUrl
+      configurePlayerSkinMaterials(playerObject)
 
       let earsCanvas: OffscreenCanvas | undefined
       if (!playerCustomSkinImage) {
@@ -1635,12 +1636,7 @@ export class Entities {
     playerObject.realUsername = entity.username ?? ''
     playerObject.position.set(0, 16, 0)
 
-    // fix issues with starfield
-    playerObject.traverse((obj) => {
-      if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshStandardMaterial) {
-        obj.material.transparent = true
-      }
-    })
+    configurePlayerSkinMaterials(playerObject)
 
     wrapper.add(playerObject as any)
     const scale = 1 / 16
