@@ -21,7 +21,7 @@ import { createItemMesh } from './itemMesh'
 import * as Entity from './entity/EntityMesh'
 import { getMesh } from './entity/EntityMesh'
 import { WalkingGeneralSwing } from './entity/animations'
-import { disposeObject, loadTexture, loadThreeJsTextureFromUrl } from './threeJsUtils'
+import { disposeObject, loadNearestFilterTexture, loadTexture, loadThreeJsTextureFromUrl } from './threeJsUtils'
 import { armorModel, armorTextures, elytraTexture } from './entity/armorModels'
 import { WorldRendererThree } from './worldRendererThree'
 import { IndexedData } from 'minecraft-data'
@@ -211,6 +211,19 @@ const addNametag = (entity, options: { fontFamily: string }, mesh, version: stri
 const nametags = {}
 
 const isFirstUpperCase = (str) => str.charAt(0) === str.charAt(0).toUpperCase()
+
+function metadataAsArray (metadata: unknown): unknown[] | undefined {
+  if (metadata == null) return undefined
+  if (Array.isArray(metadata)) return metadata
+  if (typeof metadata === 'object') {
+    const record = metadata as Record<string, unknown>
+    const keys = Object.keys(record).filter((k) => /^\d+$/.test(k)).map(Number).sort((a, b) => a - b)
+    if (keys.length && keys[0] === 0 && keys.every((k, i) => k === i)) {
+      return keys.map((k) => record[String(k)])
+    }
+  }
+  return undefined
+}
 
 function getEntityMesh(mcData: IndexedData | undefined, entity: import('prismarine-entity').Entity & { delete?: any; pos?: any; name?: any }, world: WorldRendererThree, options: { fontFamily: string }, overrides) {
   if (entity.name) {
@@ -1085,7 +1098,7 @@ export class Entities {
           ? { name: entity.name }
           : entity.name === 'falling_block'
             ? { blockState: entity['objectData'] }
-            : entity.metadata?.find((m: any) => typeof m === 'object' && m?.itemCount)
+            : metadataAsArray(entity.metadata)?.find((m: any) => typeof m === 'object' && m?.itemCount)
         if (item) {
           const object = this.getItemMesh(item, {
             'minecraft:display_context': 'ground',
@@ -1176,7 +1189,8 @@ export class Entities {
 
     const meta = getGeneralEntitiesMetadata(entity, this.mcData)
 
-    const isInvisible = ((entity.metadata?.[0] ?? 0) as unknown as number) & 0x20 || (this.worldRenderer.playerStateReactive.cameraSpectatingEntity === entity.id && this.worldRenderer.playerStateUtils.isSpectator())
+    const meta0 = metadataAsArray(entity.metadata)?.[0] ?? (entity.metadata as { 0?: unknown } | undefined)?.[0]
+    const isInvisible = ((meta0 ?? 0) as unknown as number) & 0x20 || (this.worldRenderer.playerStateReactive.cameraSpectatingEntity === entity.id && this.worldRenderer.playerStateUtils.isSpectator())
     for (const child of mesh!.children ?? []) {
       if (child.name !== 'nametag') {
         child.visible = !isInvisible
@@ -1511,12 +1525,8 @@ export class Entities {
   }
 
   loadMap(data: any) {
-    const texture = new THREE.TextureLoader().load(data)
-    if (texture) {
-      texture.magFilter = THREE.NearestFilter
-      texture.minFilter = THREE.NearestFilter
-      texture.needsUpdate = true
-    }
+    const texture = loadNearestFilterTexture(data)
+    texture.needsUpdate = true
     return texture
   }
 

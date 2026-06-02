@@ -13,7 +13,8 @@ import { AtlasParser, ItemsAtlasesOutputJson } from 'mc-assets/dist/atlasParser'
 import worldBlockProvider, { WorldBlockProvider } from 'mc-assets/dist/worldBlockProvider'
 import { isWebWorker } from '../three/documentRenderer'
 import { ItemsRenderer } from 'mc-assets/dist/itemsRenderer'
-import { getLoadedItemDefinitionsStore } from 'mc-assets'
+import { getLoadedItemDefinitionsStore } from 'mc-assets/dist/stores'
+import { sanitizeWorkerEventArgs } from '../lib/workerMessageSanitize'
 
 type ResourceManagerEvents = {
   assetsTexturesUpdated: () => void
@@ -21,16 +22,43 @@ type ResourceManagerEvents = {
   assetsInventoryReady: () => void
 }
 
+type ItemDefinitionsStore = ReturnType<typeof getLoadedItemDefinitionsStore>
+
+let workerItemDefinitionsStore: ItemDefinitionsStore | null = null
+
+export function getItemsDefinitionsStoreForRender (
+  resources: LoadedResourcesTransferrable
+): ItemDefinitionsStore {
+  if (!isWebWorker) {
+    ensureItemsDefinitionsStore(resources)
+    return resources.itemsDefinitionsStore
+  }
+  if (!workerItemDefinitionsStore || typeof workerItemDefinitionsStore.get !== 'function') {
+    workerItemDefinitionsStore = getLoadedItemDefinitionsStore(itemDefinitionsJson)
+  }
+  return workerItemDefinitionsStore
+}
+
+export function ensureItemsDefinitionsStore (resources: LoadedResourcesTransferrable): void {
+  if (isWebWorker) return
+  const store = resources.itemsDefinitionsStore as { get?: unknown }
+  if (typeof store?.get === 'function') return
+  resources.itemsDefinitionsStore = getLoadedItemDefinitionsStore(
+    resources.sourceItemDefinitionsJson ?? itemDefinitionsJson
+  )
+}
+
 export class LoadedResourcesTransferrable {
   // todo transfer instead!
   readonly sourceItemDefinitionsJson: any = itemDefinitionsJson
-  readonly itemsDefinitionsStore = getLoadedItemDefinitionsStore(this.sourceItemDefinitionsJson)
+  itemsDefinitionsStore = getLoadedItemDefinitionsStore(this.sourceItemDefinitionsJson)
 
   allReady = false
   // Atlas parsers
   itemsAtlasImage!: ImageBitmap
   blocksAtlasImage!: ImageBitmap
   blocksAtlasJson!: ItemsAtlasesOutputJson
+  itemsAtlasJson!: ItemsAtlasesOutputJson
   // User data (specific to current resourcepack/version)
   customBlockStates?: Record<string, any>
   customModels?: Record<string, any>
@@ -54,7 +82,11 @@ export class LoadedResourcesTransferrable {
 
   constructor(data?: any) {
     if (data) {
-      Object.assign(this, data)
+      const safe = { ...data }
+      delete safe.itemsDefinitionsStore
+      delete safe.sourceItemDefinitionsJson
+      Object.assign(this, safe)
+      ensureItemsDefinitionsStore(this)
     }
     if (this.version) {
       const globalMc = (globalThis as { loadedData?: IndexedData, mcData?: IndexedData }).loadedData
@@ -88,6 +120,8 @@ export class LoadedResourcesTransferrable {
     }
 
     cloned.customTextures = {}
+    delete cloned.itemsDefinitionsStore
+    delete cloned.sourceItemDefinitionsJson
     return cloned as LoadedResourcesTransferrable
   }
 
@@ -116,10 +150,36 @@ const STABLE_MODELS_VERSION = '1.21.4'
 export class ResourcesManager extends (EventEmitter as new () => TypedEmitter<ResourceManagerEvents>) {
   static restorerName = 'ResourcesManager'
 
+  rebuildWorkerRenderers (resources: LoadedResourcesTransferrable): void {
+    if (!isWebWorker) return
+    if (!resources.version || !resources.blockstatesModels || !resources.blocksAtlasJson) return
+
+    this.blocksAtlasParser = new AtlasParser({ latest: resources.blocksAtlasJson }, '')
+    if (resources.itemsAtlasJson) {
+      this.itemsAtlasParser = new AtlasParser({ latest: resources.itemsAtlasJson }, '')
+    } else if (!this.itemsAtlasParser?.atlas?.latest) {
+      if (!this.sourceItemsAtlases || Object.keys(this.sourceItemsAtlases).length === 0) return
+      this.itemsAtlasParser = new AtlasParser(this.sourceItemsAtlases, '')
+    }
+
+    resources.itemsRenderer = new ItemsRenderer(
+      resources.version,
+      resources.blockstatesModels,
+      this.itemsAtlasParser,
+      this.blocksAtlasParser
+    )
+    resources.worldBlockProvider = worldBlockProvider(
+      resources.blockstatesModels,
+      this.blocksAtlasParser.atlas,
+      STABLE_MODELS_VERSION
+    )
+  }
+
   static restoreTransferred(data: any, worker?: Worker) {
     const resourcesManager = new ResourcesManager()
-    const upResources = (data) => {
-      resourcesManager.currentResources = new LoadedResourcesTransferrable(data)
+    const upResources = (transferData: LoadedResourcesTransferrable) => {
+      resourcesManager.currentResources = new LoadedResourcesTransferrable(transferData)
+      resourcesManager.rebuildWorkerRenderers(resourcesManager.currentResources)
     }
     upResources(data.currentResources)
     if (worker) {
@@ -138,6 +198,17 @@ export class ResourcesManager extends (EventEmitter as new () => TypedEmitter<Re
     return resourcesManager
   }
 
+  enrichTransferSnapshot (transfer?: LoadedResourcesTransferrable): LoadedResourcesTransferrable | undefined {
+    if (!transfer) return transfer
+    if (this.itemsAtlasParser?.atlas?.latest) {
+      transfer.itemsAtlasJson = this.itemsAtlasParser.atlas.latest
+    }
+    if (this.blocksAtlasParser?.atlas?.latest) {
+      transfer.blocksAtlasJson = this.blocksAtlasParser.atlas.latest
+    }
+    return transfer
+  }
+
   prepareForTransfer(worker?: Worker) {
     if (worker) {
       // todo do it automatically
@@ -148,21 +219,24 @@ export class ResourcesManager extends (EventEmitter as new () => TypedEmitter<Re
           class: ResourcesManager.restorerName,
           type: 'event',
           eventName,
-          args,
+          args: sanitizeWorkerEventArgs(args),
         })
         // todo handle assetsInventoryReady
         if (eventName === 'assetsTexturesUpdated' || eventName === 'assetsInventoryReady') {
+          const currentResources = this.enrichTransferSnapshot(
+            this.currentResources?.prepareForTransfer(),
+          )
           worker.postMessage({
             class: ResourcesManager.restorerName,
             type: 'newResources',
-            currentResources: this.currentResources?.prepareForTransfer(),
+            currentResources,
           })
         }
       }) as any
     }
     return {
       __restorer: ResourcesManager.restorerName,
-      currentResources: this.currentResources?.prepareForTransfer(),
+      currentResources: this.enrichTransferSnapshot(this.currentResources?.prepareForTransfer()),
     }
   }
 
@@ -315,6 +389,7 @@ export class ResourcesManager extends (EventEmitter as new () => TypedEmitter<Re
 
     this.itemsAtlasParser = new AtlasParser({ latest: itemsAtlas }, itemsCanvas.toDataURL())
     resources.itemsAtlasImage = await createImageBitmap(itemsCanvas)
+    resources.itemsAtlasJson = this.itemsAtlasParser.atlas.latest
   }
 
   async generateGuiTextures() {

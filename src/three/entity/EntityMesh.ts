@@ -7,7 +7,7 @@ import ocelotPng from 'mc-assets/dist/other-textures/latest/entity/cat/ocelot.pn
 import arrowTexture from 'mc-assets/dist/other-textures/1.21.2/entity/projectiles/arrow.png'
 import spectralArrowTexture from 'mc-assets/dist/other-textures/1.21.2/entity/projectiles/spectral_arrow.png'
 import tippedArrowTexture from 'mc-assets/dist/other-textures/1.21.2/entity/projectiles/tipped_arrow.png'
-import { loadTexture } from '../threeJsUtils'
+import { loadNearestFilterTexture, loadTexture } from '../threeJsUtils'
 import { WorldRendererThree } from '../worldRendererThree'
 import entities from './entities.json'
 import { externalModels } from './objModels'
@@ -504,9 +504,7 @@ export class EntityMesh {
                 partRoot.position.set(x, y, z)
               }
               if (metadata?.texture) {
-                const texture = new THREE.TextureLoader().load(metadata.texture)
-                texture.minFilter = THREE.NearestFilter
-                texture.magFilter = THREE.NearestFilter
+                const texture = loadNearestFilterTexture(metadata.texture)
                 partRoot.traverse((child) => {
                   if (child instanceof THREE.Mesh) {
                     child.material = new THREE.MeshBasicMaterial({
@@ -546,9 +544,7 @@ export class EntityMesh {
               obj.position.set(x, y, z)
             }
             if (metadata?.texture) {
-              const texture = new THREE.TextureLoader().load(metadata.texture)
-              texture.minFilter = THREE.NearestFilter
-              texture.magFilter = THREE.NearestFilter
+              const texture = loadNearestFilterTexture(metadata.texture)
               const material = new THREE.MeshBasicMaterial({
                 map: texture,
                 transparent: true,
@@ -615,9 +611,7 @@ export class EntityMesh {
         debugFlags.isHardcodedTexture = true
       }
       if (!texturePath) throw new Error(`No texture for ${type}`)
-      const texture = new THREE.TextureLoader().load(texturePath)
-      texture.minFilter = THREE.NearestFilter
-      texture.magFilter = THREE.NearestFilter
+      const texture = loadNearestFilterTexture(texturePath)
       const material = new THREE.MeshBasicMaterial({
         map: texture,
         transparent: true,

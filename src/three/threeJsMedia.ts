@@ -1,6 +1,8 @@
 import * as THREE from 'three'
 import { WorldRendererThree } from './worldRendererThree'
 import { ThreeJsSound } from './threeJsSound'
+import { isWebWorker } from './documentRenderer'
+import { loadThreeJsTextureFromUrlSync } from './threeJsUtils'
 
 type ControlModeConfig = {
   mouseButton: 'both' | 'left' | 'right'
@@ -186,7 +188,11 @@ export class ThreeJsMedia {
 
     let video: HTMLVideoElement | undefined
     let positionalAudio: THREE.PositionalAudio | undefined
-    if (!isImage) {
+    const workerVideoUnsupported = isWebWorker && !isImage
+    if (workerVideoUnsupported) {
+      console.warn(`[addMedia] Video "${id}" skipped in off-thread renderer (no HTMLVideoElement)`)
+    }
+    if (!isImage && !workerVideoUnsupported) {
       video = document.createElement('video')
       video.src = props.src.endsWith('.gif') ? props.src.replace('.gif', '.mp4') : props.src
       video.loop = props.loop ?? true
@@ -267,14 +273,35 @@ export class ThreeJsMedia {
       alphaTest: 0.1
     })
 
-    const texture = video
-      ? new THREE.VideoTexture(video)
-      : new THREE.TextureLoader().load(props.src, () => {
+    let texture: THREE.Texture
+    if (video) {
+      texture = new THREE.VideoTexture(video)
+    } else if (workerVideoUnsupported) {
+      texture = this.createErrorTexture(
+        props.size.width,
+        props.size.height,
+        props.background,
+        'Video unavailable (multi-thread)',
+      )
+    } else if (isWebWorker) {
+      const loaded = loadThreeJsTextureFromUrlSync(props.src)
+      texture = loaded.texture
+      texture.minFilter = THREE.NearestFilter
+      texture.magFilter = THREE.NearestFilter
+      void loaded.promise.then(() => {
+        if (this.customMedia.get(id)?.texture === texture) {
+          material.map = texture
+          material.needsUpdate = true
+        }
+      }).catch(() => handleError())
+    } else {
+      texture = new THREE.TextureLoader().load(props.src, () => {
         if (this.customMedia.get(id)?.texture === texture) {
           material.map = texture
           material.needsUpdate = true
         }
       }, undefined, () => handleError()) // todo cache
+    }
     texture.minFilter = THREE.NearestFilter
     texture.magFilter = THREE.NearestFilter
     // texture.format = THREE.RGBAFormat

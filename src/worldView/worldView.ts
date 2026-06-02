@@ -10,6 +10,7 @@ import { Vec3 } from 'vec3'
 import TypedEmitter from 'typed-emitter'
 import type { WorldViewEvents, ChunkPosKey, WorldSizeParams } from './types'
 import { generateSpiralMatrix } from '../lib/spiral'
+import { sanitizeWorkerEventArgs } from '../lib/workerMessageSanitize'
 
 /**
  * Helper to calculate chunk position from absolute position.
@@ -130,7 +131,7 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
           class: WorldViewWorker.restorerName,
           type: 'event',
           eventName,
-          args,
+          args: sanitizeWorkerEventArgs(args),
         })
       }) as any
     }

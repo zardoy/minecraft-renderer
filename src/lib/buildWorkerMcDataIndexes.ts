@@ -1,9 +1,33 @@
 type McElement = Record<string, unknown>
 
+function coerceDenseArray (value: unknown): McElement[] | undefined {
+  if (Array.isArray(value)) {
+    return value as McElement[]
+  }
+  if (!value || typeof value !== 'object') {
+    return undefined
+  }
+  const record = value as Record<string, McElement>
+  const keys = Object.keys(record).filter((k) => /^\d+$/.test(k)).map(Number).sort((a, b) => a - b)
+  if (!keys.length || keys[0] !== 0) {
+    return undefined
+  }
+  for (let i = 0; i < keys.length; i++) {
+    if (keys[i] !== i) {
+      return undefined
+    }
+  }
+  return keys.map((k) => record[String(k)])
+}
+
 function buildIndexFromArray<T extends McElement> (
   array: T[],
   field: keyof T
 ): Record<string | number, T> {
+  if (!Array.isArray(array)) {
+    console.warn('[augmentWorkerMcData] buildIndexFromArray expected array, got', typeof array)
+    return {}
+  }
   return array.reduce<Record<string | number, T>>((index, element) => {
     index[element[field] as string | number] = element
     return index
@@ -15,6 +39,10 @@ function buildIndexFromArrayWithRanges<T extends McElement> (
   minField: keyof T,
   maxField: keyof T
 ): Record<number, T> {
+  if (!Array.isArray(array)) {
+    console.warn('[augmentWorkerMcData] buildIndexFromArrayWithRanges expected array, got', typeof array)
+    return {}
+  }
   return array.reduce<Record<number, T>>((index, element) => {
     const min = element[minField] as number
     const max = element[maxField] as number
@@ -41,13 +69,13 @@ function getSourceArray (
   arrayKey: string,
   rawKey: string
 ): McElement[] | undefined {
-  const fromArrayKey = mcData[arrayKey]
-  if (Array.isArray(fromArrayKey)) {
-    return fromArrayKey as McElement[]
+  const fromArrayKey = coerceDenseArray(mcData[arrayKey])
+  if (fromArrayKey?.length) {
+    return fromArrayKey
   }
-  const raw = mcData[rawKey]
-  if (Array.isArray(raw)) {
-    return raw as McElement[]
+  const raw = coerceDenseArray(mcData[rawKey])
+  if (raw?.length) {
+    return raw
   }
   return undefined
 }

@@ -43,6 +43,9 @@ const buildOptions = createWorkerBuildOptions({
             filter: /^mc-assets\/dist\/.*\.(json|png)$/,
           }, (args) => {
             if (/steve\.png$/.test(args.path)) return
+            if (/itemDefinitions\.json$/.test(args.path)) return
+            if (/itemsAtlases\.json$/.test(args.path)) return
+            if (/blocksAtlases\.json$/.test(args.path)) return
             return {
               path: args.path,
               namespace: 'empty-mc-assets'

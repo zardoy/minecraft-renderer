@@ -1,5 +1,18 @@
 import * as THREE from 'three'
 
+/** Canvas used for item texture extraction (main thread or worker). */
+export type ItemTextureCanvas = HTMLCanvasElement | OffscreenCanvas
+
+function createItemTextureCanvas (width: number, height: number): ItemTextureCanvas {
+  if (typeof document !== 'undefined') {
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    return canvas
+  }
+  return new OffscreenCanvas(width, height)
+}
+
 export interface Create3DItemMeshOptions {
   depth: number
   pixelSize?: number
@@ -16,7 +29,7 @@ export interface Create3DItemMeshResult {
  * from a canvas containing the item texture
  */
 export function create3DItemMesh (
-  canvas: HTMLCanvasElement,
+  canvas: ItemTextureCanvas,
   options: Create3DItemMeshOptions
 ): Create3DItemMeshResult {
   const { depth, pixelSize } = options
@@ -245,18 +258,18 @@ export interface ItemMeshResult {
 export function extractItemTextureToCanvas (
   sourceTexture: THREE.Texture,
   textureInfo: ItemTextureInfo
-): HTMLCanvasElement {
+): ItemTextureCanvas {
   const { u, v, sizeX, sizeY } = textureInfo
 
   // Calculate canvas size - fix the calculation
   const canvasWidth = Math.max(1, Math.floor(sizeX * sourceTexture.image.width))
   const canvasHeight = Math.max(1, Math.floor(sizeY * sourceTexture.image.height))
 
-  const canvas = document.createElement('canvas')
-  canvas.width = canvasWidth
-  canvas.height = canvasHeight
-
-  const ctx = canvas.getContext('2d')!
+  const canvas = createItemTextureCanvas(canvasWidth, canvasHeight)
+  const ctx = canvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null
+  if (!ctx) {
+    throw new Error('Failed to get 2d context for item texture canvas')
+  }
   ctx.imageSmoothingEnabled = false
 
   // Draw the item texture region to canvas

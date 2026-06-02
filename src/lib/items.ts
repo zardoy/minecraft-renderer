@@ -3,7 +3,7 @@ import nbt from 'prismarine-nbt'
 import { fromFormattedString } from '@xmcl/text-component'
 import { getItemSelector } from '../playerState/playerState'
 import { getItemDefinition } from 'mc-assets/dist/itemDefinitions'
-import { ResourcesManagerCommon } from '../resourcesManager'
+import { getItemsDefinitionsStoreForRender, ResourcesManagerCommon } from '../resourcesManager'
 import { ItemSpecificContextProperties } from '../playerState/types'
 import { PlayerStateRenderer } from '../playerState/playerState'
 
@@ -130,9 +130,10 @@ export const getItemModelName = (item: GeneralInputItem, specificProps: ItemSpec
   const itemSelector = getItemSelector(playerState, {
     ...specificProps
   })
-  const modelFromDef = getItemDefinition(resourcesManager.currentResources!.itemsDefinitionsStore, {
+  const resources = resourcesManager.currentResources!
+  const modelFromDef = getItemDefinition(getItemsDefinitionsStoreForRender(resources), {
     name: itemModelName,
-    version: resourcesManager.currentResources!.version,
+    version: resources.version,
     properties: itemSelector
   })?.model
   const model = (modelFromDef === 'minecraft:special' ? undefined : modelFromDef) ?? itemModelName

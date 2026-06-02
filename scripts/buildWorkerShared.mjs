@@ -65,7 +65,7 @@ export function createMcDataPlugin(bundleMcData, rootDir) {
       }, async ({ path }) => {
         const fileName = path.split(/[\\\/]/).pop()?.replace('.json', '')
         return {
-          contents: `module.exports = globalThis.mcData["${fileName}"]`,
+          contents: `module.exports = globalThis.mcData["${fileName}Array"] ?? globalThis.mcData["${fileName}"]`,
           loader: 'js',
           resolveDir: process.cwd(),
         }

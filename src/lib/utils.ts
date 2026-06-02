@@ -41,7 +41,7 @@ const detectFullOffscreenCanvasSupport = () => {
 const hasFullOffscreenCanvasSupport = detectFullOffscreenCanvasSupport()
 
 export const createCanvas = (width: number, height: number): OffscreenCanvas => {
-  if (hasFullOffscreenCanvasSupport) {
+  if (hasFullOffscreenCanvasSupport || typeof document === 'undefined') {
     return new OffscreenCanvas(width, height)
   }
   const canvas = document.createElement('canvas')
