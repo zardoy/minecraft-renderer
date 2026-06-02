@@ -105,6 +105,15 @@ export class GlobalBlockBuffer {
     return this.sectionSlots.has(sectionKey)
   }
 
+  getSectionSlot (sectionKey: string): { start: number, count: number } | undefined {
+    return this.sectionSlots.get(sectionKey)
+  }
+
+  /** Fetch fresh each raycast — growCapacity reallocates the backing array. */
+  getW0 (): Uint32Array {
+    return this.w0
+  }
+
   /** Copy live GPU words and remove the section (sci-fi reveal hide / restore). */
   takeSectionData (sectionKey: string): GlobalBlockBufferShaderData | undefined {
     const slot = this.sectionSlots.get(sectionKey)
