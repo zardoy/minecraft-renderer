@@ -43,6 +43,13 @@ export const delayedIterator = async <T>(
   }
 }
 
+type WorkerWorldViewBridge = {
+  activeWorldView: WorldViewWorker
+  handler: (event: MessageEvent) => void
+}
+
+const workerWorldViewBridges = new WeakMap<Worker, WorkerWorldViewBridge>()
+
 /**
  * WorldView for worker thread communication.
  * This is a lightweight version that receives events from the main thread.
@@ -50,18 +57,42 @@ export const delayedIterator = async <T>(
 export class WorldViewWorker extends (EventEmitter as new () => TypedEmitter<WorldViewEvents>) {
   static readonly restorerName = 'WorldViewWorker'
 
-  static restoreTransferred(data: any, worker?: Worker): WorldViewWorker {
+  static restoreTransferred(_data: any, worker?: Worker): WorldViewWorker {
     const worldView = new WorldViewWorker()
-    if (worker) {
-      worker.addEventListener('message', ({ data }) => {
-        if (data.class === WorldViewWorker.restorerName) {
-          if (data.type === 'event') {
-            worldView.emit(data.eventName, ...data.args)
-          }
+    if (!worker) {
+      return worldView
+    }
+
+    let bridge = workerWorldViewBridges.get(worker)
+    if (!bridge) {
+      const handler = ({ data }: MessageEvent) => {
+        const state = workerWorldViewBridges.get(worker)
+        const active = state?.activeWorldView
+        if (!active || data?.class !== WorldViewWorker.restorerName) return
+        if (data.type === 'event') {
+          active.emit(data.eventName, ...data.args)
         }
-      })
+      }
+      worker.addEventListener('message', handler as EventListener)
+      bridge = { activeWorldView: worldView, handler }
+      workerWorldViewBridges.set(worker, bridge)
+    } else {
+      bridge.activeWorldView = worldView
     }
     return worldView
+  }
+
+  /** @internal vitest — remove bridge listener from worker */
+  static clearWorkerBridgeForTest(worker: Worker): void {
+    const bridge = workerWorldViewBridges.get(worker)
+    if (!bridge) return
+    worker.removeEventListener('message', bridge.handler as EventListener)
+    workerWorldViewBridges.delete(worker)
+  }
+
+  /** @internal vitest — count of bridge listeners on worker */
+  static getWorkerBridgeListenerCountForTest(worker: Worker): number {
+    return workerWorldViewBridges.has(worker) ? 1 : 0
   }
 }
 
