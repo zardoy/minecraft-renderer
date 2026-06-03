@@ -18,11 +18,11 @@ import { MesherLogReader } from './mesherlogReader'
 import { setSkinsConfig } from './utils/skins'
 import { calculateSkyLightSimple } from './skyLight'
 import { WorldViewWorker } from '../worldView'
+import { bindAbortableEmitterListener, bindAbortableListener } from './bindAbortableListener'
 import { generateSpiralMatrix } from './spiral'
 import { PlayerStateReactive } from '../playerState/playerState'
 import { IndexedData } from 'minecraft-data'
 import { WorldRendererConfig } from '../graphicsBackend/config'
-import { markChunkLoaded, removeRendererHeightmap, setRendererField, setRendererHeightmap } from './rendererStateBridge'
 
 function mod(x, n) {
   return ((x % n) + n) % n
@@ -170,6 +170,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   stopMesherMessagesProcessing = false
 
   abortController = new AbortController()
+  private valtioUnsubs: Array<() => void> = []
   lastRendered = 0
   renderingActive = true
   geometryReceiveCountPerSec = 0
@@ -257,10 +258,16 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       })()
     ])
 
-    this.resourcesManager.on('assetsTexturesUpdated', async () => {
+    const onAssetsTexturesUpdated = async () => {
       if (!this.active) return
       await this.updateAssetsData()
-    })
+    }
+    bindAbortableEmitterListener(
+      this.resourcesManager,
+      'assetsTexturesUpdated',
+      onAssetsTexturesUpdated,
+      this.abortController.signal
+    )
 
     this.watchReactivePlayerState()
     this.watchReactiveConfig()
@@ -338,18 +345,24 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   }
 
   watchReactivePlayerState() {
-    this.onReactivePlayerStateUpdated('backgroundColor', (value) => {
-      this.changeBackgroundColor(value)
-    })
-    this.onReactivePlayerStateUpdated('cardinalLight', (value) => {
-      this.changeCardinalLight(value)
-    })
+    this.valtioUnsubs.push(
+      this.onReactivePlayerStateUpdated('backgroundColor', (value) => {
+        this.changeBackgroundColor(value)
+      })
+    )
+    this.valtioUnsubs.push(
+      this.onReactivePlayerStateUpdated('cardinalLight', (value) => {
+        this.changeCardinalLight(value)
+      })
+    )
   }
 
   watchReactiveConfig() {
-    this.onReactiveConfigUpdated('fetchPlayerSkins', (value) => {
-      setSkinsConfig({ apiEnabled: value })
-    })
+    this.valtioUnsubs.push(
+      this.onReactiveConfigUpdated('fetchPlayerSkins', (value) => {
+        setSkinsConfig({ apiEnabled: value })
+      })
+    )
   }
 
   async processMessageQueue(source: string) {
@@ -433,7 +446,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
           this.finishedChunks[chunkKey] = true
           const CHUNK_SIZE = 16
           const gridKey = `${Math.floor(chunkCoords[0] / CHUNK_SIZE)},${Math.floor(chunkCoords[2] / CHUNK_SIZE)}`
-          markChunkLoaded(this.reactiveState, gridKey)
+          this.reactiveState.world.chunksLoaded[gridKey] = true
           this.renderUpdateEmitter.emit(`chunkFinished`, `${chunkCoords[0]},${chunkCoords[2]}`)
           this.checkAllFinished()
           // merge highest blocks by sections into highest blocks by chunks
@@ -515,7 +528,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
     if (data.type === 'heightmap') {
       const heightmap = new Int16Array(data.heightmap)
-      setRendererHeightmap(this.reactiveState, data.key, heightmap)
+      this.reactiveState.world.heightmaps[data.key] = heightmap
     }
   }
 
@@ -528,7 +541,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
   checkAllFinished() {
     if (this.sectionsWaiting.size === 0) {
-      setRendererField(this.reactiveState, 'world.mesherWork', false)
+      this.reactiveState.world.mesherWork = false
     }
     // todo check exact surrounding chunks
     const allFinished = Object.keys(this.finishedChunks).length >= this.chunksLength
@@ -688,7 +701,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     const loadedChunks = Object.keys(this.finishedChunks)
     this.displayOptions.nonReactiveState.world.chunksLoadedCount = loadedChunks.length
     this.displayOptions.nonReactiveState.world.chunksTotalNumber = this.chunksLength
-    setRendererField(this.reactiveState, 'world.allChunksLoaded', this.allChunksFinished)
+    this.reactiveState.world.allChunksLoaded = this.allChunksFinished
 
     const text = `Q: ${this.messageQueue.length} ${Object.keys(this.loadedChunks).length}/${Object.keys(this.finishedChunks).length}/${this.chunksLength} chunks (${this.workers.length}:${this.workersProcessAverageTime.toFixed(0)}ms/${this.geometryReceiveCountPerSec}ss/${this.allLoadedIn?.toFixed(1) ?? '-'}s)`
     this.chunksFullInfo = text
@@ -790,7 +803,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     }
     this.highestBlocksByChunks.delete(`${x},${z}`)
     const heightmapKey = `${Math.floor(x / 16)},${Math.floor(z / 16)}`
-    removeRendererHeightmap(this.reactiveState, heightmapKey)
+    delete this.reactiveState.world.heightmaps[heightmapKey]
 
     this.updateChunksStats()
 
@@ -829,22 +842,23 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
   connect(worldView: WorldViewWorker) {
     const worldEmitter = worldView
+    const signal = this.abortController.signal
 
-    worldEmitter.on('entity', (e) => {
+    bindAbortableListener(worldEmitter, 'entity', (e) => {
       this.updateEntity(e, false)
-    })
-    worldEmitter.on('entityMoved', (e) => {
+    }, signal)
+    bindAbortableListener(worldEmitter, 'entityMoved', (e) => {
       this.updateEntity(e, true)
-    })
-    worldEmitter.on('playerEntity', (e) => {
+    }, signal)
+    bindAbortableListener(worldEmitter, 'playerEntity', (e) => {
       this.updatePlayerEntity?.(e)
-    })
+    }, signal)
 
     let currentLoadChunkBatch = null as {
       timeout
       data
     } | null
-    worldEmitter.on('loadChunk', ({ x, z, chunk, worldConfig, isLightUpdate }) => {
+    bindAbortableListener(worldEmitter, 'loadChunk', ({ x, z, chunk, worldConfig, isLightUpdate }) => {
       this.worldSizeParams = worldConfig
       this.queuedChunks.add(`${x},${z}`)
       const args = [x, z, chunk, isLightUpdate]
@@ -866,45 +880,44 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         }
       }
       currentLoadChunkBatch.data.push(args)
-    })
+    }, signal)
     // todo remove and use other architecture instead so data flow is clear
-    worldEmitter.on('blockEntities', (blockEntities) => {
+    bindAbortableListener(worldEmitter, 'blockEntities', (blockEntities) => {
       this.blockEntities = blockEntities
-    })
+    }, signal)
 
-    worldEmitter.on('unloadChunk', ({ x, z }) => {
+    bindAbortableListener(worldEmitter, 'unloadChunk', ({ x, z }) => {
       this.removeColumn(x, z)
-    })
+    }, signal)
 
-    worldEmitter.on('blockUpdate', ({ pos, stateId }) => {
+    bindAbortableListener(worldEmitter, 'blockUpdate', ({ pos, stateId }) => {
       this.setBlockStateId(new Vec3(pos.x, pos.y, pos.z), stateId)
-    })
+    }, signal)
 
-    worldEmitter.on('chunkPosUpdate', ({ pos }) => {
+    bindAbortableListener(worldEmitter, 'chunkPosUpdate', ({ pos }) => {
       this.updateViewerPosition(pos)
-    })
+    }, signal)
 
-    worldEmitter.on('end', () => {
+    bindAbortableListener(worldEmitter, 'end', () => {
       this.worldStop?.()
-    })
+    }, signal)
 
-
-    worldEmitter.on('renderDistance', (d) => {
+    bindAbortableListener(worldEmitter, 'renderDistance', (d) => {
       this.viewDistance = d
       this.chunksLength = d === 0 ? 1 : generateSpiralMatrix(d).length
       this.allChunksFinished = Object.keys(this.finishedChunks).length === this.chunksLength
       this.onRenderDistanceChanged?.(d)
-    })
+    }, signal)
 
-    worldEmitter.on('markAsLoaded', ({ x, z }) => {
+    bindAbortableListener(worldEmitter, 'markAsLoaded', ({ x, z }) => {
       this.markAsLoaded(x, z)
-    })
+    }, signal)
 
-    worldEmitter.on('updateLight', ({ pos }) => {
+    bindAbortableListener(worldEmitter, 'updateLight', ({ pos }) => {
       this.lightUpdate(pos.x, pos.z)
-    })
+    }, signal)
 
-    worldEmitter.on('onWorldSwitch', () => {
+    bindAbortableListener(worldEmitter, 'onWorldSwitch', () => {
       for (const fn of this.onWorldSwitched) {
         try {
           fn()
@@ -915,9 +928,9 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
           }, 0)
         }
       }
-    })
+    }, signal)
 
-    worldEmitter.on('time', (timeOfDay) => {
+    bindAbortableListener(worldEmitter, 'time', (timeOfDay) => {
       if (!this.worldRendererConfig.dayCycle) return
       this.timeUpdated?.(timeOfDay)
 
@@ -928,15 +941,15 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       // if (this instanceof WorldRendererThree) {
       //   (this).rerenderAllChunks?.()
       // }
-    })
+    }, signal)
 
-    worldEmitter.on('biomeUpdate', ({ biome }) => {
+    bindAbortableListener(worldEmitter, 'biomeUpdate', ({ biome }) => {
       this.biomeUpdated?.(biome)
-    })
+    }, signal)
 
-    worldEmitter.on('biomeReset', () => {
+    bindAbortableListener(worldEmitter, 'biomeReset', () => {
       this.biomeReset?.()
-    })
+    }, signal)
   }
 
   setBlockStateIdInner(pos: Vec3, stateId: number | undefined, needAoRecalculation = true) {
@@ -1130,7 +1143,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
   /** Dispatch dirty message to worker without throttle (original logic) */
   private _dispatchDirtyImmediate(pos: Vec3, value: boolean, useChangeWorker: boolean) {
-    setRendererField(this.reactiveState, 'world.mesherWork', true)
+    this.reactiveState.world.mesherWork = true
     const CHUNK_SIZE = 16
     const sectionHeight = this.getSectionHeight()
     const key = `${Math.floor(pos.x / CHUNK_SIZE) * CHUNK_SIZE},${Math.floor(pos.y / sectionHeight) * sectionHeight},${Math.floor(pos.z / CHUNK_SIZE) * CHUNK_SIZE}`
@@ -1220,6 +1233,11 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   }
 
   destroy() {
+    for (const unsub of this.valtioUnsubs) {
+      unsub()
+    }
+    this.valtioUnsubs = []
+
     // Cancel all pending heightmap debounce timers
     for (const timer of this.heightmapDebounceTimers.values()) {
       clearTimeout(timer)

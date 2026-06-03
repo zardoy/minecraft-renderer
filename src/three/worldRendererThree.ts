@@ -33,7 +33,6 @@ import { FireworksManager } from './fireworks'
 import { SceneOrigin } from './sceneOrigin'
 import { downloadWorldGeometry } from './worldGeometryExport'
 import { ChunkMeshManager } from './chunkMeshManager'
-import { setRendererField } from '../lib/rendererStateBridge'
 import type { RendererModuleManifest, RegisteredModule, RendererModuleController } from './rendererModuleSystem'
 import { BUILTIN_MODULES } from './modules/index'
 import { formatPerformanceFactorsDebug, PerformanceMonitor } from '../performanceMonitor'
@@ -168,7 +167,7 @@ export class WorldRendererThree extends WorldRendererCommon {
 
     this.renderer = renderer
     const rendererInfo = WorldRendererThree.getRendererInfo(renderer) ?? '...'
-    setRendererField(displayOptions.rendererState, 'renderer', rendererInfo)
+    displayOptions.rendererState.renderer = rendererInfo
 
     // Initialize chunk mesh manager
     this.chunkMeshManager = new ChunkMeshManager(this, this.scene, this.material, this.worldSizeParams.worldHeight, this.viewDistance)

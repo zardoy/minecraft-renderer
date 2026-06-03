@@ -4,7 +4,6 @@ import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerM
 import { buttonMap as standardButtonsMap } from 'contro-max/build/gamepad'
 import * as THREE from 'three'
 import { WorldRendererThree } from '../worldRendererThree'
-import { setRendererField } from '../../lib/rendererStateBridge'
 import { DocumentRenderer } from '../documentRenderer'
 
 export async function initVR(worldRenderer: WorldRendererThree, documentRenderer: DocumentRenderer) {
@@ -29,13 +28,13 @@ export async function initVR(worldRenderer: WorldRendererThree, documentRenderer
   function enableVr() {
     renderer.xr.enabled = true
     // renderer.xr.setReferenceSpaceType('local-floor')
-    setRendererField(worldRenderer.reactiveState, 'preventEscapeMenu', true)
+    worldRenderer.reactiveState.preventEscapeMenu = true
   }
 
   function disableVr() {
     renderer.xr.enabled = false
     worldRenderer.cameraGroupVr = undefined
-    setRendererField(worldRenderer.reactiveState, 'preventEscapeMenu', false)
+    worldRenderer.reactiveState.preventEscapeMenu = false
     worldRenderer.scene.remove(user)
     vrButtonContainer.hidden = true
   }

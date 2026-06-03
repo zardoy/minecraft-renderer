@@ -1,7 +1,6 @@
 import * as THREE from 'three'
 import { GraphicsBackend, GraphicsBackendLoader } from '../graphicsBackend'
 import { useWorkerProxy, deepPrepareForTransfer, findProblemTransfer } from '../lib/workerProxy'
-import { installRendererPatchHandler } from '../lib/rendererStateBridge'
 import { meshersSendMcDataAwait } from '../lib/worldrendererCommon'
 import { dynamicMcDataFiles } from '../lib/buildSharedConfig.mjs'
 import { addNewStat, MC_RENDERER_DEBUG_OVERLAY_CLASS } from '../lib/ui/newStats'
@@ -96,12 +95,10 @@ export const createGraphicsBackendOffThread: GraphicsBackendLoader = async (init
 
       if (options.playerStateReactive) {
         options.playerStateReactive['__syncToWorker'] = true
-        options.playerStateReactive['__syncToWorkerSubscribe'] = false
-        options.playerStateReactive['__syncToWorkerInterval'] = 100
       }
 
       if (options.rendererState) {
-        installRendererPatchHandler(worker, options.rendererState)
+        options.rendererState['__syncFromWorker'] = true
       }
       if (options.nonReactiveState) {
         options.nonReactiveState['__syncFromWorker'] = true

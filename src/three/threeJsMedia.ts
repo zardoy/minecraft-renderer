@@ -1,6 +1,5 @@
 import * as THREE from 'three'
 import { WorldRendererThree } from './worldRendererThree'
-import { setRendererField } from '../lib/rendererStateBridge'
 import { ThreeJsSound } from './threeJsSound'
 import { isWebWorker } from './documentRenderer'
 import { loadThreeJsTextureFromUrlSync } from './threeJsUtils'
@@ -683,7 +682,7 @@ export class ThreeJsMedia {
     // hack: need to optimize this by pulling only in distance of interaction instead and throttle
     if (Date.now() - this.lastCheck < this.THROTTLE_TIME) return
     if (this.customMedia.size === 0) {
-      setRendererField(this.worldRenderer.reactiveState, 'world.intersectMedia', null)
+      this.worldRenderer.reactiveState.world.intersectMedia = null
       this.worldRenderer['debugVideo'] = null
       this.worldRenderer.cursorBlock.cursorLinesHidden = false
       return
@@ -717,7 +716,7 @@ export class ThreeJsMedia {
               x: uv.x,
               y: uv.y
             }
-            setRendererField(this.worldRenderer.reactiveState, 'world.intersectMedia', result)
+            this.worldRenderer.reactiveState.world.intersectMedia = result
             this.worldRenderer['debugVideo'] = videoData
             this.worldRenderer.cursorBlock.cursorLinesHidden = true
             return
@@ -727,7 +726,7 @@ export class ThreeJsMedia {
     }
 
     // No media intersection found
-    setRendererField(this.worldRenderer.reactiveState, 'world.intersectMedia', null)
+    this.worldRenderer.reactiveState.world.intersectMedia = null
     this.worldRenderer['debugVideo'] = null
     this.worldRenderer.cursorBlock.cursorLinesHidden = false
   }
