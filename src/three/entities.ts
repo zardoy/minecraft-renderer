@@ -1074,6 +1074,7 @@ export class Entities {
     if (entity.delete) {
       if (!e) return
       e.userData._posTween?.stop()
+      e.userData._rotTween?.stop()
       if (e.additionalCleanup) e.additionalCleanup()
       e.traverse(c => {
         if (c['additionalCleanup']) c['additionalCleanup']()
@@ -1388,7 +1389,11 @@ export class Entities {
     }
     if (typeof entity.yaw === 'number' && Number.isFinite(entity.yaw)) {
       const dy = shortestYawRadians(e.rotation.y, entity.yaw)
-      new TWEEN.Tween(e.rotation).to({ y: e.rotation.y + dy }, ANIMATION_DURATION).start()
+      // Stop previous rotation tween to prevent accumulation (mirror _posTween)
+      e.userData._rotTween?.stop()
+      e.userData._rotTween = new TWEEN.Tween(e.rotation)
+        .to({ y: e.rotation.y + dy }, ANIMATION_DURATION)
+        .start()
     }
 
     if (e?.playerObject && overrides?.rotation?.head) {
