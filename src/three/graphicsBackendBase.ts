@@ -190,19 +190,27 @@ export const createGraphicsBackendBase = () => {
   }
 
   const startWorld = async (displayOptionsArg: DisplayWorldOptions) => {
-    const displayOptionsRestorers = [ResourcesManager, WorldViewWorker]
-    const displayOptions: DisplayWorldOptions = isWebWorker ? restoreTransferred(displayOptionsArg, displayOptionsRestorers, globalThis as unknown as Worker) : displayOptionsArg
-
     if (!documentRenderer) throw new Error('Document renderer not initialized')
-
-    documentRenderer.nonReactiveState = displayOptions.nonReactiveState
-      // Set resourcesManager globally for world rendering
-      ; (globalThis as any).resourcesManager = displayOptions.resourcesManager
 
     if (menuBackgroundRenderer) {
       menuBackgroundRenderer.dispose()
       menuBackgroundRenderer = null
     }
+
+    if (worldRenderer) {
+      worldRenderer.destroy()
+      worldRenderer = null
+      frameTimingCollector = null
+      ;(globalThis as any).world = undefined
+      ;(globalThis as any).frameTimingCollector = undefined
+    }
+
+    const displayOptionsRestorers = [ResourcesManager, WorldViewWorker]
+    const displayOptions: DisplayWorldOptions = isWebWorker ? restoreTransferred(displayOptionsArg, displayOptionsRestorers, globalThis as unknown as Worker) : displayOptionsArg
+
+    documentRenderer.nonReactiveState = displayOptions.nonReactiveState
+      // Set resourcesManager globally for world rendering
+      ; (globalThis as any).resourcesManager = displayOptions.resourcesManager
 
     worldRenderer = new WorldRendererThree(documentRenderer.renderer, initOptions, displayOptions)
 
