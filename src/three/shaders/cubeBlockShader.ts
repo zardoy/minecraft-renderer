@@ -141,9 +141,9 @@ void main() {
     } else if (faceId == 2u || faceId == 3u) {
         v_uv = vec2(v, u);
     } else if (faceId == 4u) {
-        v_uv = vec2(u, 1.0 - v);
+        v_uv = vec2(u, v);
     } else { // faceId == 5u
-        v_uv = vec2(1.0 - u, 1.0 - v);
+        v_uv = vec2(1.0 - u, v);
     }
 
     // --- Position: section base (multiples of 16) + face quad + block-local 0..15 ---
