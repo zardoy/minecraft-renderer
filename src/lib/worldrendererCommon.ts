@@ -410,7 +410,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     if (data.type === 'sectionFinished') { // on after load & unload section
       this.logWorkerWork(`<- ${data.workerIndex} sectionFinished ${data.key} ${JSON.stringify({ processTime: data.processTime })}`)
       if (!this.sectionsWaiting.has(data.key)) {
-        console.warn(`sectionFinished for non-outstanding section ${data.key} (viewDistance=${this.viewDistance})`)
+        console.debug(`sectionFinished for non-outstanding section ${data.key} (viewDistance=${this.viewDistance})`)
         return
       }
       this.sectionsWaiting.set(data.key, this.sectionsWaiting.get(data.key)! - 1)
@@ -790,10 +790,9 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       const sectionKey = `${x},${y},${z}`
       const waitingCount = this.sectionsWaiting.get(sectionKey)
       if (waitingCount !== undefined && waitingCount > 0) {
-        console.warn(`[removeColumn] clearing non-zero sectionsWaiting for ${sectionKey}: ${waitingCount} (chunk ${x},${z}, viewDistance=${this.viewDistance})`)
+        console.debug(`[removeColumn] clearing non-zero sectionsWaiting for ${sectionKey}: ${waitingCount} (chunk ${x},${z}, viewDistance=${this.viewDistance})`)
       }
       this.sectionsWaiting.delete(sectionKey)
-      this.setSectionDirty(new Vec3(x, y, z), false)
       delete this.finishedSections[sectionKey]
     }
     this.highestBlocksByChunks.delete(`${x},${z}`)

@@ -143,7 +143,7 @@ describe('WorldRendererCommon.removeColumn sectionsWaiting reconciliation', () =
   test('treats late sectionFinished as a no-op after removeColumn', () => {
     const renderer = createRenderer()
     const sectionKey = '160,64,0'
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {})
 
     renderer.sectionsWaiting.set(sectionKey, 1)
     renderer.viewDistance = 4
@@ -154,11 +154,11 @@ describe('WorldRendererCommon.removeColumn sectionsWaiting reconciliation', () =
     }).not.toThrow()
 
     expect(renderer.sectionsWaiting.has(sectionKey)).toBe(false)
-    expect(warnSpy).toHaveBeenCalledWith(
+    expect(debugSpy).toHaveBeenCalledWith(
       expect.stringContaining('sectionFinished for non-outstanding section'),
     )
 
-    warnSpy.mockRestore()
+    debugSpy.mockRestore()
   })
 
   test('clears sectionsWaiting when unload happens before batched dirty flush', () => {
