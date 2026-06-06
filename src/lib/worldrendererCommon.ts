@@ -773,9 +773,11 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         this.sectionDirtyPendingArgs.delete(key)
       }
     }
-    for (const worker of this.workers) {
-      worker.postMessage({ type: 'unloadChunk', x, z })
+    for (let i = 0; i < this.workers.length; i++) {
+      this.toWorkerMessagesQueue[i] ??= []
+      this.toWorkerMessagesQueue[i].push({ type: 'unloadChunk', x, z })
     }
+    this.dispatchMessages()
     this.logWorkerWork(`-> unloadChunk ${JSON.stringify({ x, z })}`)
     delete this.finishedChunks[`${x},${z}`]
     this.allChunksFinished = Object.keys(this.finishedChunks).length === this.chunksLength
