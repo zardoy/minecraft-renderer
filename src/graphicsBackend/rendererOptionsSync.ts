@@ -10,7 +10,7 @@ import { rendererShaderCubeDebugModeToValue } from './rendererDefaultOptions'
 import type { MenuBackgroundOptions } from '../three/menuBackground/types'
 import type { MenuBackgroundRenderer } from '../three/menuBackground/renderer'
 import { menuBackgroundSpeedToMultiplier } from '../three/menuBackground/config'
-import type { FuturisticCameraId, FuturisticSceneId, MinecraftBlockGroupId } from '../three/menuBackground/futuristic'
+import type { V2CameraId, V2SceneId, MinecraftBlockGroupId } from '../three/menuBackground/v2'
 import { setSkinsConfig } from '../lib/utils/skins'
 
 export type { RendererStorageOptions } from './rendererDefaultOptions'
@@ -36,20 +36,20 @@ export function menuBackgroundOptionsFromStorage(o: Pick<
   RendererStorageOptions,
   | 'menuBackgroundMode'
   | 'menuBackgroundMinecraftTextures'
-  | 'menuBackgroundFuturisticScene'
-  | 'menuBackgroundFuturisticCamera'
-  | 'menuBackgroundFuturisticBlockGroup'
-  | 'menuBackgroundFuturisticCameraSpeed'
-  | 'menuBackgroundFuturisticBlockSpeed'
+  | 'menuBackgroundV2Scene'
+  | 'menuBackgroundV2Camera'
+  | 'menuBackgroundV2BlockGroup'
+  | 'menuBackgroundV2CameraSpeed'
+  | 'menuBackgroundV2BlockSpeed'
 >): MenuBackgroundOptions {
   return {
     mode: o.menuBackgroundMode as MenuBackgroundOptions['mode'],
     useMinecraftTextures: o.menuBackgroundMinecraftTextures,
-    futuristicScene: o.menuBackgroundFuturisticScene as FuturisticSceneId,
-    futuristicCamera: o.menuBackgroundFuturisticCamera as FuturisticCameraId,
-    futuristicBlockGroup: o.menuBackgroundFuturisticBlockGroup as MinecraftBlockGroupId,
-    futuristicCameraSpeed: menuBackgroundSpeedToMultiplier(o.menuBackgroundFuturisticCameraSpeed),
-    futuristicBlockSpeed: menuBackgroundSpeedToMultiplier(o.menuBackgroundFuturisticBlockSpeed),
+    v2Scene: o.menuBackgroundV2Scene as V2SceneId,
+    v2Camera: o.menuBackgroundV2Camera as V2CameraId,
+    v2BlockGroup: o.menuBackgroundV2BlockGroup as MinecraftBlockGroupId,
+    v2CameraSpeed: menuBackgroundSpeedToMultiplier(o.menuBackgroundV2CameraSpeed),
+    v2BlockSpeed: menuBackgroundSpeedToMultiplier(o.menuBackgroundV2BlockSpeed),
   }
 }
 
@@ -57,20 +57,20 @@ export function applyMenuBackgroundLiveOptions(
   menu: MenuBackgroundRenderer,
   o: Pick<
     RendererStorageOptions,
-    | 'menuBackgroundFuturisticScene'
-    | 'menuBackgroundFuturisticCamera'
-    | 'menuBackgroundFuturisticBlockGroup'
-    | 'menuBackgroundFuturisticCameraSpeed'
-    | 'menuBackgroundFuturisticBlockSpeed'
+    | 'menuBackgroundV2Scene'
+    | 'menuBackgroundV2Camera'
+    | 'menuBackgroundV2BlockGroup'
+    | 'menuBackgroundV2CameraSpeed'
+    | 'menuBackgroundV2BlockSpeed'
   >
 ): void {
-  const futuristic = menu.futuristic
-  if (!futuristic) return
-  futuristic.setScene?.(o.menuBackgroundFuturisticScene)
-  futuristic.setCamera?.(o.menuBackgroundFuturisticCamera)
-  void futuristic.setBlockGroup?.(o.menuBackgroundFuturisticBlockGroup)
-  futuristic.setCameraSpeed?.(menuBackgroundSpeedToMultiplier(o.menuBackgroundFuturisticCameraSpeed))
-  futuristic.setBlockSpeed?.(menuBackgroundSpeedToMultiplier(o.menuBackgroundFuturisticBlockSpeed))
+  const v2 = menu.v2
+  if (!v2) return
+  v2.setScene?.(o.menuBackgroundV2Scene)
+  v2.setCamera?.(o.menuBackgroundV2Camera)
+  void v2.setBlockGroup?.(o.menuBackgroundV2BlockGroup)
+  v2.setCameraSpeed?.(menuBackgroundSpeedToMultiplier(o.menuBackgroundV2CameraSpeed))
+  v2.setBlockSpeed?.(menuBackgroundSpeedToMultiplier(o.menuBackgroundV2BlockSpeed))
 }
 
 function resolveWasmMesherActive(o: RendererStorageOptions): boolean {

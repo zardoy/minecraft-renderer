@@ -7,31 +7,31 @@ import { resizeMenuBackgroundCamera } from './activeView'
 import { loadThreeJsTextureFromBitmap } from '../threeJsUtils'
 import { MENU_BACKGROUND_MOTION_DEFAULTS, MENU_BACKGROUND_OPTION_DEFAULTS } from './config'
 import {
-  FUTURISTIC_CAMERA_IDS,
-  FUTURISTIC_SCENE_IDS,
+  V2_CAMERA_IDS,
+  V2_SCENE_IDS,
   MINECRAFT_BLOCK_GROUP_IDS,
-  type FuturisticCameraId,
-  type FuturisticSceneId,
+  type V2CameraId,
+  type V2SceneId,
   type MinecraftBlockGroupId,
-} from './futuristicMeta'
+} from './v2Meta'
 
 export {
-  FUTURISTIC_SCENE_IDS,
-  FUTURISTIC_SCENE_LABELS,
-  FUTURISTIC_CAMERA_IDS,
-  FUTURISTIC_CAMERA_LABELS,
+  V2_SCENE_IDS,
+  V2_SCENE_LABELS,
+  V2_CAMERA_IDS,
+  V2_CAMERA_LABELS,
   MINECRAFT_BLOCK_GROUP_IDS,
   MINECRAFT_BLOCK_GROUP_LABELS,
-} from './futuristicMeta'
-export type { FuturisticSceneId, FuturisticCameraId, MinecraftBlockGroupId } from './futuristicMeta'
+} from './v2Meta'
+export type { V2SceneId, V2CameraId, MinecraftBlockGroupId } from './v2Meta'
 
 /** Mouse parallax scale (HTML prototype uses 1). */
 const MOUSE_INFLUENCE = 0.1
 
-export interface FuturisticMenuBackgroundOptions {
+export interface V2MenuBackgroundOptions {
   useMinecraftTextures?: boolean
-  initialScene?: FuturisticSceneId
-  initialCamera?: FuturisticCameraId
+  initialScene?: V2SceneId
+  initialCamera?: V2CameraId
   initialBlockGroup?: MinecraftBlockGroupId
   /** Camera path speed multiplier (0 = frozen path; mouse parallax unchanged). */
   initialCameraSpeed?: number
@@ -40,7 +40,7 @@ export interface FuturisticMenuBackgroundOptions {
   resourcesManager?: ResourcesManager
 }
 
-/** Block pools for textured floating cubes (selected via {@link FuturisticMenuBackground.setBlockGroup}). */
+/** Block pools for textured floating cubes (selected via {@link V2MenuBackground.setBlockGroup}). */
 export const MINECRAFT_BLOCK_GROUPS = {
   mixed: [
     'white_wool', 'cyan_wool', 'blue_wool', 'purple_wool',
@@ -122,7 +122,7 @@ interface FloatingBlock {
   minecraftBlockName?: string
 }
 
-const PAL: Record<FuturisticSceneId, ScenePalette> = {
+const PAL: Record<V2SceneId, ScenePalette> = {
   galaxy: {
     bg: 0x02_04_12, fog: 0x02_04_12, fogD: 0.011,
     blocks: [0x00_f0_ff, 0x00_d4_ff, 0x00_b8_ff, 0x00_e8_ff, 0x22_cc_ff, 0x00_a8_ff],
@@ -191,7 +191,7 @@ const PAL: Record<FuturisticSceneId, ScenePalette> = {
   }
 }
 
-const CAMS: Record<FuturisticCameraId, CameraMode> = {
+const CAMS: Record<V2CameraId, CameraMode> = {
   cruise: {
     pos: (t, mx, my) => ({ x: Math.sin(t * 0.28) * 18 + Math.cos(t * 0.11) * 7 + mx * 10, y: Math.sin(t * 0.19) * 6 + Math.cos(t * 0.31) * 3 + my * 6, z: 0 }),
     look: (t, mx, my) => ({ x: Math.sin((t + 0.18) * 0.28) * 18 + mx * 8, y: Math.sin((t + 0.18) * 0.19) * 6 + my * 4, z: -25 }),
@@ -231,7 +231,7 @@ const CAMS: Record<FuturisticCameraId, CameraMode> = {
   }
 }
 
-const CAM_SPD: Record<FuturisticCameraId, number> = {
+const CAM_SPD: Record<V2CameraId, number> = {
   cruise: 1,
   barrel: 1.6,
   dive: 2.2,
@@ -269,7 +269,7 @@ const makeSkyGradientTexture = (gradient: NonNullable<ScenePalette['gradientBg']
   return tex
 }
 
-export class FuturisticMenuBackground implements MenuBackgroundView {
+export class V2MenuBackground implements MenuBackgroundView {
   readonly scene: THREE.Scene
   readonly camera: THREE.PerspectiveCamera
 
@@ -287,8 +287,8 @@ export class FuturisticMenuBackground implements MenuBackgroundView {
   private readonly bGeo = new THREE.BoxGeometry(1, 1, 1)
   private readonly eGeo = new THREE.EdgesGeometry(this.bGeo)
 
-  private curScene: FuturisticSceneId
-  private curCam: FuturisticCameraId
+  private curScene: V2SceneId
+  private curCam: V2CameraId
   private blockGroup: MinecraftBlockGroupId
   private cameraSpeed: number
   private blockSpeed: number
@@ -306,16 +306,19 @@ export class FuturisticMenuBackground implements MenuBackgroundView {
   private gradientSkyTexture: THREE.CanvasTexture | null = null
   private disposed = false
   private animTime = 0
+  private texturesApplied = false
+  private textureLoadInProgress = false
+  private onAssetsTexturesUpdated?: () => void
 
   constructor(
     private readonly documentRenderer: DocumentRenderer,
-    options: FuturisticMenuBackgroundOptions = {},
+    options: V2MenuBackgroundOptions = {},
     private readonly abortSignal?: AbortSignal
   ) {
     const d = MENU_BACKGROUND_OPTION_DEFAULTS
-    this.curScene = options.initialScene ?? d.futuristicScene
-    this.curCam = options.initialCamera ?? d.futuristicCamera
-    this.blockGroup = options.initialBlockGroup ?? d.futuristicBlockGroup
+    this.curScene = options.initialScene ?? d.v2Scene
+    this.curCam = options.initialCamera ?? d.v2Camera
+    this.blockGroup = options.initialBlockGroup ?? d.v2BlockGroup
     this.cameraSpeed = options.initialCameraSpeed ?? MENU_BACKGROUND_MOTION_DEFAULTS.camera
     this.blockSpeed = options.initialBlockSpeed ?? MENU_BACKGROUND_MOTION_DEFAULTS.block
     this.useMinecraftTextures = options.useMinecraftTextures ?? d.minecraftTextures
@@ -419,13 +422,79 @@ export class FuturisticMenuBackground implements MenuBackgroundView {
   }
 
   async init() {
-    if (this.useMinecraftTextures) {
-      try {
-        await this.loadMinecraftTextures()
-      } catch (err) {
-        console.warn('[FuturisticMenuBackground] Failed to load Minecraft textures, using solid colors:', err)
-        this.useMinecraftTextures = false
+    if (!this.useMinecraftTextures) return
+    void this.scheduleMinecraftTextureLoad()
+  }
+
+  private scheduleMinecraftTextureLoad() {
+    if (!this.useMinecraftTextures || this.disposed || this.texturesApplied || this.textureLoadInProgress) return
+    void this.tryApplyMinecraftTextures()
+  }
+
+  private attachAssetsListener() {
+    const rm = this.resourcesManager
+    if (!rm || this.onAssetsTexturesUpdated) return
+    this.onAssetsTexturesUpdated = () => this.scheduleMinecraftTextureLoad()
+    rm.on('assetsTexturesUpdated', this.onAssetsTexturesUpdated)
+  }
+
+  private detachAssetsListener() {
+    const rm = this.resourcesManager
+    if (!rm || !this.onAssetsTexturesUpdated) return
+    rm.off('assetsTexturesUpdated', this.onAssetsTexturesUpdated)
+    this.onAssetsTexturesUpdated = undefined
+  }
+
+  private hasBlockAtlas(resourcesManager: ResourcesManager): boolean {
+    const resources = resourcesManager.currentResources
+    return !!(resources?.blocksAtlasImage && resources.blocksAtlasJson)
+  }
+
+  private async ensureAtlasReady(resourcesManager: ResourcesManager): Promise<boolean> {
+    await this.ensureMcDataLoaded()
+    if (this.hasBlockAtlas(resourcesManager)) return true
+
+    if (typeof document === 'undefined' && resourcesManager !== this.resourcesManager) {
+      return false
+    }
+
+    resourcesManager.currentConfig = {
+      ...resourcesManager.currentConfig,
+      version: MENU_BACKGROUND_MC_VERSION,
+      noInventoryGui: true
+    }
+
+    try {
+      await resourcesManager.updateAssetsData?.({})
+    } catch {
+      return false
+    }
+
+    return this.hasBlockAtlas(resourcesManager)
+  }
+
+  private async tryApplyMinecraftTextures() {
+    if (this.disposed || !this.useMinecraftTextures || this.texturesApplied) return
+
+    this.textureLoadInProgress = true
+    try {
+      const resourcesManager = this.resourcesManager ?? new ResourcesManager()
+      const ready = await this.ensureAtlasReady(resourcesManager)
+      if (!ready) {
+        if (this.resourcesManager) this.attachAssetsListener()
+        return
       }
+      if (this.disposed) return
+
+      this.applyMinecraftTexturesFromAtlas(resourcesManager)
+      this.texturesApplied = true
+      this.detachAssetsListener()
+    } catch (err) {
+      console.warn('[V2MenuBackground] Failed to load Minecraft textures, using solid colors:', err)
+      this.useMinecraftTextures = false
+      this.detachAssetsListener()
+    } finally {
+      this.textureLoadInProgress = false
     }
   }
 
@@ -625,23 +694,7 @@ export class FuturisticMenuBackground implements MenuBackgroundView {
     return null
   }
 
-  private async loadMinecraftTextures() {
-    await this.ensureMcDataLoaded()
-
-    const resourcesManager = this.resourcesManager ?? new ResourcesManager()
-    const needsAssetUpdate = !resourcesManager.currentResources?.blocksAtlasImage
-    if (needsAssetUpdate) {
-      if (typeof document === 'undefined') {
-        throw new Error('Menu atlas missing in worker; pass resourcesManager from main thread')
-      }
-      resourcesManager.currentConfig = {
-        ...resourcesManager.currentConfig,
-        version: MENU_BACKGROUND_MC_VERSION,
-        noInventoryGui: true
-      }
-      await resourcesManager.updateAssetsData?.({})
-    }
-
+  private applyMinecraftTexturesFromAtlas(resourcesManager: ResourcesManager) {
     const resources = resourcesManager.currentResources
     if (!resources?.blocksAtlasImage || !resources.blocksAtlasJson) {
       throw new Error('Block atlas not available')
@@ -689,8 +742,8 @@ export class FuturisticMenuBackground implements MenuBackgroundView {
     }
   }
 
-  setScene(name: FuturisticSceneId) {
-    if (!(FUTURISTIC_SCENE_IDS as readonly string[]).includes(name)) return
+  setScene(name: V2SceneId) {
+    if (!(V2_SCENE_IDS as readonly string[]).includes(name)) return
     if (name === this.curScene || this.transitioning) return
     this.transitioning = true
     this.curScene = name
@@ -725,8 +778,8 @@ export class FuturisticMenuBackground implements MenuBackgroundView {
     }, 150)
   }
 
-  setCamera(name: FuturisticCameraId) {
-    if (!(FUTURISTIC_CAMERA_IDS as readonly string[]).includes(name)) return
+  setCamera(name: V2CameraId) {
+    if (!(V2_CAMERA_IDS as readonly string[]).includes(name)) return
     this.curCam = name
   }
 
@@ -748,18 +801,15 @@ export class FuturisticMenuBackground implements MenuBackgroundView {
       mat.dispose()
     }
     this.blockMaterialPool.clear()
-    try {
-      await this.loadMinecraftTextures()
-    } catch (err) {
-      console.warn('[FuturisticMenuBackground] Failed to reload block group textures:', err)
-    }
+    this.texturesApplied = false
+    this.scheduleMinecraftTextureLoad()
   }
 
-  getSceneId(): FuturisticSceneId {
+  getSceneId(): V2SceneId {
     return this.curScene
   }
 
-  getCameraId(): FuturisticCameraId {
+  getCameraId(): V2CameraId {
     return this.curCam
   }
 
@@ -829,6 +879,7 @@ export class FuturisticMenuBackground implements MenuBackgroundView {
 
   dispose() {
     this.disposed = true
+    this.detachAssetsListener()
     this.scene.clear()
     this.bGeo.dispose()
     this.eGeo.dispose()

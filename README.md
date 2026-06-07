@@ -98,7 +98,7 @@ Renderer-owned options live in `RENDERER_DEFAULT_OPTIONS` and `RENDERER_OPTIONS_
 
 | Change | Live update | Reload required |
 |--------|-------------|-----------------|
-| Menu futuristic scene / camera / speeds | Yes (`backend.getMenuBackground`) | Mode switch needs restart |
+| Menu V2 scene / camera / speeds | Yes (`backend.getMenuBackground`) | Mode switch needs restart |
 | `rendererMesher` (`wasm` / `legacy-js`) | Proxy flag syncs | Yes — mesher worker script swap |
 | `rendererWorldPerformance` | Config syncs | Yes — worker count |
 | Volume | App `watchValue` only | No |

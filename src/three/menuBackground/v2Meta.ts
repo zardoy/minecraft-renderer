@@ -1,12 +1,12 @@
 /** Settings / labels only — no Three.js or DocumentRenderer (safe for defaultOptions imports). */
 
-export const FUTURISTIC_SCENE_IDS = ['galaxy', 'nether', 'end', 'cyber', 'light'] as const
-export type FuturisticSceneId = typeof FUTURISTIC_SCENE_IDS[number]
+export const V2_SCENE_IDS = ['galaxy', 'nether', 'end', 'cyber', 'light'] as const
+export type V2SceneId = typeof V2_SCENE_IDS[number]
 
-export const FUTURISTIC_CAMERA_IDS = ['cruise', 'barrel', 'dive', 'orbit', 'snake'] as const
-export type FuturisticCameraId = typeof FUTURISTIC_CAMERA_IDS[number]
+export const V2_CAMERA_IDS = ['cruise', 'barrel', 'dive', 'orbit', 'snake'] as const
+export type V2CameraId = typeof V2_CAMERA_IDS[number]
 
-export const FUTURISTIC_SCENE_LABELS: Record<FuturisticSceneId, string> = {
+export const V2_SCENE_LABELS: Record<V2SceneId, string> = {
   galaxy: 'Galaxy',
   nether: 'Nether',
   end: 'The End',
@@ -14,7 +14,7 @@ export const FUTURISTIC_SCENE_LABELS: Record<FuturisticSceneId, string> = {
   light: 'Light Space'
 }
 
-export const FUTURISTIC_CAMERA_LABELS: Record<FuturisticCameraId, string> = {
+export const V2_CAMERA_LABELS: Record<V2CameraId, string> = {
   cruise: 'Cruise',
   barrel: 'Barrel',
   dive: 'Dive',

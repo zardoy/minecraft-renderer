@@ -2,14 +2,14 @@ import * as THREE from 'three'
 import type { GraphicsInitOptions } from '../../graphicsBackend/types'
 import type { DocumentRenderer } from '../documentRenderer'
 import { ClassicMenuBackground } from './classic'
-import { FuturisticMenuBackground } from './futuristic'
+import { V2MenuBackground } from './v2'
 import { WorldBlocksMenuBackground } from './worldBlocks'
 import type { MenuBackgroundView } from './activeView'
 import type { MenuBackgroundOptions } from './types'
 import { resolveMenuBackgroundMode } from './types'
 
 /**
- * Orchestrates main-menu background rendering (dispatches to classic / futuristic / world-blocks).
+ * Orchestrates main-menu background rendering (dispatches to classic / v2 / world-blocks).
  */
 export class MenuBackgroundRenderer {
   private active?: MenuBackgroundView
@@ -26,9 +26,9 @@ export class MenuBackgroundRenderer {
     this.mode = resolveMenuBackgroundMode(menuBackgroundOptions, singleFileBuild)
   }
 
-  /** Active futuristic instance when that style is running. */
-  get futuristic(): FuturisticMenuBackground | undefined {
-    return this.active instanceof FuturisticMenuBackground ? this.active : undefined
+  /** Active v2 instance when that style is running. */
+  get v2(): V2MenuBackground | undefined {
+    return this.active instanceof V2MenuBackground ? this.active : undefined
   }
 
   get scene(): THREE.Scene | undefined {
@@ -63,16 +63,16 @@ export class MenuBackgroundRenderer {
 
   private createImplementation(options: MenuBackgroundOptions): MenuBackgroundView {
     switch (this.mode) {
-      case 'futuristic':
-        return new FuturisticMenuBackground(
+      case 'v2':
+        return new V2MenuBackground(
           this.documentRenderer,
           {
             useMinecraftTextures: options.useMinecraftTextures,
-            initialScene: options.futuristicScene,
-            initialCamera: options.futuristicCamera,
-            initialBlockGroup: options.futuristicBlockGroup,
-            initialCameraSpeed: options.futuristicCameraSpeed,
-            initialBlockSpeed: options.futuristicBlockSpeed,
+            initialScene: options.v2Scene,
+            initialCamera: options.v2Camera,
+            initialBlockGroup: options.v2BlockGroup,
+            initialCameraSpeed: options.v2CameraSpeed,
+            initialBlockSpeed: options.v2BlockSpeed,
             resourcesManager: options.resourcesManager
           },
           this.abortController.signal

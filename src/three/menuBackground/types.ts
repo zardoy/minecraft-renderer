@@ -1,24 +1,24 @@
 import type { ResourcesManager } from '../../resourcesManager/resourcesManager'
-import type { FuturisticCameraId, FuturisticSceneId, MinecraftBlockGroupId } from './futuristic'
+import type { V2CameraId, V2SceneId, MinecraftBlockGroupId } from './v2'
 import { MENU_BACKGROUND_OPTION_DEFAULTS } from './config'
 
-export type { FuturisticCameraId, FuturisticSceneId, MinecraftBlockGroupId } from './futuristic'
+export type { V2CameraId, V2SceneId, MinecraftBlockGroupId } from './v2'
 
-export type MenuBackgroundMode = 'classic' | 'futuristic' | 'worldBlocks'
+export type MenuBackgroundMode = 'classic' | 'v2' | 'worldBlocks'
 
 export interface MenuBackgroundOptions {
   /** Visual style. Defaults to {@link MENU_BACKGROUND_OPTION_DEFAULTS.mode}, or `worldBlocks` in single-file build. */
   mode?: MenuBackgroundMode
-  /** Futuristic style: load block atlas and render textured cubes (requires assets / mcData). */
+  /** V2 style: load block atlas and render textured cubes (requires assets / mcData). */
   useMinecraftTextures?: boolean
-  futuristicScene?: FuturisticSceneId
-  futuristicCamera?: FuturisticCameraId
+  v2Scene?: V2SceneId
+  v2Camera?: V2CameraId
   /** Block pool when {@link useMinecraftTextures} is enabled. */
-  futuristicBlockGroup?: MinecraftBlockGroupId
+  v2BlockGroup?: MinecraftBlockGroupId
   /** Camera path speed (1 = 100%). */
-  futuristicCameraSpeed?: number
+  v2CameraSpeed?: number
   /** Block fly-through + sky drift speed (1 = 100%). */
-  futuristicBlockSpeed?: number
+  v2BlockSpeed?: number
   /**
    * Optional shared resource manager (e.g. appViewer.resourcesManager).
    * Caller should run `updateAssetsData` after mcData is loaded when using textured cubes.

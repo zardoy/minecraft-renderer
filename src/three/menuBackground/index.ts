@@ -5,21 +5,21 @@ export type { MenuBackgroundMode, MenuBackgroundOptions } from './types'
 export { resolveMenuBackgroundMode } from './types'
 export { ClassicMenuBackground } from './classic'
 export type {
-  FuturisticSceneId,
-  FuturisticCameraId,
-  FuturisticMenuBackgroundOptions,
+  V2SceneId,
+  V2CameraId,
+  V2MenuBackgroundOptions,
   MinecraftBlockGroupId
-} from './futuristic'
+} from './v2'
 export {
-  FuturisticMenuBackground,
-  FUTURISTIC_SCENE_IDS,
-  FUTURISTIC_CAMERA_IDS,
-  FUTURISTIC_SCENE_LABELS,
-  FUTURISTIC_CAMERA_LABELS,
+  V2MenuBackground,
+  V2_SCENE_IDS,
+  V2_CAMERA_IDS,
+  V2_SCENE_LABELS,
+  V2_CAMERA_LABELS,
   MINECRAFT_BLOCK_GROUPS,
   MINECRAFT_BLOCK_GROUP_IDS,
   MINECRAFT_BLOCK_GROUP_LABELS
-} from './futuristic'
+} from './v2'
 export { WorldBlocksMenuBackground } from './worldBlocks'
 export { MenuBackgroundRenderer } from './renderer'
 export {
