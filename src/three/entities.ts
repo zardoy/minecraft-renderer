@@ -1392,8 +1392,20 @@ export class Entities {
         })
         .start()
     }
-    if (typeof entity.yaw === 'number' && Number.isFinite(entity.yaw)) {
-      const dy = shortestYawRadians(e.rotation.y, entity.yaw)
+    /** World yaw for the whole model: for PlayerObject skins, rotate body to head look dir; head mesh stays yaw-fixed (pitch only). */
+    let targetYaw: number | undefined
+    if (e.playerObject && overrides?.rotation?.head) {
+      const hy = overrides.rotation.head.y
+      const headYawWorld =
+        typeof hy === 'number' && Number.isFinite(hy) ? hy : entity.yaw
+      if (typeof headYawWorld === 'number' && Number.isFinite(headYawWorld)) {
+        targetYaw = headYawWorld
+      }
+    } else if (typeof entity.yaw === 'number' && Number.isFinite(entity.yaw)) {
+      targetYaw = entity.yaw
+    }
+    if (typeof targetYaw === 'number' && Number.isFinite(targetYaw)) {
+      const dy = shortestYawRadians(e.rotation.y, targetYaw)
       // Stop previous rotation tween to prevent accumulation (mirror _posTween)
       e.userData._rotTween?.stop()
       e.userData._rotTween = new TWEEN.Tween(e.rotation)
@@ -1403,14 +1415,7 @@ export class Entities {
 
     if (e?.playerObject && overrides?.rotation?.head) {
       const { playerObject } = e
-      const hy = overrides.rotation.head.y
-      const headYawWorld =
-        typeof hy === 'number' && Number.isFinite(hy) ? hy : entity.yaw
-      const headYawOffset =
-        typeof headYawWorld === 'number' && typeof entity.yaw === 'number' && Number.isFinite(headYawWorld) && Number.isFinite(entity.yaw)
-          ? shortestYawRadians(entity.yaw, headYawWorld)
-          : 0
-      playerObject.skin.head.rotation.y = headYawOffset
+      playerObject.skin.head.rotation.y = 0
 
       const hp = overrides.rotation.head.x
       playerObject.skin.head.rotation.x =
