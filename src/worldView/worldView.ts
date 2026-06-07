@@ -264,6 +264,8 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
       this.chunkProgress()
     })
 
+    if (spiralNumber !== this.spiralNumber) return
+
     if (this.panicTimeout) clearTimeout(this.panicTimeout)
     this.inLoading = false
     this.gotPanicLastTime = false

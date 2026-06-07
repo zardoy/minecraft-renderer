@@ -48,6 +48,16 @@ export class SectionRequestTracker {
         this.counts.clear()
     }
 
+    /** Drop all pending requests for one column (`cx`,`cz` = column origin in block coords). */
+    clearColumn (cx: number, cz: number): void {
+        for (const key of [...this.counts.keys()]) {
+            const [x, , z] = key.split(',').map(Number)
+            if (x === cx && z === cz) {
+                this.counts.delete(key)
+            }
+        }
+    }
+
     /** Number of distinct keys with pending requests. */
     size (): number {
         return this.counts.size

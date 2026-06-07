@@ -766,6 +766,13 @@ const handleMessage = async (data: any) => {
       if (!world) break
       world.removeColumn(data.x, data.z)
       world.customBlockModels.delete(`${data.x},${data.z}`)
+      requestTracker.clearColumn(data.x, data.z)
+      for (const key of [...dirtySections.keys()]) {
+        const [sx, , sz] = key.split(',').map(Number)
+        if (sx === data.x && sz === data.z) {
+          dirtySections.delete(key)
+        }
+      }
       if (Object.keys(world.columns).length === 0) softCleanup()
       break
     }

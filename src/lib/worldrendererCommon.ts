@@ -423,7 +423,10 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     }
     if (data.type === 'sectionFinished') { // on after load & unload section
       this.logWorkerWork(`<- ${data.workerIndex} sectionFinished ${data.key} ${JSON.stringify({ processTime: data.processTime })}`)
-      if (!this.sectionsWaiting.has(data.key)) throw new Error(`sectionFinished event for non-outstanding section ${data.key}`)
+      if (!this.sectionsWaiting.has(data.key)) {
+        console.debug(`sectionFinished for non-outstanding section ${data.key} (viewDistance=${this.viewDistance})`)
+        return
+      }
       this.sectionsWaiting.set(data.key, this.sectionsWaiting.get(data.key)! - 1)
       if (this.sectionsWaiting.get(data.key) === 0) {
         this.sectionsWaiting.delete(data.key)
@@ -786,9 +789,11 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         this.sectionDirtyPendingArgs.delete(key)
       }
     }
-    for (const worker of this.workers) {
-      worker.postMessage({ type: 'unloadChunk', x, z })
+    for (let i = 0; i < this.workers.length; i++) {
+      this.toWorkerMessagesQueue[i] ??= []
+      this.toWorkerMessagesQueue[i].push({ type: 'unloadChunk', x, z })
     }
+    this.dispatchMessages()
     this.logWorkerWork(`-> unloadChunk ${JSON.stringify({ x, z })}`)
     delete this.finishedChunks[`${x},${z}`]
     this.allChunksFinished = Object.keys(this.finishedChunks).length === this.chunksLength
@@ -797,9 +802,14 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       this.initialChunkLoadWasStartedIn = undefined
     }
     const sectionHeight = this.getSectionHeight()
-    for (let y = this.worldSizeParams.minY; y < this.worldSizeParams.worldHeight; y += sectionHeight) {
-      this.setSectionDirty(new Vec3(x, y, z), false)
-      delete this.finishedSections[`${x},${y},${z}`]
+    for (let y = this.worldMinYRender; y < this.worldSizeParams.worldHeight; y += sectionHeight) {
+      const sectionKey = `${x},${y},${z}`
+      const waitingCount = this.sectionsWaiting.get(sectionKey)
+      if (waitingCount !== undefined && waitingCount > 0) {
+        console.debug(`[removeColumn] clearing non-zero sectionsWaiting for ${sectionKey}: ${waitingCount} (chunk ${x},${z}, viewDistance=${this.viewDistance})`)
+      }
+      this.sectionsWaiting.delete(sectionKey)
+      delete this.finishedSections[sectionKey]
     }
     this.highestBlocksByChunks.delete(`${x},${z}`)
     const heightmapKey = `${Math.floor(x / 16)},${Math.floor(z / 16)}`
