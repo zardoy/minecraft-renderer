@@ -2,27 +2,7 @@
 import { PlayerAnimation } from 'skinview3d'
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v))
-const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
 const mix = (a, b, t) => a + (b - a) * t
-const wrapPi = (a) => {
-  a = (a + Math.PI) % (Math.PI * 2)
-  if (a < 0) a += Math.PI * 2
-  return a - Math.PI
-}
-
-/**
- * @typedef {{
- *  playerRot: any,
- *  bodyPos: any, bodyRot: any,
- *  leftArmPos: any, leftArmRot: any,
- *  rightArmPos: any, rightArmRot: any,
- *  leftLegPos: any, leftLegRot: any,
- *  rightLegPos: any, rightLegRot: any,
- *  headPos: any, headRot: any,
- *  capePos: any, capeRot: any,
- *  elytraPos: any, elytraRot: any,
- * }} Defaults
- */
 
 function updateElytraRightWing(player) {
   const elytra = player?.elytra
@@ -53,32 +33,24 @@ export class WalkingGeneralSwing extends PlayerAnimation {
   isMoving = true
   isCrouched = false
 
-  /** @type {number} 0..1 */
-  moveAmount = 0
-  /** @type {number} 0..1 */
-  runAmount = 0
-
-  /** @type {number} radians */
-  lookYaw = 0
-  /** @type {number} radians */
-  lookPitch = 0
-
   _dt = 0
   _phase = 0
-  _idlePhase = 0
-
   _moveBlend = 0
-  _runBlend = 0
-  _crouchBlend = 0
-
-  _lookYawBlend = 0
-  _lookPitchBlend = 0
 
   /** @type {number | null} */
   _swingTime = null
   _swingDuration = 0.25
 
-  /** @type {Defaults | null} */
+  /** @type {{
+    bodyPos: any, bodyRot: any,
+    leftArmPos: any, leftArmRot: any,
+    rightArmPos: any, rightArmRot: any,
+    leftLegPos: any, leftLegRot: any,
+    rightLegPos: any, rightLegRot: any,
+    headPos: any, headRot: any,
+    capePos: any, capeRot: any,
+    elytraPos: any, elytraRot: any,
+  } | null} */
   _defaults = null
 
   update(player, delta) {
@@ -96,39 +68,29 @@ export class WalkingGeneralSwing extends PlayerAnimation {
     }
   }
 
-  resetLocomotion() {
-    this._moveBlend = 0
-    this._runBlend = 0
-    this._crouchBlend = 0
-    this._phase = 0
-  }
-
   _captureDefaults(player) {
-    const skin = player?.skin
     this._defaults = {
-      playerRot: player?.rotation?.clone?.(),
+      bodyPos: player.skin.body.position.clone(),
+      bodyRot: player.skin.body.rotation.clone(),
 
-      bodyPos: skin?.body?.position?.clone?.(),
-      bodyRot: skin?.body?.rotation?.clone?.(),
+      leftArmPos: player.skin.leftArm.position.clone(),
+      leftArmRot: player.skin.leftArm.rotation.clone(),
+      rightArmPos: player.skin.rightArm.position.clone(),
+      rightArmRot: player.skin.rightArm.rotation.clone(),
 
-      leftArmPos: skin?.leftArm?.position?.clone?.(),
-      leftArmRot: skin?.leftArm?.rotation?.clone?.(),
-      rightArmPos: skin?.rightArm?.position?.clone?.(),
-      rightArmRot: skin?.rightArm?.rotation?.clone?.(),
+      leftLegPos: player.skin.leftLeg.position.clone(),
+      leftLegRot: player.skin.leftLeg.rotation.clone(),
+      rightLegPos: player.skin.rightLeg.position.clone(),
+      rightLegRot: player.skin.rightLeg.rotation.clone(),
 
-      leftLegPos: skin?.leftLeg?.position?.clone?.(),
-      leftLegRot: skin?.leftLeg?.rotation?.clone?.(),
-      rightLegPos: skin?.rightLeg?.position?.clone?.(),
-      rightLegRot: skin?.rightLeg?.rotation?.clone?.(),
+      headPos: player.skin.head.position.clone(),
+      headRot: player.skin.head.rotation.clone(),
 
-      headPos: skin?.head?.position?.clone?.(),
-      headRot: skin?.head?.rotation?.clone?.(),
+      capePos: player.cape.position.clone(),
+      capeRot: player.cape.rotation.clone(),
 
-      capePos: player?.cape?.position?.clone?.(),
-      capeRot: player?.cape?.rotation?.clone?.(),
-
-      elytraPos: player?.elytra?.position?.clone?.(),
-      elytraRot: player?.elytra?.rotation?.clone?.(),
+      elytraPos: player.elytra.position.clone(),
+      elytraRot: player.elytra.rotation.clone(),
     }
   }
 
@@ -136,151 +98,101 @@ export class WalkingGeneralSwing extends PlayerAnimation {
     const d = this._defaults
     if (!d) return
 
-    const skin = player?.skin
-    const cape = player?.cape
-    const elytra = player?.elytra
+    player.skin.body.position.copy(d.bodyPos)
+    player.skin.body.rotation.copy(d.bodyRot)
 
-    if (d.playerRot && player?.rotation) player.rotation.copy(d.playerRot)
+    player.skin.leftArm.position.copy(d.leftArmPos)
+    player.skin.leftArm.rotation.copy(d.leftArmRot)
+    player.skin.rightArm.position.copy(d.rightArmPos)
+    player.skin.rightArm.rotation.copy(d.rightArmRot)
 
-    if (d.bodyPos && skin?.body?.position) skin.body.position.copy(d.bodyPos)
-    if (d.bodyRot && skin?.body?.rotation) skin.body.rotation.copy(d.bodyRot)
+    player.skin.leftLeg.position.copy(d.leftLegPos)
+    player.skin.leftLeg.rotation.copy(d.leftLegRot)
+    player.skin.rightLeg.position.copy(d.rightLegPos)
+    player.skin.rightLeg.rotation.copy(d.rightLegRot)
 
-    if (d.leftArmPos && skin?.leftArm?.position) skin.leftArm.position.copy(d.leftArmPos)
-    if (d.leftArmRot && skin?.leftArm?.rotation) skin.leftArm.rotation.copy(d.leftArmRot)
+    player.skin.head.position.copy(d.headPos)
+    player.skin.head.rotation.copy(d.headRot)
 
-    if (d.rightArmPos && skin?.rightArm?.position) skin.rightArm.position.copy(d.rightArmPos)
-    if (d.rightArmRot && skin?.rightArm?.rotation) skin.rightArm.rotation.copy(d.rightArmRot)
+    player.cape.position.copy(d.capePos)
+    player.cape.rotation.copy(d.capeRot)
 
-    if (d.leftLegPos && skin?.leftLeg?.position) skin.leftLeg.position.copy(d.leftLegPos)
-    if (d.leftLegRot && skin?.leftLeg?.rotation) skin.leftLeg.rotation.copy(d.leftLegRot)
-
-    if (d.rightLegPos && skin?.rightLeg?.position) skin.rightLeg.position.copy(d.rightLegPos)
-    if (d.rightLegRot && skin?.rightLeg?.rotation) skin.rightLeg.rotation.copy(d.rightLegRot)
-
-    if (d.headPos && skin?.head?.position) skin.head.position.copy(d.headPos)
-    if (d.headRot && skin?.head?.rotation) skin.head.rotation.copy(d.headRot)
-
-    if (d.capePos && cape?.position) cape.position.copy(d.capePos)
-    if (d.capeRot && cape?.rotation) cape.rotation.copy(d.capeRot)
-
-    if (d.elytraPos && elytra?.position) elytra.position.copy(d.elytraPos)
-    if (d.elytraRot && elytra?.rotation) elytra.rotation.copy(d.elytraRot)
+    player.elytra.position.copy(d.elytraPos)
+    player.elytra.rotation.copy(d.elytraRot)
   }
 
   animate(player) {
     const dt = this._dt || 0
+
     if (!this._defaults) this._captureDefaults(player)
     this._applyDefaults(player)
 
-    const externalMove = typeof this.moveAmount === 'number' ? this.moveAmount : (this.isMoving ? 1 : 0)
-    const externalRun = typeof this.runAmount === 'number' ? this.runAmount : (this.isRunning ? 1 : 0)
-
-    const targetMove = clamp01(externalMove)
-    const targetRun = clamp01(externalRun)
-    const targetCrouch = this.isCrouched ? 1 : 0
-
-    const kMove = Math.min(1, dt * 8)
-    const kRun = Math.min(1, dt * 6)
-    const kCrouch = Math.min(1, dt * 7)
-
+    const targetMove = this.isMoving ? 1 : 0
+    const kMove = Math.min(1, dt * 20)
     this._moveBlend += (targetMove - this._moveBlend) * kMove
-    this._runBlend += (targetRun - this._runBlend) * kRun
-    this._crouchBlend += (targetCrouch - this._crouchBlend) * kCrouch
 
-    const moveBlend = clamp01(this._moveBlend)
-    const runBlend = clamp01(this._runBlend)
-    const crouchBlend = clamp01(this._crouchBlend)
+    const speed = this.isRunning ? 10 : 8
+    this._phase += dt * speed * this._moveBlend
 
-    const baseSpeed = mix(8, 10, runBlend)
-    const crouchSpeedMul = mix(1, 0.55, crouchBlend)
-    const speed = baseSpeed * crouchSpeedMul
+    const t = this._phase + (this.isRunning ? Math.PI * 0.5 : 0)
+    let reset = false
 
-    this._phase += dt * speed * moveBlend
-    this._idlePhase += dt * 1.15
+    applyCrouchPose(player, this.isCrouched ? 1 : 0)
 
-    const t = this._phase + (runBlend > 0.5 ? Math.PI * 0.5 : 0)
-
-    if (this.switchAnimationCallback) {
-      const boundary = Math.abs(Math.sin(t))
-      if (boundary < 0.02) {
-        const cb = this.switchAnimationCallback
-        this.switchAnimationCallback = null
-        cb?.()
+    const boundary = this.isRunning ? Math.cos(t) : Math.sin(t)
+    if (Math.abs(boundary) < 0.02) {
+      if (this.switchAnimationCallback) {
+        reset = true
       }
     }
 
-    applyCrouchPose(player, crouchBlend)
-
-    const maxYaw = (80 * Math.PI) / 180
-    const maxPitch = (75 * Math.PI) / 180
-    const targetLookYaw = clamp(wrapPi(this.lookYaw || 0), -maxYaw, maxYaw)
-    const targetLookPitch = clamp(this.lookPitch || 0, -maxPitch, maxPitch)
-
-    const kLook = Math.min(1, dt * 14)
-    this._lookYawBlend += (targetLookYaw - this._lookYawBlend) * kLook
-    this._lookPitchBlend += (targetLookPitch - this._lookPitchBlend) * kLook
-
-    if (player?.skin?.head?.rotation) {
-      player.skin.head.rotation.y += this._lookYawBlend
-      player.skin.head.rotation.x += this._lookPitchBlend
+    if (this.isRunning) {
+      player.skin.leftLeg.rotation.x = Math.cos(t + Math.PI) * 1.3
+      player.skin.rightLeg.rotation.x = Math.cos(t) * 1.3
+    } else {
+      player.skin.leftLeg.rotation.x = Math.sin(t) * 0.5
+      player.skin.rightLeg.rotation.x = Math.sin(t + Math.PI) * 0.5
     }
 
-    const idleStrength = (1 - moveBlend) * (1 - 0.25 * runBlend)
-    if (idleStrength > 0.0001 && player?.skin) {
-      const b = Math.sin(this._idlePhase)
-      player.skin.body.rotation.x += b * 0.02 * idleStrength
-      player.skin.head.rotation.x += -b * 0.015 * idleStrength
-      player.skin.leftArm.rotation.x += b * 0.03 * idleStrength
-      player.skin.rightArm.rotation.x += -b * 0.03 * idleStrength
-      if (player?.cape?.rotation) player.cape.rotation.x += Math.sin(this._idlePhase * 0.7) * 0.03 * idleStrength
-    }
+    if (this.isRunning) {
+      player.skin.leftArm.rotation.x = Math.cos(t) * 1.5
+      player.skin.rightArm.rotation.x = Math.cos(t + Math.PI) * 1.5
 
-    if (moveBlend > 0.0001 && player?.skin) {
-      const legAmp = mix(1, 0.85, crouchBlend)
-      const armAmp = mix(1, 0.7, crouchBlend)
+      const basicArmRotationZ = Math.PI * 0.1
+      player.skin.leftArm.rotation.z = Math.cos(t) * 0.1 + basicArmRotationZ
+      player.skin.rightArm.rotation.z = Math.cos(t + Math.PI) * 0.1 - basicArmRotationZ
+    } else {
+      player.skin.leftArm.rotation.x = Math.sin(t + Math.PI) * 0.5
+      player.skin.rightArm.rotation.x = Math.sin(t) * 0.5
 
-      const walkLegL = Math.sin(t) * 0.5
-      const walkLegR = Math.sin(t + Math.PI) * 0.5
-      const runLegL = Math.cos(t + Math.PI) * 1.3
-      const runLegR = Math.cos(t) * 1.3
-
-      player.skin.leftLeg.rotation.x += mix(walkLegL, runLegL, runBlend) * moveBlend * legAmp
-      player.skin.rightLeg.rotation.x += mix(walkLegR, runLegR, runBlend) * moveBlend * legAmp
-
-      const walkArmL = Math.sin(t + Math.PI) * 0.5
-      const walkArmR = Math.sin(t) * 0.5
-      const runArmL = Math.cos(t) * 1.5
-      const runArmR = Math.cos(t + Math.PI) * 1.5
-
-      player.skin.leftArm.rotation.x += mix(walkArmL, runArmL, runBlend) * moveBlend * armAmp
-      player.skin.rightArm.rotation.x += mix(walkArmR, runArmR, runBlend) * moveBlend * armAmp
-
-      const walkArmZBase = Math.PI * 0.02
-      const runArmZBase = Math.PI * 0.1
-      const armZBase = mix(walkArmZBase, runArmZBase, runBlend)
-
-      const walkArmZL = Math.cos(t) * 0.03 + walkArmZBase
-      const walkArmZR = Math.cos(t + Math.PI) * 0.03 - walkArmZBase
-      const runArmZL = Math.cos(t) * 0.1 + runArmZBase
-      const runArmZR = Math.cos(t + Math.PI) * 0.1 - runArmZBase
-
-      player.skin.leftArm.rotation.z += (mix(walkArmZL, runArmZL, runBlend) * moveBlend + armZBase * 0.15 * moveBlend) * armAmp
-      player.skin.rightArm.rotation.z += (mix(walkArmZR, runArmZR, runBlend) * moveBlend - armZBase * 0.15 * moveBlend) * armAmp
-      
-      if (this._defaults?.playerRot) {
-        player.rotation.z = this._defaults.playerRot.z + Math.cos(t + Math.PI) * 0.01 * runBlend * moveBlend
-      }
-
-      const capeBase = mix(Math.PI * 0.06, Math.PI * 0.3, runBlend)
-      const capeWave = mix(Math.sin(t / 1.5) * 0.06, Math.sin(t * 2) * 0.1, runBlend)
-      if (player?.cape?.rotation) player.cape.rotation.x += (capeBase + capeWave) * moveBlend
+      const basicArmRotationZ = Math.PI * 0.02
+      player.skin.leftArm.rotation.z = Math.cos(t) * 0.03 + basicArmRotationZ
+      player.skin.rightArm.rotation.z = Math.cos(t + Math.PI) * 0.03 - basicArmRotationZ
     }
 
     if (this._swingTime !== null) {
       this._swingTime += dt
       const p = Math.min(this._swingTime / this._swingDuration, 1)
-      HitAnimation.animate(p, player, moveBlend > 0.2)
+      HitAnimation.animate(p, player, this.isMoving)
       if (p >= 1) this._swingTime = null
+    }
+
+    if (this.isRunning) {
+      player.rotation.z = Math.cos(t + Math.PI) * 0.01
+    }
+
+    if (this.isRunning) {
+      const basicCapeRotationX = Math.PI * 0.3
+      player.cape.rotation.x = Math.sin(t * 2) * 0.1 + basicCapeRotationX
+    } else {
+      const basicCapeRotationX = Math.PI * 0.06
+      player.cape.rotation.x = Math.sin(t / 1.5) * 0.06 + basicCapeRotationX
+    }
+
+    if (reset) {
+      const cb = this.switchAnimationCallback
+      this.switchAnimationCallback = null
+      cb?.()
     }
   }
 }
@@ -289,11 +201,6 @@ const HitAnimation = {
   animate(progress, player, isMovingOrRunning) {
     if (!player?.skin?.rightArm?.rotation) return
 
-    // One swing = one arc. `swing` rises to its peak at the middle of the swing
-    // (progress 0.5) and returns to rest at both ends, matching vanilla's
-    // `sin(swingProgress * PI)` and the first-person hand. Driving the trig with
-    // `progress * 18` previously ran ~3 sine cycles per click, which made other
-    // players' arms look like they were swinging several times per hit.
     const swing = Math.sin(progress * Math.PI)
     player.skin.rightArm.rotation.x = -0.4537860552 * 2 - 2 * swing * 0.3
 

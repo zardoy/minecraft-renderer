@@ -44,14 +44,6 @@ export const TWEEN_DURATION = 120
 
 const degreesToRadians = (degrees: number) => degrees * (Math.PI / 180)
 
-const clamp01 = (v: number) => Math.max(0, Math.min(1, v))
-const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
-const wrapPi = (a: number) => {
-  a = (a + Math.PI) % (Math.PI * 2)
-  if (a < 0) a += Math.PI * 2
-  return a - Math.PI
-}
-
 function convert2sComplementToHex(complement: number) {
   if (complement < 0) {
     complement = (0xFF_FF_FF_FF + complement + 1) >>> 0
@@ -279,129 +271,44 @@ export class Entities {
   pendingModelOverrides = new Map<string, { parts: EntityModelOverridePart[] }>()
 
   private motionCache = new Map<string, { pos: THREE.Vector3, speed: number }>()
-  private _wasThirdPerson = false
+  private readonly MOVE_ON = 0.05
+  private readonly MOVE_OFF = 0.02
+  private readonly RUN_ON = 4.8
+  private readonly RUN_OFF = 4.2
 
-  private _tpBodyYaw = 0
-  private _tpHasBodyYaw = false
-
-  private updateAutoWalkFlags(entityKey: string, entity: SceneEntity, dt: number, samplePos?: THREE.Vector3) {
+  private updateAutoWalkFlags(entityKey: string, entity: SceneEntity, dt: number) {
     if (!entity.playerObject?.animation) return
     const anim: any = entity.playerObject.animation
+    if (!('isMoving' in anim) || !('isRunning' in anim)) return
     if (dt <= 0) return
-
-    const pos = samplePos ?? entity.position
 
     const cached = this.motionCache.get(entityKey)
     if (!cached) {
-      this.motionCache.set(entityKey, { pos: pos.clone(), speed: 0 })
+      this.motionCache.set(entityKey, { pos: entity.position.clone(), speed: 0 })
       anim.isMoving = false
       anim.isRunning = false
-      anim.moveAmount = 0
-      anim.runAmount = 0
       return
     }
 
-    const dx = pos.x - cached.pos.x
-    const dz = pos.z - cached.pos.z
-    cached.pos.copy(pos)
+    const dx = entity.position.x - cached.pos.x
+    const dz = entity.position.z - cached.pos.z
+    cached.pos.copy(entity.position)
 
-    const instSpeed = Math.hypot(dx, dz) / Math.max(dt, 1e-6) // blocks/sec
+    const instSpeed = Math.hypot(dx, dz) / Math.max(dt, 1e-6)
 
-    const alpha = 1 - Math.exp(-dt * 12)
-    cached.speed += (instSpeed - cached.speed) * alpha
+    cached.speed = cached.speed * 0.8 + instSpeed * 0.2
 
-    const speed = cached.speed
+    const movingNow = anim.isMoving
+      ? cached.speed > this.MOVE_OFF
+      : cached.speed > this.MOVE_ON
 
-    const smoothstep = (a: number, b: number, x: number) => {
-      const t = clamp01((x - a) / (b - a))
-      return t * t * (3 - 2 * t)
-    }
+    const runningNow = anim.isRunning
+      ? cached.speed > this.RUN_OFF
+      : cached.speed > this.RUN_ON
 
-    const MOVE_START = 0.08
-    const MOVE_FULL = 0.6
-
-    const WALK_MAX = 4.3
-    const SPRINT_FULL = 5.6
-
-    const moveAmount = smoothstep(MOVE_START, MOVE_FULL, speed)
-    const runAmount = smoothstep(WALK_MAX, SPRINT_FULL, speed)
-
-    anim.moveAmount = moveAmount
-    anim.runAmount = runAmount
-
-    anim.isMoving = moveAmount > 0.15
-    anim.isRunning = runAmount > 0.55
+    anim.isMoving = movingNow
+    anim.isRunning = movingNow && runningNow
   }
-
-  private getLocalSneak(): boolean {
-    const ps: any = this.worldRenderer.playerStateReactive as any
-    return (
-      ps?.movementState === 'SNEAKING' ||
-      ps?.movementState === 'CROUCHING' ||
-      !!ps?.isSneaking ||
-      !!ps?.sneaking ||
-      !!ps?.isCrouching ||
-      !!ps?.crouching ||
-      !!ps?.controls?.sneak ||
-      !!ps?.controlState?.sneak
-    )
-  }
-
-  private updateThirdPersonHeadAndBody(entity: SceneEntity, dt: number) {
-    const anim: any = entity.playerObject?.animation
-    const rotation = this.worldRenderer.cameraShake.getBaseRotation()
-
-    const camYaw = rotation.yaw
-    const camPitch = rotation.pitch
-
-    const move = clamp01(anim?.moveAmount ?? (anim?.isMoving ? 1 : 0))
-    const run = clamp01(anim?.runAmount ?? (anim?.isRunning ? 1 : 0))
-    const moving = move > 0.15
-
-    if (!this._tpHasBodyYaw) {
-      this._tpHasBodyYaw = true
-      this._tpBodyYaw = camYaw
-    }
-
-    if (moving) {
-      const k = 1 - Math.exp(-dt * (18 + 10 * run))
-      this._tpBodyYaw = this._tpBodyYaw + wrapPi(camYaw - this._tpBodyYaw) * k
-
-      entity.rotation.set(0, this._tpBodyYaw, 0)
-
-      const headMax = ((25 - 8 * run) * Math.PI) / 180
-      const headYaw = clamp(wrapPi(camYaw - this._tpBodyYaw), -headMax, headMax)
-
-      if (anim && 'lookYaw' in anim) anim.lookYaw = headYaw
-      if (anim && 'lookPitch' in anim) anim.lookPitch = -camPitch
-      return
-    }
-
-    // idle behavior (head leads, body follows after threshold)
-    const maxHeadYaw = (85 * Math.PI) / 180
-    const bodyFollowStart = (55 * Math.PI) / 180
-
-    let desiredHeadYaw = wrapPi(camYaw - this._tpBodyYaw)
-    desiredHeadYaw = clamp(desiredHeadYaw, -maxHeadYaw, maxHeadYaw)
-
-    const excess = Math.abs(desiredHeadYaw) - bodyFollowStart
-    if (excess > 0) {
-      const push = excess / (maxHeadYaw - bodyFollowStart)
-      const targetBodyYaw = camYaw - Math.sign(desiredHeadYaw) * bodyFollowStart
-      const k = 1 - Math.exp(-dt * (6 + 10 * push))
-      this._tpBodyYaw = this._tpBodyYaw + wrapPi(targetBodyYaw - this._tpBodyYaw) * k
-      desiredHeadYaw = wrapPi(camYaw - this._tpBodyYaw)
-      desiredHeadYaw = clamp(desiredHeadYaw, -maxHeadYaw, maxHeadYaw)
-    } else {
-      const k = 1 - Math.exp(-dt * 5)
-      this._tpBodyYaw = this._tpBodyYaw + wrapPi(camYaw - this._tpBodyYaw) * (k * 0.15)
-    }
-
-    entity.rotation.set(0, this._tpBodyYaw, 0)
-    if (anim && 'lookYaw' in anim) anim.lookYaw = desiredHeadYaw
-    if (anim && 'lookPitch' in anim) anim.lookPitch = -camPitch
-  }
-
 
   get entitiesByName(): Record<string, SceneEntity[]> {
     const byName: Record<string, SceneEntity[]> = {}
@@ -476,8 +383,6 @@ export class Entities {
     this.currentSkinUrls = {}
 
     this.motionCache.clear()
-    this._wasThirdPerson = false
-    this._tpHasBodyYaw = false
 
     // Clean up player entity
     if (this.playerEntity) {
@@ -546,92 +451,66 @@ export class Entities {
     const botPos = this.worldRenderer.viewerChunkPosition
     const VISIBLE_DISTANCE = 10 * 10
 
-    const thirdPersonNow = this.worldRenderer.playerStateUtils.isThirdPerson()
-    if (thirdPersonNow !== this._wasThirdPerson) {
-      this._wasThirdPerson = thirdPersonNow
-      const key = String(this.playerEntity?.originalEntity.id ?? 'player_entity')
-      this.motionCache.delete(key)
-
-      const anim: any = this.playerEntity?.playerObject?.animation
-      if (anim?.resetLocomotion) anim.resetLocomotion()
-
-      this._tpHasBodyYaw = false
-    }
-
     for (const [entityIdRaw, entity] of [...Object.entries(this.entities), ['player_entity', this.playerEntity] as [string, SceneEntity | null]]) {
       if (!entity) continue
 
+      let entityKey = entityIdRaw
       const isPlayerEntity = entityIdRaw === 'player_entity'
-      const entityKey = isPlayerEntity ? String(this.playerEntity?.originalEntity.id ?? 'player_entity') : String(entityIdRaw)
 
       if (isPlayerEntity) {
-        entity.visible = thirdPersonNow
+        const thirdPerson = this.worldRenderer.playerStateUtils.isThirdPerson()
+        entity.visible = thirdPerson
 
-        if (thirdPersonNow) {
+        if (thirdPerson) {
           const yOffset = this.worldRenderer.playerStateReactive.eyeHeight
-          // Set world position — proxy auto-converts to scene coords
           entity.position.set(
             this.worldRenderer.cameraWorldPos.x,
             this.worldRenderer.cameraWorldPos.y - yOffset,
             this.worldRenderer.cameraWorldPos.z
           )
-
-          const p: any = (this.worldRenderer.playerStateReactive as any).position
-          if (p && typeof p.x === 'number') {
-            this.updateAutoWalkFlags(entityKey, entity, dtRaw, new THREE.Vector3(p.x, p.y, p.z))
-          } else {
-            const wp = this.worldRenderer.sceneOrigin.getWorldPosition(entity)
-            this.updateAutoWalkFlags(entityKey, entity, dtRaw, wp ? new THREE.Vector3(wp.x, wp.y, wp.z) : entity.position)
-          }
-
-          this.updateThirdPersonHeadAndBody(entity, dt)
-        } else {
-          const wp = this.worldRenderer.sceneOrigin.getWorldPosition(entity)
-          this.updateAutoWalkFlags(entityKey, entity, dtRaw, wp ? new THREE.Vector3(wp.x, wp.y, wp.z) : entity.position)
         }
-      } else {
-        const wp = this.worldRenderer.sceneOrigin.getWorldPosition(entity)
-        this.updateAutoWalkFlags(entityKey, entity, dtRaw, wp ? new THREE.Vector3(wp.x, wp.y, wp.z) : entity.position)
+
+        entityKey = String(this.playerEntity?.originalEntity.id ?? 'player_entity')
       }
 
       const { playerObject } = entity
 
+      this.updateAutoWalkFlags(entityKey, entity, dtRaw)
+
       if (playerObject?.animation) {
-        const anim: any = playerObject.animation
-
-        const flags = Number((entity.originalEntity?.metadata?.[0] ?? 0))
-        const remoteSneak = (flags & 0x02) !== 0
-
-        const localSneak = this.getLocalSneak()
-
-        if ('isCrouched' in anim) anim.isCrouched = isPlayerEntity ? localSneak : remoteSneak
-
         playerObject.animation.update(playerObject, dt)
       }
 
-      // Update GLTF animations
       entity.traverse(child => {
         if (child instanceof Entity.EntityMesh) {
           child.update(dt)
         }
       })
 
-      // Update visibility based on distance and chunk load status
       if (!isPlayerEntity && botPos && entity.position) {
         const dx = entity.position.x - botPos.x
         const dy = entity.position.y - botPos.y
         const dz = entity.position.z - botPos.z
         const distanceSquared = dx * dx + dy * dy + dz * dz
 
-        // Entity is visible if within 20 blocks OR in a finished chunk
         entity.visible = !!(distanceSquared < VISIBLE_DISTANCE || this.worldRenderer.shouldObjectVisible(entity))
 
         this.maybeRenderPlayerSkin(entityIdRaw)
       }
 
       if (entity.visible) {
-        // Update armor positions
         this.syncArmorPositions(entity)
+      }
+
+      if (isPlayerEntity && entity.visible) {
+        const rotation = this.worldRenderer.cameraShake.getBaseRotation()
+        entity.rotation.set(0, rotation.yaw, 0)
+
+        entity.traverse((c) => {
+          if (c.name === 'head') {
+            c.rotation.set(-rotation.pitch, 0, 0)
+          }
+        })
       }
     }
   }
