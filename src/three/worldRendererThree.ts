@@ -1283,6 +1283,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     const globalBuffer = this.chunkMeshManager.globalBlockBuffer
     if (globalBuffer) {
       globalBuffer.setCameraOrigin(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
+      globalBuffer.compactStep()
       globalBuffer.uploadDirtyRange()
     }
     this.renderer.render(this.scene, cam)

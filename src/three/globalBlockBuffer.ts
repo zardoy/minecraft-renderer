@@ -7,7 +7,10 @@ import { packWord2Empty } from '../wasm-mesher/bridge/shaderCubeBridge'
 const INITIAL_CAPACITY_FACES = 512_000      // ~8 MB up front (4 words × 4 B), well under 1M
 const GROWTH_INCREMENT_FACES = 1_000_000    // +16 MB per growth step instead of doubling
 const MAX_UPLOAD_FACES_PER_FRAME = 15_000   // face-indexed budget (chunksStorage uses 10k blocks)
+const FRAGMENTATION_THRESHOLD = 0.25
 const EMPTY_W2 = packWord2Empty()
+
+type PendingMove = { key: string, oldStart: number, newStart: number, count: number }
 
 export type GlobalBlockBufferShaderData = {
   words: Uint32Array
@@ -30,6 +33,7 @@ export class GlobalBlockBuffer {
   private freeList: Array<{ start: number, count: number }> = []
   private highWatermark = 0
   private pendingRanges: Array<{ start: number, end: number }> = []
+  private pendingMove: PendingMove | null = null
 
   constructor (
     material: THREE.ShaderMaterial,
@@ -141,6 +145,19 @@ export class GlobalBlockBuffer {
     const slot = this.sectionSlots.get(sectionKey)
     if (!slot) return
 
+    if (this.pendingMove?.key === sectionKey) {
+      const { oldStart, count } = this.pendingMove
+      for (let i = oldStart; i < oldStart + count; i++) {
+        this.w0[i] = 0
+        this.w1[i] = 0
+        this.w2[i] = EMPTY_W2
+        this.w3[i] = 0
+      }
+      this.markDirty(oldStart, oldStart + count - 1)
+      this.insertFreeSlot({ start: oldStart, count })
+      this.pendingMove = null
+    }
+
     for (let i = slot.start; i < slot.start + slot.count; i++) {
       this.w0[i] = 0
       this.w1[i] = 0
@@ -153,6 +170,36 @@ export class GlobalBlockBuffer {
     this.insertFreeSlot(slot)
     this.shrinkHighWatermark()
     this.mesh.geometry.instanceCount = this.highWatermark
+  }
+
+  /** One interior-hole move per frame when fragmentation exceeds threshold; deferred shrink. */
+  compactStep (): void {
+    if (this.pendingMove) {
+      const { newStart, count } = this.pendingMove
+      if (this.rangeFullyUploaded(newStart, newStart + count - 1)) {
+        this.finalizePendingMove()
+      }
+      return
+    }
+
+    if (this.highWatermark === 0) return
+    const interiorFree = this.interiorFreeFaces()
+    if (interiorFree / this.highWatermark <= FRAGMENTATION_THRESHOLD) return
+
+    const section = this.findMovableSection(MAX_UPLOAD_FACES_PER_FRAME)
+    if (!section) return
+
+    const hole = this.findLowestInteriorHole(section.start, section.count)
+    if (!hole) return
+
+    const reserved = this.reserveFreeSlotAt(hole.index, section.count)
+    const oldStart = section.start
+    const newStart = reserved.start
+
+    this.copySectionRange(oldStart, newStart, section.count)
+    this.sectionSlots.set(section.key, { start: newStart, count: section.count })
+    this.markDirty(newStart, newStart + section.count - 1)
+    this.pendingMove = { key: section.key, oldStart, newStart, count: section.count }
   }
 
   uploadDirtyRange (): void {
@@ -194,6 +241,7 @@ export class GlobalBlockBuffer {
     this.freeList.length = 0
     this.highWatermark = 0
     this.pendingRanges.length = 0
+    this.pendingMove = null
     this.w0.fill(0)
     this.w1.fill(0)
     this.w2.fill(EMPTY_W2)
@@ -267,6 +315,97 @@ export class GlobalBlockBuffer {
     this.freeList = merged
   }
 
+  private interiorFreeFaces (): number {
+    let total = 0
+    for (const slot of this.freeList) {
+      if (slot.start < this.highWatermark) total += slot.count
+    }
+    return total
+  }
+
+  private findMovableSection (maxCount: number): { key: string, start: number, count: number } | undefined {
+    const sections: Array<{ key: string, start: number, count: number }> = []
+    for (const [key, slot] of this.sectionSlots) {
+      sections.push({ key, start: slot.start, count: slot.count })
+    }
+    if (sections.length === 0) return undefined
+
+    sections.sort((a, b) => {
+      if (b.start !== a.start) return b.start - a.start
+      return (b.start + b.count) - (a.start + a.count)
+    })
+
+    const tailmost = sections[0]!
+    if (tailmost.count <= maxCount && this.findLowestInteriorHole(tailmost.start, tailmost.count)) {
+      return tailmost
+    }
+
+    const candidates = sections
+      .filter(s => s.count <= maxCount)
+      .sort((a, b) => b.count - a.count)
+
+    for (const s of candidates) {
+      if (this.findLowestInteriorHole(s.start, s.count)) return s
+    }
+    return undefined
+  }
+
+  private findLowestInteriorHole (
+    sectionStart: number,
+    count: number,
+  ): { start: number, count: number, index: number } | undefined {
+    for (let i = 0; i < this.freeList.length; i++) {
+      const slot = this.freeList[i]!
+      if (slot.start < sectionStart && slot.count >= count) {
+        return { start: slot.start, count: slot.count, index: i }
+      }
+    }
+    return undefined
+  }
+
+  private reserveFreeSlotAt (index: number, count: number): { start: number, count: number } {
+    const slot = this.freeList[index]!
+    this.freeList.splice(index, 1)
+    if (slot.count === count) return { start: slot.start, count }
+    const used = { start: slot.start, count }
+    this.insertFreeSlot({ start: slot.start + count, count: slot.count - count })
+    return used
+  }
+
+  private copySectionRange (oldStart: number, newStart: number, count: number): void {
+    this.w0.copyWithin(newStart, oldStart, oldStart + count)
+    this.w1.copyWithin(newStart, oldStart, oldStart + count)
+    this.w2.copyWithin(newStart, oldStart, oldStart + count)
+    this.w3.copyWithin(newStart, oldStart, oldStart + count)
+  }
+
+  private rangeFullyUploaded (start: number, end: number): boolean {
+    for (const r of this.pendingRanges) {
+      if (r.start <= end && r.end >= start) return false
+    }
+    return true
+  }
+
+  private finalizePendingMove (): void {
+    const move = this.pendingMove
+    if (!move) return
+
+    const { oldStart, count } = move
+    for (let i = oldStart; i < oldStart + count; i++) {
+      this.w0[i] = 0
+      this.w1[i] = 0
+      this.w2[i] = EMPTY_W2
+      this.w3[i] = 0
+    }
+    this.insertFreeSlot({ start: oldStart, count })
+    this.shrinkHighWatermark()
+    if (oldStart < this.highWatermark) {
+      this.markDirty(oldStart, oldStart + count - 1)
+    }
+    this.mesh.geometry.instanceCount = this.highWatermark
+    this.pendingMove = null
+  }
+
   private shrinkHighWatermark (): void {
     while (this.highWatermark > 0) {
       const tail = this.highWatermark - 1
@@ -279,6 +418,9 @@ export class GlobalBlockBuffer {
   }
 
   private growCapacity (minFaces: number): void {
+    // Moved CPU data at newStart survives nw*.set(); pendingRanges cleared below anyway.
+    if (this.pendingMove) this.finalizePendingMove()
+
     console.warn('[globalBlockBuffer] growing faces', this.capacityFaces, '->', '(need', minFaces, ')')
     let newCap = this.capacityFaces
     while (newCap < minFaces) newCap += GROWTH_INCREMENT_FACES
