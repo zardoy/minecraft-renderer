@@ -110,7 +110,6 @@ function createRenderer(workerCount = 2) {
     postMessage: vi.fn(),
     terminate: vi.fn(),
   }))
-  renderer['mesherWorkersScript'] = 'wasm'
   renderer['syncMesherPoolSnapshot']()
   renderer.viewDistance = 8
   renderer.viewerChunkPosition = new Vec3(0, 64, 0)
@@ -136,24 +135,17 @@ describe('WorldRendererCommon.reconfigureMesherWorkers', () => {
     vi.unstubAllGlobals()
   })
 
-  test('shrinks worker pool and triggers remesh', async () => {
+  test('recreates workers with new count and triggers remesh', async () => {
     const renderer = createRenderer(3)
+    const terminated = renderer.workers.map((worker) => worker.terminate)
     renderer.worldRendererConfig.mesherWorkers = 1
 
     await renderer.reconfigureMesherWorkers()
 
+    for (const terminate of terminated) {
+      expect(terminate).toHaveBeenCalled()
+    }
     expect(renderer.workers).toHaveLength(1)
-    expect(renderer.rerenderCalls).toBe(1)
-  })
-
-  test('grows worker pool when count increases', async () => {
-    const renderer = createRenderer(1)
-    renderer.worldRendererConfig.mesherWorkers = 3
-    renderer.addColumn(0, 0, 'chunk-json', false)
-
-    await renderer.reconfigureMesherWorkers()
-
-    expect(renderer.workers).toHaveLength(3)
     expect(renderer.rerenderCalls).toBe(1)
   })
 
@@ -167,7 +159,7 @@ describe('WorldRendererCommon.reconfigureMesherWorkers', () => {
     for (const terminate of terminated) {
       expect(terminate).toHaveBeenCalled()
     }
-    expect(renderer['mesherWorkersScript']).toBe('legacy')
+    expect(renderer.workers).toHaveLength(2)
     expect(renderer.rerenderCalls).toBe(1)
   })
 })

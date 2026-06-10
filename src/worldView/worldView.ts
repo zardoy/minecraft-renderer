@@ -320,6 +320,17 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
   }
 
   /**
+   * Re-fetch and re-emit every loaded chunk (e.g. after mesher workers are recreated).
+   */
+  async reloadLoadedChunks(): Promise<void> {
+    const coords = Object.keys(this.loadedChunks)
+    for (const key of coords) {
+      const [x, z] = key.split(',').map(Number)
+      await this.loadChunk({ x, z }, false, 'mesher-reconfigure')
+    }
+  }
+
+  /**
    * Unload all chunks.
    */
   unloadAllChunks(): void {

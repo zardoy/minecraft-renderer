@@ -99,8 +99,8 @@ Renderer-owned options live in `RENDERER_DEFAULT_OPTIONS` and `RENDERER_OPTIONS_
 | Change | Live update | Reload required |
 |--------|-------------|-----------------|
 | Menu V2 scene / camera / speeds | Yes (`backend.getMenuBackground`) | Mode switch needs restart |
-| `rendererMesher` (`wasm` / `legacy-js`) | Yes — worker script swap and chunk remesh | No |
-| `rendererWorldPerformance` | Yes — worker count resize and chunk remesh | No |
+| `rendererMesher` (`wasm` / `legacy-js`) | Yes — recreates mesher workers | Chunks reload (`requiresChunksReload`) |
+| `rendererWorldPerformance` | Yes — recreates mesher workers | Chunks reload (`requiresChunksReload`) |
 | Volume | App `watchValue` only | No |
 
 Sync runs on the **main thread** only; `inWorldRenderingConfig` uses existing valtio `__syncToWorker` for off-thread backends. Do not call `subscribeRendererOptions` from mesher workers.

@@ -126,9 +126,6 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   debugStopGeometryUpdate = false
 
   protocolCustomBlocks = new Map<string, CustomBlockModels>()
-  /** Cached chunk payloads so mesher workers can be recreated without a page reload. */
-  private chunkPayloadCache = new Map<string, { chunk: string; isLightUpdate: boolean }>()
-  private mesherWorkersScript: 'wasm' | 'legacy' | null = null
   private mesherPoolSnapshot = {
     mesherWorkers: -1,
     wasmMesher: false,
@@ -219,9 +216,6 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     addNewStat('downloaded-chunks', 100, 140, 20, { className: MC_RENDERER_DEBUG_OVERLAY_CLASS })
 
     this.connect(this.displayOptions.worldView as any)
-    this.onWorldSwitched.push(() => {
-      this.chunkPayloadCache.clear()
-    })
 
     const chunksUpdateInterval = setInterval(() => {
       this.geometryReceiveCountPerSec = Object.values(this.geometryReceiveCount).reduce((acc, curr) => acc + curr, 0)
@@ -341,7 +335,6 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     for (let i = 0; i < numWorkers; i++) {
       this.workers.push(this.createMesherWorker())
     }
-    this.mesherWorkersScript = this.getMesherWorkerScript()
   }
 
   private syncMesherPoolSnapshot() {
@@ -399,105 +392,28 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.reactiveState.world.mesherWork = false
   }
 
-  private terminateMesherWorkers(fromIndex = 0) {
-    const removed = this.workers.splice(fromIndex)
-    for (const worker of removed) {
+  private terminateAllMesherWorkers() {
+    for (const worker of this.workers) {
       worker.terminate()
     }
+    this.workers = []
   }
 
-  private async bootstrapMesherWorkers(workers: any[], workerIndexOffset = 0) {
-    if (workers.length === 0) return
+  private async bootstrapMesherWorkers() {
+    if (this.workers.length === 0) return
 
-    meshersSendMcData(
-      workers,
-      this.version,
-      dynamicMcDataFiles,
-      this.resourcesManager.currentResources.mcData
-    )
-
-    const resources = this.resourcesManager.currentResources
-    for (const [i, worker] of workers.entries()) {
-      worker.postMessage({
-        type: 'mesherData',
-        workerIndex: workerIndexOffset + i,
-        blocksAtlas: {
-          latest: resources.blocksAtlasJson
-        },
-        blockstatesModels: resources.blockstatesModels,
-        config: this.getMesherConfig(),
-      })
-    }
-
+    this.sendMesherMcData()
+    await this.updateAssetsData()
     this.logWorkerWork('# mesher workers bootstrapped')
   }
 
-  private resendCachedChunksToWorkers(workers: any[]) {
-    if (workers.length === 0 || this.chunkPayloadCache.size === 0) return
-
-    for (const [chunkKey, { chunk }] of this.chunkPayloadCache) {
-      const [x, z] = chunkKey.split(',').map(Number)
-      const customBlockModels = this.protocolCustomBlocks.get(chunkKey)
-
-      for (const worker of workers) {
-        worker.postMessage({
-          type: 'chunk',
-          x,
-          z,
-          chunk,
-          customBlockModels: customBlockModels || undefined
-        })
-      }
-
-      if (!this.worldRendererConfig.wasmMesher) {
-        workers[0].postMessage({
-          type: 'getHeightmap',
-          x,
-          z,
-        })
-      }
-    }
-
-    this.logWorkerWork(`# resent ${this.chunkPayloadCache.size} cached chunks to ${workers.length} worker(s)`)
-  }
-
   async reconfigureMesherWorkers() {
-    if (!this.active || this.workers.length === 0) return
-
-    const desiredCount = this.worldRendererConfig.mesherWorkers
-    const desiredScript = this.getMesherWorkerScript()
-    const currentCount = this.workers.length
-    const currentScript = this.mesherWorkersScript
+    if (!this.active) return
 
     this.clearMesherPendingState()
-
-    if (desiredScript !== currentScript) {
-      this.terminateMesherWorkers()
-      this.initWorkers(desiredCount)
-      await this.bootstrapMesherWorkers(this.workers)
-      this.resendCachedChunksToWorkers(this.workers)
-      this.afterMesherWorkersReconfigured()
-      return
-    }
-
-    if (desiredCount > currentCount) {
-      const startIndex = currentCount
-      for (let i = 0; i < desiredCount - currentCount; i++) {
-        this.workers.push(this.createMesherWorker())
-      }
-      const newWorkers = this.workers.slice(startIndex)
-      await this.bootstrapMesherWorkers(newWorkers, startIndex)
-      this.resendCachedChunksToWorkers(newWorkers)
-      this.afterMesherWorkersReconfigured()
-      return
-    }
-
-    if (desiredCount < currentCount) {
-      this.terminateMesherWorkers(desiredCount)
-      this.afterMesherWorkersReconfigured()
-      return
-    }
-
+    this.terminateAllMesherWorkers()
+    this.initWorkers()
+    await this.bootstrapMesherWorkers()
     this.afterMesherWorkersReconfigured()
   }
 
@@ -901,7 +817,6 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.initialChunksLoad = false
     this.initialChunkLoadWasStartedIn ??= Date.now()
     this.loadedChunks[`${x},${z}`] = true
-    this.chunkPayloadCache.set(`${x},${z}`, { chunk, isLightUpdate })
     this.updateChunksStats()
 
     const chunkKey = `${x},${z}`
@@ -957,7 +872,6 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
   removeColumn(x, z) {
     delete this.loadedChunks[`${x},${z}`]
-    this.chunkPayloadCache.delete(`${x},${z}`)
     // Cancel any pending heightmap debounce for this chunk
     const debounceKey = `${x},${z}`
     const pendingTimer = this.heightmapDebounceTimers.get(debounceKey)
@@ -1463,7 +1377,6 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
     // Clear chunk and section tracking (previously handled by @worldCleanup decorator)
     this.loadedChunks = {}
-    this.chunkPayloadCache.clear()
     this.finishedChunks = {}
     this.finishedSections = {}
     this.sectionsWaiting.clear()

@@ -165,7 +165,8 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
   },
   rendererWorldPerformance: {
     text: 'World performance',
-    tooltip: 'Background workers for chunk geometry. Changes apply immediately.',
+    tooltip: 'Background workers for chunk geometry. Recreates mesher workers and reloads chunks.',
+    requiresChunksReload: true,
     possibleValues: [
       ['low-energy', 'Low Energy'],
       ['normal', 'Normal'],
@@ -192,6 +193,7 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
     possibleValues: [['wasm', 'WASM'], ['legacy-js', 'Legacy JS']],
     text: 'Mesher pipeline',
     tooltip: 'Browser technology for processing world geometry before render. WASM is the fastest; if you see a dead tab icon, reloads, or other errors, switch to Legacy JS.',
+    requiresChunksReload: true,
   },
   rendererShaderCubeBlocks: {
     text: 'Instanced shader cubes',
