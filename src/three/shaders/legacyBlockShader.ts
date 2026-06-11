@@ -95,6 +95,44 @@ void main() {
 }
 `
 
+const globalVertexShader = /* glsl */ `
+precision highp float;
+
+uniform vec3 u_cameraOrigin;
+uniform vec3 u_cameraOriginFrac;
+
+in vec3 a_origin;
+
+// position, uv, color: declared by Three.js shader chunks (vertexColors → USE_COLOR).
+out vec3 vColor;
+out vec2 v_uv;
+
+#ifdef USE_LOGDEPTHBUF
+out float vFragDepth;
+#endif
+
+#ifdef USE_FOG
+out float vFogDepth;
+#endif
+
+void main() {
+    vec3 relativePos = (a_origin - u_cameraOrigin) + position - u_cameraOriginFrac;
+    vec4 mvPosition = viewMatrix * vec4(relativePos, 1.0);
+    gl_Position = projectionMatrix * mvPosition;
+
+    vColor = color;
+    v_uv = uv;
+
+#ifdef USE_LOGDEPTHBUF
+    vFragDepth = 1.0 + gl_Position.w;
+#endif
+
+#ifdef USE_FOG
+    vFogDepth = -mvPosition.z;
+#endif
+}
+`
+
 export function createLegacyBlockMaterial (): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     vertexShader,
@@ -108,6 +146,28 @@ export function createLegacyBlockMaterial (): THREE.ShaderMaterial {
       },
     ]),
     transparent: true,
+    depthWrite: true,
+    depthTest: true,
+    vertexColors: true,
+    glslVersion: THREE.GLSL3,
+    fog: true,
+  })
+}
+
+/** Global opaque legacy buffer — per-vertex section origin via a_origin. */
+export function createGlobalLegacyBlockMaterial (): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    vertexShader: globalVertexShader,
+    fragmentShader,
+    uniforms: THREE.UniformsUtils.merge([
+      THREE.UniformsLib.fog,
+      {
+        u_atlas: { value: null },
+        u_cameraOrigin: { value: new THREE.Vector3() },
+        u_cameraOriginFrac: { value: new THREE.Vector3() },
+      },
+    ]),
+    transparent: false,
     depthWrite: true,
     depthTest: true,
     vertexColors: true,

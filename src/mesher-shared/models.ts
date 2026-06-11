@@ -22,6 +22,20 @@ const tints: any = {}
 let needTiles = false
 let semiTransparentBlocks: string[] = []
 
+/** Mutable geometry bucket used while meshing (opaque or blend). */
+export type MesherGeometryBucket = {
+  positions: number[]
+  normals: number[]
+  colors: number[]
+  uvs: number[]
+  indices: number[]
+  indicesCount: number
+}
+
+export function isSemiTransparentBlockName (name: string): boolean {
+  return semiTransparentBlocks.includes(name)
+}
+
 let tintsData
 try {
   tintsData = require('esbuild-data').tints
@@ -88,7 +102,7 @@ const getVec = (v: Vec3, dir: Vec3) => {
   return v.plus(dir)
 }
 
-function renderLiquid(world: World, cursor: Vec3, texture: any | undefined, type: number, biome: string, water: boolean, attr: MesherGeometryOutput, isRealWater: boolean) {
+function renderLiquid(world: World, cursor: Vec3, texture: any | undefined, type: number, biome: string, water: boolean, bucket: MesherGeometryBucket, attr: MesherGeometryOutput, isRealWater: boolean) {
   const heights: number[] = []
   for (let z = -1; z <= 1; z++) {
     for (let x = -1; x <= 1; x++) {
@@ -146,16 +160,18 @@ function renderLiquid(world: World, cursor: Vec3, texture: any | undefined, type
     // Get base light value for the face
     const baseLight = world.getLight(neighborPos, undefined, undefined, water ? 'water' : 'lava') / 15
 
+    const baseIndex = bucket.positions.length / 3
+
     for (const pos of corners) {
       const height = cornerHeights[pos[2] * 2 + pos[0]]
       const OFFSET = 0.0001
-      attr.t_positions!.push(
+      bucket.positions.push(
         (pos[0] ? 1 - OFFSET : OFFSET) + (cursor.x & 15) - 8,
         (pos[1] ? height - OFFSET : OFFSET) + (cursor.y & 15) - 8,
         (pos[2] ? 1 - OFFSET : OFFSET) + (cursor.z & 15) - 8
       )
-      attr.t_normals!.push(...dir)
-      attr.t_uvs!.push(pos[3] * su + u, pos[4] * sv * (pos[1] ? 1 : height) + v)
+      bucket.normals.push(...dir)
+      bucket.uvs.push(pos[3] * su + u, pos[4] * sv * (pos[1] ? 1 : height) + v)
 
       let cornerLightResult = baseLight
       if (world.config.smoothLighting) {
@@ -180,7 +196,22 @@ function renderLiquid(world: World, cursor: Vec3, texture: any | undefined, type
       }
 
       // Apply light value to tint
-      attr.t_colors!.push(tint[0] * cornerLightResult, tint[1] * cornerLightResult, tint[2] * cornerLightResult)
+      bucket.colors.push(tint[0] * cornerLightResult, tint[1] * cornerLightResult, tint[2] * cornerLightResult)
+    }
+
+    if (!needTiles) {
+      bucket.indices[bucket.indicesCount++] = baseIndex
+      bucket.indices[bucket.indicesCount++] = baseIndex + 1
+      bucket.indices[bucket.indicesCount++] = baseIndex + 2
+      bucket.indices[bucket.indicesCount++] = baseIndex + 2
+      bucket.indices[bucket.indicesCount++] = baseIndex + 1
+      bucket.indices[bucket.indicesCount++] = baseIndex + 3
+      bucket.indices[bucket.indicesCount++] = baseIndex
+      bucket.indices[bucket.indicesCount++] = baseIndex + 2
+      bucket.indices[bucket.indicesCount++] = baseIndex + 1
+      bucket.indices[bucket.indicesCount++] = baseIndex + 2
+      bucket.indices[bucket.indicesCount++] = baseIndex + 3
+      bucket.indices[bucket.indicesCount++] = baseIndex + 1
     }
   }
 }
@@ -225,7 +256,7 @@ const identicalCull = (currentElement: BlockElement, neighbor: Block, direction:
 
 let needSectionRecomputeOnChange = false
 
-function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: boolean, attr: MesherGeometryOutput, globalMatrix: any, globalShift: any, block: Block, biome: string) {
+function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: boolean, bucket: MesherGeometryBucket, attr: MesherGeometryOutput, globalMatrix: any, globalShift: any, block: Block, biome: string) {
   const position = cursor
   // const key = `${position.x},${position.y},${position.z}`
   // if (!globalThis.allowedBlocks.includes(key)) return
@@ -263,7 +294,7 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
     const { su } = texture
     const { sv } = texture
 
-    const ndx = Math.floor(attr.positions.length / 3)
+    const ndx = Math.floor(bucket.positions.length / 3)
 
     tsLog(`[TS]   Base index: ${ndx}`)
 
@@ -369,16 +400,16 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
 
         tsLog(`[TS]     Corner ${pos.join(',')}: vertex=[${vertex.map(v => v.toFixed(3)).join(',')}], worldPos=[${worldPos.map(v => v.toFixed(3)).join(',')}]`)
 
-        attr.positions.push(...worldPos)
+        bucket.positions.push(...worldPos)
 
-        attr.normals.push(...dir)
+        bucket.normals.push(...dir)
 
         const baseu = (pos[3] - 0.5) * uvcs - (pos[4] - 0.5) * uvsn + 0.5
         const basev = (pos[3] - 0.5) * uvsn + (pos[4] - 0.5) * uvcs + 0.5
         const finalU = baseu * su + u
         const finalV = basev * sv + v
         tsLog(`[TS]       UV: cornerUV=[${pos[3]},${pos[4]}], baseUV=[${baseu.toFixed(6)},${basev.toFixed(6)}], finalUV=[${finalU.toFixed(6)},${finalV.toFixed(6)}], texture=[u=${u},v=${v},su=${su},sv=${sv}], rotation=${r}`)
-        attr.uvs.push(finalU, finalV)
+        bucket.uvs.push(finalU, finalV)
       }
 
       let light = 1
@@ -430,7 +461,7 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
       }
 
       if (!needTiles) {
-        attr.colors.push(tint[0] * light, tint[1] * light, tint[2] * light)
+        bucket.colors.push(tint[0] * light, tint[1] * light, tint[2] * light)
       }
     }
 
@@ -464,22 +495,22 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
         tri1 = [ndx, ndx + 3, ndx + 2]
         tri2 = [ndx, ndx + 1, ndx + 3]
         tsLog(`[TS]     Indices (AO optimized): tri1=[${tri1.join(',')}], tri2=[${tri2.join(',')}], aos=[${aos.join(',')}]`)
-        attr.indices[attr.indicesCount++] = tri1[0]
-        attr.indices[attr.indicesCount++] = tri1[1]
-        attr.indices[attr.indicesCount++] = tri1[2]
-        attr.indices[attr.indicesCount++] = tri2[0]
-        attr.indices[attr.indicesCount++] = tri2[1]
-        attr.indices[attr.indicesCount++] = tri2[2]
+        bucket.indices[bucket.indicesCount++] = tri1[0]
+        bucket.indices[bucket.indicesCount++] = tri1[1]
+        bucket.indices[bucket.indicesCount++] = tri1[2]
+        bucket.indices[bucket.indicesCount++] = tri2[0]
+        bucket.indices[bucket.indicesCount++] = tri2[1]
+        bucket.indices[bucket.indicesCount++] = tri2[2]
       } else {
         tri1 = [ndx, ndx + 1, ndx + 2]
         tri2 = [ndx + 2, ndx + 1, ndx + 3]
         tsLog(`[TS]     Indices (standard): tri1=[${tri1.join(',')}], tri2=[${tri2.join(',')}], aos=[${aos.join(',')}]`)
-        attr.indices[attr.indicesCount++] = tri1[0]
-        attr.indices[attr.indicesCount++] = tri1[1]
-        attr.indices[attr.indicesCount++] = tri1[2]
-        attr.indices[attr.indicesCount++] = tri2[0]
-        attr.indices[attr.indicesCount++] = tri2[1]
-        attr.indices[attr.indicesCount++] = tri2[2]
+        bucket.indices[bucket.indicesCount++] = tri1[0]
+        bucket.indices[bucket.indicesCount++] = tri1[1]
+        bucket.indices[bucket.indicesCount++] = tri1[2]
+        bucket.indices[bucket.indicesCount++] = tri2[0]
+        bucket.indices[bucket.indicesCount++] = tri2[1]
+        bucket.indices[bucket.indicesCount++] = tri2[2]
       }
     }
   }
@@ -516,10 +547,6 @@ export function getSectionGeometry(sx: number, sy: number, sz: number, world: Wo
     normals: [],
     colors: [],
     uvs: [],
-    t_positions: [],
-    t_normals: [],
-    t_colors: [],
-    t_uvs: [],
     indices: [],
     indicesCount: 0, // Track current index position
     using32Array: true,
@@ -531,6 +558,23 @@ export function getSectionGeometry(sx: number, sy: number, sz: number, world: Wo
     // isFull: true,
     hadErrors: false,
     blocksCount: 0
+  }
+
+  const opaqueBucket: MesherGeometryBucket = {
+    positions: attr.positions as number[],
+    normals: attr.normals as number[],
+    colors: attr.colors as number[],
+    uvs: attr.uvs as number[],
+    indices: attr.indices as number[],
+    indicesCount: attr.indicesCount,
+  }
+  const blendBucket: MesherGeometryBucket = {
+    positions: [],
+    normals: [],
+    colors: [],
+    uvs: [],
+    indices: [],
+    indicesCount: 0,
   }
 
   const cursor = new Vec3(0, 0, 0)
@@ -563,11 +607,11 @@ export function getSectionGeometry(sx: number, sy: number, sz: number, world: Wo
           const pos = cursor.clone()
           // eslint-disable-next-line @typescript-eslint/no-loop-func
           delayedRender.push(() => {
-            renderLiquid(world, pos, blockProvider.getTextureInfo('water_still'), block.type, biome, true, attr, !isWaterlogged)
+            renderLiquid(world, pos, blockProvider.getTextureInfo('water_still'), block.type, biome, true, blendBucket, attr, !isWaterlogged)
           })
           attr.blocksCount++
         } else if (block.name === 'lava') {
-          renderLiquid(world, cursor, blockProvider.getTextureInfo('lava_still'), block.type, biome, false, attr, false)
+          renderLiquid(world, cursor, blockProvider.getTextureInfo('lava_still'), block.type, biome, false, blendBucket, attr, false)
           attr.blocksCount++
         }
         if (block.name !== 'water' && block.name !== 'lava' && !INVISIBLE_BLOCKS.has(block.name)) {
@@ -607,14 +651,14 @@ export function getSectionGeometry(sx: number, sy: number, sz: number, world: Wo
 
             for (const element of model.elements ?? []) {
               const ao = model.ao ?? block.boundingBox !== 'empty'
-              if (block.transparent && semiTransparentBlocks.includes(block.name)) {
+              if (block.transparent && isSemiTransparentBlockName(block.name)) {
                 const pos = cursor.clone()
                 delayedRender.push(() => {
-                  renderElement(world, pos, element, ao, attr, globalMatrix, globalShift, block, biome)
+                  renderElement(world, pos, element, ao, blendBucket, attr, globalMatrix, globalShift, block, biome)
                 })
               } else {
                 // 60%
-                renderElement(world, cursor, element, ao, attr, globalMatrix, globalShift, block, biome)
+                renderElement(world, cursor, element, ao, opaqueBucket, attr, globalMatrix, globalShift, block, biome)
               }
             }
           }
@@ -629,33 +673,7 @@ export function getSectionGeometry(sx: number, sy: number, sz: number, world: Wo
   }
   delayedRender = []
 
-  let ndx = attr.positions.length / 3
-  for (let i = 0; i < attr.t_positions!.length / 12; i++) {
-    attr.indices[attr.indicesCount++] = ndx
-    attr.indices[attr.indicesCount++] = ndx + 1
-    attr.indices[attr.indicesCount++] = ndx + 2
-    attr.indices[attr.indicesCount++] = ndx + 2
-    attr.indices[attr.indicesCount++] = ndx + 1
-    attr.indices[attr.indicesCount++] = ndx + 3
-    // back face
-    attr.indices[attr.indicesCount++] = ndx
-    attr.indices[attr.indicesCount++] = ndx + 2
-    attr.indices[attr.indicesCount++] = ndx + 1
-    attr.indices[attr.indicesCount++] = ndx + 2
-    attr.indices[attr.indicesCount++] = ndx + 3
-    attr.indices[attr.indicesCount++] = ndx + 1
-    ndx += 4
-  }
-
-  attr.positions.push(...attr.t_positions!)
-  attr.normals.push(...attr.t_normals!)
-  attr.colors.push(...attr.t_colors!)
-  attr.uvs.push(...attr.t_uvs!)
-
-  delete attr.t_positions
-  delete attr.t_normals
-  delete attr.t_colors
-  delete attr.t_uvs
+  attr.indicesCount = opaqueBucket.indicesCount
 
   attr.positions = new Float32Array(attr.positions) as any
   attr.normals = new Float32Array(attr.normals) as any
@@ -666,6 +684,19 @@ export function getSectionGeometry(sx: number, sy: number, sz: number, world: Wo
     attr.indices = new Uint32Array(attr.indices)
   } else {
     attr.indices = new Uint16Array(attr.indices)
+  }
+
+  if (blendBucket.positions.length > 0) {
+    const blendUsing32 = arrayNeedsUint32(blendBucket.indices)
+    attr.blend = {
+      positions: new Float32Array(blendBucket.positions),
+      normals: new Float32Array(blendBucket.normals),
+      colors: new Float32Array(blendBucket.colors),
+      uvs: new Float32Array(blendBucket.uvs),
+      indices: blendUsing32
+        ? new Uint32Array(blendBucket.indices)
+        : new Uint16Array(blendBucket.indices),
+    }
   }
 
   tsLog(`[TS] Final geometry summary:`)

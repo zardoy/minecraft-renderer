@@ -29,6 +29,15 @@ export type CustomBlockModels = {
 
 export type MesherConfig = typeof defaultMesherConfig
 
+/** Vertex/index arrays for one opaque or blend geometry bucket. */
+export type MesherGeometryBucketData = {
+  positions: Float32Array
+  normals: Float32Array
+  colors: Float32Array
+  uvs: Float32Array
+  indices: Uint32Array | Uint16Array
+}
+
 export type MesherGeometryOutput = {
   sectionYNumber: number,
   chunkKey: string,
@@ -47,10 +56,8 @@ export type MesherGeometryOutput = {
   normals: any,
   colors: any,
   uvs: any,
-  t_positions?: number[],
-  t_normals?: number[],
-  t_colors?: number[],
-  t_uvs?: number[],
+  /** Per-section blend geometry (water, lava, stained glass, ice, etc.). */
+  blend?: MesherGeometryBucketData,
 
   indices: Uint32Array | Uint16Array | number[],
   indicesCount: number,

@@ -10,6 +10,13 @@ export interface ExportedSection {
     uvs: number[]
     indices: number[]
   }
+  blendGeometry?: {
+    positions: number[]
+    normals: number[]
+    colors: number[]
+    uvs: number[]
+    indices: number[]
+  }
   shaderCubes?: {
     words: Uint32Array
     count: number

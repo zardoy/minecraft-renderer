@@ -1017,6 +1017,15 @@ export class WorldRendererThree extends WorldRendererCommon {
       finalDistance = Math.max(0.5, boxHit - 0.2)
     }
 
+    const legacyGlobalHit = this.chunkMeshManager.raycastGlobalLegacySections(
+      raycaster,
+      pos,
+      maxCenterDistance,
+    )
+    if (legacyGlobalHit !== undefined) {
+      finalDistance = Math.max(0.5, legacyGlobalHit - 0.2)
+    }
+
     const finalPos = new Vec3(
       pos.x + direction.x * finalDistance,
       pos.y + direction.y * finalDistance,
@@ -1279,6 +1288,11 @@ export class WorldRendererThree extends WorldRendererCommon {
       globalBuffer.setCameraOrigin(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
       globalBuffer.compactStep()
       globalBuffer.uploadDirtyRange()
+    }
+    const globalLegacyBuffer = this.chunkMeshManager.globalLegacyBuffer
+    if (globalLegacyBuffer) {
+      globalLegacyBuffer.setCameraOrigin(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
+      globalLegacyBuffer.uploadDirtyRange()
     }
     this.chunkMeshManager.setLegacyCameraOrigin(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
     this.chunkMeshManager.updateLegacySectionCullAndSort(

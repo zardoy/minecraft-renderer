@@ -3,6 +3,7 @@ import type { WorldRendererThree } from '../worldRendererThree'
 import type { RendererModuleController, RendererModuleManifest } from '../rendererModuleSystem'
 import type { MesherGeometryOutput } from '../../mesher-shared/shared'
 import type { GlobalBlockBufferShaderData } from '../globalBlockBuffer'
+import type { LegacySectionGeometryData } from '../globalLegacyBuffer'
 
 const SCI_FI_CYAN = new THREE.Color(13 / 255, 234 / 255, 238 / 255)
 const CHUNKS_THRESHOLD = 9
@@ -25,6 +26,8 @@ interface RevealingSection {
   renderMeshRefs: THREE.Mesh[]
   /** Shader cubes temporarily removed from globalBlockBuffer during reveal. */
   globalShaderRestore?: GlobalBlockBufferShaderData
+  /** Opaque legacy temporarily removed from globalLegacyBuffer during reveal. */
+  globalLegacyRestore?: LegacySectionGeometryData
   wireframeMs: number
   revealMs: number
 }
@@ -301,6 +304,7 @@ export class SciFiWorldRevealModule implements RendererModuleController {
   private sectionHasRevealContent(geometry: MesherGeometryOutput): boolean {
     if ((geometry.wireframePositions?.length ?? 0) > 0) return true
     if ((geometry.positions?.length ?? 0) > 0) return true
+    if ((geometry.blend?.positions.length ?? 0) > 0) return true
     return (geometry.shaderCubes?.count ?? 0) > 0
   }
 
@@ -455,6 +459,9 @@ export class SciFiWorldRevealModule implements RendererModuleController {
     const global = this.worldRenderer.chunkMeshManager.globalBlockBuffer
     const globalShaderRestore = global?.hasSection(key) ? global.takeSectionData(key) : undefined
 
+    const globalLegacy = this.worldRenderer.chunkMeshManager.globalLegacyBuffer
+    const globalLegacyRestore = globalLegacy?.hasSection(key) ? globalLegacy.takeSectionData(key) : undefined
+
     const renderMeshRefs = this.hideSectionRenderMeshes(key)
     // Main wireframe
     const wireframe = new THREE.LineSegments(wireframeGeom, this.wireframeMaterial.clone())
@@ -490,6 +497,7 @@ export class SciFiWorldRevealModule implements RendererModuleController {
       phase: 'wireframe',
       renderMeshRefs,
       globalShaderRestore,
+      globalLegacyRestore,
       wireframeMs,
       revealMs,
     }
@@ -692,12 +700,24 @@ export class SciFiWorldRevealModule implements RendererModuleController {
     }
 
     this.worldRenderer.chunkMeshManager.migrateDeferredShaderToGlobal(section.key)
+    this.worldRenderer.chunkMeshManager.migrateDeferredLegacyToGlobal(section.key)
 
     if (section.globalShaderRestore) {
       this.worldRenderer.chunkMeshManager.globalBlockBuffer?.addSection(
         section.key,
         section.globalShaderRestore.words,
         section.globalShaderRestore.count,
+      )
+    }
+
+    if (section.globalLegacyRestore) {
+      const r = section.globalLegacyRestore
+      this.worldRenderer.chunkMeshManager.globalLegacyBuffer?.addSection(
+        section.key,
+        { positions: r.positions, colors: r.colors, uvs: r.uvs, indices: r.indices },
+        r.sx,
+        r.sy,
+        r.sz,
       )
     }
 

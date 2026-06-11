@@ -20,18 +20,44 @@ export function exportWorldGeometry(
 ): ExportedWorldGeometry {
   const sections: ExportedSection[] = []
 
+  const globalLegacy = worldRenderer.chunkMeshManager.globalLegacyBuffer
+
   for (const [key, sectionObject] of Object.entries(worldRenderer.sectionObjects)) {
-    const mesh = sectionObject.children.find(child => child.name === 'mesh') as THREE.Mesh | undefined
-    if (!mesh?.geometry) continue
+    const positions: number[] = []
+    const normals: number[] = []
+    const colors: number[] = []
+    const uvs: number[] = []
+    const indices: number[] = []
 
-    const { geometry } = mesh
-    const positionAttr = geometry.getAttribute('position') as THREE.BufferAttribute
-    const normalAttr = geometry.getAttribute('normal') as THREE.BufferAttribute
-    const colorAttr = geometry.getAttribute('color') as THREE.BufferAttribute
-    const uvAttr = geometry.getAttribute('uv') as THREE.BufferAttribute
-    const indexAttr = geometry.index!
+    const globalSlot = globalLegacy?.getSectionGeometryData(key)
+    if (globalSlot) {
+      positions.push(...globalSlot.positions)
+      colors.push(...globalSlot.colors)
+      uvs.push(...globalSlot.uvs)
+      indices.push(...globalSlot.indices)
+    }
 
-    if (!positionAttr || !indexAttr) continue
+    const blendMesh = sectionObject.children.find(child => child.name === 'mesh') as THREE.Mesh | undefined
+    if (blendMesh?.geometry) {
+      const { geometry } = blendMesh
+      const positionAttr = geometry.getAttribute('position') as THREE.BufferAttribute
+      const normalAttr = geometry.getAttribute('normal') as THREE.BufferAttribute
+      const colorAttr = geometry.getAttribute('color') as THREE.BufferAttribute
+      const uvAttr = geometry.getAttribute('uv') as THREE.BufferAttribute
+      const indexAttr = geometry.index
+      if (positionAttr && indexAttr) {
+        const vertOffset = positions.length / 3
+        positions.push(...positionAttr.array as ArrayLike<number>)
+        if (normalAttr) normals.push(...normalAttr.array as ArrayLike<number>)
+        if (colorAttr) colors.push(...colorAttr.array as ArrayLike<number>)
+        if (uvAttr) uvs.push(...uvAttr.array as ArrayLike<number>)
+        for (const idx of indexAttr.array as ArrayLike<number>) {
+          indices.push(idx + vertOffset)
+        }
+      }
+    }
+
+    if (positions.length === 0 || indices.length === 0) continue
 
     sections.push({
       key,
@@ -41,12 +67,12 @@ export function exportWorldGeometry(
         z: sectionObject.worldZ ?? 0,
       },
       geometry: {
-        positions: [...positionAttr.array],
-        normals: normalAttr ? [...normalAttr.array] : [],
-        colors: colorAttr ? [...colorAttr.array] : [],
-        uvs: uvAttr ? [...uvAttr.array] : [],
-        indices: [...indexAttr.array]
-      }
+        positions,
+        normals,
+        colors,
+        uvs,
+        indices,
+      },
     })
   }
 
