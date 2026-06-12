@@ -148,12 +148,18 @@ const PAL: Record<V2SceneId, ScenePalette> = {
     ambient: 0x06_00_10, dir: 0x99_33_ff, pt1: 0xaa_44_ff, pt2: 0x44_00_aa, name: 'THE END'
   },
   cyber: {
-    bg: 0x00_0a_06, fog: 0x00_0a_06, fogD: 0.010,
-    blocks: [0x00_ff_ff, 0x00_ff_88, 0xaa_ff_00, 0x00_cc_ff, 0x66_ff_00, 0x00_ff_ee],
-    emit: [0x00_22_11, 0x00_1a_00, 0x00_1a_22],
-    nebula: [0x00_1a_12, 0x00_14_00, 0x00_12_1a],
-    galFn: b => new THREE.Color(0, b, b * 0.6),
-    ambient: 0x00_1a_0d, dir: 0x00_ff_aa, pt1: 0x00_ff_cc, pt2: 0x44_ff_00, name: 'CYBER'
+    bg: 0x0c_18_22, fog: 0x0c_18_22, fogD: 0.008,
+    blocks: [0x00_ff_ff, 0x44_ff_cc, 0xaa_ff_44, 0x66_dd_ff, 0x88_ff_66, 0x00_ff_aa],
+    emit: [0x0a_2a_33, 0x0a_33_22, 0x0a_28_38],
+    nebula: [0x12_30_40, 0x18_38_28, 0x14_32_44],
+    galFn: b => new THREE.Color(b * 0.15, b * 0.85, b * 0.95),
+    ambient: 0x1a_30_40, dir: 0x66_ff_cc, pt1: 0x44_ff_ee, pt2: 0x99_ff_44, name: 'CYBER',
+    starColor: 0xcc_f0_ff,
+    starOpacity: 0.75,
+    galaxyOpacity: 0.62,
+    nebulaOpacity: 0.36,
+    edgeLineColor: 0x44_ff_dd,
+    blockOpacity: [0.38, 0.54]
   },
   light: {
     bg: 0x88_98_b0,
