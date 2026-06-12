@@ -28,6 +28,8 @@ interface RevealingSection {
   globalShaderRestore?: GlobalBlockBufferShaderData
   /** Opaque legacy temporarily removed from globalLegacyBuffer during reveal. */
   globalLegacyRestore?: LegacySectionGeometryData
+  /** Blend legacy temporarily removed from globalLegacyBlendBuffer during reveal. */
+  globalLegacyBlendRestore?: LegacySectionGeometryData
   wireframeMs: number
   revealMs: number
 }
@@ -462,6 +464,9 @@ export class SciFiWorldRevealModule implements RendererModuleController {
     const globalLegacy = this.worldRenderer.chunkMeshManager.globalLegacyBuffer
     const globalLegacyRestore = globalLegacy?.hasSection(key) ? globalLegacy.takeSectionData(key) : undefined
 
+    const globalLegacyBlend = this.worldRenderer.chunkMeshManager.globalLegacyBlendBuffer
+    const globalLegacyBlendRestore = globalLegacyBlend?.hasSection(key) ? globalLegacyBlend.takeSectionData(key) : undefined
+
     const renderMeshRefs = this.hideSectionRenderMeshes(key)
     // Main wireframe
     const wireframe = new THREE.LineSegments(wireframeGeom, this.wireframeMaterial.clone())
@@ -498,6 +503,7 @@ export class SciFiWorldRevealModule implements RendererModuleController {
       renderMeshRefs,
       globalShaderRestore,
       globalLegacyRestore,
+      globalLegacyBlendRestore,
       wireframeMs,
       revealMs,
     }
@@ -713,6 +719,17 @@ export class SciFiWorldRevealModule implements RendererModuleController {
     if (section.globalLegacyRestore) {
       const r = section.globalLegacyRestore
       this.worldRenderer.chunkMeshManager.globalLegacyBuffer?.addSection(
+        section.key,
+        { positions: r.positions, colors: r.colors, uvs: r.uvs, indices: r.indices },
+        r.sx,
+        r.sy,
+        r.sz,
+      )
+    }
+
+    if (section.globalLegacyBlendRestore) {
+      const r = section.globalLegacyBlendRestore
+      this.worldRenderer.chunkMeshManager.globalLegacyBlendBuffer?.addSection(
         section.key,
         { positions: r.positions, colors: r.colors, uvs: r.uvs, indices: r.indices },
         r.sx,

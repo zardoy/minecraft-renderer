@@ -1294,6 +1294,11 @@ export class WorldRendererThree extends WorldRendererCommon {
       globalLegacyBuffer.setCameraOrigin(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
       globalLegacyBuffer.uploadDirtyRange()
     }
+    const globalLegacyBlendBuffer = this.chunkMeshManager.globalLegacyBlendBuffer
+    if (globalLegacyBlendBuffer) {
+      globalLegacyBlendBuffer.setCameraOrigin(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
+      globalLegacyBlendBuffer.uploadDirtyRange()
+    }
     this.chunkMeshManager.setLegacyCameraOrigin(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
     this.chunkMeshManager.updateLegacySectionCullAndSort(
       cam,

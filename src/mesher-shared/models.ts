@@ -200,18 +200,30 @@ function renderLiquid(world: World, cursor: Vec3, texture: any | undefined, type
     }
 
     if (!needTiles) {
+      // Quad A (front face)
       bucket.indices[bucket.indicesCount++] = baseIndex
       bucket.indices[bucket.indicesCount++] = baseIndex + 1
       bucket.indices[bucket.indicesCount++] = baseIndex + 2
       bucket.indices[bucket.indicesCount++] = baseIndex + 2
       bucket.indices[bucket.indicesCount++] = baseIndex + 1
       bucket.indices[bucket.indicesCount++] = baseIndex + 3
-      bucket.indices[bucket.indicesCount++] = baseIndex
-      bucket.indices[bucket.indicesCount++] = baseIndex + 2
-      bucket.indices[bucket.indicesCount++] = baseIndex + 1
-      bucket.indices[bucket.indicesCount++] = baseIndex + 2
-      bucket.indices[bucket.indicesCount++] = baseIndex + 3
-      bucket.indices[bucket.indicesCount++] = baseIndex + 1
+
+      // Quad B (back face) — duplicate verts so global buffer keeps 6/4 invariant
+      const dupBase = bucket.positions.length / 3
+      for (let v = 0; v < 4; v++) {
+        const src = (baseIndex + v) * 3
+        bucket.positions.push(bucket.positions[src]!, bucket.positions[src + 1]!, bucket.positions[src + 2]!)
+        bucket.normals.push(-dir[0], -dir[1], -dir[2])
+        const uvSrc = (baseIndex + v) * 2
+        bucket.uvs.push(bucket.uvs[uvSrc]!, bucket.uvs[uvSrc + 1]!)
+        bucket.colors.push(bucket.colors[src]!, bucket.colors[src + 1]!, bucket.colors[src + 2]!)
+      }
+      bucket.indices[bucket.indicesCount++] = dupBase
+      bucket.indices[bucket.indicesCount++] = dupBase + 2
+      bucket.indices[bucket.indicesCount++] = dupBase + 1
+      bucket.indices[bucket.indicesCount++] = dupBase + 1
+      bucket.indices[bucket.indicesCount++] = dupBase + 2
+      bucket.indices[bucket.indicesCount++] = dupBase + 3
     }
   }
 }

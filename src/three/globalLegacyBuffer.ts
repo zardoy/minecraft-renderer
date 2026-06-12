@@ -5,9 +5,21 @@ const INDICES_PER_QUAD = 6
 const FLOATS_PER_VERT = 3
 const FLOATS_PER_UV_VERT = 2
 
-const INITIAL_CAPACITY_QUADS = 128_000
-const GROWTH_INCREMENT_QUADS = 128_000
+const DEFAULT_INITIAL_CAPACITY_QUADS = 128_000
+const DEFAULT_GROWTH_INCREMENT_QUADS = 128_000
 const MAX_UPLOAD_QUADS_PER_FRAME = 5_000
+
+export const FULL_DRAW_VISIBLE_FRACTION = 0.75
+export const SPAN_GAP_TOLERANCE_QUADS = 256
+export const MAX_OPAQUE_SPANS = 64
+
+export type GlobalLegacyBufferOptions = {
+  name?: string
+  initialCapacityQuads?: number
+  growthIncrementQuads?: number
+}
+
+export type VisibleSectionSpan = { key: string, distSq: number }
 
 export type LegacySectionGeometry = {
   positions: Float32Array
@@ -23,12 +35,14 @@ export type LegacySectionGeometryData = LegacySectionGeometry & {
 }
 
 /**
- * Single GPU mesh for all legacy opaque+cutout quads.
+ * Single GPU mesh for legacy quads (opaque+cutout or transparent blend).
  * Camera-relative via per-vertex a_origin + u_cameraOrigin uniforms.
  */
 export class GlobalLegacyBuffer {
-  readonly mesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>
+  readonly mesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial | THREE.ShaderMaterial[]>
+  readonly material: THREE.ShaderMaterial
 
+  private readonly growthIncrementQuads: number
   private capacityQuads: number
   private positions: Float32Array
   private colors: Float32Array
@@ -39,12 +53,16 @@ export class GlobalLegacyBuffer {
   private freeList: Array<{ start: number, count: number }> = []
   private highWatermark = 0
   private pendingRanges: Array<{ start: number, end: number }> = []
+  private readonly _spanScratch: Array<{ start: number, count: number }> = []
 
   constructor (
     material: THREE.ShaderMaterial,
     scene: THREE.Object3D,
+    opts?: GlobalLegacyBufferOptions,
   ) {
-    this.capacityQuads = INITIAL_CAPACITY_QUADS
+    this.material = material
+    this.growthIncrementQuads = opts?.growthIncrementQuads ?? DEFAULT_GROWTH_INCREMENT_QUADS
+    this.capacityQuads = opts?.initialCapacityQuads ?? DEFAULT_INITIAL_CAPACITY_QUADS
     const maxVerts = this.capacityQuads * VERTS_PER_QUAD
     this.positions = new Float32Array(maxVerts * FLOATS_PER_VERT)
     this.colors = new Float32Array(maxVerts * FLOATS_PER_VERT)
@@ -71,13 +89,24 @@ export class GlobalLegacyBuffer {
     geometry.setDrawRange(0, 0)
     geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), Infinity)
 
-    this.mesh = new THREE.Mesh(geometry, material)
-    this.mesh.name = 'globalLegacyOpaque'
+    this.mesh = new THREE.Mesh(geometry, [material])
+    this.mesh.name = opts?.name ?? 'globalLegacyOpaque'
     this.mesh.frustumCulled = false
     this.mesh.matrixAutoUpdate = false
     this.mesh.matrix.identity()
     this.mesh.position.set(0, 0, 0)
     scene.add(this.mesh)
+    this.syncDefaultDrawGroups()
+  }
+
+  private syncDefaultDrawGroups (): void {
+    const geometry = this.mesh.geometry
+    geometry.clearGroups()
+    const indexCount = this.highWatermark * INDICES_PER_QUAD
+    if (indexCount > 0) {
+      geometry.addGroup(0, indexCount, 0)
+    }
+    geometry.setDrawRange(0, indexCount)
   }
 
   addSection (
@@ -137,8 +166,93 @@ export class GlobalLegacyBuffer {
 
     this.sectionSlots.set(sectionKey, slot)
     this.markDirty(slot.start, slot.start + quadCount - 1)
-    this.mesh.geometry.setDrawRange(0, this.highWatermark * INDICES_PER_QUAD)
+    this.syncDefaultDrawGroups()
     return true
+  }
+
+  updateDrawSpans (visible: VisibleSectionSpan[], mode: 'opaque' | 'sortedBlend'): void {
+    const geometry = this.mesh.geometry
+    geometry.clearGroups()
+
+    if (this.highWatermark === 0) {
+      geometry.setDrawRange(0, 0)
+      return
+    }
+
+    const spans = this._spanScratch
+    spans.length = 0
+    let visibleQuadCount = 0
+
+    for (const entry of visible) {
+      const slot = this.sectionSlots.get(entry.key)
+      if (!slot) continue
+      spans.push({ start: slot.start, count: slot.count })
+      visibleQuadCount += slot.count
+    }
+
+    if (spans.length === 0) {
+      geometry.setDrawRange(0, 0)
+      return
+    }
+
+    if (mode === 'opaque') {
+      if (visibleQuadCount >= this.highWatermark * FULL_DRAW_VISIBLE_FRACTION) {
+        geometry.addGroup(0, this.highWatermark * INDICES_PER_QUAD, 0)
+        geometry.setDrawRange(0, this.highWatermark * INDICES_PER_QUAD)
+        return
+      }
+
+      spans.sort((a, b) => a.start - b.start)
+      this.mergeOpaqueSpans(spans)
+      this.capOpaqueSpans(spans)
+
+      for (const span of spans) {
+        geometry.addGroup(span.start * INDICES_PER_QUAD, span.count * INDICES_PER_QUAD, 0)
+      }
+    } else {
+      visible.sort((a, b) => b.distSq - a.distSq)
+      for (const entry of visible) {
+        const slot = this.sectionSlots.get(entry.key)
+        if (!slot) continue
+        geometry.addGroup(slot.start * INDICES_PER_QUAD, slot.count * INDICES_PER_QUAD, 0)
+      }
+    }
+
+    geometry.setDrawRange(0, this.highWatermark * INDICES_PER_QUAD)
+  }
+
+  private mergeOpaqueSpans (spans: Array<{ start: number, count: number }>): void {
+    if (spans.length < 2) return
+    let i = 0
+    while (i < spans.length - 1) {
+      const cur = spans[i]!
+      const next = spans[i + 1]!
+      const gap = next.start - (cur.start + cur.count)
+      if (gap <= SPAN_GAP_TOLERANCE_QUADS) {
+        cur.count = next.start + next.count - cur.start
+        spans.splice(i + 1, 1)
+      } else {
+        i++
+      }
+    }
+  }
+
+  private capOpaqueSpans (spans: Array<{ start: number, count: number }>): void {
+    while (spans.length > MAX_OPAQUE_SPANS) {
+      let bestIdx = 0
+      let bestGap = Infinity
+      for (let i = 0; i < spans.length - 1; i++) {
+        const gap = spans[i + 1]!.start - (spans[i]!.start + spans[i]!.count)
+        if (gap < bestGap) {
+          bestGap = gap
+          bestIdx = i
+        }
+      }
+      const cur = spans[bestIdx]!
+      const next = spans[bestIdx + 1]!
+      cur.count = next.start + next.count - cur.start
+      spans.splice(bestIdx + 1, 1)
+    }
   }
 
   hasSection (sectionKey: string): boolean {
@@ -197,7 +311,7 @@ export class GlobalLegacyBuffer {
     this.sectionSlots.delete(sectionKey)
     this.insertFreeSlot(slot)
     this.shrinkHighWatermark()
-    this.mesh.geometry.setDrawRange(0, this.highWatermark * INDICES_PER_QUAD)
+    this.syncDefaultDrawGroups()
   }
 
   uploadDirtyRange (): void {
@@ -245,9 +359,9 @@ export class GlobalLegacyBuffer {
     const ix = Math.floor(x)
     const iy = Math.floor(y)
     const iz = Math.floor(z)
-    const u = this.mesh.material.uniforms.u_cameraOrigin
+    const u = this.material.uniforms.u_cameraOrigin
     if (u?.value?.set) u.value.set(ix, iy, iz)
-    const uf = this.mesh.material.uniforms.u_cameraOriginFrac
+    const uf = this.material.uniforms.u_cameraOriginFrac
     if (uf?.value?.set) uf.value.set(x - ix, y - iy, z - iz)
   }
 
@@ -308,7 +422,7 @@ export class GlobalLegacyBuffer {
     this.freeList.length = 0
     this.highWatermark = 0
     this.pendingRanges.length = 0
-    this.mesh.geometry.setDrawRange(0, 0)
+    this.syncDefaultDrawGroups()
   }
 
   dispose (): void {
@@ -390,7 +504,7 @@ export class GlobalLegacyBuffer {
 
   private growCapacity (minQuads: number): void {
     let newCap = this.capacityQuads
-    while (newCap < minQuads) newCap += GROWTH_INCREMENT_QUADS
+    while (newCap < minQuads) newCap += this.growthIncrementQuads
 
     const oldMaxVerts = this.capacityQuads * VERTS_PER_QUAD
     const newMaxVerts = newCap * VERTS_PER_QUAD

@@ -442,12 +442,24 @@ const renderLiquidToGeometry = (
       baseIndex + 2,
       baseIndex + 1,
       baseIndex + 3,
-      baseIndex,
-      baseIndex + 2,
-      baseIndex + 1,
-      baseIndex + 2,
-      baseIndex + 3,
-      baseIndex + 1,
+    )
+
+    const dupBase = positions.length / 3
+    for (let v = 0; v < 4; v++) {
+      const src = (baseIndex + v) * 3
+      positions.push(positions[src]!, positions[src + 1]!, positions[src + 2]!)
+      normals.push(-dir[0], -dir[1], -dir[2])
+      const uvSrc = (baseIndex + v) * 2
+      uvs.push(uvs[uvSrc]!, uvs[uvSrc + 1]!)
+      colors.push(colors[src]!, colors[src + 1]!, colors[src + 2]!)
+    }
+    indices.push(
+      dupBase,
+      dupBase + 2,
+      dupBase + 1,
+      dupBase + 1,
+      dupBase + 2,
+      dupBase + 3,
     )
   }
 }

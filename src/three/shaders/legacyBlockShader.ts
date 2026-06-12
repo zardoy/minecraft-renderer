@@ -176,6 +176,28 @@ export function createGlobalLegacyBlockMaterial (): THREE.ShaderMaterial {
   })
 }
 
+/** Global transparent blend buffer — same shaders as opaque global, blend material flags. */
+export function createGlobalLegacyBlendMaterial (): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    vertexShader: globalVertexShader,
+    fragmentShader,
+    uniforms: THREE.UniformsUtils.merge([
+      THREE.UniformsLib.fog,
+      {
+        u_atlas: { value: null },
+        u_cameraOrigin: { value: new THREE.Vector3() },
+        u_cameraOriginFrac: { value: new THREE.Vector3() },
+      },
+    ]),
+    transparent: true,
+    depthWrite: true,
+    depthTest: true,
+    vertexColors: true,
+    glslVersion: THREE.GLSL3,
+    fog: true,
+  })
+}
+
 /** Integer + fractional camera split — matches GlobalBlockBuffer.setCameraOrigin. */
 export function setLegacyCameraOrigin (material: THREE.ShaderMaterial, x: number, y: number, z: number): void {
   const ix = Math.floor(x)

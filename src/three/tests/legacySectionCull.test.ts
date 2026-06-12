@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest'
 import * as THREE from 'three'
-import { setupLegacySectionMatrix, updateLegacySectionCullState } from '../legacySectionCull'
+import { sectionIntersectsFrustum, setupLegacySectionMatrix, updateLegacySectionCullState } from '../legacySectionCull'
 
 test('setupLegacySectionMatrix: translation set once and stable across frames', () => {
   const mesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial())
@@ -34,6 +34,17 @@ test('updateLegacySectionCullState: frustum hit sets visible and nearer section 
   expect(meshNear.visible).toBe(true)
   expect(meshFar.visible).toBe(true)
   expect(meshFar.renderOrder).toBeLessThan(meshNear.renderOrder)
+})
+
+test('sectionIntersectsFrustum: returns distSq and visibility', () => {
+  const frustum = { intersectsBox: () => true } as unknown as THREE.Frustum
+  const box = new THREE.Box3()
+  const boxMin = new THREE.Vector3()
+  const boxMax = new THREE.Vector3()
+
+  const result = sectionIntersectsFrustum(10, 0, 0, 0, 0, 0, frustum, box, boxMin, boxMax)
+  expect(result.visible).toBe(true)
+  expect(result.distSq).toBe(100)
 })
 
 test('updateLegacySectionCullState: outside frustum hides mesh', () => {

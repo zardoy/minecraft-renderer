@@ -4,7 +4,9 @@ import {
   raycastAabb,
   raycastShaderBlocksAabb,
   raycastSectionAabb,
+  sectionAabbIntersectsRay,
 } from '../../three/sectionRaycastAabb'
+import { LEGACY_SECTION_HALF_EXTENT } from '../../three/legacySectionCull'
 import { SHADER_CUBES_WORDS_PER_FACE } from '../bridge/shaderCubeBridge'
 import { WORD0 } from '../../three/shaders/cubeBlockShader'
 
@@ -100,6 +102,24 @@ test('raycastShaderBlocksAabb: SoA stride-1 layout (GlobalBlockBuffer style)', (
   const t = raycastShaderBlocksAabb(w0, 0, 2, 1, 8, 8, 8, 4.5, 5.5, 8.5, 1, 0, 0, 10, visitGen, visitStamp)!
   expect(t).toBeGreaterThan(0)
   expect(t).toBeLessThan(4)
+})
+
+const SECTION_HALF = LEGACY_SECTION_HALF_EXTENT + 0.01
+
+test('sectionAabbIntersectsRay: ray toward section center within far', () => {
+  expect(sectionAabbIntersectsRay(8, 8, 8, 4, 8, 8, 1, 0, 0, 4, SECTION_HALF)).toBe(true)
+})
+
+test('sectionAabbIntersectsRay: far shorter than gap to section', () => {
+  expect(sectionAabbIntersectsRay(8, 8, 8, -20, 8, 8, 1, 0, 0, 3, SECTION_HALF)).toBe(false)
+})
+
+test('sectionAabbIntersectsRay: parallel offset ray misses box', () => {
+  expect(sectionAabbIntersectsRay(8, 8, 8, -20, 8, -20, 1, 0, 0, 100, SECTION_HALF)).toBe(false)
+})
+
+test('sectionAabbIntersectsRay: origin inside box', () => {
+  expect(sectionAabbIntersectsRay(8, 8, 8, 8, 8, 8, 0, 1, 0, 4, SECTION_HALF)).toBe(true)
 })
 
 test('raycastAabb: narrow floor slab blocks downward ray', () => {

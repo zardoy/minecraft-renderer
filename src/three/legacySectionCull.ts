@@ -21,9 +21,36 @@ export function setupLegacySectionMatrix (
   mesh.frustumCulled = false
 }
 
+export function sectionIntersectsFrustum (
+  sectionWorldX: number,
+  sectionWorldY: number,
+  sectionWorldZ: number,
+  cameraWorldX: number,
+  cameraWorldY: number,
+  cameraWorldZ: number,
+  frustum: THREE.Frustum,
+  box: THREE.Box3,
+  boxMin: THREE.Vector3,
+  boxMax: THREE.Vector3,
+): { visible: boolean, distSq: number } {
+  const dx = sectionWorldX - cameraWorldX
+  const dy = sectionWorldY - cameraWorldY
+  const dz = sectionWorldZ - cameraWorldZ
+
+  const half = LEGACY_SECTION_HALF_EXTENT + CULL_BOX_EPSILON
+  boxMin.set(dx - half, dy - half, dz - half)
+  boxMax.set(dx + half, dy + half, dz + half)
+  box.set(boxMin, boxMax)
+
+  return {
+    visible: frustum.intersectsBox(box),
+    distSq: dx * dx + dy * dy + dz * dz,
+  }
+}
+
 /**
  * Per-frame frustum cull + back-to-front renderOrder for one legacy section.
- * Precursor to Stage 2c span culling — same section loop shape.
+ * Used for pooled per-section meshes (reveal defer + invariant fallback).
  */
 export function updateLegacySectionCullState (
   mesh: THREE.Mesh,
@@ -38,15 +65,18 @@ export function updateLegacySectionCullState (
   boxMin: THREE.Vector3,
   boxMax: THREE.Vector3,
 ): void {
-  const dx = sectionWorldX - cameraWorldX
-  const dy = sectionWorldY - cameraWorldY
-  const dz = sectionWorldZ - cameraWorldZ
-
-  const half = LEGACY_SECTION_HALF_EXTENT + CULL_BOX_EPSILON
-  boxMin.set(dx - half, dy - half, dz - half)
-  boxMax.set(dx + half, dy + half, dz + half)
-  box.set(boxMin, boxMax)
-
-  mesh.visible = frustum.intersectsBox(box)
-  mesh.renderOrder = -(dx * dx + dy * dy + dz * dz)
+  const { visible, distSq } = sectionIntersectsFrustum(
+    sectionWorldX,
+    sectionWorldY,
+    sectionWorldZ,
+    cameraWorldX,
+    cameraWorldY,
+    cameraWorldZ,
+    frustum,
+    box,
+    boxMin,
+    boxMax,
+  )
+  mesh.visible = visible
+  mesh.renderOrder = -distSq
 }
