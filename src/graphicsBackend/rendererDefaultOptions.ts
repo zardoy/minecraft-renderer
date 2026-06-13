@@ -196,7 +196,7 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
     requiresRestart: true
   },
   rendererShaderCubeBlocks: {
-    text: 'Instanced shader cubes',
+    text: '(UNSTABLE) Instanced shader cubes',
     tooltip: 'Render full blocks through the global GPU instanced path. Requires WASM mesher and WebGL2.',
     requiresChunksReload: true,
   },

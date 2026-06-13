@@ -94,6 +94,31 @@ export function isPointInsideAabb (
   return ox >= minX && ox <= maxX && oy >= minY && oy <= maxY && oz >= minZ && oz <= maxZ
 }
 
+/** True if a `far`-bounded ray from (ox,oy,oz) dir (dx,dy,dz) crosses or starts inside
+ *  the cube-section AABB centered at (cx,cy,cz) with the given half-extent. */
+export function sectionAabbIntersectsRay (
+  cx: number,
+  cy: number,
+  cz: number,
+  ox: number,
+  oy: number,
+  oz: number,
+  dx: number,
+  dy: number,
+  dz: number,
+  far: number,
+  halfExtent: number,
+): boolean {
+  const minX = cx - halfExtent
+  const minY = cy - halfExtent
+  const minZ = cz - halfExtent
+  const maxX = cx + halfExtent
+  const maxY = cy + halfExtent
+  const maxZ = cz + halfExtent
+  if (isPointInsideAabb(ox, oy, oz, minX, minY, minZ, maxX, maxY, maxZ)) return true
+  return raycastAabb(ox, oy, oz, dx, dy, dz, minX, minY, minZ, maxX, maxY, maxZ, far) !== undefined
+}
+
 /** Ray–AABB entry distance, or undefined. Ignores hits when origin is inside the box. */
 export function raycastAabb (
   ox: number,

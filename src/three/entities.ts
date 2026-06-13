@@ -282,17 +282,22 @@ export class Entities {
     if (!('isMoving' in anim) || !('isRunning' in anim)) return
     if (dt <= 0) return
 
+    const wp = this.worldRenderer.sceneOrigin.getWorldPosition(entity)
+    const px = wp?.x ?? entity.position.x
+    const py = wp?.y ?? entity.position.y
+    const pz = wp?.z ?? entity.position.z
+
     const cached = this.motionCache.get(entityKey)
     if (!cached) {
-      this.motionCache.set(entityKey, { pos: entity.position.clone(), speed: 0 })
+      this.motionCache.set(entityKey, { pos: new THREE.Vector3(px, py, pz), speed: 0 })
       anim.isMoving = false
       anim.isRunning = false
       return
     }
 
-    const dx = entity.position.x - cached.pos.x
-    const dz = entity.position.z - cached.pos.z
-    cached.pos.copy(entity.position)
+    const dx = px - cached.pos.x
+    const dz = pz - cached.pos.z
+    cached.pos.set(px, py, pz)
 
     const instSpeed = Math.hypot(dx, dz) / Math.max(dt, 1e-6)
 

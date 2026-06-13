@@ -14,6 +14,7 @@ import type { MesherGeometryOutput } from '../../mesher-shared/shared'
 import { SECTION_HEIGHT } from '../../mesher-shared/shared'
 import type { World } from '../../mesher-shared/world'
 import { resolveBlockPropertiesForMeshing } from '../../mesher-shared/blockPropertiesForMeshing'
+import { isSemiTransparentBlockName } from '../../mesher-shared/models'
 import {
   buildShaderCubesFromWords,
   getShaderCubeResources,
@@ -441,12 +442,24 @@ const renderLiquidToGeometry = (
       baseIndex + 2,
       baseIndex + 1,
       baseIndex + 3,
-      baseIndex,
-      baseIndex + 2,
-      baseIndex + 1,
-      baseIndex + 2,
-      baseIndex + 3,
-      baseIndex + 1,
+    )
+
+    const dupBase = positions.length / 3
+    for (let v = 0; v < 4; v++) {
+      const src = (baseIndex + v) * 3
+      positions.push(positions[src]!, positions[src + 1]!, positions[src + 2]!)
+      normals.push(-dir[0], -dir[1], -dir[2])
+      const uvSrc = (baseIndex + v) * 2
+      uvs.push(uvs[uvSrc]!, uvs[uvSrc + 1]!)
+      colors.push(colors[src]!, colors[src + 1]!, colors[src + 2]!)
+    }
+    indices.push(
+      dupBase,
+      dupBase + 2,
+      dupBase + 1,
+      dupBase + 1,
+      dupBase + 2,
+      dupBase + 3,
     )
   }
 }
@@ -503,6 +516,12 @@ export function renderWasmOutputToGeometry(
   const uvs: number[] = []
   const indices: number[] = []
 
+  const blendPositions: number[] = []
+  const blendNormals: number[] = []
+  const blendColors: number[] = []
+  const blendUvs: number[] = []
+  const blendIndices: number[] = []
+
   const liquidQueue: Array<{
     pos: Vec3,
     type: number,
@@ -510,8 +529,6 @@ export function renderWasmOutputToGeometry(
     water: boolean,
     isRealWater: boolean,
   }> = []
-
-  let currentIndex = 0
 
   const sectionHeight = options?.sectionHeight ?? SECTION_HEIGHT
   const shaderCubesEnabled = options?.shaderCubes !== false
@@ -600,6 +617,13 @@ export function renderWasmOutputToGeometry(
 
     const models = cachedModel.models
     if (!models || models.length == 0) continue
+
+    const routeToBlend = prismBlock.transparent && isSemiTransparentBlockName(cachedModel.blockName)
+    const tgtPos = routeToBlend ? blendPositions : positions
+    const tgtNorm = routeToBlend ? blendNormals : normals
+    const tgtCol = routeToBlend ? blendColors : colors
+    const tgtUv = routeToBlend ? blendUvs : uvs
+    const tgtIdx = routeToBlend ? blendIndices : indices
 
     const faceNameToIndex: Record<string, number> = {
       'up': 0,
@@ -717,7 +741,7 @@ export function renderWasmOutputToGeometry(
 
           const tint = getTint(matchingEFace, cachedModel.blockName, cachedModel.blockProps, biome, world)
 
-          const baseIndex = currentIndex
+          const baseIndex = tgtPos.length / 3
           const computedAoValues = [3, 3, 3, 3]
           for (let cornerIdx = 0; cornerIdx < 4; cornerIdx++) {
             const pos = corners[cornerIdx]
@@ -738,9 +762,9 @@ export function renderWasmOutputToGeometry(
               vertex[2] + (bz & 15) - 8
             ]
 
-            positions.push(...worldPos)
+            tgtPos.push(...worldPos)
 
-            normals.push(transformedDir[0], transformedDir[1], transformedDir[2])
+            tgtNorm.push(transformedDir[0], transformedDir[1], transformedDir[2])
 
             const useModelLighting = !cachedModel.isCube && world
 
@@ -818,15 +842,13 @@ export function renderWasmOutputToGeometry(
               light = computeMesherVertexLight(world, ao, cornerLightResult, faceDir)
             }
 
-            colors.push(tint[0] * light!, tint[1] * light!, tint[2] * light!)
+            tgtCol.push(tint[0] * light!, tint[1] * light!, tint[2] * light!)
 
             const baseu = (pos[3] - 0.5) * uvcs - (pos[4] - 0.5) * uvsn + 0.5
             const basev = (pos[3] - 0.5) * uvsn + (pos[4] - 0.5) * uvcs + 0.5
             const finalU = baseu * su + u
             const finalV = basev * sv + v
-            uvs.push(finalU, finalV)
-
-            currentIndex++
+            tgtUv.push(finalU, finalV)
           }
 
           const aoValues = computedAoValues
@@ -839,7 +861,7 @@ export function renderWasmOutputToGeometry(
             tri1 = [baseIndex, baseIndex + 1, baseIndex + 2]
             tri2 = [baseIndex + 2, baseIndex + 1, baseIndex + 3]
           }
-          indices.push(...tri1, ...tri2)
+          tgtIdx.push(...tri1, ...tri2)
         }
       }
     }
@@ -861,11 +883,11 @@ export function renderWasmOutputToGeometry(
         q.biome,
         q.water,
         q.isRealWater,
-        positions,
-        normals,
-        colors,
-        uvs,
-        indices,
+        blendPositions,
+        blendNormals,
+        blendColors,
+        blendUvs,
+        blendIndices,
       )
     }
   }
@@ -882,6 +904,15 @@ export function renderWasmOutputToGeometry(
       uvs,
       indices,
     },
+    ...(blendPositions.length > 0 ? {
+      blendGeometry: {
+        positions: blendPositions,
+        normals: blendNormals,
+        colors: blendColors,
+        uvs: blendUvs,
+        indices: blendIndices,
+      },
+    } : {}),
     ...(shaderCubes ? { shaderCubes } : {}),
   }
 
@@ -1045,6 +1076,15 @@ export function mesherGeometryToExportFormat(
       uvs,
       indices,
     },
+    ...(mesherGeometry.blend ? {
+      blendGeometry: {
+        positions: Array.from(mesherGeometry.blend.positions),
+        normals: Array.from(mesherGeometry.blend.normals),
+        colors: Array.from(mesherGeometry.blend.colors),
+        uvs: Array.from(mesherGeometry.blend.uvs),
+        indices: Array.from(mesherGeometry.blend.indices),
+      },
+    } : {}),
   }
 
   return {

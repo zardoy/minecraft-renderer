@@ -1312,7 +1312,9 @@ function processColumnTick() {
 
         let geometry: MesherGeometryOutput
         let transferable: any[] = []
-        const hasLegacyMesh = (exported?.geometry.indices.length ?? 0) > 0
+        const hasOpaqueMesh = (exported?.geometry.indices.length ?? 0) > 0
+        const hasBlendMesh = (exported?.blendGeometry?.indices.length ?? 0) > 0
+        const hasLegacyMesh = hasOpaqueMesh || hasBlendMesh
         const hasShaderCubes = (exported?.shaderCubes?.count ?? 0) > 0
         if (exported && (hasLegacyMesh || hasShaderCubes)) {
           const maxIndex = exported.geometry.indices.length > 0
@@ -1359,6 +1361,18 @@ function processColumnTick() {
               formatVersion: 3,
             }
           }
+          if (exported.blendGeometry && hasBlendMesh) {
+            const blendMax = Math.max(...exported.blendGeometry.indices)
+            geometry.blend = {
+              positions: new Float32Array(exported.blendGeometry.positions),
+              normals: new Float32Array(exported.blendGeometry.normals),
+              colors: new Float32Array(exported.blendGeometry.colors),
+              uvs: new Float32Array(exported.blendGeometry.uvs),
+              indices: blendMax > 65535
+                ? new Uint32Array(exported.blendGeometry.indices)
+                : new Uint16Array(exported.blendGeometry.indices),
+            }
+          }
           transferable = [
             geometry.positions?.buffer,
             geometry.normals?.buffer,
@@ -1366,6 +1380,12 @@ function processColumnTick() {
             geometry.uvs?.buffer,
             //@ts-ignore
             geometry.indices?.buffer,
+            geometry.blend?.positions?.buffer,
+            geometry.blend?.normals?.buffer,
+            geometry.blend?.colors?.buffer,
+            geometry.blend?.uvs?.buffer,
+            //@ts-ignore
+            geometry.blend?.indices?.buffer,
             geometry.shaderCubes?.words?.buffer,
           ].filter(Boolean)
 
