@@ -270,46 +270,6 @@ export class Entities {
   itemFrameMaps = {} as Record<number, Array<THREE.Mesh<THREE.PlaneGeometry, THREE.MeshLambertMaterial>>>
   pendingModelOverrides = new Map<string, { parts: EntityModelOverridePart[] }>()
 
-  private motionCache = new Map<string, { pos: THREE.Vector3, speed: number }>()
-  private readonly MOVE_ON = 0.05
-  private readonly MOVE_OFF = 0.02
-  private readonly RUN_ON = 4.8
-  private readonly RUN_OFF = 4.2
-
-  private updateAutoWalkFlags(entityKey: string, entity: SceneEntity, dt: number) {
-    if (!entity.playerObject?.animation) return
-    const anim: any = entity.playerObject.animation
-    if (!('isMoving' in anim) || !('isRunning' in anim)) return
-    if (dt <= 0) return
-
-    const cached = this.motionCache.get(entityKey)
-    if (!cached) {
-      this.motionCache.set(entityKey, { pos: entity.position.clone(), speed: 0 })
-      anim.isMoving = false
-      anim.isRunning = false
-      return
-    }
-
-    const dx = entity.position.x - cached.pos.x
-    const dz = entity.position.z - cached.pos.z
-    cached.pos.copy(entity.position)
-
-    const instSpeed = Math.hypot(dx, dz) / Math.max(dt, 1e-6)
-
-    cached.speed = cached.speed * 0.8 + instSpeed * 0.2
-
-    const movingNow = anim.isMoving
-      ? cached.speed > this.MOVE_OFF
-      : cached.speed > this.MOVE_ON
-
-    const runningNow = anim.isRunning
-      ? cached.speed > this.RUN_OFF
-      : cached.speed > this.RUN_ON
-
-    anim.isMoving = movingNow
-    anim.isRunning = movingNow && runningNow
-  }
-
   get entitiesByName(): Record<string, SceneEntity[]> {
     const byName: Record<string, SceneEntity[]> = {}
     for (const entity of Object.values(this.entities)) {
@@ -382,8 +342,6 @@ export class Entities {
     this.entities = {}
     this.currentSkinUrls = {}
 
-    this.motionCache.clear()
-
     // Clean up player entity
     if (this.playerEntity) {
       this.worldRenderer.sceneOrigin.removeAndUntrack(this.playerEntity)
@@ -446,15 +404,13 @@ export class Entities {
       this.setRendering(renderEntitiesConfig)
     }
 
-    const dtRaw = this.clock.getDelta()
-    const dt = Math.min(dtRaw, 1 / 30)
+    const dt = Math.min(this.clock.getDelta(), 1 / 30)
     const botPos = this.worldRenderer.viewerChunkPosition
     const VISIBLE_DISTANCE = 10 * 10
 
     for (const [entityIdRaw, entity] of [...Object.entries(this.entities), ['player_entity', this.playerEntity] as [string, SceneEntity | null]]) {
       if (!entity) continue
 
-      let entityKey = entityIdRaw
       const isPlayerEntity = entityIdRaw === 'player_entity'
 
       if (isPlayerEntity) {
@@ -469,13 +425,9 @@ export class Entities {
             this.worldRenderer.cameraWorldPos.z
           )
         }
-
-        entityKey = String(this.playerEntity?.originalEntity.id ?? 'player_entity')
       }
 
       const { playerObject } = entity
-
-      this.updateAutoWalkFlags(entityKey, entity, dtRaw)
 
       if (playerObject?.animation) {
         playerObject.animation.update(playerObject, dt)
@@ -777,84 +729,31 @@ export class Entities {
     }
   }
 
+  private applyMovementAnimation(
+    playerObject: PlayerObjectType,
+    animation: 'walking' | 'running' | 'oneSwing' | 'idle' | 'crouch' | 'crouchWalking',
+  ): void {
+    const anim = playerObject.animation as WalkingGeneralSwing | undefined
+    if (!anim) return
+
+    if (animation === 'oneSwing') {
+      anim.swingArm()
+      return
+    }
+
+    anim.switchAnimationCallback = null
+    anim.isMoving = animation === 'walking' || animation === 'running' || animation === 'crouchWalking'
+    anim.isRunning = animation === 'running'
+    anim.isCrouched = animation === 'crouch' || animation === 'crouchWalking'
+  }
+
   playAnimation(entityPlayerId, animation: 'walking' | 'running' | 'oneSwing' | 'idle' | 'crouch' | 'crouchWalking') {
-    // TODO CLEANUP!
-    // Handle special player entity ID for bot entity in third person
-    const key = String(entityPlayerId)
-    // `oneSwing` is a one-shot event, not a persistent state: two swings in a row
-    // are both 'oneSwing', so deduping by name would swallow every repeat swing
-    // while standing still. Only dedupe the persistent state animations.
-    if (animation !== 'oneSwing') {
-      if (this.playerPerAnimation[key] === animation) return
-      this.playerPerAnimation[key] = animation
-    }
+    const playerObject = entityPlayerId === 'player_entity'
+      ? this.playerEntity?.playerObject
+      : this.getPlayerObject(entityPlayerId) ?? this.playerEntity?.playerObject
 
-    if (entityPlayerId === 'player_entity' && this.playerEntity?.playerObject) {
-      const { playerObject } = this.playerEntity
-      if (animation === 'oneSwing') {
-        if (playerObject.animation && (playerObject.animation as any).swingArm) {
-          (playerObject.animation as any).swingArm()
-        }
-        return
-      }
-
-      if (playerObject.animation && (playerObject.animation as any).switchAnimationCallback !== undefined) {
-        (playerObject.animation as any).switchAnimationCallback = () => {
-          const anim = playerObject.animation as any
-          if (anim) {
-            anim.isMoving = animation === 'walking' || animation === 'running' || animation === 'crouchWalking'
-            anim.isRunning = animation === 'running'
-            anim.isCrouched = animation === 'crouch' || animation === 'crouchWalking'
-          }
-        }
-      }
-      return
-    }
-
-    // Handle regular entities
-    const playerObject = this.getPlayerObject(entityPlayerId)
-    if (playerObject) {
-      if (animation === 'oneSwing') {
-        if (playerObject.animation && (playerObject.animation as any).swingArm) {
-          (playerObject.animation as any).swingArm()
-        }
-        return
-      }
-
-      if (playerObject.animation && (playerObject.animation as any).switchAnimationCallback !== undefined) {
-        (playerObject.animation as any).switchAnimationCallback = () => {
-          const anim = playerObject.animation as any
-          if (anim) {
-            anim.isMoving = animation === 'walking' || animation === 'running' || animation === 'crouchWalking'
-            anim.isRunning = animation === 'running'
-            anim.isCrouched = animation === 'crouch' || animation === 'crouchWalking'
-          }
-        }
-      }
-      return
-    }
-
-    // Handle player entity (for third person view) - fallback for backwards compatibility
-    if (this.playerEntity?.playerObject) {
-      const { playerObject: playerEntityObject } = this.playerEntity
-      if (animation === 'oneSwing') {
-        if (playerEntityObject.animation && (playerEntityObject.animation as any).swingArm) {
-          (playerEntityObject.animation as any).swingArm()
-        }
-        return
-      }
-
-      if (playerEntityObject.animation && (playerEntityObject.animation as any).switchAnimationCallback !== undefined) {
-        (playerEntityObject.animation as any).switchAnimationCallback = () => {
-          const anim = playerEntityObject.animation as any
-          if (anim) {
-            anim.isMoving = animation === 'walking' || animation === 'running' || animation === 'crouchWalking'
-            anim.isRunning = animation === 'running'
-            anim.isCrouched = animation === 'crouch' || animation === 'crouchWalking'
-          }
-        }
-      }
-    }
+    if (!playerObject) return
+    this.applyMovementAnimation(playerObject, animation)
   }
 
   parseEntityLabel(jsonLike) {
@@ -1339,11 +1238,9 @@ export class Entities {
     }
   }
 
-  playerPerAnimation = {} as Record<number, string>
   onRemoveEntity(entity: import('prismarine-entity').Entity) {
     this.loadedSkinEntityIds.delete(entity.id.toString())
     delete this.currentSkinUrls[entity.id.toString()]
-    this.motionCache.delete(entity.id.toString())
   }
 
   updateMap(mapNumber: string | number, data: string) {
