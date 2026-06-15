@@ -9,7 +9,7 @@ export interface AnimationState {
 }
 
 export class AnimationManager {
-  private readonly clock = new THREE.Clock()
+  private readonly timer = new THREE.Timer()
   private readonly animatedObjects = new Set<THREE.Object3D>()
   state!: AnimationState
 
@@ -46,7 +46,8 @@ export class AnimationManager {
       if (child instanceof THREE.Mesh || child instanceof THREE.Line || child instanceof THREE.Points || child instanceof THREE.Sprite) {
         const originalOnBeforeRender = child.onBeforeRender
         child.onBeforeRender = (renderer, scene, camera, geometry, material, group) => {
-          const delta = this.clock.getDelta()
+          this.timer.update(performance.now())
+          const delta = this.timer.getDelta()
           mixer.update(delta)
           // Call original onBeforeRender if it existed
           originalOnBeforeRender?.(renderer, scene, camera, geometry, material, group)
@@ -122,7 +123,8 @@ export class AnimationManager {
    * Gets the current clock delta (useful for manual updates)
    */
   getDelta(): number {
-    return this.clock.getDelta()
+    this.timer.update(performance.now())
+    return this.timer.getDelta()
   }
 }
 

@@ -260,7 +260,7 @@ export function getMesh(
   let textureHeight = jsonModel.textureheight ?? 64
   let textureOffset: number[] | undefined
   const useBlockTexture = texture.startsWith('block:')
-  const blocksTexture = worldRenderer?.material.map
+  const blocksTexture = worldRenderer?.material.map as THREE.Texture<HTMLImageElement | ImageBitmap> | null | undefined
   if (useBlockTexture) {
     if (!worldRenderer) throw new Error('worldRenderer is required for block textures')
     const blockName = texture.slice(6)
@@ -368,13 +368,15 @@ export function getMesh(
       material.map = loadedTexture
     }, () => {
       // This callback runs after the texture is fully loaded
-      const actualWidth = material.map!.image.width
+      const map = material.map as THREE.Texture<HTMLImageElement | ImageBitmap> | null
+      if (!map) return
+      const actualWidth = map.image.width
       if (actualWidth && textureWidth !== actualWidth) {
-        material.map!.repeat.x = textureWidth / actualWidth
+        map.repeat.x = textureWidth / actualWidth
       }
-      const actualHeight = material.map!.image.height
+      const actualHeight = map.image.height
       if (actualHeight && textureHeight !== actualHeight) {
-        material.map!.repeat.y = textureHeight / actualHeight
+        map.repeat.y = textureHeight / actualHeight
       }
       material.needsUpdate = true
     })

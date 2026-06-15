@@ -20,7 +20,7 @@ import { createGraphicsBackendOffThread } from '../three/graphicsBackendOffThrea
 import { WorldRendererThree } from '../three/worldRendererThree'
 import createGraphicsBackendSingleThread from '../three/graphicsBackendSingleThread'
 
-window.THREE = THREE
+globalThis.THREE = THREE
 
 // Scene configuration interface
 export interface PlaygroundSceneConfig {

@@ -35,7 +35,7 @@ uniform vec3 u_cameraOriginFrac;
 out vec3 vColor;
 out vec2 v_uv;
 
-#ifdef USE_LOGDEPTHBUF
+#ifdef USE_LOGARITHMIC_DEPTH_BUFFER
 out float vFragDepth;
 #endif
 
@@ -51,7 +51,7 @@ void main() {
     vColor = color;
     v_uv = uv;
 
-#ifdef USE_LOGDEPTHBUF
+#ifdef USE_LOGARITHMIC_DEPTH_BUFFER
     vFragDepth = 1.0 + gl_Position.w;
 #endif
 
@@ -69,7 +69,7 @@ uniform sampler2D u_atlas;
 in vec3 vColor;
 in vec2 v_uv;
 
-#ifdef USE_LOGDEPTHBUF
+#ifdef USE_LOGARITHMIC_DEPTH_BUFFER
 uniform float logDepthBufFC;
 in float vFragDepth;
 #endif
@@ -88,7 +88,7 @@ uniform float fogFar;
 out vec4 FragColor;
 
 void writeLogDepth() {
-#ifdef USE_LOGDEPTHBUF
+#ifdef USE_LOGARITHMIC_DEPTH_BUFFER
     gl_FragDepth = log2(vFragDepth) * logDepthBufFC * 0.5;
 #endif
 }
@@ -131,7 +131,7 @@ in vec3 a_origin;
 out vec3 vColor;
 out vec2 v_uv;
 
-#ifdef USE_LOGDEPTHBUF
+#ifdef USE_LOGARITHMIC_DEPTH_BUFFER
 out float vFragDepth;
 #endif
 
@@ -147,7 +147,7 @@ void main() {
     vColor = color;
     v_uv = uv;
 
-#ifdef USE_LOGDEPTHBUF
+#ifdef USE_LOGARITHMIC_DEPTH_BUFFER
     vFragDepth = 1.0 + gl_Position.w;
 #endif
 

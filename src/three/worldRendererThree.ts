@@ -42,6 +42,9 @@ type SectionKey = string
 export class WorldRendererThree extends WorldRendererCommon {
   outputFormat = 'threeJs' as const
 
+  /** r184 removed useLegacyLights; physical intensities ≈ legacy / π. */
+  private static readonly LEGACY_TO_PHYSICAL_LIGHT = Math.PI
+
   protected override isShaderCubeBlocksEnabled(): boolean {
     return this.worldRendererConfig.shaderCubeBlocks === true
       && !!this.renderer?.capabilities?.isWebGL2
@@ -59,8 +62,8 @@ export class WorldRendererThree extends WorldRendererCommon {
   get realScene() {
     return this.scene
   }
-  ambientLight = new THREE.AmbientLight(0xcc_cc_cc)
-  directionalLight = new THREE.DirectionalLight(0xff_ff_ff, 0.5)
+  ambientLight = new THREE.AmbientLight(0xcc_cc_cc, WorldRendererThree.LEGACY_TO_PHYSICAL_LIGHT)
+  directionalLight = new THREE.DirectionalLight(0xff_ff_ff, 0.5 * WorldRendererThree.LEGACY_TO_PHYSICAL_LIGHT)
   entities = new Entities(this, (globalThis as any).mcData)
   performanceMonitor!: PerformanceMonitor
   cameraGroupVr?: THREE.Object3D
@@ -501,11 +504,11 @@ export class WorldRendererThree extends WorldRendererCommon {
     })
     this.onReactivePlayerStateUpdated('ambientLight', (value) => {
       if (!value) return
-      this.ambientLight.intensity = value
+      this.ambientLight.intensity = value * WorldRendererThree.LEGACY_TO_PHYSICAL_LIGHT
     })
     this.onReactivePlayerStateUpdated('directionalLight', (value) => {
       if (!value) return
-      this.directionalLight.intensity = value
+      this.directionalLight.intensity = value * WorldRendererThree.LEGACY_TO_PHYSICAL_LIGHT
     })
     this.onReactivePlayerStateUpdated('lookingAtBlock', (value) => {
       this.cursorBlock.setHighlightCursorBlock(value ? new Vec3(value.x, value.y, value.z) : null, value?.shapes)

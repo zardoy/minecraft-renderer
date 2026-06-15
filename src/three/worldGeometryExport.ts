@@ -47,11 +47,11 @@ export function exportWorldGeometry(
       const indexAttr = geometry.index
       if (positionAttr && indexAttr) {
         const vertOffset = positions.length / 3
-        positions.push(...positionAttr.array as ArrayLike<number>)
-        if (normalAttr) normals.push(...normalAttr.array as ArrayLike<number>)
-        if (colorAttr) colors.push(...colorAttr.array as ArrayLike<number>)
-        if (uvAttr) uvs.push(...uvAttr.array as ArrayLike<number>)
-        for (const idx of indexAttr.array as ArrayLike<number>) {
+        positions.push(...Array.from(positionAttr.array))
+        if (normalAttr) normals.push(...Array.from(normalAttr.array))
+        if (colorAttr) colors.push(...Array.from(colorAttr.array))
+        if (uvAttr) uvs.push(...Array.from(uvAttr.array))
+        for (const idx of Array.from(indexAttr.array)) {
           indices.push(idx + vertOffset)
         }
       }
@@ -89,7 +89,7 @@ export function exportWorldGeometry(
   // Optionally include texture atlas as data URL
   if (includeTexture && worldRenderer.material.map) {
     const canvas = document.createElement('canvas')
-    const texture = worldRenderer.material.map
+    const texture = worldRenderer.material.map as THREE.Texture<HTMLImageElement | ImageBitmap>
     const { image } = texture
     if (image) {
       canvas.width = image.width

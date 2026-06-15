@@ -526,7 +526,7 @@ export class ChunkMeshManager {
       const hadLegacyAsPrimary = section.mesh === this.activeSections.get(sectionKey)?.mesh
       this.releasePooledMesh(sectionKey)
       if (hadLegacyAsPrimary) {
-        section.mesh = section.shaderMesh as unknown as THREE.Mesh | undefined ?? undefined
+        section.mesh = section.shaderMesh as unknown as THREE.Mesh<THREE.BufferGeometry, THREE.Material> | undefined ?? undefined
       }
     }
   }

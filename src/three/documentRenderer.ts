@@ -215,8 +215,6 @@ export class DocumentRenderer {
       throw err
     }
 
-    // @ts-ignore - legacy lights API
-    this.renderer.useLegacyLights = true
     this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace
 
     if (!externalCanvas) {

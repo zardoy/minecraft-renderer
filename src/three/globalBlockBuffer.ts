@@ -213,8 +213,8 @@ export class GlobalBlockBuffer {
 
     for (const name of ['a_w0', 'a_w1', 'a_w2', 'a_w3'] as const) {
       const attr = geometry.getAttribute(name) as THREE.InstancedBufferAttribute
-      attr.updateRange.offset = offset
-      attr.updateRange.count = count
+      attr.clearUpdateRanges()
+      attr.addUpdateRange(offset, count)
       attr.needsUpdate = true
     }
 

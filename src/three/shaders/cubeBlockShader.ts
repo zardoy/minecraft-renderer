@@ -24,7 +24,7 @@ flat out int v_texIndex;
 flat out int v_tintIndex;
 flat out int v_faceId;
 
-// Logarithmic depth buffer support: Three.js injects USE_LOGDEPTHBUF when the
+// Logarithmic depth buffer support: Three.js injects USE_LOGARITHMIC_DEPTH_BUFFER when the
 // renderer has logarithmicDepthBuffer: true. Standard Three.js shader chunks
 // rewrite gl_FragDepth via these varyings — if we don't, our linear gl_FragCoord.z
 // fails depth test vs sibling meshes that DO write log depth (we'd be invisible).
@@ -33,7 +33,7 @@ flat out int v_faceId;
 // issue where vIsPerspective lands on 0.9999… on some pixels and silently falls
 // back to linear gl_FragCoord.z, producing a white-noise z-fight pattern against
 // neighbouring meshes.
-#ifdef USE_LOGDEPTHBUF
+#ifdef USE_LOGARITHMIC_DEPTH_BUFFER
 out float vFragDepth;
 #endif
 
@@ -162,7 +162,7 @@ void main() {
     vec4 mvPosition = modelViewMatrix * vec4(relativePos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
 
-#ifdef USE_LOGDEPTHBUF
+#ifdef USE_LOGARITHMIC_DEPTH_BUFFER
     // Mirrors three.js logdepthbuf_vertex chunk (EXT path: fragment writes gl_FragDepth).
     vFragDepth = 1.0 + gl_Position.w;
 #endif
@@ -190,7 +190,7 @@ flat in int v_texIndex;
 flat in int v_tintIndex;
 flat in int v_faceId;
 
-#ifdef USE_LOGDEPTHBUF
+#ifdef USE_LOGARITHMIC_DEPTH_BUFFER
 uniform float logDepthBufFC;
 in float vFragDepth;
 #endif
@@ -209,7 +209,7 @@ uniform float fogFar;
 out vec4 FragColor;
 
 void writeLogDepth() {
-#ifdef USE_LOGDEPTHBUF
+#ifdef USE_LOGARITHMIC_DEPTH_BUFFER
     // Camera is always perspective; skip the vIsPerspective branch from three.js
     // standard chunks to avoid float-precision z-fight against neighbouring meshes.
     gl_FragDepth = log2(vFragDepth) * logDepthBufFC * 0.5;

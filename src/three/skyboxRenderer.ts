@@ -66,7 +66,7 @@ export class SkyboxRenderer {
         imageUrl,
         (texture) => {
           texture.mapping = THREE.EquirectangularReflectionMapping
-          texture.encoding = THREE.sRGBEncoding
+          texture.colorSpace = THREE.SRGBColorSpace
           // Keep pixelated look
           texture.minFilter = THREE.NearestFilter
           texture.magFilter = THREE.NearestFilter

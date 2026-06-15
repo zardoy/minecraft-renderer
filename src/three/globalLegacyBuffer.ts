@@ -332,28 +332,28 @@ export class GlobalLegacyBuffer {
 
     const geometry = this.mesh.geometry
     const posAttr = geometry.getAttribute('position') as THREE.BufferAttribute
-    posAttr.updateRange.offset = vertOffset * FLOATS_PER_VERT
-    posAttr.updateRange.count = vertCount * FLOATS_PER_VERT
+    posAttr.clearUpdateRanges()
+    posAttr.addUpdateRange(vertOffset * FLOATS_PER_VERT, vertCount * FLOATS_PER_VERT)
     posAttr.needsUpdate = true
 
     const colorAttr = geometry.getAttribute('color') as THREE.BufferAttribute
-    colorAttr.updateRange.offset = vertOffset * FLOATS_PER_VERT
-    colorAttr.updateRange.count = vertCount * FLOATS_PER_VERT
+    colorAttr.clearUpdateRanges()
+    colorAttr.addUpdateRange(vertOffset * FLOATS_PER_VERT, vertCount * FLOATS_PER_VERT)
     colorAttr.needsUpdate = true
 
     const uvAttr = geometry.getAttribute('uv') as THREE.BufferAttribute
-    uvAttr.updateRange.offset = vertOffset * FLOATS_PER_UV_VERT
-    uvAttr.updateRange.count = vertCount * FLOATS_PER_UV_VERT
+    uvAttr.clearUpdateRanges()
+    uvAttr.addUpdateRange(vertOffset * FLOATS_PER_UV_VERT, vertCount * FLOATS_PER_UV_VERT)
     uvAttr.needsUpdate = true
 
     const originAttr = geometry.getAttribute('a_origin') as THREE.BufferAttribute
-    originAttr.updateRange.offset = vertOffset * FLOATS_PER_VERT
-    originAttr.updateRange.count = vertCount * FLOATS_PER_VERT
+    originAttr.clearUpdateRanges()
+    originAttr.addUpdateRange(vertOffset * FLOATS_PER_VERT, vertCount * FLOATS_PER_VERT)
     originAttr.needsUpdate = true
 
     const indexAttr = geometry.index as THREE.BufferAttribute
-    indexAttr.updateRange.offset = indexOffset
-    indexAttr.updateRange.count = indexCount
+    indexAttr.clearUpdateRanges()
+    indexAttr.addUpdateRange(indexOffset, indexCount)
     indexAttr.needsUpdate = true
 
     if (quadOffset + quadCount > r.end) this.pendingRanges.shift()

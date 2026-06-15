@@ -710,12 +710,12 @@ test('GlobalBlockBuffer: uploadDirtyRange budgets large dirty span across frames
 
   const w0Attr = buffer.mesh.geometry.getAttribute('a_w0') as THREE.InstancedBufferAttribute
   buffer.uploadDirtyRange()
-  expect(w0Attr.updateRange.offset).toBe(0)
-  expect(w0Attr.updateRange.count).toBe(15_000)
+  expect(w0Attr.updateRanges[0].start).toBe(0)
+  expect(w0Attr.updateRanges[0].count).toBe(15_000)
 
   buffer.uploadDirtyRange()
-  expect(w0Attr.updateRange.offset).toBe(15_000)
-  expect(w0Attr.updateRange.count).toBe(5_000)
+  expect(w0Attr.updateRanges[0].start).toBe(15_000)
+  expect(w0Attr.updateRanges[0].count).toBe(5_000)
 
   buffer.uploadDirtyRange()
   expect((buffer as unknown as { pendingRanges: unknown[] }).pendingRanges).toHaveLength(0)

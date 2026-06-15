@@ -37,7 +37,7 @@ class StarfieldMaterial extends THREE.ShaderMaterial {
 
 export class StarfieldModule implements RendererModuleController {
   private points?: THREE.Points
-  private clock = new THREE.Clock()
+  private timer = new THREE.Timer()
   private enabled = false
   private currentTime?: number
 
@@ -74,8 +74,9 @@ export class StarfieldModule implements RendererModuleController {
   render?: (deltaTime: number) => void = (_deltaTime) => {
     if (!this.points) return
     this.points.position.set(0, 0, 0)
+    this.timer.update(performance.now())
       ; (this.points.material as StarfieldMaterial).uniforms.time.value =
-        this.clock.getElapsedTime() * 0.2
+        this.timer.getElapsed() * 0.2
   }
 
   /**
