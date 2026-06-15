@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { computeCameraRelativeUniforms, type RenderOrigin } from './shaders/legacyBlockShader'
 
 const VERTS_PER_QUAD = 4
 const INDICES_PER_QUAD = 6
@@ -36,7 +37,7 @@ export type LegacySectionGeometryData = LegacySectionGeometry & {
 
 /**
  * Single GPU mesh for legacy quads (opaque+cutout or transparent blend).
- * Camera-relative via per-vertex a_origin + u_cameraOrigin uniforms.
+ * Camera-relative via per-vertex a_origin (relative to render origin) + u_originDelta uniforms.
  */
 export class GlobalLegacyBuffer {
   readonly mesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial | THREE.ShaderMaterial[]>
@@ -54,6 +55,7 @@ export class GlobalLegacyBuffer {
   private highWatermark = 0
   private pendingRanges: Array<{ start: number, end: number }> = []
   private readonly _spanScratch: Array<{ start: number, count: number }> = []
+  private renderOrigin: RenderOrigin = { x: 0, y: 0, z: 0 }
 
   constructor (
     material: THREE.ShaderMaterial,
@@ -151,11 +153,14 @@ export class GlobalLegacyBuffer {
     this.uvs.set(geo.uvs, dstUvBase)
 
     const originOff = dstFloatBase
+    const rx = this.renderOrigin.x
+    const ry = this.renderOrigin.y
+    const rz = this.renderOrigin.z
     for (let v = 0; v < vertCount; v++) {
       const o = originOff + v * FLOATS_PER_VERT
-      this.aOrigin[o] = sx
-      this.aOrigin[o + 1] = sy
-      this.aOrigin[o + 2] = sz
+      this.aOrigin[o] = sx - rx
+      this.aOrigin[o + 1] = sy - ry
+      this.aOrigin[o + 2] = sz - rz
     }
 
     const dstIndexBase = slot.start * INDICES_PER_QUAD
@@ -290,9 +295,9 @@ export class GlobalLegacyBuffer {
       indices[i] = indices[i]! - vertexBase
     }
 
-    const sx = this.aOrigin[dstFloatBase]!
-    const sy = this.aOrigin[dstFloatBase + 1]!
-    const sz = this.aOrigin[dstFloatBase + 2]!
+    const sx = this.aOrigin[dstFloatBase]! + this.renderOrigin.x
+    const sy = this.aOrigin[dstFloatBase + 1]! + this.renderOrigin.y
+    const sz = this.aOrigin[dstFloatBase + 2]! + this.renderOrigin.z
 
     return { positions, colors, uvs, indices, sx, sy, sz }
   }
@@ -355,14 +360,35 @@ export class GlobalLegacyBuffer {
     else r.start = quadOffset + quadCount
   }
 
+  setRenderOrigin (renderOrigin: RenderOrigin): void {
+    this.renderOrigin = { ...renderOrigin }
+  }
+
+  rebase (delta: RenderOrigin): void {
+    if (this.highWatermark === 0) return
+    for (const slot of this.sectionSlots.values()) {
+      const dstVertBase = slot.start * VERTS_PER_QUAD
+      const vertCount = slot.count * VERTS_PER_QUAD
+      const dstFloatBase = dstVertBase * FLOATS_PER_VERT
+      for (let v = 0; v < vertCount; v++) {
+        const o = dstFloatBase + v * FLOATS_PER_VERT
+        this.aOrigin[o]! -= delta.x
+        this.aOrigin[o + 1]! -= delta.y
+        this.aOrigin[o + 2]! -= delta.z
+      }
+    }
+    this.markDirty(0, this.highWatermark - 1)
+    this.renderOrigin.x += delta.x
+    this.renderOrigin.y += delta.y
+    this.renderOrigin.z += delta.z
+  }
+
   setCameraOrigin (x: number, y: number, z: number): void {
-    const ix = Math.floor(x)
-    const iy = Math.floor(y)
-    const iz = Math.floor(z)
-    const u = this.material.uniforms.u_cameraOrigin
-    if (u?.value?.set) u.value.set(ix, iy, iz)
+    const { originDelta, cameraOriginFrac } = computeCameraRelativeUniforms(this.renderOrigin, x, y, z)
+    const u = this.material.uniforms.u_originDelta
+    if (u?.value?.set) u.value.set(originDelta.x, originDelta.y, originDelta.z)
     const uf = this.material.uniforms.u_cameraOriginFrac
-    if (uf?.value?.set) uf.value.set(x - ix, y - iy, z - iz)
+    if (uf?.value?.set) uf.value.set(cameraOriginFrac.x, cameraOriginFrac.y, cameraOriginFrac.z)
   }
 
   raycastSections (
@@ -373,6 +399,13 @@ export class GlobalLegacyBuffer {
     const ray = raycaster.ray
     const closest = raycaster.near
     const far = raycaster.far
+    _raycastOrigin.copy(ray.origin).sub(_raycastRenderOrigin.set(
+      this.renderOrigin.x,
+      this.renderOrigin.y,
+      this.renderOrigin.z,
+    ))
+    _raycastRay.origin.copy(_raycastOrigin)
+    _raycastRay.direction.copy(ray.direction)
 
     for (const key of sectionKeys) {
       const slot = this.sectionSlots.get(key)
@@ -390,7 +423,7 @@ export class GlobalLegacyBuffer {
         if (i0 === i1 && i1 === i2) continue
 
         const hit = intersectTriangle(
-          ray,
+          _raycastRay,
           this.positions, this.aOrigin, dstFloatBase,
           i0, i1, i2,
           closest, far,
@@ -557,6 +590,9 @@ const _vC = new THREE.Vector3()
 const _edge1 = new THREE.Vector3()
 const _edge2 = new THREE.Vector3()
 const _normal = new THREE.Vector3()
+const _raycastOrigin = new THREE.Vector3()
+const _raycastRenderOrigin = new THREE.Vector3()
+const _raycastRay = new THREE.Ray()
 
 function readWorldVertex (
   positions: Float32Array,

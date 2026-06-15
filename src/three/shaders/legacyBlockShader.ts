@@ -1,9 +1,34 @@
 import * as THREE from 'three'
 
+export type RenderOrigin = { x: number, y: number, z: number }
+
+export function computeCameraRelativeUniforms (
+  renderOrigin: RenderOrigin,
+  x: number,
+  y: number,
+  z: number,
+): { originDelta: RenderOrigin, cameraOriginFrac: RenderOrigin } {
+  const ix = Math.floor(x)
+  const iy = Math.floor(y)
+  const iz = Math.floor(z)
+  return {
+    originDelta: {
+      x: renderOrigin.x - ix,
+      y: renderOrigin.y - iy,
+      z: renderOrigin.z - iz,
+    },
+    cameraOriginFrac: {
+      x: x - ix,
+      y: y - iy,
+      z: z - iz,
+    },
+  }
+}
+
 const vertexShader = /* glsl */ `
 precision highp float;
 
-uniform vec3 u_cameraOrigin;
+uniform vec3 u_originDelta;
 uniform vec3 u_cameraOriginFrac;
 
 // position, uv, color: declared by Three.js shader chunks (vertexColors → USE_COLOR).
@@ -19,8 +44,7 @@ out float vFogDepth;
 #endif
 
 void main() {
-    vec3 sectionOrigin = modelMatrix[3].xyz;
-    vec3 relativePos = (sectionOrigin - u_cameraOrigin) + position - u_cameraOriginFrac;
+    vec3 relativePos = modelMatrix[3].xyz + u_originDelta + position - u_cameraOriginFrac;
     vec4 mvPosition = viewMatrix * vec4(relativePos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
 
@@ -98,7 +122,7 @@ void main() {
 const globalVertexShader = /* glsl */ `
 precision highp float;
 
-uniform vec3 u_cameraOrigin;
+uniform vec3 u_originDelta;
 uniform vec3 u_cameraOriginFrac;
 
 in vec3 a_origin;
@@ -116,7 +140,7 @@ out float vFogDepth;
 #endif
 
 void main() {
-    vec3 relativePos = (a_origin - u_cameraOrigin) + position - u_cameraOriginFrac;
+    vec3 relativePos = a_origin + u_originDelta + position - u_cameraOriginFrac;
     vec4 mvPosition = viewMatrix * vec4(relativePos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
 
@@ -141,7 +165,7 @@ export function createLegacyBlockMaterial (): THREE.ShaderMaterial {
       THREE.UniformsLib.fog,
       {
         u_atlas: { value: null },
-        u_cameraOrigin: { value: new THREE.Vector3() },
+        u_originDelta: { value: new THREE.Vector3() },
         u_cameraOriginFrac: { value: new THREE.Vector3() },
       },
     ]),
@@ -163,7 +187,7 @@ export function createGlobalLegacyBlockMaterial (): THREE.ShaderMaterial {
       THREE.UniformsLib.fog,
       {
         u_atlas: { value: null },
-        u_cameraOrigin: { value: new THREE.Vector3() },
+        u_originDelta: { value: new THREE.Vector3() },
         u_cameraOriginFrac: { value: new THREE.Vector3() },
       },
     ]),
@@ -185,7 +209,7 @@ export function createGlobalLegacyBlendMaterial (): THREE.ShaderMaterial {
       THREE.UniformsLib.fog,
       {
         u_atlas: { value: null },
-        u_cameraOrigin: { value: new THREE.Vector3() },
+        u_originDelta: { value: new THREE.Vector3() },
         u_cameraOriginFrac: { value: new THREE.Vector3() },
       },
     ]),
@@ -198,17 +222,21 @@ export function createGlobalLegacyBlendMaterial (): THREE.ShaderMaterial {
   })
 }
 
-/** Integer + fractional camera split — matches GlobalBlockBuffer.setCameraOrigin. */
-export function setLegacyCameraOrigin (material: THREE.ShaderMaterial, x: number, y: number, z: number): void {
-  const ix = Math.floor(x)
-  const iy = Math.floor(y)
-  const iz = Math.floor(z)
-  const u = material.uniforms.u_cameraOrigin
+/** Render-origin + fractional camera split — matches GlobalBlockBuffer.setCameraOrigin. */
+export function setLegacyCameraOrigin (
+  material: THREE.ShaderMaterial,
+  renderOrigin: RenderOrigin,
+  x: number,
+  y: number,
+  z: number,
+): void {
+  const { originDelta, cameraOriginFrac } = computeCameraRelativeUniforms(renderOrigin, x, y, z)
+  const u = material.uniforms.u_originDelta
   if (u?.value?.set) {
-    u.value.set(ix, iy, iz)
+    u.value.set(originDelta.x, originDelta.y, originDelta.z)
   }
   const uf = material.uniforms.u_cameraOriginFrac
   if (uf?.value?.set) {
-    uf.value.set(x - ix, y - iy, z - iz)
+    uf.value.set(cameraOriginFrac.x, cameraOriginFrac.y, cameraOriginFrac.z)
   }
 }

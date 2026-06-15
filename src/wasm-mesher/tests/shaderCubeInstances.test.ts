@@ -15,7 +15,7 @@ import {
   SHADER_CUBES_WORDS_PER_FACE,
 } from '../bridge/shaderCubeBridge'
 import { GlobalBlockBuffer } from '../../three/globalBlockBuffer'
-import { createCubeBlockMaterial } from '../../three/shaders/cubeBlockShader'
+import { createCubeBlockMaterial, computeSectionOriginRel } from '../../three/shaders/cubeBlockShader'
 import * as THREE from 'three'
 import { renderWasmOutputToGeometry } from '../bridge/render-from-wasm'
 
@@ -346,6 +346,38 @@ test('packWord2Empty: bit 18 set regardless of high X/Z bits in word2', () => {
   expect(empty & (1 << WORD2.EMPTY_SHIFT)).not.toBe(0)
   const withHighBits = empty | (0x3f << WORD2.SECTION_X_HI_SHIFT) | (0x3f << WORD2.SECTION_Z_HI_SHIFT)
   expect(withHighBits & (1 << WORD2.EMPTY_SHIFT)).not.toBe(0)
+})
+
+test('section index relative decode past 2^20: exact integer subtract', () => {
+  const sectionBlockX = 21_050_000
+  const renderOrigin = { x: 21_000_000, y: 0, z: 0 }
+  const words: number[] = []
+  const block = {
+    position: [0, 0, 0] as [number, number, number],
+    visible_faces: 1 << 2,
+    ao_data: [[3, 3, 3, 3]],
+    light_data: [[1, 1, 1, 1]],
+    light_combined: [[255, 255, 255, 255]],
+  }
+  const { textureIndexMapping, tintPalette } = getShaderCubeResources()
+  const model = { elements: [{ faces: SIX_FACE_TEXTURES }] }
+  tryBuildShaderCubeInstances(
+    block,
+    { blockName: 'stone', blockProps: {}, isCube: true, model },
+    model,
+    {
+      sectionOrigin: { x: sectionBlockX, y: 0, z: 0 },
+      sectionHeight: 16,
+      tintPalette,
+      textureIndexMapping,
+    },
+    words,
+  )
+  const base = decodeSectionBaseFromWords(words[2]!, words[3]!)
+  const sX = base.x / 16
+  const sectionOriginRel = computeSectionOriginRel(renderOrigin)
+  const sXr = sX - sectionOriginRel.x
+  expect(sXr * 16).toBe(sectionBlockX - renderOrigin.x)
 })
 
 test('GlobalBlockBuffer: free-list reuses slot with EMPTY sentinel', () => {

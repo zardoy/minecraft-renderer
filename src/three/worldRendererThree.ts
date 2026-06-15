@@ -1299,23 +1299,26 @@ export class WorldRendererThree extends WorldRendererCommon {
     const sciFiDeltaMs = sciFiNow - this.lastSciFiTickMs
     this.lastSciFiTickMs = sciFiNow
     this.getModule<{ tick?: (deltaMs: number, now?: number) => void }>('futuristicReveal')?.tick?.(sciFiDeltaMs, sciFiNow)
+    const camX = this.cameraWorldPos.x
+    const camY = this.cameraWorldPos.y
+    const camZ = this.cameraWorldPos.z
+    this.chunkMeshManager.maybeRebase({ x: camX, y: camY, z: camZ })
+    const renderOrigin = this.chunkMeshManager.getRenderOrigin()
     const globalBuffer = this.chunkMeshManager.globalBlockBuffer
     if (globalBuffer) {
-      globalBuffer.setCameraOrigin(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
+      globalBuffer.setCameraOrigin(renderOrigin, camX, camY, camZ)
       globalBuffer.compactStep()
       globalBuffer.uploadDirtyRange()
     }
     const globalLegacyBuffer = this.chunkMeshManager.globalLegacyBuffer
     if (globalLegacyBuffer) {
-      globalLegacyBuffer.setCameraOrigin(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
       globalLegacyBuffer.uploadDirtyRange()
     }
     const globalLegacyBlendBuffer = this.chunkMeshManager.globalLegacyBlendBuffer
     if (globalLegacyBlendBuffer) {
-      globalLegacyBlendBuffer.setCameraOrigin(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
       globalLegacyBlendBuffer.uploadDirtyRange()
     }
-    this.chunkMeshManager.setLegacyCameraOrigin(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
+    this.chunkMeshManager.setLegacyCameraOrigin(camX, camY, camZ)
     this.chunkMeshManager.updateLegacySectionCullAndSort(
       cam,
       this.cameraWorldPos.x,

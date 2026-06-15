@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import type { RenderOrigin } from './shaders/legacyBlockShader'
 
 /** Half-extent of a section mesh AABB in section-local space. */
 export const LEGACY_SECTION_HALF_EXTENT = 8
@@ -15,8 +16,9 @@ export function setupLegacySectionMatrix (
   sx: number,
   sy: number,
   sz: number,
+  renderOrigin: RenderOrigin,
 ): void {
-  mesh.matrix.makeTranslation(sx, sy, sz)
+  mesh.matrix.makeTranslation(sx - renderOrigin.x, sy - renderOrigin.y, sz - renderOrigin.z)
   mesh.matrixWorldNeedsUpdate = true
   mesh.frustumCulled = false
 }

@@ -1,5 +1,6 @@
 import * as THREE from 'three'
-import { VERTICES_PER_FACE } from './shaders/cubeBlockShader'
+import { VERTICES_PER_FACE, computeSectionOriginRel } from './shaders/cubeBlockShader'
+import { computeCameraRelativeUniforms, type RenderOrigin } from './shaders/legacyBlockShader'
 import { packWord2Empty } from '../wasm-mesher/bridge/shaderCubeBridge'
 
 // Linear growth (NOT doubling) to keep iOS allocation spikes bounded to one increment.
@@ -19,7 +20,7 @@ export type GlobalBlockBufferShaderData = {
 
 /**
  * Single GPU instanced mesh for all shader-cube faces in the world.
- * Camera-relative positioning via u_cameraOrigin; no sceneOrigin tracking.
+ * Camera-relative positioning via u_originDelta + u_sectionOriginRel; no sceneOrigin tracking.
  */
 export class GlobalBlockBuffer {
   readonly mesh: THREE.Mesh<THREE.InstancedBufferGeometry, THREE.ShaderMaterial>
@@ -221,18 +222,20 @@ export class GlobalBlockBuffer {
     else r.start = offset + count
   }
 
-  setCameraOrigin (x: number, y: number, z: number): void {
-    // Integer + fractional parts — see cubeBlockShader position math.
-    const ix = Math.floor(x)
-    const iy = Math.floor(y)
-    const iz = Math.floor(z)
-    const u = this.mesh.material.uniforms.u_cameraOrigin
+  setCameraOrigin (renderOrigin: RenderOrigin, x: number, y: number, z: number): void {
+    const { originDelta, cameraOriginFrac } = computeCameraRelativeUniforms(renderOrigin, x, y, z)
+    const sectionOriginRel = computeSectionOriginRel(renderOrigin)
+    const u = this.mesh.material.uniforms.u_originDelta
     if (u?.value?.set) {
-      u.value.set(ix, iy, iz)
+      u.value.set(originDelta.x, originDelta.y, originDelta.z)
     }
     const uf = this.mesh.material.uniforms.u_cameraOriginFrac
     if (uf?.value?.set) {
-      uf.value.set(x - ix, y - iy, z - iz)
+      uf.value.set(cameraOriginFrac.x, cameraOriginFrac.y, cameraOriginFrac.z)
+    }
+    const us = this.mesh.material.uniforms.u_sectionOriginRel
+    if (us?.value?.set) {
+      us.value.set(sectionOriginRel.x, sectionOriginRel.y, sectionOriginRel.z)
     }
   }
 

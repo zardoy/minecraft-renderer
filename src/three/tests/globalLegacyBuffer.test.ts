@@ -67,6 +67,50 @@ test('GlobalLegacyBuffer: slot reuse and a_origin fill', () => {
   mat.dispose()
 })
 
+test('GlobalLegacyBuffer: a_origin stores world minus render origin', () => {
+  const scene = new THREE.Scene()
+  const mat = createGlobalLegacyBlockMaterial()
+  const buffer = new GlobalLegacyBuffer(mat, scene)
+  const geo = makeQuadGeometry()
+
+  buffer.setRenderOrigin({ x: 16, y: 0, z: 16 })
+  buffer.addSection('a', geo, 100, 64, 200)
+  const originAttr = buffer.mesh.geometry.getAttribute('a_origin') as THREE.BufferAttribute
+  expect(originAttr.array[0]).toBe(84)
+  expect(originAttr.array[1]).toBe(64)
+  expect(originAttr.array[2]).toBe(184)
+
+  buffer.dispose()
+  mat.dispose()
+})
+
+test('GlobalLegacyBuffer: rebase shifts all a_origin and marks dirty', () => {
+  const scene = new THREE.Scene()
+  const mat = createGlobalLegacyBlockMaterial()
+  const buffer = new GlobalLegacyBuffer(mat, scene)
+  const geo = makeQuadGeometry()
+
+  buffer.addSection('a', geo, 100, 64, 200)
+  buffer.addSection('b', geo, 16, 8, 16)
+
+  buffer.rebase({ x: 16, y: 0, z: 16 })
+  const originAttr = buffer.mesh.geometry.getAttribute('a_origin') as THREE.BufferAttribute
+  expect(originAttr.array[0]).toBe(84)
+  expect(originAttr.array[1]).toBe(64)
+  expect(originAttr.array[2]).toBe(184)
+
+  const slotB = buffer.getSectionSlot('b')!
+  const baseB = slotB.start * 4 * 3
+  expect(originAttr.array[baseB]).toBe(0)
+  expect(originAttr.array[baseB + 1]).toBe(8)
+  expect(originAttr.array[baseB + 2]).toBe(0)
+
+  expect(getInternals(buffer).pendingRanges.length).toBeGreaterThan(0)
+
+  buffer.dispose()
+  mat.dispose()
+})
+
 test('GlobalLegacyBuffer: index rebase on copy', () => {
   const scene = new THREE.Scene()
   const mat = createGlobalLegacyBlockMaterial()

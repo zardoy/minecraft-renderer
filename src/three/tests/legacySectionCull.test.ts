@@ -6,7 +6,7 @@ test('setupLegacySectionMatrix: translation set once and stable across frames', 
   const mesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial())
   mesh.matrixAutoUpdate = false
 
-  setupLegacySectionMatrix(mesh, 100, 64, -200)
+  setupLegacySectionMatrix(mesh, 100, 64, -200, { x: 0, y: 0, z: 0 })
 
   expect(mesh.matrix.elements[12]).toBe(100)
   expect(mesh.matrix.elements[13]).toBe(64)
@@ -65,4 +65,15 @@ test('updateLegacySectionCullState: outside frustum hides mesh', () => {
   updateLegacySectionCullState(mesh, 500, 0, 0, 0, 0, 0, frustum, box, boxMin, boxMax)
 
   expect(mesh.visible).toBe(false)
+})
+
+test('setupLegacySectionMatrix: non-zero render origin stores world minus R', () => {
+  const mesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial())
+  mesh.matrixAutoUpdate = false
+
+  setupLegacySectionMatrix(mesh, 100, 64, -200, { x: 16, y: 0, z: 16 })
+
+  expect(mesh.matrix.elements[12]).toBe(84)
+  expect(mesh.matrix.elements[13]).toBe(64)
+  expect(mesh.matrix.elements[14]).toBe(-216)
 })

@@ -13,7 +13,8 @@ layout(location = 2) in uint a_w2;
 layout(location = 3) in uint a_w3;
 
 // World camera position split for stable float32 subtraction (see relativePos below).
-uniform vec3 u_cameraOrigin;
+uniform ivec3 u_sectionOriginRel;
+uniform vec3 u_originDelta;
 uniform vec3 u_cameraOriginFrac;
 
 out float v_light;
@@ -151,11 +152,13 @@ void main() {
     int sX = int((a_w3 & 0xFFFFu) | (((a_w2 >> 19u) & 0x3Fu) << 16u)) - 2097152;
     int sZ = int(((a_w3 >> 16u) & 0xFFFFu) | (((a_w2 >> 25u) & 0x3Fu) << 16u)) - 2097152;
     int sY = int((a_w2 >> 13u) & 0x1Fu) - 4;
-    vec3 sectionBase = vec3(float(sX * 16), float(sY * 16), float(sZ * 16));
+    int sXr = sX - u_sectionOriginRel.x;
+    int sYr = sY - u_sectionOriginRel.y;
+    int sZr = sZ - u_sectionOriginRel.z;
+    vec3 sectionBase = vec3(float(sXr * 16), float(sYr * 16), float(sZr * 16));
     vec3 facePos = BASE[faceId] + u * DU[faceId] + v * DV[faceId];
     vec3 blockLocal = vec3(float(lx), float(ly), float(lz));
-    // (sectionBase - u_cameraOrigin) is exact in float32; add small terms after.
-    vec3 relativePos = (sectionBase - u_cameraOrigin) + facePos + blockLocal - u_cameraOriginFrac;
+    vec3 relativePos = sectionBase + u_originDelta + facePos + blockLocal - u_cameraOriginFrac;
     vec4 mvPosition = modelViewMatrix * vec4(relativePos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
 
@@ -293,7 +296,8 @@ export function createCubeBlockMaterial(): THREE.ShaderMaterial {
                 u_atlas: { value: null },
                 u_tintPalette: { value: null },
                 u_debugMode: { value: 0 },
-                u_cameraOrigin: { value: new THREE.Vector3() },
+                u_sectionOriginRel: { value: new THREE.Vector3(0, 0, 0) },
+                u_originDelta: { value: new THREE.Vector3() },
                 u_cameraOriginFrac: { value: new THREE.Vector3() },
             },
         ]),
@@ -312,6 +316,19 @@ export function createCubeBlockMaterial(): THREE.ShaderMaterial {
 
 // Three geometry constants: 6 vertices per face (2 triangles, un-indexed)
 export const VERTICES_PER_FACE = 6
+
+/** Section index units for render origin R (R is always a multiple of 16). */
+export function computeSectionOriginRel (renderOrigin: { x: number, y: number, z: number }): {
+  x: number
+  y: number
+  z: number
+} {
+  return {
+    x: Math.round(renderOrigin.x / 16),
+    y: Math.round(renderOrigin.y / 16),
+    z: Math.round(renderOrigin.z / 16),
+  }
+}
 
 // Word layout constants (for encoding/decoding instances)
 export const WORD0 = {

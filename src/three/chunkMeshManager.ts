@@ -4,8 +4,8 @@ import * as nbt from 'prismarine-nbt'
 import { Vec3 } from 'vec3'
 import { MesherGeometryOutput } from '../mesher-shared/shared'
 import { getShaderCubeResources, SHADER_CUBES_WORDS_PER_FACE } from '../wasm-mesher/bridge/shaderCubeBridge'
-import { createCubeBlockMaterial } from './shaders/cubeBlockShader'
-import { createGlobalLegacyBlendMaterial, createGlobalLegacyBlockMaterial, createLegacyBlockMaterial, setLegacyCameraOrigin } from './shaders/legacyBlockShader'
+import { createCubeBlockMaterial, computeSectionOriginRel } from './shaders/cubeBlockShader'
+import { computeCameraRelativeUniforms, createGlobalLegacyBlendMaterial, createGlobalLegacyBlockMaterial, createLegacyBlockMaterial, setLegacyCameraOrigin, type RenderOrigin } from './shaders/legacyBlockShader'
 import { LEGACY_SECTION_HALF_EXTENT, sectionIntersectsFrustum, setupLegacySectionMatrix, updateLegacySectionCullState } from './legacySectionCull'
 import { createShaderCubeMesh, disposeShaderCubeMesh } from './shaderCubeMesh'
 import { GlobalBlockBuffer } from './globalBlockBuffer'
@@ -72,6 +72,11 @@ export interface SectionObject extends THREE.Group {
 }
 
 export class ChunkMeshManager {
+  private static readonly REBASE_THRESHOLD = 65536
+
+  /** Float64 render origin snapped to section granularity; GPU buffers store origins relative to this. */
+  private renderOrigin: RenderOrigin = { x: 0, y: 0, z: 0 }
+
   private readonly meshPool: ChunkMeshPool[] = []
   private readonly activeSections = new Map<string, ChunkMeshPool>()
   readonly sectionObjects: Record<string, SectionObject> = {}
@@ -250,6 +255,7 @@ export class ChunkMeshManager {
         this.getGlobalLegacyShaderMaterial(),
         this.scene,
       )
+      this.globalLegacyBuffer.setRenderOrigin(this.renderOrigin)
     }
     return this.globalLegacyBuffer
   }
@@ -273,8 +279,56 @@ export class ChunkMeshManager {
           growthIncrementQuads: 32_000,
         },
       )
+      this.globalLegacyBlendBuffer.setRenderOrigin(this.renderOrigin)
     }
     return this.globalLegacyBlendBuffer
+  }
+
+  getRenderOrigin (): Readonly<RenderOrigin> {
+    return this.renderOrigin
+  }
+
+  maybeRebase (camera: RenderOrigin): void {
+    const R = this.renderOrigin
+    if (
+      Math.abs(camera.x - R.x) <= ChunkMeshManager.REBASE_THRESHOLD
+      && Math.abs(camera.y - R.y) <= ChunkMeshManager.REBASE_THRESHOLD
+      && Math.abs(camera.z - R.z) <= ChunkMeshManager.REBASE_THRESHOLD
+    ) {
+      return
+    }
+
+    const newOrigin: RenderOrigin = {
+      x: Math.round(camera.x / 16) * 16,
+      y: Math.round(camera.y / 16) * 16,
+      z: Math.round(camera.z / 16) * 16,
+    }
+    const delta: RenderOrigin = {
+      x: newOrigin.x - R.x,
+      y: newOrigin.y - R.y,
+      z: newOrigin.z - R.z,
+    }
+
+    this.globalLegacyBuffer?.rebase(delta)
+    this.globalLegacyBlendBuffer?.rebase(delta)
+
+    for (const poolEntry of this.activeSections.values()) {
+      const sectionKey = poolEntry.sectionKey
+      if (!sectionKey) continue
+      const sectionObject = this.sectionObjects[sectionKey]
+      if (!sectionObject) continue
+      setupLegacySectionMatrix(
+        poolEntry.mesh,
+        sectionObject.worldX ?? 0,
+        sectionObject.worldY ?? 0,
+        sectionObject.worldZ ?? 0,
+        newOrigin,
+      )
+    }
+
+    this.renderOrigin = newOrigin
+    this.globalLegacyBuffer?.setRenderOrigin(newOrigin)
+    this.globalLegacyBlendBuffer?.setRenderOrigin(newOrigin)
   }
 
   /** Whether a section still holds a pooled legacy mesh (defer / invariant fallback). */
@@ -338,11 +392,30 @@ export class ChunkMeshManager {
   }
 
   setLegacyCameraOrigin (x: number, y: number, z: number): void {
-    setLegacyCameraOrigin(this.getLegacyShaderMaterial(), x, y, z)
-    setLegacyCameraOrigin(this.getGlobalLegacyShaderMaterial(), x, y, z)
-    setLegacyCameraOrigin(this.getGlobalLegacyBlendShaderMaterial(), x, y, z)
+    const R = this.renderOrigin
+    setLegacyCameraOrigin(this.getLegacyShaderMaterial(), R, x, y, z)
+    setLegacyCameraOrigin(this.getGlobalLegacyShaderMaterial(), R, x, y, z)
+    setLegacyCameraOrigin(this.getGlobalLegacyBlendShaderMaterial(), R, x, y, z)
     this.globalLegacyBuffer?.setCameraOrigin(x, y, z)
     this.globalLegacyBlendBuffer?.setCameraOrigin(x, y, z)
+
+    const cubeMat = this.cubeShaderMaterial
+    if (cubeMat) {
+      const { originDelta, cameraOriginFrac } = computeCameraRelativeUniforms(R, x, y, z)
+      const sectionOriginRel = computeSectionOriginRel(R)
+      const u = cubeMat.uniforms.u_originDelta
+      if (u?.value?.set) {
+        u.value.set(originDelta.x, originDelta.y, originDelta.z)
+      }
+      const uf = cubeMat.uniforms.u_cameraOriginFrac
+      if (uf?.value?.set) {
+        uf.value.set(cameraOriginFrac.x, cameraOriginFrac.y, cameraOriginFrac.z)
+      }
+      const us = cubeMat.uniforms.u_sectionOriginRel
+      if (us?.value?.set) {
+        us.value.set(sectionOriginRel.x, sectionOriginRel.y, sectionOriginRel.z)
+      }
+    }
   }
 
   private getCubeShaderMaterial (): THREE.ShaderMaterial | null {
@@ -638,7 +711,7 @@ export class ChunkMeshManager {
       new THREE.Vector3(0, 0, 0),
       Math.sqrt(3 * 8 ** 2),
     )
-    setupLegacySectionMatrix(mesh, sx, sy, sz)
+    setupLegacySectionMatrix(mesh, sx, sy, sz, this.renderOrigin)
     mesh.visible = false
     mesh.name = 'mesh'
     poolEntry.lastUsedTime = performance.now()
