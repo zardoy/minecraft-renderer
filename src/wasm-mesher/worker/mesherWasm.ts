@@ -17,6 +17,7 @@ import {
 
 let wasm: typeof import('../runtime-build/wasm_mesher.js') | null = null
 let wasmInitialized = false
+let wasmReady = false // true ONLY after wasm.default() instantiates the module; gates light-packet parsing
 
 // Pending raw `update_light` packets that arrived before WASM finished
 // loading. Parsed and drained once `initWasm` resolves. Without this queue
@@ -32,7 +33,7 @@ const pendingUpdateLightV17: Array<{ rawPacket: Uint8Array, numSections: number 
 const pendingUpdateLightV16: Array<{ rawPacket: Uint8Array }> = []
 
 function processUpdateLightV17 (rawPacket: Uint8Array, numSections: number): void {
-  if (!wasm || !(wasm as any).parseUpdateLightV17) {
+  if (!wasmReady) {
     pendingUpdateLightV17.push({ rawPacket, numSections })
     return
   }
@@ -56,7 +57,7 @@ function processUpdateLightV17 (rawPacket: Uint8Array, numSections: number): voi
 // chunk cache has the entry, and crossing the streams could mismatch a
 // stale 1.17 column with 1.16 light or vice versa during version switches.
 function processUpdateLightV16 (rawPacket: Uint8Array): void {
-  if (!wasm || !(wasm as any).parseUpdateLightV17) {
+  if (!wasmReady) {
     pendingUpdateLightV16.push({ rawPacket })
     return
   }
@@ -80,6 +81,7 @@ async function initWasm() {
     wasmInitialized = true
     wasm = await import('../runtime-build/wasm_mesher.js')
     await wasm.default('/wasm_mesher_bg.wasm') as any
+    wasmReady = true // instance is now usable; drained packets below will pass the guard
 
     if (pendingUpdateLightV17.length > 0) {
       console.log('[WASM Mesher] draining', pendingUpdateLightV17.length, 'pending update_light v17 packets')
