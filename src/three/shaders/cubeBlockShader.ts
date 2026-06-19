@@ -1,4 +1,11 @@
 import * as THREE from 'three'
+import {
+  APPLY_LIGHTMAP_GLSL,
+  DEFAULT_LIGHTMAP_PARAMS,
+  type BlockLightmapParams,
+} from '../../lib/blockEntityLighting'
+
+export type { BlockLightmapParams }
 
 // Face order: UP=0, DOWN=1, EAST=2, WEST=3, SOUTH=4, NORTH=5
 // matches WASM mesher face order (mesher.rs FACE_NAMES)
@@ -13,17 +20,20 @@ layout(location = 2) in uint a_w2;
 layout(location = 3) in uint a_w3;
 
 // World camera position split for stable float32 subtraction (see relativePos below).
-uniform vec3 u_cameraOrigin;
+uniform ivec3 u_sectionOriginRel;
+uniform vec3 u_originDelta;
 uniform vec3 u_cameraOriginFrac;
+uniform float u_skyLevel;
 
-out float v_light;
+out float v_blockLight;
+out float v_skyLight;
 out float v_ao;
 out vec2 v_uv;
 flat out int v_texIndex;
 flat out int v_tintIndex;
 flat out int v_faceId;
 
-// Logarithmic depth buffer support: Three.js injects USE_LOGDEPTHBUF when the
+// Logarithmic depth buffer support: Three.js injects USE_LOGARITHMIC_DEPTH_BUFFER when the
 // renderer has logarithmicDepthBuffer: true. Standard Three.js shader chunks
 // rewrite gl_FragDepth via these varyings — if we don't, our linear gl_FragCoord.z
 // fails depth test vs sibling meshes that DO write log depth (we'd be invisible).
@@ -32,7 +42,7 @@ flat out int v_faceId;
 // issue where vIsPerspective lands on 0.9999… on some pixels and silently falls
 // back to linear gl_FragCoord.z, producing a white-noise z-fight pattern against
 // neighbouring meshes.
-#ifdef USE_LOGDEPTHBUF
+#ifdef USE_LOGARITHMIC_DEPTH_BUFFER
 out float vFragDepth;
 #endif
 
@@ -124,9 +134,12 @@ void main() {
     uint aoLevel = (a_w0 >> uint(23 + vi * 2)) & 0x3u;
     v_ao = (float(aoLevel) + 1.0) / 4.0;
 
-    // --- word1: combined smooth light (8 bits per corner) ---
+    // --- word1: sky (high nibble) + block (low nibble) light per corner ---
     uint lightRaw = (a_w1 >> uint(vi * 8)) & 0xFFu;
-    v_light = float(lightRaw) / 255.0;
+    uint sky4 = (lightRaw >> 4u) & 0xFu;
+    uint block4 = lightRaw & 0xFu;
+    v_skyLight = float(sky4) / 15.0;
+    v_blockLight = float(block4) / 15.0;
 
     // --- word2: texture index ---
     v_texIndex = int(a_w2 & 0xFFFu);
@@ -151,15 +164,17 @@ void main() {
     int sX = int((a_w3 & 0xFFFFu) | (((a_w2 >> 19u) & 0x3Fu) << 16u)) - 2097152;
     int sZ = int(((a_w3 >> 16u) & 0xFFFFu) | (((a_w2 >> 25u) & 0x3Fu) << 16u)) - 2097152;
     int sY = int((a_w2 >> 13u) & 0x1Fu) - 4;
-    vec3 sectionBase = vec3(float(sX * 16), float(sY * 16), float(sZ * 16));
+    int sXr = sX - u_sectionOriginRel.x;
+    int sYr = sY - u_sectionOriginRel.y;
+    int sZr = sZ - u_sectionOriginRel.z;
+    vec3 sectionBase = vec3(float(sXr * 16), float(sYr * 16), float(sZr * 16));
     vec3 facePos = BASE[faceId] + u * DU[faceId] + v * DV[faceId];
     vec3 blockLocal = vec3(float(lx), float(ly), float(lz));
-    // (sectionBase - u_cameraOrigin) is exact in float32; add small terms after.
-    vec3 relativePos = (sectionBase - u_cameraOrigin) + facePos + blockLocal - u_cameraOriginFrac;
+    vec3 relativePos = sectionBase + u_originDelta + facePos + blockLocal - u_cameraOriginFrac;
     vec4 mvPosition = modelViewMatrix * vec4(relativePos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
 
-#ifdef USE_LOGDEPTHBUF
+#ifdef USE_LOGARITHMIC_DEPTH_BUFFER
     // Mirrors three.js logdepthbuf_vertex chunk (EXT path: fragment writes gl_FragDepth).
     vFragDepth = 1.0 + gl_Position.w;
 #endif
@@ -179,15 +194,20 @@ uniform sampler2D u_atlas;
 uniform sampler2D u_tintPalette;
 /** 0=normal 1=holes 2=tileIndex 3=faceId 4=atlasAlpha */
 uniform float u_debugMode;
+uniform float u_skyLevel;
+uniform float u_lightCurve;
+uniform float u_minBrightness;
+uniform float u_lightGamma;
 
-in float v_light;
+in float v_blockLight;
+in float v_skyLight;
 in float v_ao;
 in vec2 v_uv;
 flat in int v_texIndex;
 flat in int v_tintIndex;
 flat in int v_faceId;
 
-#ifdef USE_LOGDEPTHBUF
+#ifdef USE_LOGARITHMIC_DEPTH_BUFFER
 uniform float logDepthBufFC;
 in float vFragDepth;
 #endif
@@ -206,7 +226,7 @@ uniform float fogFar;
 out vec4 FragColor;
 
 void writeLogDepth() {
-#ifdef USE_LOGDEPTHBUF
+#ifdef USE_LOGARITHMIC_DEPTH_BUFFER
     // Camera is always perspective; skip the vIsPerspective branch from three.js
     // standard chunks to avoid float-precision z-fight against neighbouring meshes.
     gl_FragDepth = log2(vFragDepth) * logDepthBufFC * 0.5;
@@ -224,6 +244,8 @@ void applyFog() {
     FragColor.rgb = mix(FragColor.rgb, fogColor, fogFactor);
 #endif
 }
+
+${APPLY_LIGHTMAP_GLSL}
 
 void main() {
     // Atlas sample (pixelated, no filtering)
@@ -269,9 +291,9 @@ void main() {
     // Tint from palette (256x1 RGBA texture, index 0 = white [1,1,1])
     vec3 tint = texelFetch(u_tintPalette, ivec2(v_tintIndex, 0), 0).rgb;
 
-    // Combined light * AO, identity brightness curve (no mcBrightness) to match the
-    // legacy CPU mesher output 1:1.
-    float brightness = v_light * v_ao;
+    float L = max(v_blockLight, min(v_skyLight, u_skyLevel));
+    float Lm = applyLightmap(L);
+    float brightness = Lm * v_ao;
 
     // Opaque full cubes: always alpha 1 (legacy uses cutout material; avoids seeing blocks behind)
     FragColor = vec4(baseColor.rgb * tint * brightness, 1.0);
@@ -293,7 +315,12 @@ export function createCubeBlockMaterial(): THREE.ShaderMaterial {
                 u_atlas: { value: null },
                 u_tintPalette: { value: null },
                 u_debugMode: { value: 0 },
-                u_cameraOrigin: { value: new THREE.Vector3() },
+                u_skyLevel: { value: 1.0 },
+                u_lightCurve: { value: DEFAULT_LIGHTMAP_PARAMS.curve },
+                u_minBrightness: { value: DEFAULT_LIGHTMAP_PARAMS.minBrightness },
+                u_lightGamma: { value: DEFAULT_LIGHTMAP_PARAMS.gamma },
+                u_sectionOriginRel: { value: new THREE.Vector3(0, 0, 0) },
+                u_originDelta: { value: new THREE.Vector3() },
                 u_cameraOriginFrac: { value: new THREE.Vector3() },
             },
         ]),
@@ -311,7 +338,43 @@ export function createCubeBlockMaterial(): THREE.ShaderMaterial {
 }
 
 // Three geometry constants: 6 vertices per face (2 triangles, un-indexed)
+export function setCubeSkyLevel (material: THREE.ShaderMaterial, value: number): void {
+    const u = material.uniforms.u_skyLevel
+    if (u) u.value = value
+}
+
+export function setCubeLightmapParams (
+    material: THREE.ShaderMaterial,
+    params: BlockLightmapParams,
+): void {
+    if (params.curve !== undefined) {
+        const u = material.uniforms.u_lightCurve
+        if (u) u.value = params.curve
+    }
+    if (params.minBrightness !== undefined) {
+        const u = material.uniforms.u_minBrightness
+        if (u) u.value = params.minBrightness
+    }
+    if (params.gamma !== undefined) {
+        const u = material.uniforms.u_lightGamma
+        if (u) u.value = params.gamma
+    }
+}
+
 export const VERTICES_PER_FACE = 6
+
+/** Section index units for render origin R (R is always a multiple of 16). */
+export function computeSectionOriginRel (renderOrigin: { x: number, y: number, z: number }): {
+  x: number
+  y: number
+  z: number
+} {
+  return {
+    x: Math.round(renderOrigin.x / 16),
+    y: Math.round(renderOrigin.y / 16),
+    z: Math.round(renderOrigin.z / 16),
+  }
+}
 
 // Word layout constants (for encoding/decoding instances)
 export const WORD0 = {

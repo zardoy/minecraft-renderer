@@ -8,6 +8,7 @@ import { renderSign } from '../sign-renderer'
 import { DisplayWorldOptions, GraphicsInitOptions } from '../graphicsBackend/types'
 import { chunkPos, sectionPos } from '../lib/simpleUtils'
 import { WorldRendererCommon } from '../lib/worldrendererCommon'
+import { calculateSkyLightSimple } from '../lib/skyLight'
 import { addNewStat, MC_RENDERER_DEBUG_OVERLAY_CLASS } from '../lib/ui/newStats'
 import { MesherGeometryOutput } from '../mesher-shared/shared'
 import { ItemSpecificContextProperties } from '../playerState/types'
@@ -42,6 +43,9 @@ type SectionKey = string
 export class WorldRendererThree extends WorldRendererCommon {
   outputFormat = 'threeJs' as const
 
+  /** r184 removed useLegacyLights; physical intensities ≈ legacy / π. */
+  private static readonly LEGACY_TO_PHYSICAL_LIGHT = Math.PI
+
   protected override isShaderCubeBlocksEnabled(): boolean {
     return this.worldRendererConfig.shaderCubeBlocks === true
       && !!this.renderer?.capabilities?.isWebGL2
@@ -59,8 +63,8 @@ export class WorldRendererThree extends WorldRendererCommon {
   get realScene() {
     return this.scene
   }
-  ambientLight = new THREE.AmbientLight(0xcc_cc_cc)
-  directionalLight = new THREE.DirectionalLight(0xff_ff_ff, 0.5)
+  ambientLight = new THREE.AmbientLight(0xcc_cc_cc, WorldRendererThree.LEGACY_TO_PHYSICAL_LIGHT)
+  directionalLight = new THREE.DirectionalLight(0xff_ff_ff, 0.5 * WorldRendererThree.LEGACY_TO_PHYSICAL_LIGHT)
   entities = new Entities(this, (globalThis as any).mcData)
   performanceMonitor!: PerformanceMonitor
   cameraGroupVr?: THREE.Object3D
@@ -69,6 +73,7 @@ export class WorldRendererThree extends WorldRendererCommon {
   cursorBlock: CursorBlock
   onRender: Array<(deltaTime: number) => void> = []
   private lastRenderTime = 0
+  private lastSciFiTickMs = 0
   private animatedFov = 0
   private lastFovAnimTime = 0
   private static readonly FOV_TRANSITION_MS = 200
@@ -174,6 +179,15 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.onRenderDistanceChanged = (viewDistance) => {
       this.chunkMeshManager.updateViewDistance(viewDistance)
     }
+
+    // Final lightmap values TBD — compare against https://v99.mcraft.fun/
+    if (typeof window !== 'undefined') {
+      (window as any).setBlockLightmap = (params: { curve?: number, minBrightness?: number, gamma?: number }) => {
+        this.chunkMeshManager.setBlockLightmapParams(params)
+      }
+    }
+
+    this.syncSkyLevelFromTime(this.timeOfTheDay)
 
     this.cursorBlock = new CursorBlock(this)
     this.holdingBlock = createHoldingBlock(this)
@@ -430,6 +444,7 @@ export class WorldRendererThree extends WorldRendererCommon {
 
   worldSwitchActions() {
     this.onWorldSwitched.push(() => {
+      this.getModule<{ onWorldSwitched?: () => void }>('futuristicReveal')?.onWorldSwitched?.()
       // clear custom blocks
       this.protocolCustomBlocks.clear()
       // Reset section animations
@@ -440,6 +455,7 @@ export class WorldRendererThree extends WorldRendererCommon {
       this.cinimaticScript.stopScript()
       // Clear fireworks
       this.fireworks.clear()
+      this.syncSkyLevelFromTime(this.timeOfTheDay)
     })
   }
 
@@ -499,11 +515,11 @@ export class WorldRendererThree extends WorldRendererCommon {
     })
     this.onReactivePlayerStateUpdated('ambientLight', (value) => {
       if (!value) return
-      this.ambientLight.intensity = value
+      this.ambientLight.intensity = value * WorldRendererThree.LEGACY_TO_PHYSICAL_LIGHT
     })
     this.onReactivePlayerStateUpdated('directionalLight', (value) => {
       if (!value) return
-      this.directionalLight.intensity = value
+      this.directionalLight.intensity = value * WorldRendererThree.LEGACY_TO_PHYSICAL_LIGHT
     })
     this.onReactivePlayerStateUpdated('lookingAtBlock', (value) => {
       this.cursorBlock.setHighlightCursorBlock(value ? new Vec3(value.x, value.y, value.z) : null, value?.shapes)
@@ -529,6 +545,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     })
     this.onReactiveConfigUpdated('shaderCubeDebugMode', () => {
       this.chunkMeshManager.syncCubeShaderUniforms()
+      this.chunkMeshManager.syncLegacyShaderUniforms()
     })
     this.onReactiveConfigUpdated('futuristicReveal', () => {
       this.updateModulesFromConfig()
@@ -630,6 +647,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     texture.flipY = false
     this.material.map = texture
     this.chunkMeshManager.syncCubeShaderUniforms()
+    this.chunkMeshManager.syncLegacyShaderUniforms()
 
     const itemsTexture = loadThreeJsTextureFromBitmap(resources.itemsAtlasImage!)
     itemsTexture.needsUpdate = true
@@ -674,6 +692,16 @@ export class WorldRendererThree extends WorldRendererCommon {
     }
 
     this.skyboxRenderer.updateTime(newTime)
+    this.syncSkyLevelFromTime(newTime)
+  }
+
+  private syncSkyLevelFromTime (timeOfDay: number): void {
+    const skyLevel = calculateSkyLightSimple(timeOfDay) / 15
+    this.chunkMeshManager.setSkyLevel(skyLevel)
+  }
+
+  protected onDayCycleSkyLightChanged(_skyLight: number): void {
+    // Sky cap is driven by u_skyLevel uniform; no remesh on day/night.
   }
 
   biomeUpdated(biome: Biome): void {
@@ -786,6 +814,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     // "Batch Chunks Display" (`_renderByChunks`) option. No-op when the
     // option is off — `waitingChunksToDisplay` is empty in that case.
     this.chunkMeshManager.finishChunkDisplay(chunkKey)
+    this.getModule<{ onChunkFinished?: () => void }>('futuristicReveal')?.onChunkFinished?.()
   }
 
   private applyPendingSectionUpdates() {
@@ -846,8 +875,12 @@ export class WorldRendererThree extends WorldRendererCommon {
         continue
       }
 
-      this.chunkMeshManager.updateSection(update.key, update.geometry)
+      const sectionObject = this.chunkMeshManager.updateSection(update.key, update.geometry)
       this.updatePosDataChunk(update.key)
+      if (sectionObject) {
+        this.getModule<{ onSectionMeshed?: (key: string, geometry: MesherGeometryOutput, section: typeof sectionObject) => void }>('futuristicReveal')
+          ?.onSectionMeshed?.(update.key, update.geometry, sectionObject)
+      }
     }
   }
 
@@ -884,8 +917,12 @@ export class WorldRendererThree extends WorldRendererCommon {
         this.chunkMeshManager.releaseSection(data.key)
         return
       }
-      this.chunkMeshManager.updateSection(data.key, data.geometry)
+      const sectionObject = this.chunkMeshManager.updateSection(data.key, data.geometry)
       this.updatePosDataChunk(data.key)
+      if (sectionObject) {
+        this.getModule<{ onSectionMeshed?: (key: string, geometry: MesherGeometryOutput, section: typeof sectionObject) => void }>('futuristicReveal')
+          ?.onSectionMeshed?.(data.key, data.geometry, sectionObject)
+      }
     }
   }
 
@@ -974,17 +1011,9 @@ export class WorldRendererThree extends WorldRendererCommon {
       this.debugRaycast(pos, direction, distance)
     }
 
-    // Convert world position to scene-relative coordinates for raycasting
-    const scenePos = this._tpScenePos.set(
-      this.sceneOrigin.toSceneX(pos.x),
-      this.sceneOrigin.toSceneY(pos.y),
-      this.sceneOrigin.toSceneZ(pos.z)
-    )
-
-    // Perform raycast to avoid camera going through blocks
     const raycaster = this._tpRaycaster
-    raycaster.set(scenePos, direction)
-    raycaster.far = distance // Limit raycast distance
+    raycaster.set(pos, direction)
+    raycaster.far = distance
 
     const maxCenterDistance = 80
     const maxCenterDistSq = maxCenterDistance * maxCenterDistance
@@ -992,8 +1021,8 @@ export class WorldRendererThree extends WorldRendererCommon {
     const oy = pos.y
     const oz = pos.z
 
-    // Legacy / deferred-shader meshes (scene-relative raycast)
-    const meshes: THREE.Object3D[] = []
+    // Legacy section meshes: world-space raycast (static mesh.matrix translation).
+    const legacyMeshes: THREE.Object3D[] = []
     for (const obj of Object.values(this.sectionObjects)) {
       if (obj.name !== 'chunk' || !obj.visible) continue
       if (obj.worldX === undefined) continue
@@ -1001,11 +1030,11 @@ export class WorldRendererThree extends WorldRendererCommon {
       const dcy = obj.worldY! - oy
       const dcz = obj.worldZ! - oz
       if (dcx * dcx + dcy * dcy + dcz * dcz > maxCenterDistSq) continue
-      const mesh = obj.children.find(child => child.name === 'mesh' || child.name === 'shaderMesh')
-      if (mesh) meshes.push(mesh)
+      const mesh = obj.children.find(child => child.name === 'mesh')
+      if (mesh) legacyMeshes.push(mesh)
     }
 
-    const intersects = raycaster.intersectObjects(meshes, false)
+    const intersects = raycaster.intersectObjects(legacyMeshes, false)
 
     let finalDistance = distance
     if (intersects.length > 0) {
@@ -1021,6 +1050,15 @@ export class WorldRendererThree extends WorldRendererCommon {
     )
     if (boxHit !== undefined) {
       finalDistance = Math.max(0.5, boxHit - 0.2)
+    }
+
+    const legacyGlobalHit = this.chunkMeshManager.raycastGlobalLegacySections(
+      raycaster,
+      pos,
+      maxCenterDistance,
+    )
+    if (legacyGlobalHit !== undefined) {
+      finalDistance = Math.max(0.5, legacyGlobalHit - 0.2)
     }
 
     const finalPos = new Vec3(
@@ -1279,12 +1317,45 @@ export class WorldRendererThree extends WorldRendererCommon {
 
     // eslint-disable-next-line @typescript-eslint/non-nullable-type-assertion-style
     const cam = this.cameraGroupVr instanceof THREE.Group ? this.cameraGroupVr.children.find(child => child instanceof THREE.PerspectiveCamera) as THREE.PerspectiveCamera : this.camera
+    // Flush buffered section geometry before reveal tick (calls onSectionMeshed synchronously in handleWorkerMessage).
     this.applyPendingSectionUpdates()
+    const sciFiNow = performance.now()
+    const sciFiDeltaMs = sciFiNow - this.lastSciFiTickMs
+    this.lastSciFiTickMs = sciFiNow
+    this.getModule<{ tick?: (deltaMs: number, now?: number) => void }>('futuristicReveal')?.tick?.(sciFiDeltaMs, sciFiNow)
+    const camX = this.cameraWorldPos.x
+    const camY = this.cameraWorldPos.y
+    const camZ = this.cameraWorldPos.z
+    this.chunkMeshManager.maybeRebase({ x: camX, y: camY, z: camZ })
+    const renderOrigin = this.chunkMeshManager.getRenderOrigin()
     const globalBuffer = this.chunkMeshManager.globalBlockBuffer
     if (globalBuffer) {
-      globalBuffer.setCameraOrigin(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
+      globalBuffer.setCameraOrigin(renderOrigin, camX, camY, camZ)
+      globalBuffer.setDebugOverlay(this.displayOptions.inWorldRenderingConfig.enableDebugOverlay)
       globalBuffer.compactStep()
-      globalBuffer.uploadDirtyRange()
+      if (globalBuffer.hasPendingUploads()) {
+        globalBuffer.uploadDirtyRange()
+      }
+      globalBuffer.suppressThreeDraw()
+    }
+    const globalLegacyBuffer = this.chunkMeshManager.globalLegacyBuffer
+    if (globalLegacyBuffer?.hasPendingUploads()) {
+      globalLegacyBuffer.uploadDirtyRange()
+    }
+    const globalLegacyBlendBuffer = this.chunkMeshManager.globalLegacyBlendBuffer
+    if (globalLegacyBlendBuffer?.hasPendingUploads()) {
+      globalLegacyBlendBuffer.uploadDirtyRange()
+    }
+    this.chunkMeshManager.setLegacyCameraOrigin(camX, camY, camZ)
+    this.chunkMeshManager.updateCullDirtyFromCamera(cam, camX, camY, camZ)
+    if (this.chunkMeshManager.cullDirty) {
+      this.chunkMeshManager.updateSectionCullAndSort(
+        cam,
+        this.cameraWorldPos.x,
+        this.cameraWorldPos.y,
+        this.cameraWorldPos.z,
+      )
+      this.chunkMeshManager.clearCullDirty()
     }
     this.renderer.render(this.scene, cam)
 
@@ -1523,8 +1594,6 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
 
   setSectionDirty(...args: Parameters<WorldRendererCommon['setSectionDirty']>) {
-    const [pos] = args
-    this.cleanChunkTextures(pos.x, pos.z) // todo don't do this!
     super.setSectionDirty(...args)
   }
 

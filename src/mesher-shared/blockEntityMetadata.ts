@@ -1,6 +1,14 @@
+import { Vec3 } from 'vec3'
+
 export interface SignMeta { isWall: boolean; isHanging: boolean; rotation: number }
 export interface HeadMeta { isWall: boolean; rotation: number }
-export interface BannerMeta { isWall: boolean; blockName: string; rotation: number }
+export interface BannerMeta {
+  isWall: boolean
+  blockName: string
+  rotation: number
+  blockLightNorm: number
+  skyLightNorm: number
+}
 
 export interface BlockEntityMetadataTarget {
   signs: Record<string, SignMeta>
@@ -14,11 +22,16 @@ export interface BlockEntityMetadataOptions {
 
 type BlockLike = { name: string; getProperties(): any }
 
+type LightSampler = {
+  getChannelLightNorm(pos: Vec3): { block: number, sky: number }
+}
+
 export function collectBlockEntityMetadata(
   block: BlockLike,
   x: number, y: number, z: number,
   target: BlockEntityMetadataTarget,
-  options: BlockEntityMetadataOptions
+  options: BlockEntityMetadataOptions,
+  world?: LightSampler,
 ): void {
   if ((block.name.includes('_sign') || block.name === 'sign') && !options.disableBlockEntityTextures) {
     const key = `${x},${y},${z}`
@@ -60,10 +73,13 @@ export function collectBlockEntityMetadata(
       'east': 3
     }
     const isWall = block.name.endsWith('_wall_banner')
+    const light = world?.getChannelLightNorm(new Vec3(x, y, z)) ?? { block: 0, sky: 1 }
     target.banners[key] = {
       isWall,
       blockName: block.name, // Pass block name for base color extraction
-      rotation: isWall ? facingRotationMap[props.facing] : (props.rotation === undefined ? 0 : +props.rotation)
+      rotation: isWall ? facingRotationMap[props.facing] : (props.rotation === undefined ? 0 : +props.rotation),
+      blockLightNorm: light.block,
+      skyLightNorm: light.sky,
     }
   }
 }

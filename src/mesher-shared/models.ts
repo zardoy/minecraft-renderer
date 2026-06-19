@@ -4,7 +4,7 @@ import moreBlockDataGeneratedJson from '../lib/moreBlockDataGenerated.json'
 import { BlockType } from '../playground/shared'
 import { World, BlockModelPartsResolved, WorldBlock as Block, WorldBlock, worldColumnKey } from './world'
 import { BlockElement, buildRotationMatrix, elemFaces, matmul3, matmulmat3, vecadd3, vecsub3 } from './modelsGeometryCommon'
-import { getSideShading, vertexLightFromAo } from './vertexShading'
+import { getSideShading } from './vertexShading'
 import { INVISIBLE_BLOCKS } from './worldConstants'
 import { MesherGeometryOutput, HighestBlockInfo } from './shared'
 import { collectBlockEntityMetadata } from './blockEntityMetadata'
@@ -21,6 +21,38 @@ let blockProvider: WorldBlockProvider
 const tints: any = {}
 let needTiles = false
 let semiTransparentBlocks: string[] = []
+
+/** Mutable geometry bucket used while meshing (opaque or blend). */
+export type MesherGeometryBucket = {
+  positions: number[]
+  normals: number[]
+  colors: number[]
+  skyLights: number[]
+  blockLights: number[]
+  uvs: number[]
+  indices: number[]
+  indicesCount: number
+}
+
+function vertexTintAoColor (
+  tint: [number, number, number],
+  ao: number,
+  faceDir: [number, number, number],
+  shadingTheme: 'vanilla' | 'high-contrast',
+  cardinalLight: string,
+): [number, number, number] {
+  const sideShading = getSideShading(faceDir, shadingTheme, cardinalLight)
+  if (shadingTheme === 'high-contrast') {
+    const f = sideShading * ((ao + 1) / 4)
+    return [tint[0] * f, tint[1] * f, tint[2] * f]
+  }
+  const f = sideShading * (ao * 0.2 + 0.4)
+  return [tint[0] * f, tint[1] * f, tint[2] * f]
+}
+
+export function isSemiTransparentBlockName (name: string): boolean {
+  return semiTransparentBlocks.includes(name)
+}
 
 let tintsData
 try {
@@ -88,7 +120,7 @@ const getVec = (v: Vec3, dir: Vec3) => {
   return v.plus(dir)
 }
 
-function renderLiquid(world: World, cursor: Vec3, texture: any | undefined, type: number, biome: string, water: boolean, attr: MesherGeometryOutput, isRealWater: boolean) {
+function renderLiquid(world: World, cursor: Vec3, texture: any | undefined, type: number, biome: string, water: boolean, bucket: MesherGeometryBucket, attr: MesherGeometryOutput, isRealWater: boolean) {
   const heights: number[] = []
   for (let z = -1; z <= 1; z++) {
     for (let x = -1; x <= 1; x++) {
@@ -143,21 +175,23 @@ function renderLiquid(world: World, cursor: Vec3, texture: any | undefined, type
     const { su } = texture
     const { sv } = texture
 
-    // Get base light value for the face
-    const baseLight = world.getLight(neighborPos, undefined, undefined, water ? 'water' : 'lava') / 15
+    const baseChannels = world.getChannelLightNorm(neighborPos)
+
+    const baseIndex = bucket.positions.length / 3
 
     for (const pos of corners) {
       const height = cornerHeights[pos[2] * 2 + pos[0]]
       const OFFSET = 0.0001
-      attr.t_positions!.push(
+      bucket.positions.push(
         (pos[0] ? 1 - OFFSET : OFFSET) + (cursor.x & 15) - 8,
         (pos[1] ? height - OFFSET : OFFSET) + (cursor.y & 15) - 8,
         (pos[2] ? 1 - OFFSET : OFFSET) + (cursor.z & 15) - 8
       )
-      attr.t_normals!.push(...dir)
-      attr.t_uvs!.push(pos[3] * su + u, pos[4] * sv * (pos[1] ? 1 : height) + v)
+      bucket.normals.push(...dir)
+      bucket.uvs.push(pos[3] * su + u, pos[4] * sv * (pos[1] ? 1 : height) + v)
 
-      let cornerLightResult = baseLight
+      let skyNorm = baseChannels.sky
+      let blockNorm = baseChannels.block
       if (world.config.smoothLighting) {
         const dx = pos[0] * 2 - 1
         const dy = pos[1] * 2 - 1
@@ -169,18 +203,47 @@ function renderLiquid(world: World, cursor: Vec3, texture: any | undefined, type
         const dirVec = new Vec3(...dir as [number, number, number])
 
         const side1LightDir = getVec(new Vec3(...side1Dir), dirVec)
-        const side1Light = world.getLight(cursor.plus(side1LightDir)) / 15
         const side2DirLight = getVec(new Vec3(...side2Dir), dirVec)
-        const side2Light = world.getLight(cursor.plus(side2DirLight)) / 15
         const cornerLightDir = getVec(new Vec3(...cornerDir), dirVec)
-        const cornerLight = world.getLight(cursor.plus(cornerLightDir)) / 15
-        // interpolate
-        const lights = [side1Light, side2Light, cornerLight, baseLight]
-        cornerLightResult = lights.reduce((acc, cur) => acc + cur, 0) / lights.length
+        const s1 = world.getChannelLightNorm(cursor.plus(side1LightDir))
+        const s2 = world.getChannelLightNorm(cursor.plus(side2DirLight))
+        const sc = world.getChannelLightNorm(cursor.plus(cornerLightDir))
+        blockNorm = (s1.block + s2.block + sc.block + baseChannels.block) / 4
+        skyNorm = (s1.sky + s2.sky + sc.sky + baseChannels.sky) / 4
       }
 
-      // Apply light value to tint
-      attr.t_colors!.push(tint[0] * cornerLightResult, tint[1] * cornerLightResult, tint[2] * cornerLightResult)
+      bucket.colors.push(tint[0], tint[1], tint[2])
+      bucket.skyLights.push(skyNorm)
+      bucket.blockLights.push(blockNorm)
+    }
+
+    if (!needTiles) {
+      // Quad A (front face)
+      bucket.indices[bucket.indicesCount++] = baseIndex
+      bucket.indices[bucket.indicesCount++] = baseIndex + 1
+      bucket.indices[bucket.indicesCount++] = baseIndex + 2
+      bucket.indices[bucket.indicesCount++] = baseIndex + 2
+      bucket.indices[bucket.indicesCount++] = baseIndex + 1
+      bucket.indices[bucket.indicesCount++] = baseIndex + 3
+
+      // Quad B (back face) — duplicate verts so global buffer keeps 6/4 invariant
+      const dupBase = bucket.positions.length / 3
+      for (let v = 0; v < 4; v++) {
+        const src = (baseIndex + v) * 3
+        bucket.positions.push(bucket.positions[src]!, bucket.positions[src + 1]!, bucket.positions[src + 2]!)
+        bucket.normals.push(-dir[0], -dir[1], -dir[2])
+        const uvSrc = (baseIndex + v) * 2
+        bucket.uvs.push(bucket.uvs[uvSrc]!, bucket.uvs[uvSrc + 1]!)
+        bucket.colors.push(bucket.colors[src]!, bucket.colors[src + 1]!, bucket.colors[src + 2]!)
+        bucket.skyLights.push(bucket.skyLights[baseIndex + v]!)
+        bucket.blockLights.push(bucket.blockLights[baseIndex + v]!)
+      }
+      bucket.indices[bucket.indicesCount++] = dupBase
+      bucket.indices[bucket.indicesCount++] = dupBase + 2
+      bucket.indices[bucket.indicesCount++] = dupBase + 1
+      bucket.indices[bucket.indicesCount++] = dupBase + 1
+      bucket.indices[bucket.indicesCount++] = dupBase + 2
+      bucket.indices[bucket.indicesCount++] = dupBase + 3
     }
   }
 }
@@ -225,7 +288,7 @@ const identicalCull = (currentElement: BlockElement, neighbor: Block, direction:
 
 let needSectionRecomputeOnChange = false
 
-function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: boolean, attr: MesherGeometryOutput, globalMatrix: any, globalShift: any, block: Block, biome: string) {
+function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: boolean, bucket: MesherGeometryBucket, attr: MesherGeometryOutput, globalMatrix: any, globalShift: any, block: Block, biome: string) {
   const position = cursor
   // const key = `${position.x},${position.y},${position.z}`
   // if (!globalThis.allowedBlocks.includes(key)) return
@@ -263,7 +326,7 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
     const { su } = texture
     const { sv } = texture
 
-    const ndx = Math.floor(attr.positions.length / 3)
+    const ndx = Math.floor(bucket.positions.length / 3)
 
     tsLog(`[TS]   Base index: ${ndx}`)
 
@@ -344,11 +407,9 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
 
     const aos: number[] = []
     const neighborPos = position.plus(new Vec3(...dir))
-    // 10%
     const { smoothLighting, shadingTheme, cardinalLight } = world.config
-    const faceLight = world.getLight(neighborPos, undefined, undefined, block.name)
-    const sideShading = getSideShading(dir, shadingTheme, cardinalLight)
-    const baseLight = sideShading * faceLight / 15
+    const baseChannels = world.getChannelLightNorm(neighborPos)
+    const faceDir = dir as [number, number, number]
     for (const pos of corners) {
       let vertex = [
         (pos[0] ? maxx : minx),
@@ -369,19 +430,21 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
 
         tsLog(`[TS]     Corner ${pos.join(',')}: vertex=[${vertex.map(v => v.toFixed(3)).join(',')}], worldPos=[${worldPos.map(v => v.toFixed(3)).join(',')}]`)
 
-        attr.positions.push(...worldPos)
+        bucket.positions.push(...worldPos)
 
-        attr.normals.push(...dir)
+        bucket.normals.push(...dir)
 
         const baseu = (pos[3] - 0.5) * uvcs - (pos[4] - 0.5) * uvsn + 0.5
         const basev = (pos[3] - 0.5) * uvsn + (pos[4] - 0.5) * uvcs + 0.5
         const finalU = baseu * su + u
         const finalV = basev * sv + v
         tsLog(`[TS]       UV: cornerUV=[${pos[3]},${pos[4]}], baseUV=[${baseu.toFixed(6)},${basev.toFixed(6)}], finalUV=[${finalU.toFixed(6)},${finalV.toFixed(6)}], texture=[u=${u},v=${v},su=${su},sv=${sv}], rotation=${r}`)
-        attr.uvs.push(finalU, finalV)
+        bucket.uvs.push(finalU, finalV)
       }
 
-      let light = 1
+      let skyLightNorm = baseChannels.sky
+      let blockLightNorm = baseChannels.block
+      let ao = 3
       if (doAO) {
         const dx = pos[0] * 2 - 1
         const dy = pos[1] * 2 - 1
@@ -393,8 +456,6 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
         const side2 = world.getBlock(cursor.offset(...side2Dir))
         const corner = world.getBlock(cursor.offset(...cornerDir))
 
-        let cornerLightResult = faceLight
-
         if (smoothLighting) {
           const dirVec = new Vec3(...dir)
           const getVec = (v: Vec3) => {
@@ -404,37 +465,35 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
             return v.plus(dirVec)
           }
           const side1LightDir = getVec(new Vec3(...side1Dir))
-          const side1Light = world.getLight(cursor.plus(side1LightDir))
           const side2DirLight = getVec(new Vec3(...side2Dir))
-          const side2Light = world.getLight(cursor.plus(side2DirLight))
           const cornerLightDir = getVec(new Vec3(...cornerDir))
-          const cornerLight = world.getLight(cursor.plus(cornerLightDir))
-          // interpolate
-          const lights = [side1Light, side2Light, cornerLight, faceLight]
-          cornerLightResult = lights.reduce((acc, cur) => acc + cur, 0) / lights.length
+          const s1 = world.getChannelLightNorm(cursor.plus(side1LightDir))
+          const s2 = world.getChannelLightNorm(cursor.plus(side2DirLight))
+          const sc = world.getChannelLightNorm(cursor.plus(cornerLightDir))
+          blockLightNorm = (s1.block + s2.block + sc.block + baseChannels.block) / 4
+          skyLightNorm = (s1.sky + s2.sky + sc.sky + baseChannels.sky) / 4
         }
 
         const side1Block = world.shouldMakeAo(side1) ? 1 : 0
         const side2Block = world.shouldMakeAo(side2) ? 1 : 0
         const cornerBlock = world.shouldMakeAo(corner) ? 1 : 0
 
-        // TODO: correctly interpolate ao light based on pos (evaluate once for each corner of the block)
-
-        const ao = (side1Block && side2Block) ? 0 : (3 - (side1Block + side2Block + cornerBlock))
-        light = vertexLightFromAo(ao, cornerLightResult, sideShading, shadingTheme)
+        ao = (side1Block && side2Block) ? 0 : (3 - (side1Block + side2Block + cornerBlock))
         aos.push(ao)
 
-        // Log AO and light for this corner (corner index is aos.length - 1)
         const cornerIdx = aos.length - 1
-        tsLog(`[TS]       Corner ${cornerIdx} AO=${ao}, light=${light.toFixed(3)}`)
+        tsLog(`[TS]       Corner ${cornerIdx} AO=${ao}, sky=${skyLightNorm.toFixed(3)}, block=${blockLightNorm.toFixed(3)}`)
       }
 
       if (!needTiles) {
-        attr.colors.push(tint[0] * light, tint[1] * light, tint[2] * light)
+        const tintAo = vertexTintAoColor(tint as [number, number, number], ao, faceDir, shadingTheme, cardinalLight)
+        bucket.colors.push(tintAo[0], tintAo[1], tintAo[2])
+        bucket.skyLights.push(skyLightNorm)
+        bucket.blockLights.push(blockLightNorm)
       }
     }
 
-    const lightWithColor = [baseLight * tint[0], baseLight * tint[1], baseLight * tint[2]] as [number, number, number]
+    const lightWithColor = [baseChannels.sky * tint[0], baseChannels.sky * tint[1], baseChannels.sky * tint[2]] as [number, number, number]
 
     if (needTiles) {
       const tiles = attr.tiles as Tiles
@@ -450,7 +509,7 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
           side,
           textureIndex: eFace.texture.tileIndex,
           neighbor: `${neighborPos.x},${neighborPos.y},${neighborPos.z}`,
-          light: baseLight,
+          light: Math.max(baseChannels.block, baseChannels.sky),
           tint: lightWithColor,
           //@ts-expect-error debug prop
           texture: eFace.texture.debugName || block.name,
@@ -464,22 +523,22 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
         tri1 = [ndx, ndx + 3, ndx + 2]
         tri2 = [ndx, ndx + 1, ndx + 3]
         tsLog(`[TS]     Indices (AO optimized): tri1=[${tri1.join(',')}], tri2=[${tri2.join(',')}], aos=[${aos.join(',')}]`)
-        attr.indices[attr.indicesCount++] = tri1[0]
-        attr.indices[attr.indicesCount++] = tri1[1]
-        attr.indices[attr.indicesCount++] = tri1[2]
-        attr.indices[attr.indicesCount++] = tri2[0]
-        attr.indices[attr.indicesCount++] = tri2[1]
-        attr.indices[attr.indicesCount++] = tri2[2]
+        bucket.indices[bucket.indicesCount++] = tri1[0]
+        bucket.indices[bucket.indicesCount++] = tri1[1]
+        bucket.indices[bucket.indicesCount++] = tri1[2]
+        bucket.indices[bucket.indicesCount++] = tri2[0]
+        bucket.indices[bucket.indicesCount++] = tri2[1]
+        bucket.indices[bucket.indicesCount++] = tri2[2]
       } else {
         tri1 = [ndx, ndx + 1, ndx + 2]
         tri2 = [ndx + 2, ndx + 1, ndx + 3]
         tsLog(`[TS]     Indices (standard): tri1=[${tri1.join(',')}], tri2=[${tri2.join(',')}], aos=[${aos.join(',')}]`)
-        attr.indices[attr.indicesCount++] = tri1[0]
-        attr.indices[attr.indicesCount++] = tri1[1]
-        attr.indices[attr.indicesCount++] = tri1[2]
-        attr.indices[attr.indicesCount++] = tri2[0]
-        attr.indices[attr.indicesCount++] = tri2[1]
-        attr.indices[attr.indicesCount++] = tri2[2]
+        bucket.indices[bucket.indicesCount++] = tri1[0]
+        bucket.indices[bucket.indicesCount++] = tri1[1]
+        bucket.indices[bucket.indicesCount++] = tri1[2]
+        bucket.indices[bucket.indicesCount++] = tri2[0]
+        bucket.indices[bucket.indicesCount++] = tri2[1]
+        bucket.indices[bucket.indicesCount++] = tri2[2]
       }
     }
   }
@@ -515,11 +574,9 @@ export function getSectionGeometry(sx: number, sy: number, sz: number, world: Wo
     positions: [],
     normals: [],
     colors: [],
+    skyLights: [],
+    blockLights: [],
     uvs: [],
-    t_positions: [],
-    t_normals: [],
-    t_colors: [],
-    t_uvs: [],
     indices: [],
     indicesCount: 0, // Track current index position
     using32Array: true,
@@ -533,13 +590,34 @@ export function getSectionGeometry(sx: number, sy: number, sz: number, world: Wo
     blocksCount: 0
   }
 
+  const opaqueBucket: MesherGeometryBucket = {
+    positions: attr.positions as number[],
+    normals: attr.normals as number[],
+    colors: attr.colors as number[],
+    skyLights: attr.skyLights as number[],
+    blockLights: attr.blockLights as number[],
+    uvs: attr.uvs as number[],
+    indices: attr.indices as number[],
+    indicesCount: attr.indicesCount,
+  }
+  const blendBucket: MesherGeometryBucket = {
+    positions: [],
+    normals: [],
+    colors: [],
+    skyLights: [],
+    blockLights: [],
+    uvs: [],
+    indices: [],
+    indicesCount: 0,
+  }
+
   const cursor = new Vec3(0, 0, 0)
   for (cursor.y = sy; cursor.y < sy + readHeight; cursor.y++) {
     for (cursor.z = sz; cursor.z < sz + 16; cursor.z++) {
       for (cursor.x = sx; cursor.x < sx + 16; cursor.x++) {
         let block = world.getBlock(cursor, blockProvider, attr)!
         if (INVISIBLE_BLOCKS.has(block.name)) continue
-        collectBlockEntityMetadata(block, cursor.x, cursor.y, cursor.z, attr, { disableBlockEntityTextures: world.config.disableBlockEntityTextures })
+        collectBlockEntityMetadata(block, cursor.x, cursor.y, cursor.z, attr, { disableBlockEntityTextures: world.config.disableBlockEntityTextures }, world)
         const biome = block.biome.name
 
         if (world.preflat) { // 10% perf
@@ -563,11 +641,11 @@ export function getSectionGeometry(sx: number, sy: number, sz: number, world: Wo
           const pos = cursor.clone()
           // eslint-disable-next-line @typescript-eslint/no-loop-func
           delayedRender.push(() => {
-            renderLiquid(world, pos, blockProvider.getTextureInfo('water_still'), block.type, biome, true, attr, !isWaterlogged)
+            renderLiquid(world, pos, blockProvider.getTextureInfo('water_still'), block.type, biome, true, blendBucket, attr, !isWaterlogged)
           })
           attr.blocksCount++
         } else if (block.name === 'lava') {
-          renderLiquid(world, cursor, blockProvider.getTextureInfo('lava_still'), block.type, biome, false, attr, false)
+          renderLiquid(world, cursor, blockProvider.getTextureInfo('lava_still'), block.type, biome, false, blendBucket, attr, false)
           attr.blocksCount++
         }
         if (block.name !== 'water' && block.name !== 'lava' && !INVISIBLE_BLOCKS.has(block.name)) {
@@ -607,14 +685,14 @@ export function getSectionGeometry(sx: number, sy: number, sz: number, world: Wo
 
             for (const element of model.elements ?? []) {
               const ao = model.ao ?? block.boundingBox !== 'empty'
-              if (block.transparent && semiTransparentBlocks.includes(block.name)) {
+              if (block.transparent && isSemiTransparentBlockName(block.name)) {
                 const pos = cursor.clone()
                 delayedRender.push(() => {
-                  renderElement(world, pos, element, ao, attr, globalMatrix, globalShift, block, biome)
+                  renderElement(world, pos, element, ao, blendBucket, attr, globalMatrix, globalShift, block, biome)
                 })
               } else {
                 // 60%
-                renderElement(world, cursor, element, ao, attr, globalMatrix, globalShift, block, biome)
+                renderElement(world, cursor, element, ao, opaqueBucket, attr, globalMatrix, globalShift, block, biome)
               }
             }
           }
@@ -629,43 +707,34 @@ export function getSectionGeometry(sx: number, sy: number, sz: number, world: Wo
   }
   delayedRender = []
 
-  let ndx = attr.positions.length / 3
-  for (let i = 0; i < attr.t_positions!.length / 12; i++) {
-    attr.indices[attr.indicesCount++] = ndx
-    attr.indices[attr.indicesCount++] = ndx + 1
-    attr.indices[attr.indicesCount++] = ndx + 2
-    attr.indices[attr.indicesCount++] = ndx + 2
-    attr.indices[attr.indicesCount++] = ndx + 1
-    attr.indices[attr.indicesCount++] = ndx + 3
-    // back face
-    attr.indices[attr.indicesCount++] = ndx
-    attr.indices[attr.indicesCount++] = ndx + 2
-    attr.indices[attr.indicesCount++] = ndx + 1
-    attr.indices[attr.indicesCount++] = ndx + 2
-    attr.indices[attr.indicesCount++] = ndx + 3
-    attr.indices[attr.indicesCount++] = ndx + 1
-    ndx += 4
-  }
-
-  attr.positions.push(...attr.t_positions!)
-  attr.normals.push(...attr.t_normals!)
-  attr.colors.push(...attr.t_colors!)
-  attr.uvs.push(...attr.t_uvs!)
-
-  delete attr.t_positions
-  delete attr.t_normals
-  delete attr.t_colors
-  delete attr.t_uvs
+  attr.indicesCount = opaqueBucket.indicesCount
 
   attr.positions = new Float32Array(attr.positions) as any
   attr.normals = new Float32Array(attr.normals) as any
   attr.colors = new Float32Array(attr.colors) as any
+  attr.skyLights = new Float32Array(attr.skyLights) as any
+  attr.blockLights = new Float32Array(attr.blockLights) as any
   attr.uvs = new Float32Array(attr.uvs) as any
   attr.using32Array = arrayNeedsUint32(attr.indices)
   if (attr.using32Array) {
     attr.indices = new Uint32Array(attr.indices)
   } else {
     attr.indices = new Uint16Array(attr.indices)
+  }
+
+  if (blendBucket.positions.length > 0) {
+    const blendUsing32 = arrayNeedsUint32(blendBucket.indices)
+    attr.blend = {
+      positions: new Float32Array(blendBucket.positions),
+      normals: new Float32Array(blendBucket.normals),
+      colors: new Float32Array(blendBucket.colors),
+      skyLights: new Float32Array(blendBucket.skyLights),
+      blockLights: new Float32Array(blendBucket.blockLights),
+      uvs: new Float32Array(blendBucket.uvs),
+      indices: blendUsing32
+        ? new Uint32Array(blendBucket.indices)
+        : new Uint16Array(blendBucket.indices),
+    }
   }
 
   tsLog(`[TS] Final geometry summary:`)

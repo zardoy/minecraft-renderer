@@ -15,7 +15,8 @@ import {
   SHADER_CUBES_WORDS_PER_FACE,
 } from '../bridge/shaderCubeBridge'
 import { GlobalBlockBuffer } from '../../three/globalBlockBuffer'
-import { createCubeBlockMaterial } from '../../three/shaders/cubeBlockShader'
+import { buildVisibleCubeSpans } from '../../three/cubeDrawSpans'
+import { createCubeBlockMaterial, computeSectionOriginRel } from '../../three/shaders/cubeBlockShader'
 import * as THREE from 'three'
 import { renderWasmOutputToGeometry } from '../bridge/render-from-wasm'
 
@@ -348,6 +349,38 @@ test('packWord2Empty: bit 18 set regardless of high X/Z bits in word2', () => {
   expect(withHighBits & (1 << WORD2.EMPTY_SHIFT)).not.toBe(0)
 })
 
+test('section index relative decode past 2^20: exact integer subtract', () => {
+  const sectionBlockX = 21_050_000
+  const renderOrigin = { x: 21_000_000, y: 0, z: 0 }
+  const words: number[] = []
+  const block = {
+    position: [0, 0, 0] as [number, number, number],
+    visible_faces: 1 << 2,
+    ao_data: [[3, 3, 3, 3]],
+    light_data: [[1, 1, 1, 1]],
+    light_combined: [[255, 255, 255, 255]],
+  }
+  const { textureIndexMapping, tintPalette } = getShaderCubeResources()
+  const model = { elements: [{ faces: SIX_FACE_TEXTURES }] }
+  tryBuildShaderCubeInstances(
+    block,
+    { blockName: 'stone', blockProps: {}, isCube: true, model },
+    model,
+    {
+      sectionOrigin: { x: sectionBlockX, y: 0, z: 0 },
+      sectionHeight: 16,
+      tintPalette,
+      textureIndexMapping,
+    },
+    words,
+  )
+  const base = decodeSectionBaseFromWords(words[2]!, words[3]!)
+  const sX = base.x / 16
+  const sectionOriginRel = computeSectionOriginRel(renderOrigin)
+  const sXr = sX - sectionOriginRel.x
+  expect(sXr * 16).toBe(sectionBlockX - renderOrigin.x)
+})
+
 test('GlobalBlockBuffer: free-list reuses slot with EMPTY sentinel', () => {
   const scene = new THREE.Scene()
   const mat = createCubeBlockMaterial()
@@ -660,6 +693,35 @@ test('GlobalBlockBuffer: takeSectionData reads relocated section slot', () => {
   mat.dispose()
 })
 
+test('GlobalBlockBuffer: pendingMove draw start uses oldStart for visible spans', () => {
+  const scene = new THREE.Scene()
+  const mat = createCubeBlockMaterial()
+  const buffer = new GlobalBlockBuffer(mat, scene)
+
+  buffer.addSection('a', makeSectionWords([10]), 1)
+  buffer.addSection('b', makeSectionWords([20]), 1)
+  buffer.addSection('c', makeSectionWords([30]), 1)
+  buffer.removeSection('b')
+  drainAllUploads(buffer)
+
+  buffer.compactStep()
+  const move = buffer.getPendingMove()
+  expect(move?.key).toBe('c')
+
+  const slotStart = buffer.getSectionSlot('c')!.start
+  expect(buffer.getSectionDrawStart('c')).toBe(move!.oldStart)
+  expect(buffer.getSectionDrawStart('c')).not.toBe(slotStart)
+
+  const spans = buildVisibleCubeSpans(
+    [{ start: buffer.getSectionDrawStart('c')!, count: 1 }],
+    buffer.getHighWatermark(),
+  )
+  expect(spans[0]?.start).toBe(move!.oldStart)
+
+  buffer.dispose()
+  mat.dispose()
+})
+
 test('GlobalBlockBuffer: uploadDirtyRange budgets large dirty span across frames', () => {
   const scene = new THREE.Scene()
   const mat = createCubeBlockMaterial()
@@ -678,12 +740,12 @@ test('GlobalBlockBuffer: uploadDirtyRange budgets large dirty span across frames
 
   const w0Attr = buffer.mesh.geometry.getAttribute('a_w0') as THREE.InstancedBufferAttribute
   buffer.uploadDirtyRange()
-  expect(w0Attr.updateRange.offset).toBe(0)
-  expect(w0Attr.updateRange.count).toBe(15_000)
+  expect(w0Attr.updateRanges[0].start).toBe(0)
+  expect(w0Attr.updateRanges[0].count).toBe(15_000)
 
   buffer.uploadDirtyRange()
-  expect(w0Attr.updateRange.offset).toBe(15_000)
-  expect(w0Attr.updateRange.count).toBe(5_000)
+  expect(w0Attr.updateRanges[0].start).toBe(15_000)
+  expect(w0Attr.updateRanges[0].count).toBe(5_000)
 
   buffer.uploadDirtyRange()
   expect((buffer as unknown as { pendingRanges: unknown[] }).pendingRanges).toHaveLength(0)

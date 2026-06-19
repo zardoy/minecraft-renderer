@@ -256,7 +256,7 @@ export interface ItemMeshResult {
  * Extracts item texture region to a canvas
  */
 export function extractItemTextureToCanvas (
-  sourceTexture: THREE.Texture,
+  sourceTexture: THREE.Texture<HTMLImageElement | ImageBitmap>,
   textureInfo: ItemTextureInfo
 ): ItemTextureCanvas {
   const { u, v, sizeX, sizeY } = textureInfo
@@ -332,7 +332,10 @@ export function createItemMesh (
   if (use3D) {
     // Try to create 3D mesh
     try {
-      const canvas = extractItemTextureToCanvas(sourceTexture, textureInfo)
+      const canvas = extractItemTextureToCanvas(
+        sourceTexture as THREE.Texture<HTMLImageElement | ImageBitmap>,
+        textureInfo
+      )
       const { geometry } = create3DItemMesh(canvas, { depth })
 
       // Create texture from canvas for the 3D mesh

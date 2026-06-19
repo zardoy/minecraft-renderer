@@ -88,7 +88,7 @@ export function createWaypointSprite (options: {
   const labelCanvas = createCanvas(getLabelCanvasSize(), getLabelCanvasSize())
   drawCombinedOntoCanvas(labelCanvas, displayColor, options.label ?? '', '0m', visualScale)
 
-  const labelTexture = new THREE.CanvasTexture(labelCanvas)
+  const labelTexture: THREE.CanvasTexture<OffscreenCanvas> = new THREE.CanvasTexture(labelCanvas)
   labelTexture.anisotropy = 1
   labelTexture.magFilter = THREE.LinearFilter
   labelTexture.minFilter = THREE.LinearFilter
@@ -111,7 +111,7 @@ export function createWaypointSprite (options: {
   let arrowSprite: THREE.Sprite | undefined
   let arrowCanvas: OffscreenCanvas | undefined
   let arrowCtx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | undefined
-  let arrowTexture: THREE.CanvasTexture | undefined
+  let arrowTexture: THREE.CanvasTexture<OffscreenCanvas> | undefined
   let arrowParent: THREE.Object3D | null = null
   let arrowEnabled = WAYPOINT_CONFIG.ARROW.enabledDefault
 

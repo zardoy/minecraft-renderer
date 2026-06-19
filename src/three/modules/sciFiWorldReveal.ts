@@ -1,845 +1,489 @@
+/**
+ * Wireframe-to-solid chunk reveal.
+ * Ported from web-client-2/renderer/viewer/three/sciFiWorldReveal.ts
+ */
 import * as THREE from 'three'
 import type { WorldRendererThree } from '../worldRendererThree'
 import type { RendererModuleController, RendererModuleManifest } from '../rendererModuleSystem'
 import type { MesherGeometryOutput } from '../../mesher-shared/shared'
-import type { GlobalBlockBufferShaderData } from '../globalBlockBuffer'
+import type { SectionObject } from '../chunkMeshManager'
 
 const SCI_FI_CYAN = new THREE.Color(13 / 255, 234 / 255, 238 / 255)
+
 const CHUNKS_THRESHOLD = 9
-const REVEAL_DURATION = 3500 // ms for full reveal transition
-const WIREFRAME_FADE_DELAY = 1200 // ms before wireframe starts fading
+const GLOBAL_START_FALLBACK_MS = 12_000
+const WAVE_SPREAD_MS = 1500
+const MAX_SECTION_LIFETIME_MS = 10_000
 
 const INITIAL_WIREFRAME_MS = 350
-const INITIAL_REVEAL_MS = 650
-const INITIAL_WAVE_SPREAD_MS = 650
-
+const INITIAL_FADE_MS = 650
 const CHUNK_WIREFRAME_MS = 120
-const CHUNK_REVEAL_MS = 280
+const CHUNK_FADE_MS = 280
 
-interface RevealingSection {
+type RevealPhase = 'queued' | 'wireframe' | 'fade' | 'done'
+
+interface SectionReveal {
   key: string
-  wireframeGroup: THREE.Group
-  revealStartTime: number
-  phase: 'wireframe' | 'transitioning' | 'complete'
-  /** Legacy + shader render meshes hidden during reveal */
-  renderMeshRefs: THREE.Mesh[]
-  /** Shader cubes temporarily removed from globalBlockBuffer during reveal. */
-  globalShaderRestore?: GlobalBlockBufferShaderData
+  geometry: MesherGeometryOutput
+  phase: RevealPhase
+  phaseStartMs: number
+  revealAtMs: number
   wireframeMs: number
-  revealMs: number
+  fadeMs: number
+  wireframeGroup: THREE.Group | null
+  mesh: THREE.Mesh | null
+  savedMaterial: THREE.Material | null
+  pulseOffset: number
 }
 
-
-/**
- * SciFiWorldReveal - Creates a futuristic wireframe-to-solid reveal effect
- *
- * When chunks load, they first appear as glowing cyan wireframes that pulse
- * and emanate from the camera, then gradually transition to solid geometry.
- */
 export class SciFiWorldRevealModule implements RendererModuleController {
-  private readonly pendingGeometries = new Map<string, MesherGeometryOutput>()
-  private readonly revealingSections = new Map<string, RevealingSection>()
+  private enabled = true
+  private readonly sections = new Map<string, SectionReveal>()
+  private readonly completed = new Set<string>()
+
+  private globalWaveStarted = false
+  private globalWaveStartMs = 0
   private finishedChunkCount = 0
-  private revealTriggered = false
-  private revealStartTime = 0
-  private enabled = false
-
-  private onWorldSwitchedCb: (() => void) | null = null
-  private patched = false
-  private initialWaveDone = false
-  /** True after every section from the first reveal wave has finished animating. */
-  private initialRevealWaveSettled = false
-
-  // Wireframe materials
-  private readonly wireframeMaterial!: THREE.LineBasicMaterial
-  private readonly wireframeGlowMaterial!: THREE.LineBasicMaterial
-
-  // For pulsing animation
+  private firstQueuedMs: number | null = null
   private pulseTime = 0
 
-  // Track which chunks have been revealed
-  private readonly revealedChunks = new Set<string>()
+  private readonly wireframeMaterial = new THREE.LineBasicMaterial({
+    color: SCI_FI_CYAN,
+    transparent: true,
+    opacity: 1,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  })
 
-  // Store original methods for patching
-  private originalFinishChunk: ((chunkKey: string) => void) | null = null
-  private originalDestroy: (() => void) | null = null
-  private originalSceneAdd: ((...object: THREE.Object3D[]) => THREE.Scene) | null = null
-  private originalHandleWorkerMessage: ((data: { geometry: MesherGeometryOutput; key: string; type: string }) => void) | null = null
+  private readonly wireframeGlowMaterial = new THREE.LineBasicMaterial({
+    color: SCI_FI_CYAN,
+    transparent: true,
+    opacity: 0.55,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  })
 
   constructor(private readonly worldRenderer: WorldRendererThree) {
-    this.wireframeMaterial = new THREE.LineBasicMaterial({
-      color: SCI_FI_CYAN,
-      transparent: true,
-      opacity: 1,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    })
-
-    this.wireframeGlowMaterial = new THREE.LineBasicMaterial({
-      color: SCI_FI_CYAN,
-      transparent: true,
-      opacity: 0.55,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    })
+    if (worldRenderer.worldRendererConfig.futuristicReveal !== true) {
+      this.enabled = false
+    }
   }
 
-  /** Read live config — option may sync after module construction (watchOptions). */
-  isFuturisticRevealConfigured (): boolean {
+  autoEnableCheck(): boolean {
     return this.worldRenderer.worldRendererConfig.futuristicReveal === true
   }
 
-  /** Until the first cinematic wave fully completes, shader sections stay off the global buffer. */
-  isInInitialRevealCampaign (): boolean {
-    return this.enabled && !this.initialRevealWaveSettled
-  }
-
-  autoEnableCheck (): boolean {
-    return this.isFuturisticRevealConfigured()
-  }
-
   enable(): void {
-    if (!this.isFuturisticRevealConfigured()) return
-    if (this.enabled && this.patched) return
-    if (this.enabled && !this.patched) {
-      this.patchWorldRenderer()
-      return
-    }
-    this.enabled = true
-    this.patchWorldRenderer()
+    if (!this.autoEnableCheck()) return
+    this.setEnabled(true)
   }
 
   disable(): void {
-    if (!this.enabled) return
-    this.enabled = false
-    this.unpatchWorldRenderer()
-    this.reset()
-  }
-
-  toggle(): boolean {
-    if (this.enabled) {
-      this.disable()
-    } else {
-      this.enable()
-    }
-    return this.enabled
-  }
-
-  render?: (deltaTime: number) => void = (deltaTime) => {
-    if (!this.enabled) return
-    this.update(deltaTime * 1000)
+    this.setEnabled(false)
   }
 
   dispose(): void {
-    this.disable()
+    this.reset()
     this.wireframeMaterial.dispose()
     this.wireframeGlowMaterial.dispose()
   }
 
-  /**
-   * Patch world renderer methods to integrate the reveal effect
-   */
-  private patchWorldRenderer(): void {
-    if (this.patched) return
-    this.patched = true
-    const wr = this.worldRenderer
-
-    // Hook into onWorldSwitched
-    this.onWorldSwitchedCb = () => this.reset()
-    wr.onWorldSwitched.push(this.onWorldSwitchedCb)
-
-
-    // Patch finishChunk
-    this.originalFinishChunk = wr.finishChunk.bind(wr)
-    wr.finishChunk = (chunkKey: string) => {
-      this.originalFinishChunk!(chunkKey)
-      this.onChunkFinished(chunkKey)
-    }
-
-    // Patch destroy
-    this.originalDestroy = wr.destroy.bind(wr)
-    wr.destroy = () => {
-      this.dispose()
-      this.originalDestroy!()
-    }
-
-    // Patch handleWorkerMessage to intercept geometry
-    this.originalHandleWorkerMessage = wr.handleWorkerMessage.bind(wr)
-    wr.handleWorkerMessage = (data: any) => {
-      this.originalHandleWorkerMessage!(data)
-
-      if (this.enabled && data?.type === 'geometry') {
-        Promise.resolve().then(() => {
-          try {
-            this.registerSection(data.key, data.geometry)
-          } catch (err) {
-            console.error('[SciFiReveal] registerSection failed', err)
-          }
-        })
-      }
-    }
-
-
-    // Patch scene.add to intercept mesh additions
-    this.originalSceneAdd = wr.scene.add.bind(wr.scene)
-    wr.scene.add = (...objects: THREE.Object3D[]): THREE.Scene => {
-      // Call original add first
-      const result = this.originalSceneAdd!(...objects)
-
-      // Check each added object for meshes that need reveal effect
-      for (const obj of objects) {
-        this.checkAndPatchMesh(obj)
-      }
-
-      return result
-    }
+  shouldDeferSectionGeometry(sectionKey: string): boolean {
+    return this.enabled && !this.completed.has(sectionKey)
   }
 
-  /**
-   * Unpatch world renderer methods
-   */
-  private unpatchWorldRenderer(): void {
-    const wr = this.worldRenderer
-
-    if (this.originalFinishChunk) {
-      wr.finishChunk = this.originalFinishChunk
-      this.originalFinishChunk = null
-    }
-
-    if (this.originalDestroy) {
-      wr.destroy = this.originalDestroy
-      this.originalDestroy = null
-    }
-
-    if (this.originalHandleWorkerMessage) {
-      wr.handleWorkerMessage = this.originalHandleWorkerMessage
-      this.originalHandleWorkerMessage = null
-    }
-
-    if (this.originalSceneAdd) {
-      wr.scene.add = this.originalSceneAdd
-      this.originalSceneAdd = null
-    }
-
-    if (this.onWorldSwitchedCb) {
-      const i = wr.onWorldSwitched.indexOf(this.onWorldSwitchedCb)
-      if (i !== -1) wr.onWorldSwitched.splice(i, 1)
-      this.onWorldSwitchedCb = null
-    }
-    this.patched = false
+  onSectionMeshed(key: string, geometry: MesherGeometryOutput, sectionObject: SectionObject): void {
+    const mesh = sectionObject.children.find(c => c.name === 'mesh')
+    if (!(mesh instanceof THREE.Mesh)) return
+    this.onSectionMeshedMesh(key, geometry, mesh)
   }
 
-  /**
-   * Check if an object or its children is a mesh that needs reveal effect visibility patch
-   */
-  private checkAndPatchMesh(obj: THREE.Object3D): void {
-    if (obj instanceof THREE.Mesh && (obj.name === 'mesh' || obj.name === 'shaderMesh')) {
-      const sectionKey = this.findSectionKeyForMesh(obj)
-      if (sectionKey && this.shouldUseRevealEffect(sectionKey)) {
-        obj.visible = false
-          ; (obj as any).hiddenByReveal = true
-      }
-    }
-
-    // Recursively check children
-    for (const child of obj.children) {
-      this.checkAndPatchMesh(child)
-    }
-  }
-
-  /**
-   * Find the section key for a mesh by traversing up to find the parent group
-   * and checking for sectionKey property
-   */
-  private findSectionKeyForMesh(mesh: THREE.Mesh): string | null {
-    // Traverse up to find the parent group with sectionKey
-    let current: THREE.Object3D | null = mesh
-    while (current) {
-      const { sectionKey } = (current as any)
-      if (sectionKey && this.worldRenderer.chunkMeshManager.sectionObjects[sectionKey] === current) {
-        return sectionKey
-      }
-      current = current.parent
-    }
-
-    // Fallback: try to derive key from mesh world position
-    // mesh.position is scene-relative (near 0 in camera-relative rendering),
-    // so use stored world coords or convert back to world coords
-    const wp = this.worldRenderer.sceneOrigin.getWorldPosition(mesh)
-    const worldX = wp?.x ?? this.worldRenderer.sceneOrigin.toWorldX(mesh.position.x)
-    const worldY = wp?.y ?? this.worldRenderer.sceneOrigin.toWorldY(mesh.position.y)
-    const worldZ = wp?.z ?? this.worldRenderer.sceneOrigin.toWorldZ(mesh.position.z)
-    const CHUNK_SIZE = 16
-    const sectionHeight = this.worldRenderer.getSectionHeight()
-    const sectionX = Math.floor(worldX / CHUNK_SIZE) * CHUNK_SIZE
-    const sectionY = Math.floor(worldY / sectionHeight) * sectionHeight
-    const sectionZ = Math.floor(worldZ / CHUNK_SIZE) * CHUNK_SIZE
-    const derivedKey = `${sectionX},${sectionY},${sectionZ}`
-
-    // Verify this key exists in sectionObjects
-    if (this.worldRenderer.chunkMeshManager.sectionObjects[derivedKey]) {
-      return derivedKey
-    }
-
-    return null
-  }
-
-  /**
-   * Get the scene from world renderer
-   */
-  private get scene(): THREE.Scene {
-    return this.worldRenderer.realScene
-  }
-
-  /**
-   * Get camera position from world renderer
-   */
-  private getCameraPosition(): THREE.Vector3 {
-    return this.worldRenderer.getCameraPosition()
-  }
-
-  private sectionHasRevealContent(geometry: MesherGeometryOutput): boolean {
-    if ((geometry.wireframePositions?.length ?? 0) > 0) return true
-    if ((geometry.positions?.length ?? 0) > 0) return true
-    return (geometry.shaderCubes?.count ?? 0) > 0
-  }
-
-  /** Legacy `mesh` and instanced `shaderMesh` for a section. */
-  private getSectionRenderMeshes(key: string): THREE.Mesh[] {
-    const sectionObject = this.worldRenderer.chunkMeshManager.sectionObjects[key]
-    if (!sectionObject) return []
-    const meshes: THREE.Mesh[] = []
-    for (const name of ['mesh', 'shaderMesh'] as const) {
-      const child = sectionObject.children.find(c => c.name === name)
-      if (child instanceof THREE.Mesh) meshes.push(child)
-    }
-    return meshes
-  }
-
-  private hideSectionRenderMeshes(key: string): THREE.Mesh[] {
-    const meshes = this.getSectionRenderMeshes(key)
-    for (const m of meshes) {
-      m.visible = false
-      ;(m as any).hiddenByReveal = true
-    }
-    return meshes
-  }
-
-  private setMeshFadeOpacity(mesh: THREE.Mesh, opacity: number): void {
-    // ShaderMaterial ignores material.opacity; cloning breaks atlas uniforms.
-    if (mesh.name === 'shaderMesh') {
-      mesh.visible = opacity > 0.001
-      return
-    }
-    const mat = mesh.material
-    if (Array.isArray(mat)) return
-    if (!(mat as any).originalMaterial) {
-      ;(mat as any).originalMaterial = mat
-      const fadeMat = mat.clone()
-      fadeMat.transparent = true
-      fadeMat.opacity = opacity
-      fadeMat.needsUpdate = true
-      mesh.material = fadeMat
-    } else {
-      mat.opacity = opacity
-      mat.transparent = true
-      mat.needsUpdate = true
-    }
-  }
-
-  private restoreMeshMaterial(mesh: THREE.Mesh): void {
-    const originalMat = (mesh as any).originalMaterial as THREE.Material | undefined
-    if (!originalMat) return
-    const currentMat = mesh.material as THREE.Material
-    mesh.material = originalMat
-    if (currentMat !== originalMat) currentMat.dispose()
-    delete (mesh as any).originalMaterial
-  }
-
-  /**
-   * Call this when a chunk finishes loading
-   */
-  onChunkFinished(_chunkKey: string): void {
+  onChunkFinished(): void {
+    if (!this.enabled) return
     this.finishedChunkCount++
+    this.tryStartGlobalWave(performance.now())
+  }
 
-    if (!this.revealTriggered && this.finishedChunkCount >= CHUNKS_THRESHOLD) {
-      this.triggerReveal()
+  onSectionRemoved(key: string): void {
+    this.cancelSection(key, true)
+    this.completed.delete(key)
+  }
+
+  onWorldSwitched(): void {
+    this.reset()
+  }
+
+  tick(deltaMs: number, now = performance.now()): void {
+    if (!this.enabled) return
+
+    this.tryStartGlobalWave(now)
+
+    if (
+      !this.globalWaveStarted &&
+      this.firstQueuedMs !== null &&
+      this.sections.size > 0 &&
+      now - this.firstQueuedMs >= GLOBAL_START_FALLBACK_MS
+    ) {
+      this.startGlobalWave(now)
+    }
+
+    if (this.sections.size === 0) return
+
+    this.pulseTime += deltaMs * 0.001
+    const toFinish: SectionReveal[] = []
+
+    for (const section of this.sections.values()) {
+      if (now - section.phaseStartMs > MAX_SECTION_LIFETIME_MS) {
+        toFinish.push(section)
+        continue
+      }
+
+      if (section.phase === 'queued') {
+        if (this.globalWaveStarted && now >= section.revealAtMs) {
+          this.beginWireframe(section, now)
+        }
+        continue
+      }
+
+      const phaseElapsed = now - section.phaseStartMs
+
+      if (section.phase === 'wireframe') {
+        this.animateWireframe(section, phaseElapsed)
+        if (phaseElapsed >= section.wireframeMs) {
+          this.beginFade(section, now)
+        }
+        continue
+      }
+
+      if (section.phase === 'fade') {
+        const progress = Math.min(1, phaseElapsed / section.fadeMs)
+        this.animateFade(section, progress)
+        if (progress >= 1) {
+          toFinish.push(section)
+        }
+      }
+    }
+
+    for (const section of toFinish) {
+      this.finishSection(section)
     }
   }
 
-  /**
-   * Register a new section geometry for the reveal effect
-   */
-  registerSection(key: string, geometry: MesherGeometryOutput): void {
-    // If already revealed or currently revealing, skip
-    if (this.revealedChunks.has(key) || this.revealingSections.has(key)) return
+  private setEnabled(enabled: boolean): void {
+    if (enabled === this.enabled) return
+    this.enabled = enabled
+    if (!enabled) {
+      this.forceFinishAll()
+    }
+  }
 
-    // After the initial spawn wave, show streaming sections immediately (no wireframe flash).
-    if (this.revealTriggered && this.initialWaveDone) {
-      this.revealedChunks.add(key)
+  private onSectionMeshedMesh(key: string, geometry: MesherGeometryOutput, mesh: THREE.Mesh): void {
+    if (!this.enabled || !geometry.positions?.length) return
+    if (this.completed.has(key)) return
+
+    const existing = this.sections.get(key)
+    if (existing) {
+      existing.mesh = mesh
+      existing.geometry = geometry
+      if (existing.phase === 'wireframe' || existing.phase === 'fade') {
+        this.finishSection(existing)
+      }
       return
     }
 
-    // If reveal already triggered, start effect immediately (don't store in pending)
-    if (this.revealTriggered) {
-      this.startSectionReveal(key, geometry)
-    } else {
-      // Store geometry for later
-      this.pendingGeometries.set(key, geometry)
+    const now = performance.now()
+    if (this.firstQueuedMs === null) {
+      this.firstQueuedMs = now
+    }
+
+    const useChunkTimings = this.globalWaveStarted
+    this.sections.set(key, {
+      key,
+      geometry,
+      phase: 'queued',
+      phaseStartMs: now,
+      revealAtMs: this.globalWaveStarted ? now : 0,
+      wireframeMs: useChunkTimings ? CHUNK_WIREFRAME_MS : INITIAL_WIREFRAME_MS,
+      fadeMs: useChunkTimings ? CHUNK_FADE_MS : INITIAL_FADE_MS,
+      wireframeGroup: null,
+      mesh,
+      savedMaterial: null,
+      pulseOffset: Math.random() * Math.PI * 2,
+    })
+
+    mesh.visible = false
+    this.setShaderMeshesVisible(key, false)
+    this.tryStartGlobalWave(now)
+  }
+
+  private reset(): void {
+    this.forceFinishAll()
+    this.sections.clear()
+    this.completed.clear()
+    this.globalWaveStarted = false
+    this.globalWaveStartMs = 0
+    this.finishedChunkCount = 0
+    this.firstQueuedMs = null
+    this.pulseTime = 0
+  }
+
+  private forceFinishAll(): void {
+    for (const section of [...this.sections.values()]) {
+      this.finishSection(section)
+    }
+    this.sections.clear()
+    this.unhideAllSectionMeshes()
+  }
+
+  private tryStartGlobalWave(now: number): void {
+    if (this.globalWaveStarted) return
+    if (this.sections.size === 0) return
+
+    if (this.finishedChunkCount >= CHUNKS_THRESHOLD) {
+      this.startGlobalWave(now)
+      return
+    }
+
+    if (this.worldRenderer.allChunksFinished) {
+      this.startGlobalWave(now)
     }
   }
 
-  /**
-   * Check if a section should use the reveal effect
-   */
-  shouldUseRevealEffect(key: string): boolean {
-    if (!this.enabled) return false
-    // Match registerSection: no cinematic hide for chunks loaded while moving.
-    if (this.revealTriggered && this.initialWaveDone) return false
-    return !this.revealedChunks.has(key) && !this.revealingSections.has(key)
-  }
+  private startGlobalWave(now: number): void {
+    if (this.globalWaveStarted) return
+    this.globalWaveStarted = true
+    this.globalWaveStartMs = now
 
-  /**
-   * Trigger the reveal sequence
-   */
-  private triggerReveal(): void {
-    this.revealTriggered = true
-    this.initialWaveDone = true
+    const cameraPos = this.worldRenderer.getCameraPosition()
+    let maxDistance = 1
+    const distances = new Map<string, number>()
 
-    this.revealStartTime = performance.now()
+    for (const [key, section] of this.sections) {
+      if (section.phase !== 'queued') continue
+      const { sx, sy, sz } = section.geometry
+      const distance = Math.hypot(sx - cameraPos.x, sy - cameraPos.y, sz - cameraPos.z)
+      distances.set(key, distance)
+      maxDistance = Math.max(maxDistance, distance)
+    }
 
-    const cameraPos = this.getCameraPosition()
-
-    // Copy and clear pending geometries before processing
-    const toProcess = [...this.pendingGeometries.entries()]
-    this.pendingGeometries.clear()
-
-    // Sort by distance from camera for wave effect
-    const sorted = toProcess
-      .map(([key, geometry]) => {
-        const distance = Math.hypot(
-          (geometry.sx - cameraPos.x),
-          (geometry.sy - cameraPos.y),
-          (geometry.sz - cameraPos.z)
-        )
-        return { key, geometry, distance }
-      })
-      .sort((a, b) => a.distance - b.distance)
-
-    const maxDistance = sorted.at(-1)?.distance || 1
-
-    // Start reveal for each section with staggered timing
-    for (const { key, geometry, distance } of sorted) {
-      const delay = (distance / maxDistance) * 1500 // 1500ms spread for wave effect
-      setTimeout(() => {
-        // Double check the section hasn't been revealed already
-        if (!this.revealedChunks.has(key) && !this.revealingSections.has(key)) {
-          this.startSectionReveal(key, geometry)
-        }
-      }, delay)
+    for (const [, section] of this.sections) {
+      if (section.phase !== 'queued') continue
+      const distance = distances.get(section.key) ?? 0
+      section.revealAtMs = now + (distance / maxDistance) * WAVE_SPREAD_MS
+      section.wireframeMs = CHUNK_WIREFRAME_MS
+      section.fadeMs = CHUNK_FADE_MS
     }
   }
 
-  /**
-   * Start the reveal effect for a single section
-   */
-  private startSectionReveal(key: string, geometry: MesherGeometryOutput): void {
-    if (!this.sectionHasRevealContent(geometry)) return
+  private beginWireframe(section: SectionReveal, now: number): void {
+    const mesh = section.mesh ?? this.getSectionMesh(section.key)
+    section.mesh = mesh
+    if (!mesh) {
+      this.sections.delete(section.key)
+      return
+    }
 
-    // Don't create if already exists
-    if (this.revealingSections.has(key) || this.revealedChunks.has(key)) return
-
-    // Create wireframe geometry
-    const wireframeGeom = this.createWireframeGeometry(geometry)
-
-    const global = this.worldRenderer.chunkMeshManager.globalBlockBuffer
-    const globalShaderRestore = global?.hasSection(key) ? global.takeSectionData(key) : undefined
-
-    const renderMeshRefs = this.hideSectionRenderMeshes(key)
-    // Main wireframe
+    const wireframeGeom = this.createWireframeGeometry(section.geometry)
     const wireframe = new THREE.LineSegments(wireframeGeom, this.wireframeMaterial.clone())
     this.worldRenderer.sceneOrigin.track(wireframe)
-    wireframe.position.set(geometry.sx, geometry.sy, geometry.sz)
+    wireframe.position.set(section.geometry.sx, section.geometry.sy, section.geometry.sz)
     wireframe.name = 'scifi-wireframe'
     wireframe.renderOrder = 1000
 
-    // Glow layer
-    const glowWireframe = new THREE.LineSegments(wireframeGeom.clone(), this.wireframeGlowMaterial.clone())
-    this.worldRenderer.sceneOrigin.track(glowWireframe)
-    glowWireframe.position.set(geometry.sx, geometry.sy, geometry.sz)
-    glowWireframe.scale.set(1.02, 1.02, 1.02)
-    glowWireframe.name = 'scifi-glow'
-    glowWireframe.renderOrder = 999
+    const glow = new THREE.LineSegments(wireframeGeom.clone(), this.wireframeGlowMaterial.clone())
+    this.worldRenderer.sceneOrigin.track(glow)
+    glow.position.copy(wireframe.position)
+    glow.scale.setScalar(1.02)
+    glow.name = 'scifi-glow'
+    glow.renderOrder = 999
 
     const group = new THREE.Group()
-    group.add(wireframe)
-    group.add(glowWireframe)
     group.name = 'scifi-reveal-group'
-      // Store key on group for debugging
-      ; (group as any).sectionKey = key
+    group.add(wireframe, glow)
+    this.worldRenderer.realScene.add(group)
 
-    this.scene.add(group)
+    mesh.visible = false
+    this.setShaderMeshesVisible(section.key, false)
 
-    const wireframeMs = this.initialWaveDone ? CHUNK_WIREFRAME_MS : INITIAL_WIREFRAME_MS
-    const revealMs = this.initialWaveDone ? CHUNK_REVEAL_MS : INITIAL_REVEAL_MS
-
-    const section: RevealingSection = {
-      key,
-      wireframeGroup: group,
-      revealStartTime: performance.now(),
-      phase: 'wireframe',
-      renderMeshRefs,
-      globalShaderRestore,
-      wireframeMs,
-      revealMs,
-    }
-
-    setTimeout(() => {
-      for (const m of this.getSectionRenderMeshes(key)) {
-        if (!(m as any).hiddenByReveal) {
-          this.hideSectionRenderMeshes(key)
-        }
-      }
-    }, 0)
-
-    this.revealingSections.set(key, section)
+    section.wireframeGroup = group
+    section.phase = 'wireframe'
+    section.phaseStartMs = now
   }
 
-  /** 16³ section bounds wireframe in section-local coords (−8…+8). */
-  private createSectionBoundsWireframe(): THREE.BufferGeometry {
-    const min = -8
-    const max = 8
-    const c = [
-      [min, min, min], [max, min, min], [min, max, min], [max, max, min],
-      [min, min, max], [max, min, max], [min, max, max], [max, max, max],
-    ] as const
-    const edges: [number, number][] = [
-      [0, 1], [1, 3], [3, 2], [2, 0],
-      [4, 5], [5, 7], [7, 6], [6, 4],
-      [0, 4], [1, 5], [2, 6], [3, 7],
-    ]
-    const linePositions: number[] = []
-    for (const [a, b] of edges) {
-      linePositions.push(...c[a]!, ...c[b]!)
+  private beginFade(section: SectionReveal, now: number): void {
+    const mesh = section.mesh ?? this.getSectionMesh(section.key)
+    section.mesh = mesh
+    if (mesh) {
+      mesh.visible = true
+      const rawMat = mesh.material
+      if (!Array.isArray(rawMat) && rawMat && typeof rawMat.clone === 'function') {
+        section.savedMaterial = rawMat
+        const fadeMat = rawMat.clone()
+        fadeMat.transparent = true
+        fadeMat.opacity = 0
+        fadeMat.needsUpdate = true
+        mesh.material = fadeMat
+      }
     }
-    const wireframeGeom = new THREE.BufferGeometry()
-    wireframeGeom.setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3))
-    return wireframeGeom
+    this.setShaderMeshesVisible(section.key, true)
+    section.phase = 'fade'
+    section.phaseStartMs = now
+  }
+
+  private animateWireframe(section: SectionReveal, phaseElapsed: number): void {
+    if (!section.wireframeGroup) return
+    const wireframe = section.wireframeGroup.children[0] as THREE.LineSegments
+    const glow = section.wireframeGroup.children[1] as THREE.LineSegments
+    const basePulse = 0.6 + 0.4 * Math.sin(this.pulseTime * 4 + section.pulseOffset)
+    if (wireframe?.material) {
+      const mat = wireframe.material as THREE.LineBasicMaterial
+      mat.opacity = basePulse
+      const intensity = 0.85 + 0.15 * Math.sin(this.pulseTime * 6 + phaseElapsed * 0.002)
+      mat.color.setRGB((13 / 255) * intensity, (234 / 255) * intensity, (238 / 255) * intensity)
+    }
+    if (glow?.material) {
+      (glow.material as THREE.LineBasicMaterial).opacity = basePulse * 0.4
+    }
+  }
+
+  private animateFade(section: SectionReveal, progress: number): void {
+    const eased = 1 - (1 - progress) ** 3
+    if (section.wireframeGroup) {
+      const wireframe = section.wireframeGroup.children[0] as THREE.LineSegments
+      const glow = section.wireframeGroup.children[1] as THREE.LineSegments
+      if (wireframe?.material) (wireframe.material as THREE.LineBasicMaterial).opacity = 1 - eased
+      if (glow?.material) (glow.material as THREE.LineBasicMaterial).opacity = (1 - eased) * 0.55
+    }
+    const mesh = section.mesh
+    if (mesh && section.savedMaterial && !Array.isArray(mesh.material)) {
+      (mesh.material as THREE.Material).opacity = eased
+    }
+    this.setShaderMeshesVisible(section.key, eased > 0.001)
+  }
+
+  private finishSection(section: SectionReveal): void {
+    const mesh = section.mesh ?? this.getSectionMesh(section.key)
+    if (mesh) {
+      if (section.savedMaterial) {
+        const fadeMat = mesh.material as THREE.Material
+        mesh.material = section.savedMaterial
+        fadeMat.dispose()
+        section.savedMaterial = null
+      }
+      mesh.visible = true
+    }
+    this.setShaderMeshesVisible(section.key, true)
+
+    const { chunkMeshManager } = this.worldRenderer
+    chunkMeshManager.migrateDeferredShaderToGlobal(section.key)
+    chunkMeshManager.migrateDeferredLegacyToGlobal(section.key)
+
+    if (section.wireframeGroup) {
+      this.disposeWireframeGroup(section.wireframeGroup)
+      section.wireframeGroup = null
+    }
+    this.sections.delete(section.key)
+    this.completed.add(section.key)
+  }
+
+  private cancelSection(key: string, unhide: boolean): void {
+    const section = this.sections.get(key)
+    if (!section) return
+    if (section.wireframeGroup) {
+      this.disposeWireframeGroup(section.wireframeGroup)
+    }
+    if (unhide) {
+      const mesh = section.mesh ?? this.getSectionMesh(key)
+      if (mesh) {
+        if (section.savedMaterial) {
+          const fadeMat = mesh.material as THREE.Material
+          mesh.material = section.savedMaterial
+          fadeMat.dispose()
+        }
+        mesh.visible = true
+      }
+      this.setShaderMeshesVisible(key, true)
+    }
+    this.sections.delete(key)
+  }
+
+  private getSectionMesh(key: string): THREE.Mesh | null {
+    const sectionObject = this.worldRenderer.chunkMeshManager.sectionObjects[key]
+    if (!sectionObject) return null
+    const mesh = sectionObject.children.find(c => c.name === 'mesh')
+    return mesh instanceof THREE.Mesh ? mesh : null
+  }
+
+  private getShaderMesh(key: string): THREE.Mesh | null {
+    const sectionObject = this.worldRenderer.chunkMeshManager.sectionObjects[key]
+    if (!sectionObject) return null
+    const mesh = sectionObject.children.find(c => c.name === 'shaderMesh')
+    return mesh instanceof THREE.Mesh ? mesh : null
+  }
+
+  private setShaderMeshesVisible(key: string, visible: boolean): void {
+    const shaderMesh = this.getShaderMesh(key)
+    if (shaderMesh) shaderMesh.visible = visible
+  }
+
+  private unhideAllSectionMeshes(): void {
+    for (const obj of Object.values(this.worldRenderer.chunkMeshManager.sectionObjects)) {
+      if (!obj) continue
+      obj.traverse((child) => {
+        if (child instanceof THREE.Mesh && (child.name === 'mesh' || child.name === 'shaderMesh')) {
+          child.visible = true
+        }
+      })
+    }
+  }
+
+  private disposeWireframeGroup(group: THREE.Group): void {
+    this.worldRenderer.sceneOrigin.removeAndUntrackAll(group)
+    this.worldRenderer.realScene.remove(group)
+    group.traverse((child) => {
+      const line = child as THREE.LineSegments
+      line.geometry?.dispose()
+      const mat = line.material
+      if (Array.isArray(mat)) mat.forEach(m => m.dispose())
+      else mat?.dispose()
+    })
+    group.clear()
   }
 
   private createWireframeGeometry(geometry: MesherGeometryOutput): THREE.BufferGeometry {
-    if (geometry.wireframePositions && geometry.wireframePositions.length > 0) {
-      const wireframeGeom = new THREE.BufferGeometry()
-      wireframeGeom.setAttribute('position', new THREE.Float32BufferAttribute(geometry.wireframePositions, 3))
-      return wireframeGeom
-    }
-
     const positions = geometry.positions as Float32Array
     const indices = geometry.indices as Uint32Array | Uint16Array
-
-    if (!positions?.length || !indices?.length) {
-      return this.createSectionBoundsWireframe()
-    }
-
     const linePositions: number[] = []
     const edgeSet = new Set<string>()
-
-    // Create edges from triangles
     for (let i = 0; i < indices.length; i += 3) {
       const i0 = indices[i]!
       const i1 = indices[i + 1]!
       const i2 = indices[i + 2]!
-
       this.addEdge(positions, i0, i1, linePositions, edgeSet)
       this.addEdge(positions, i1, i2, linePositions, edgeSet)
       this.addEdge(positions, i2, i0, linePositions, edgeSet)
     }
-
     const wireframeGeom = new THREE.BufferGeometry()
     wireframeGeom.setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3))
-
     return wireframeGeom
   }
 
-  /**
-   * Add edge to line positions if not duplicate
-   */
   private addEdge(
     positions: Float32Array,
     i0: number,
     i1: number,
     linePositions: number[],
-    edgeSet: Set<string>
+    edgeSet: Set<string>,
   ): void {
     const minI = Math.min(i0, i1)
     const maxI = Math.max(i0, i1)
-    const key = `${minI}-${maxI}`
-
-    if (edgeSet.has(key)) return
-    edgeSet.add(key)
-
+    const edgeKey = `${minI}-${maxI}`
+    if (edgeSet.has(edgeKey)) return
+    edgeSet.add(edgeKey)
     linePositions.push(
       positions[i0 * 3]!, positions[i0 * 3 + 1]!, positions[i0 * 3 + 2]!,
-      positions[i1 * 3]!, positions[i1 * 3 + 1]!, positions[i1 * 3 + 2]!
+      positions[i1 * 3]!, positions[i1 * 3 + 1]!, positions[i1 * 3 + 2]!,
     )
-  }
-
-  /**
-   * Update the reveal animation - call this every frame
-   */
-  update(deltaTime: number): void {
-    if (!this.enabled || this.revealingSections.size === 0) return
-
-    this.pulseTime += deltaTime * 0.001 // Convert to seconds
-    const currentTime = performance.now()
-
-    // Pulse effect parameters
-    const basePulse = 0.6 + 0.4 * Math.sin(this.pulseTime * 4)
-
-    const toComplete: RevealingSection[] = []
-
-    for (const [key, section] of this.revealingSections) {
-      const elapsed = currentTime - section.revealStartTime
-
-      if (section.phase === 'wireframe') {
-        // Animate wireframe
-        const wireframe = section.wireframeGroup.children[0] as THREE.LineSegments
-        const glow = section.wireframeGroup.children[1] as THREE.LineSegments
-
-        if (wireframe?.material) {
-          const mat = wireframe.material as THREE.LineBasicMaterial
-          mat.opacity = basePulse
-
-          // Color pulse with slight variation
-          const colorIntensity = 0.85 + 0.15 * Math.sin(this.pulseTime * 6 + elapsed * 0.002)
-          mat.color.setRGB(
-            (13 / 255) * colorIntensity,
-            (234 / 255) * colorIntensity,
-            (238 / 255) * colorIntensity
-          )
-        }
-
-        if (glow?.material) {
-          const glowMat = glow.material as THREE.LineBasicMaterial
-          glowMat.opacity = basePulse * 0.4
-        }
-
-        // Transition to fading phase
-        if (elapsed > section.wireframeMs) {
-          section.phase = 'transitioning'
-
-          section.renderMeshRefs = this.getSectionRenderMeshes(key)
-          for (const mesh of section.renderMeshRefs) {
-            mesh.visible = true
-            this.setMeshFadeOpacity(mesh, 0)
-          }
-        }
-      } else if (section.phase === 'transitioning') {
-        const transitionElapsed = elapsed - section.wireframeMs
-        const progress = Math.min(1, transitionElapsed / section.revealMs)
-
-        // Smooth ease-out curve
-        const eased = 1 - (1 - progress) ** 3
-
-        // Fade out wireframe
-        const wireframe = section.wireframeGroup.children[0] as THREE.LineSegments
-        const glow = section.wireframeGroup.children[1] as THREE.LineSegments
-
-        if (wireframe?.material) {
-          const mat = wireframe.material as THREE.LineBasicMaterial
-          mat.opacity = (1 - eased)
-        }
-
-        if (glow?.material) {
-          const glowMat = glow.material as THREE.LineBasicMaterial
-          glowMat.opacity = (1 - eased) * 0.55
-        }
-
-        for (const mesh of section.renderMeshRefs) {
-          this.setMeshFadeOpacity(mesh, eased)
-        }
-
-        // Complete transition
-        if (progress >= 1) {
-          section.phase = 'complete'
-          toComplete.push(section)
-        }
-      }
-    }
-
-    // Complete all finished sections after iteration
-    for (const section of toComplete) {
-      this.completeReveal(section)
-    }
-  }
-
-  /**
-   * Complete the reveal and clean up
-   */
-  private completeReveal(section: RevealingSection): void {
-    // Remove from map first to prevent re-processing
-    this.revealingSections.delete(section.key)
-    this.revealedChunks.add(section.key)
-
-    if (this.revealTriggered && this.revealingSections.size === 0) {
-      this.initialRevealWaveSettled = true
-    }
-
-    for (const mesh of section.renderMeshRefs) {
-      this.restoreMeshMaterial(mesh)
-      mesh.visible = true
-      delete (mesh as any).hiddenByReveal
-    }
-
-    this.worldRenderer.chunkMeshManager.migrateDeferredShaderToGlobal(section.key)
-
-    if (section.globalShaderRestore) {
-      this.worldRenderer.chunkMeshManager.globalBlockBuffer?.addSection(
-        section.key,
-        section.globalShaderRestore.words,
-        section.globalShaderRestore.count,
-      )
-    }
-
-    // Clean up wireframe group
-    this.disposeWireframeGroup(section.wireframeGroup)
-  }
-
-  /**
-   * Dispose a wireframe group and remove from scene
-   */
-  private disposeWireframeGroup(group: THREE.Group): void {
-    this.worldRenderer.sceneOrigin.removeAndUntrackAll(group)
-
-    // Collect all objects to dispose
-    const toDispose: THREE.Object3D[] = []
-    group.traverse((child) => {
-      toDispose.push(child)
-    })
-
-    // Dispose all collected objects
-    for (const child of toDispose) {
-      const lineSegments = child as THREE.LineSegments
-      if (lineSegments.geometry) {
-        lineSegments.geometry.dispose()
-      }
-      if (lineSegments.material) {
-        const mat = lineSegments.material
-        if (Array.isArray(mat)) {
-          for (const m of mat) m.dispose()
-        } else if (mat && typeof mat.dispose === 'function') {
-          mat.dispose()
-        }
-      }
-    }
-
-    // Clear children
-    group.clear()
-  }
-
-  /**
-   * Reset the reveal system
-   */
-  reset(): void {
-    // Clean up all revealing sections
-    for (const section of this.revealingSections.values()) {
-      this.disposeWireframeGroup(section.wireframeGroup)
-    }
-
-    this.pendingGeometries.clear()
-    this.revealingSections.clear()
-    this.revealedChunks.clear()
-    this.finishedChunkCount = 0
-    this.revealTriggered = false
-    this.initialWaveDone = false
-    this.initialRevealWaveSettled = false
-    this.revealStartTime = 0
-    this.pulseTime = 0
-  }
-
-  /**
-   * Force complete all reveals (skip animation)
-   */
-  forceCompleteAll(): void {
-    const sections = [...this.revealingSections.values()]
-    for (const section of sections) {
-      section.renderMeshRefs = this.getSectionRenderMeshes(section.key)
-      for (const mesh of section.renderMeshRefs) {
-        this.restoreMeshMaterial(mesh)
-        mesh.visible = true
-        delete (mesh as any).hiddenByReveal
-      }
-      this.completeReveal(section)
-    }
-  }
-
-  // ============ DEBUG METHODS ============
-
-  /**
-   * Debug: Get all wireframe groups still in scene
-   */
-  debugGetWireframeGroups(): THREE.Group[] {
-    const groups: THREE.Group[] = []
-    this.scene.traverse((child) => {
-      if (child.name === 'scifi-reveal-group') {
-        groups.push(child as THREE.Group)
-      }
-    })
-    return groups
-  }
-
-  /**
-   * Debug: Force remove all wireframe groups from scene
-   */
-  debugForceCleanup(): void {
-    const groups = this.debugGetWireframeGroups()
-    console.log(`[SciFiReveal] Found ${groups.length} wireframe groups in scene`)
-
-    for (const group of groups) {
-      console.log(`[SciFiReveal] Removing group:`, group)
-      this.disposeWireframeGroup(group)
-    }
-
-    // Also clean up any tracked sections
-    for (const section of this.revealingSections.values()) {
-      this.disposeWireframeGroup(section.wireframeGroup)
-    }
-    this.revealingSections.clear()
-
-    console.log(`[SciFiReveal] Cleanup complete. Remaining groups: ${this.debugGetWireframeGroups().length}`)
-  }
-
-  /**
-   * Debug: Get status of the reveal system
-   */
-  debugStatus() {
-    const wireframeGroups = this.debugGetWireframeGroups()
-    const trackedKeys = new Set(this.revealingSections.keys())
-    const orphanedGroups = wireframeGroups.filter(g => !trackedKeys.has((g as any).sectionKey))
-
-    return {
-      revealTriggered: this.revealTriggered,
-      finishedChunkCount: this.finishedChunkCount,
-      pendingGeometries: this.pendingGeometries.size,
-      revealingSections: this.revealingSections.size,
-      revealedChunks: this.revealedChunks.size,
-      wireframeGroupsInScene: wireframeGroups.length,
-      orphanedWireframeGroups: orphanedGroups.length,
-      orphanedKeys: orphanedGroups.map(g => (g as any).sectionKey),
-      sections: [...this.revealingSections.entries()].map(([key, s]) => ({
-        key,
-        phase: s.phase,
-        renderMeshCount: s.renderMeshRefs.length,
-        wireframeInScene: s.wireframeGroup.parent !== null
-      }))
-    }
-  }
-
-  /**
-   * Debug: Log current status to console
-   */
-  debugLog(): void {
-    console.log('[SciFiReveal] Status:', this.debugStatus())
   }
 }
 

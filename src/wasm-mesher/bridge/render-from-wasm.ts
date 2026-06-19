@@ -11,9 +11,11 @@ import { Vec3 } from 'vec3'
 import { elemFaces, buildRotationMatrix, matmul3, matmulmat3, vecadd3, vecsub3 } from '../../mesher-shared/modelsGeometryCommon'
 import type { ExportedWorldGeometry, ExportedSection } from '../../mesher-shared/exportedGeometryTypes'
 import type { MesherGeometryOutput } from '../../mesher-shared/shared'
+import { bakeLegacyVertexColors } from '../../lib/bakeLegacyLight'
 import { SECTION_HEIGHT } from '../../mesher-shared/shared'
 import type { World } from '../../mesher-shared/world'
 import { resolveBlockPropertiesForMeshing } from '../../mesher-shared/blockPropertiesForMeshing'
+import { isSemiTransparentBlockName } from '../../mesher-shared/models'
 import {
   buildShaderCubesFromWords,
   getShaderCubeResources,
@@ -86,8 +88,10 @@ interface WasmBlockFaceData {
   block_state_id: number
   visible_faces: number
   ao_data: number[][]
-  light_data: number[][]
-  light_combined?: number[][] // Packed combined light for shader path ([u8; 4] per visible face)
+  light_data?: number[][]
+  sky_light_data?: number[][]
+  block_light_data?: number[][]
+  light_combined?: number[][]
 }
 
 export interface WasmGeometryOutput {
@@ -147,6 +151,78 @@ function computeMesherVertexLight(
   const cardinalLight = world?.config.cardinalLight ?? 'default'
   const sideShading = getSideShading(faceDir, shadingTheme, cardinalLight)
   return vertexLightFromAo(ao, cornerLight15, sideShading, shadingTheme)
+}
+
+function vertexTintAoColor (
+  world: World | undefined,
+  tint: [number, number, number],
+  ao: number,
+  faceDir: [number, number, number],
+): [number, number, number] {
+  const shadingTheme = world?.config.shadingTheme ?? 'high-contrast'
+  const cardinalLight = world?.config.cardinalLight ?? 'default'
+  const sideShading = getSideShading(faceDir, shadingTheme, cardinalLight)
+  if (shadingTheme === 'high-contrast') {
+    const f = sideShading * ((ao + 1) / 4)
+    return [tint[0] * f, tint[1] * f, tint[2] * f]
+  }
+  const f = sideShading * (ao * 0.2 + 0.4)
+  return [tint[0] * f, tint[1] * f, tint[2] * f]
+}
+
+function sampleChannelLightAt (world: World, pos: Vec3): { block: number, sky: number } {
+  return world.getChannelLightNorm(pos)
+}
+
+function smoothChannelLightAt (
+  world: World,
+  cursor: Vec3,
+  faceDir: [number, number, number],
+  cornerOffset: [number, number, number],
+  faceIdx: number,
+): { block: number, sky: number } {
+  const neighbor = cursor.offset(faceDir[0], faceDir[1], faceDir[2])
+  const base = sampleChannelLightAt(world, neighbor)
+
+  if (!world.config.smoothLighting) {
+    return base
+  }
+
+  const mask1 = [
+    [1, 1, 0], [1, 1, 0], [1, 1, 0], [1, 1, 0], [1, 0, 1], [1, 0, 1],
+  ][faceIdx]!
+  const mask2 = [
+    [0, 1, 1], [0, 1, 1], [1, 0, 1], [1, 0, 1], [0, 1, 1], [0, 1, 1],
+  ][faceIdx]!
+  const [cx, cy, cz] = cornerOffset
+  const [fx, fy, fz] = faceDir
+
+  const shrink = (v: [number, number, number], mask: number[]) => {
+    const out: [number, number, number] = [cx * mask[0]!, cy * mask[1]!, cz * mask[2]!]
+    if (fx !== 0) out[0] = 0
+    if (fy !== 0) out[1] = 0
+    if (fz !== 0) out[2] = 0
+    return out
+  }
+
+  const s1 = shrink([cx, cy, cz], mask1)
+  const s2 = shrink([cx, cy, cz], mask2)
+  const c = shrink([cx, cy, cz], [1, 1, 1])
+
+  const samples = [
+    base,
+    sampleChannelLightAt(world, neighbor.offset(s1[0], s1[1], s1[2])),
+    sampleChannelLightAt(world, neighbor.offset(s2[0], s2[1], s2[2])),
+    sampleChannelLightAt(world, neighbor.offset(c[0], c[1], c[2])),
+  ]
+
+  let blockSum = 0
+  let skySum = 0
+  for (const s of samples) {
+    blockSum += s.block
+    skySum += s.sky
+  }
+  return { block: blockSum / 4, sky: skySum / 4 }
 }
 
 /**
@@ -350,6 +426,8 @@ const renderLiquidToGeometry = (
   positions: number[],
   normals: number[],
   colors: number[],
+  skyLights: number[],
+  blockLights: number[],
   uvs: number[],
   indices: number[],
 ) => {
@@ -393,7 +471,7 @@ const renderLiquidToGeometry = (
     const su = texture.su || 1
     const sv = texture.sv || 1
 
-    const baseLight = world.getLight(neighborPos, undefined, undefined, water ? 'water' : 'lava') / 15
+    const baseChannels = sampleChannelLightAt(world, neighborPos)
 
     const baseIndex = positions.length / 3
 
@@ -410,7 +488,8 @@ const renderLiquidToGeometry = (
       normals.push(dir[0], dir[1], dir[2])
       uvs.push(pos[3] * su + u, pos[4] * sv * (pos[1] ? 1 : height) + v)
 
-      let cornerLightResult = baseLight
+      let skyNorm = baseChannels.sky
+      let blockNorm = baseChannels.block
       if (world.config.smoothLighting) {
         const dx = pos[0] * 2 - 1
         const dy = pos[1] * 2 - 1
@@ -422,16 +501,19 @@ const renderLiquidToGeometry = (
         const dirVec = new Vec3(dir[0], dir[1], dir[2])
 
         const side1LightDir = getVec(new Vec3(side1Dir[0], side1Dir[1], side1Dir[2]), dirVec)
-        const side1Light = world.getLight(cursor.plus(side1LightDir)) / 15
-        const side2DirLight = getVec(new Vec3(side2Dir[0], side2Dir[1], side2Dir[2]), dirVec)
-        const side2Light = world.getLight(cursor.plus(side2DirLight)) / 15
+        const side2LightDir = getVec(new Vec3(side2Dir[0], side2Dir[1], side2Dir[2]), dirVec)
         const cornerLightDir = getVec(new Vec3(cornerDir[0], cornerDir[1], cornerDir[2]), dirVec)
-        const cornerLight = world.getLight(cursor.plus(cornerLightDir)) / 15
 
-        cornerLightResult = (side1Light + side2Light + cornerLight + baseLight) / 4
+        const s1 = sampleChannelLightAt(world, cursor.plus(side1LightDir))
+        const s2 = sampleChannelLightAt(world, cursor.plus(side2LightDir))
+        const sc = sampleChannelLightAt(world, cursor.plus(cornerLightDir))
+        blockNorm = (s1.block + s2.block + sc.block + baseChannels.block) / 4
+        skyNorm = (s1.sky + s2.sky + sc.sky + baseChannels.sky) / 4
       }
 
-      colors.push(tint[0] * cornerLightResult, tint[1] * cornerLightResult, tint[2] * cornerLightResult)
+      colors.push(tint[0], tint[1], tint[2])
+      skyLights.push(skyNorm)
+      blockLights.push(blockNorm)
     }
 
     indices.push(
@@ -441,12 +523,26 @@ const renderLiquidToGeometry = (
       baseIndex + 2,
       baseIndex + 1,
       baseIndex + 3,
-      baseIndex,
-      baseIndex + 2,
-      baseIndex + 1,
-      baseIndex + 2,
-      baseIndex + 3,
-      baseIndex + 1,
+    )
+
+    const dupBase = positions.length / 3
+    for (let v = 0; v < 4; v++) {
+      const src = (baseIndex + v) * 3
+      positions.push(positions[src]!, positions[src + 1]!, positions[src + 2]!)
+      normals.push(-dir[0], -dir[1], -dir[2])
+      const uvSrc = (baseIndex + v) * 2
+      uvs.push(uvs[uvSrc]!, uvs[uvSrc + 1]!)
+      colors.push(colors[src]!, colors[src + 1]!, colors[src + 2]!)
+      skyLights.push(skyLights[src / 3]!)
+      blockLights.push(blockLights[src / 3]!)
+    }
+    indices.push(
+      dupBase,
+      dupBase + 2,
+      dupBase + 1,
+      dupBase + 1,
+      dupBase + 2,
+      dupBase + 3,
     )
   }
 }
@@ -500,8 +596,18 @@ export function renderWasmOutputToGeometry(
   const positions: number[] = []
   const normals: number[] = []
   const colors: number[] = []
+  const skyLights: number[] = []
+  const blockLights: number[] = []
   const uvs: number[] = []
   const indices: number[] = []
+
+  const blendPositions: number[] = []
+  const blendNormals: number[] = []
+  const blendColors: number[] = []
+  const blendSkyLights: number[] = []
+  const blendBlockLights: number[] = []
+  const blendUvs: number[] = []
+  const blendIndices: number[] = []
 
   const liquidQueue: Array<{
     pos: Vec3,
@@ -510,8 +616,6 @@ export function renderWasmOutputToGeometry(
     water: boolean,
     isRealWater: boolean,
   }> = []
-
-  let currentIndex = 0
 
   const sectionHeight = options?.sectionHeight ?? SECTION_HEIGHT
   const shaderCubesEnabled = options?.shaderCubes !== false
@@ -600,6 +704,15 @@ export function renderWasmOutputToGeometry(
 
     const models = cachedModel.models
     if (!models || models.length == 0) continue
+
+    const routeToBlend = prismBlock.transparent && isSemiTransparentBlockName(cachedModel.blockName)
+    const tgtPos = routeToBlend ? blendPositions : positions
+    const tgtNorm = routeToBlend ? blendNormals : normals
+    const tgtCol = routeToBlend ? blendColors : colors
+    const tgtSky = routeToBlend ? blendSkyLights : skyLights
+    const tgtBlock = routeToBlend ? blendBlockLights : blockLights
+    const tgtUv = routeToBlend ? blendUvs : uvs
+    const tgtIdx = routeToBlend ? blendIndices : indices
 
     const faceNameToIndex: Record<string, number> = {
       'up': 0,
@@ -700,7 +813,9 @@ export function renderWasmOutputToGeometry(
 
           const faceDataIndex = faceIdx === undefined ? undefined : wasmFaceToDataIndex[faceIdx]
           const aoValuesRaw = faceDataIndex === undefined ? undefined : block.ao_data[faceDataIndex]
-          const lightValuesRaw = faceDataIndex === undefined ? undefined : block.light_data[faceDataIndex]
+          const skyValuesRaw = faceDataIndex === undefined ? undefined : block.sky_light_data?.[faceDataIndex]
+          const blockValuesRaw = faceDataIndex === undefined ? undefined : block.block_light_data?.[faceDataIndex]
+          const lightValuesRaw = faceDataIndex === undefined ? undefined : block.light_data?.[faceDataIndex]
 
           const texture = matchingEFace.texture as any
           const u = texture.u || 0
@@ -717,7 +832,7 @@ export function renderWasmOutputToGeometry(
 
           const tint = getTint(matchingEFace, cachedModel.blockName, cachedModel.blockProps, biome, world)
 
-          const baseIndex = currentIndex
+          const baseIndex = tgtPos.length / 3
           const computedAoValues = [3, 3, 3, 3]
           for (let cornerIdx = 0; cornerIdx < 4; cornerIdx++) {
             const pos = corners[cornerIdx]
@@ -738,20 +853,19 @@ export function renderWasmOutputToGeometry(
               vertex[2] + (bz & 15) - 8
             ]
 
-            positions.push(...worldPos)
+            tgtPos.push(...worldPos)
 
-            normals.push(transformedDir[0], transformedDir[1], transformedDir[2])
+            tgtNorm.push(transformedDir[0], transformedDir[1], transformedDir[2])
 
-            const useModelLighting = !cachedModel.isCube && world
+            const useModelLighting = (!cachedModel.isCube || globalMatrix != null) && world
 
             let ao = 3
-            let cornerLightResult = 15
-            let light: number
+            let skyLightNorm = 1
+            let blockLightNorm = 0
+            const faceDir = transformedDirI as [number, number, number]
 
             if (!doAO) {
-              // JS parity: skip AO/light sampling, emit full-bright vertex.
               computedAoValues[cornerIdx] = 3
-              light = 1
             } else if (useModelLighting) {
               const cursor = new Vec3(bx, by, bz)
 
@@ -778,55 +892,45 @@ export function renderWasmOutputToGeometry(
               ao = (side1Block && side2Block) ? 0 : (3 - (side1Block + side2Block + cornerBlock))
               computedAoValues[cornerIdx] = ao
 
-              const neighborPos = cursor.offset(transformedDirI[0], transformedDirI[1], transformedDirI[2])
-              const baseLight15 = world.getLight(neighborPos)
-
-              if (world.config.smoothLighting) {
-                const dirVec = new Vec3(transformedDirI[0], transformedDirI[1], transformedDirI[2])
-                const getVec = (v: Vec3) => {
-                  for (const coord of ['x', 'y', 'z'] as const) {
-                    if (Math.abs((dirVec as any)[coord]) > 0) (v as any)[coord] = 0
-                  }
-                  return v.plus(dirVec)
-                }
-
-                const side1LightDir = getVec(new Vec3(side1DirI[0], side1DirI[1], side1DirI[2]))
-                const side2LightDir = getVec(new Vec3(side2DirI[0], side2DirI[1], side2DirI[2]))
-                const cornerLightDir = getVec(new Vec3(cornerDirI[0], cornerDirI[1], cornerDirI[2]))
-
-                const side1Light = world.getLight(cursor.plus(side1LightDir))
-                const side2Light = world.getLight(cursor.plus(side2LightDir))
-                const cornerLight = world.getLight(cursor.plus(cornerLightDir))
-
-                cornerLightResult = (side1Light + side2Light + cornerLight + baseLight15) / 4
-              } else {
-                cornerLightResult = baseLight15
-              }
+              const cornerDirL = matmul3(globalMatrix, [dx, dy, dz])
+              const cornerOffsetI: [number, number, number] = [
+                Math.round(cornerDirL[0]), Math.round(cornerDirL[1]), Math.round(cornerDirL[2]),
+              ]
+              const channels = smoothChannelLightAt(
+                world,
+                cursor,
+                faceDir,
+                cornerOffsetI,
+                faceIdx ?? 0,
+              )
+              skyLightNorm = channels.sky
+              blockLightNorm = channels.block
             } else {
               const aoValues = aoValuesRaw ?? [3, 3, 3, 3]
-              const lightValues = lightValuesRaw ?? [1, 1, 1, 1]
 
               ao = aoValues[cornerIdx] ?? 3
               computedAoValues[cornerIdx] = ao
 
-              const baseLight = lightValues[cornerIdx] ?? 1
-              cornerLightResult = baseLight * 15
+              if (skyValuesRaw && blockValuesRaw) {
+                skyLightNorm = skyValuesRaw[cornerIdx] ?? 1
+                blockLightNorm = blockValuesRaw[cornerIdx] ?? 0
+              } else {
+                const combined = lightValuesRaw?.[cornerIdx] ?? 1
+                skyLightNorm = combined
+                blockLightNorm = 0
+              }
             }
 
-            if (doAO) {
-              const faceDir = transformedDirI as [number, number, number]
-              light = computeMesherVertexLight(world, ao, cornerLightResult, faceDir)
-            }
-
-            colors.push(tint[0] * light!, tint[1] * light!, tint[2] * light!)
+            const tintAo = vertexTintAoColor(world, tint, ao, faceDir)
+            tgtCol.push(tintAo[0], tintAo[1], tintAo[2])
+            tgtSky.push(skyLightNorm)
+            tgtBlock.push(blockLightNorm)
 
             const baseu = (pos[3] - 0.5) * uvcs - (pos[4] - 0.5) * uvsn + 0.5
             const basev = (pos[3] - 0.5) * uvsn + (pos[4] - 0.5) * uvcs + 0.5
             const finalU = baseu * su + u
             const finalV = basev * sv + v
-            uvs.push(finalU, finalV)
-
-            currentIndex++
+            tgtUv.push(finalU, finalV)
           }
 
           const aoValues = computedAoValues
@@ -839,7 +943,7 @@ export function renderWasmOutputToGeometry(
             tri1 = [baseIndex, baseIndex + 1, baseIndex + 2]
             tri2 = [baseIndex + 2, baseIndex + 1, baseIndex + 3]
           }
-          indices.push(...tri1, ...tri2)
+          tgtIdx.push(...tri1, ...tri2)
         }
       }
     }
@@ -861,11 +965,13 @@ export function renderWasmOutputToGeometry(
         q.biome,
         q.water,
         q.isRealWater,
-        positions,
-        normals,
-        colors,
-        uvs,
-        indices,
+        blendPositions,
+        blendNormals,
+        blendColors,
+        blendSkyLights,
+        blendBlockLights,
+        blendUvs,
+        blendIndices,
       )
     }
   }
@@ -879,9 +985,22 @@ export function renderWasmOutputToGeometry(
       positions,
       normals,
       colors,
+      skyLights,
+      blockLights,
       uvs,
       indices,
     },
+    ...(blendPositions.length > 0 ? {
+      blendGeometry: {
+        positions: blendPositions,
+        normals: blendNormals,
+        colors: blendColors,
+        skyLights: blendSkyLights,
+        blockLights: blendBlockLights,
+        uvs: blendUvs,
+        indices: blendIndices,
+      },
+    } : {}),
     ...(shaderCubes ? { shaderCubes } : {}),
   }
 
@@ -1016,12 +1135,17 @@ export function mesherGeometryToExportFormat(
   mesherGeometry: MesherGeometryOutput,
   version: string,
   cameraPosition = { x: 0, y: 0, z: 0 },
-  cameraRotation = { pitch: 0, yaw: 0 }
+  cameraRotation = { pitch: 0, yaw: 0 },
+  skyLevel = 1,
 ): ExportedWorldGeometry {
-  // Convert typed arrays to regular number arrays
   const positions = Array.from(mesherGeometry.positions) as number[]
   const normals = mesherGeometry.normals ? (Array.from(mesherGeometry.normals) as number[]) : []
-  const colors = mesherGeometry.colors ? (Array.from(mesherGeometry.colors) as number[]) : []
+  const tintColors = mesherGeometry.colors ? (Array.from(mesherGeometry.colors) as number[]) : []
+  const skyLights = mesherGeometry.skyLights ? (Array.from(mesherGeometry.skyLights) as number[]) : []
+  const blockLights = mesherGeometry.blockLights ? (Array.from(mesherGeometry.blockLights) as number[]) : []
+  const colors = skyLights.length
+    ? bakeLegacyVertexColors(tintColors, skyLights, blockLights, skyLevel)
+    : tintColors
   const uvs = mesherGeometry.uvs ? (Array.from(mesherGeometry.uvs) as number[]) : []
   const indices = Array.from(mesherGeometry.indices) as number[]
 
@@ -1042,9 +1166,27 @@ export function mesherGeometryToExportFormat(
       positions,
       normals,
       colors,
+      skyLights,
+      blockLights,
       uvs,
       indices,
     },
+    ...(mesherGeometry.blend ? {
+      blendGeometry: {
+        positions: Array.from(mesherGeometry.blend.positions),
+        normals: Array.from(mesherGeometry.blend.normals),
+        colors: bakeLegacyVertexColors(
+          Array.from(mesherGeometry.blend.colors),
+          Array.from(mesherGeometry.blend.skyLights),
+          Array.from(mesherGeometry.blend.blockLights),
+          skyLevel,
+        ),
+        skyLights: Array.from(mesherGeometry.blend.skyLights),
+        blockLights: Array.from(mesherGeometry.blend.blockLights),
+        uvs: Array.from(mesherGeometry.blend.uvs),
+        indices: Array.from(mesherGeometry.blend.indices),
+      },
+    } : {}),
   }
 
   return {

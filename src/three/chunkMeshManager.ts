@@ -4,14 +4,19 @@ import * as nbt from 'prismarine-nbt'
 import { Vec3 } from 'vec3'
 import { MesherGeometryOutput } from '../mesher-shared/shared'
 import { getShaderCubeResources, SHADER_CUBES_WORDS_PER_FACE } from '../wasm-mesher/bridge/shaderCubeBridge'
-import { createCubeBlockMaterial } from './shaders/cubeBlockShader'
+import { createCubeBlockMaterial, computeSectionOriginRel, setCubeSkyLevel, setCubeLightmapParams, type BlockLightmapParams } from './shaders/cubeBlockShader'
+import { computeCameraRelativeUniforms, createGlobalLegacyBlendMaterial, createGlobalLegacyBlockMaterial, createLegacyBlockMaterial, setLegacyCameraOrigin, setLegacySkyLevel, setLegacyLightmapParams, type RenderOrigin } from './shaders/legacyBlockShader'
+import { LEGACY_SECTION_HALF_EXTENT, sectionIntersectsFrustum, setupLegacySectionMatrix, updateLegacySectionCullState } from './legacySectionCull'
 import { createShaderCubeMesh, disposeShaderCubeMesh } from './shaderCubeMesh'
 import { GlobalBlockBuffer } from './globalBlockBuffer'
+import { buildVisibleCubeSpans } from './cubeDrawSpans'
+import { GlobalLegacyBuffer, type LegacySectionGeometry } from './globalLegacyBuffer'
 import {
   computeShaderSectionRaycastAabb,
   isPointInsideAabb,
   raycastAabb,
   raycastShaderBlocksAabb,
+  sectionAabbIntersectsRay,
   type ShaderSectionRaycastEntry,
 } from './sectionRaycastAabb'
 import { chunkPos } from '../lib/simpleUtils'
@@ -21,6 +26,7 @@ import type { WorldRendererThree } from './worldRendererThree'
 import { armorModel } from './entity/armorModels'
 import { disposeObject } from './threeJsUtils'
 import { getBannerTexture, createBannerMesh, releaseBannerTexture } from './bannerRenderer'
+import { BlockEntityLightRegistry } from '../lib/blockEntityLightRegistry'
 
 export interface ChunkMeshPool {
   mesh: THREE.Mesh
@@ -35,6 +41,12 @@ export interface SectionObject extends THREE.Group {
   shaderMesh?: THREE.Mesh<THREE.InstancedBufferGeometry, THREE.ShaderMaterial>
   /** Shader cube words kept for migration to global buffer after reveal. */
   deferredShaderCubes?: { words: Uint32Array, count: number }
+  /** Opaque legacy geometry deferred from global buffer during sci-fi reveal. */
+  deferredLegacyOpaque?: LegacySectionGeometry
+  /** Blend legacy geometry deferred from global buffer during sci-fi reveal. */
+  deferredLegacyBlend?: LegacySectionGeometry
+  /** Section uses a pooled mesh for blend (reveal defer or invariant fallback). */
+  hasBlendMesh?: boolean
   tilesCount?: number
   blocksCount?: number
 
@@ -62,6 +74,11 @@ export interface SectionObject extends THREE.Group {
 }
 
 export class ChunkMeshManager {
+  private static readonly REBASE_THRESHOLD = 65536
+
+  /** Float64 render origin snapped to section granularity; GPU buffers store origins relative to this. */
+  private renderOrigin: RenderOrigin = { x: 0, y: 0, z: 0 }
+
   private readonly meshPool: ChunkMeshPool[] = []
   private readonly activeSections = new Map<string, ChunkMeshPool>()
   readonly sectionObjects: Record<string, SectionObject> = {}
@@ -89,6 +106,7 @@ export class ChunkMeshManager {
   private maxPoolSize!: number
   private minPoolSize!: number
   private readonly signHeadsRenderer: SignHeadsRenderer
+  private readonly blockEntityLightRegistry = new BlockEntityLightRegistry()
   /**
    * Shared transparent material used as the basis for the wireframe chunk
    * border `BoxHelper` created lazily in {@link updateBoxHelper}. Kept on the
@@ -98,8 +116,26 @@ export class ChunkMeshManager {
   private readonly chunkBoxMaterial = new THREE.MeshBasicMaterial({ color: 0x00_00_00, transparent: true, opacity: 0 })
   /** Shared across all sections — atlas/tint uniforms updated via {@link syncCubeShaderUniforms}. */
   private cubeShaderMaterial: THREE.ShaderMaterial | null = null
+  /** Per-section blend meshes — atlas + camera origin updated each frame. */
+  private legacyShaderMaterial: THREE.ShaderMaterial | null = null
+  private globalLegacyShaderMaterial: THREE.ShaderMaterial | null = null
+  private globalLegacyBlendShaderMaterial: THREE.ShaderMaterial | null = null
+  private readonly _legacyCullFrustum = new THREE.Frustum()
+  private readonly _legacyCullProjScreen = new THREE.Matrix4()
+  private readonly _legacyCullBox = new THREE.Box3()
+  private readonly _legacyCullBoxMin = new THREE.Vector3()
+  private readonly _legacyCullBoxMax = new THREE.Vector3()
+  private readonly _visibleSectionSpans: Array<{ key: string, distSq: number }> = []
+  /** Drives per-frame cull + span rebuild; cleared after updateSectionCullAndSort. */
+  cullDirty = true
+  private readonly _lastCullCamPos = new THREE.Vector3()
+  private readonly _lastCullCamQuat = new THREE.Quaternion()
+  private readonly _cullViewQuat = new THREE.Quaternion()
+  private _cullCamInitialized = false
   /** One instanced mesh for all shader-cube faces (single draw call). */
   globalBlockBuffer: GlobalBlockBuffer | null = null
+  globalLegacyBuffer: GlobalLegacyBuffer | null = null
+  globalLegacyBlendBuffer: GlobalLegacyBuffer | null = null
   /** Tight world AABBs for third-person raycast; block word0 read from GlobalBlockBuffer or deferred. */
   private readonly shaderSectionRaycastBoxes = new Map<string, ShaderSectionRaycastEntry>()
   /** Per-raycast block dedup; safe while the eye is inside at most one section aggregate AABB per call. */
@@ -145,7 +181,7 @@ export class ChunkMeshManager {
     // Create initial pool
     for (let i = 0; i < this.poolSize; i++) {
       const geometry = new THREE.BufferGeometry()
-      const mesh = new THREE.Mesh(geometry, this.material)
+      const mesh = new THREE.Mesh(geometry, this.getLegacyShaderMaterial())
       mesh.visible = false
       mesh.matrixAutoUpdate = false
       mesh.name = 'pooled-section-mesh'
@@ -164,6 +200,7 @@ export class ChunkMeshManager {
   /** True when section has legacy vertices and/or GPU shader cube instances. */
   sectionHasRenderableContent (geometryData: MesherGeometryOutput): boolean {
     if (geometryData.positions.length > 0) return true
+    if ((geometryData.blend?.positions.length ?? 0) > 0) return true
     if (!this.isShaderCubesGpuEnabled()) return false
     return (geometryData.shaderCubes?.count ?? 0) > 0
   }
@@ -189,6 +226,292 @@ export class ChunkMeshManager {
     mat.needsUpdate = true
   }
 
+  syncLegacyShaderUniforms (): void {
+    const atlas = (this.material as THREE.MeshBasicMaterial).map ?? null
+    if (this.legacyShaderMaterial) {
+      this.legacyShaderMaterial.uniforms.u_atlas.value = atlas
+      this.legacyShaderMaterial.needsUpdate = true
+    }
+    if (this.globalLegacyShaderMaterial) {
+      this.globalLegacyShaderMaterial.uniforms.u_atlas.value = atlas
+      this.globalLegacyShaderMaterial.needsUpdate = true
+    }
+    if (this.globalLegacyBlendShaderMaterial) {
+      this.globalLegacyBlendShaderMaterial.uniforms.u_atlas.value = atlas
+      this.globalLegacyBlendShaderMaterial.needsUpdate = true
+    }
+  }
+
+  /** Render-time sky light cap (0–1, from time-of-day / 15). */
+  setSkyLevel (value: number): void {
+    const cube = this.cubeShaderMaterial ?? (this.isShaderCubesGpuEnabled() ? this.getCubeShaderMaterial() : null)
+    if (cube) setCubeSkyLevel(cube, value)
+    if (this.legacyShaderMaterial) setLegacySkyLevel(this.legacyShaderMaterial, value)
+    if (this.globalLegacyShaderMaterial) setLegacySkyLevel(this.globalLegacyShaderMaterial, value)
+    if (this.globalLegacyBlendShaderMaterial) setLegacySkyLevel(this.globalLegacyBlendShaderMaterial, value)
+    this.blockEntityLightRegistry.setSkyLevel(value)
+  }
+
+  /** Vanilla-like lightmap curve params (live tuning via window.setBlockLightmap). */
+  setBlockLightmapParams (params: BlockLightmapParams): void {
+    const cube = this.cubeShaderMaterial ?? (this.isShaderCubesGpuEnabled() ? this.getCubeShaderMaterial() : null)
+    if (cube) setCubeLightmapParams(cube, params)
+    if (this.legacyShaderMaterial) setLegacyLightmapParams(this.legacyShaderMaterial, params)
+    if (this.globalLegacyShaderMaterial) setLegacyLightmapParams(this.globalLegacyShaderMaterial, params)
+    if (this.globalLegacyBlendShaderMaterial) setLegacyLightmapParams(this.globalLegacyBlendShaderMaterial, params)
+    this.blockEntityLightRegistry.setLightmapParams(params)
+  }
+
+  private getLegacyShaderMaterial (): THREE.ShaderMaterial {
+    if (!this.legacyShaderMaterial) {
+      this.legacyShaderMaterial = createLegacyBlockMaterial()
+      this.syncLegacyShaderUniforms()
+    }
+    return this.legacyShaderMaterial
+  }
+
+  private getGlobalLegacyShaderMaterial (): THREE.ShaderMaterial {
+    if (!this.globalLegacyShaderMaterial) {
+      this.globalLegacyShaderMaterial = createGlobalLegacyBlockMaterial()
+      this.syncLegacyShaderUniforms()
+    }
+    return this.globalLegacyShaderMaterial
+  }
+
+  private getGlobalLegacyBuffer (): GlobalLegacyBuffer {
+    if (!this.globalLegacyBuffer) {
+      this.globalLegacyBuffer = new GlobalLegacyBuffer(
+        this.getGlobalLegacyShaderMaterial(),
+        this.scene,
+      )
+      this.globalLegacyBuffer.setRenderOrigin(this.renderOrigin)
+    }
+    return this.globalLegacyBuffer
+  }
+
+  private getGlobalLegacyBlendShaderMaterial (): THREE.ShaderMaterial {
+    if (!this.globalLegacyBlendShaderMaterial) {
+      this.globalLegacyBlendShaderMaterial = createGlobalLegacyBlendMaterial()
+      this.syncLegacyShaderUniforms()
+    }
+    return this.globalLegacyBlendShaderMaterial
+  }
+
+  private getGlobalLegacyBlendBuffer (): GlobalLegacyBuffer {
+    if (!this.globalLegacyBlendBuffer) {
+      this.globalLegacyBlendBuffer = new GlobalLegacyBuffer(
+        this.getGlobalLegacyBlendShaderMaterial(),
+        this.scene,
+        {
+          name: 'globalLegacyBlend',
+          initialCapacityQuads: 32_000,
+          growthIncrementQuads: 32_000,
+        },
+      )
+      this.globalLegacyBlendBuffer.setRenderOrigin(this.renderOrigin)
+    }
+    return this.globalLegacyBlendBuffer
+  }
+
+  getRenderOrigin (): Readonly<RenderOrigin> {
+    return this.renderOrigin
+  }
+
+  maybeRebase (camera: RenderOrigin): void {
+    const R = this.renderOrigin
+    if (
+      Math.abs(camera.x - R.x) <= ChunkMeshManager.REBASE_THRESHOLD
+      && Math.abs(camera.y - R.y) <= ChunkMeshManager.REBASE_THRESHOLD
+      && Math.abs(camera.z - R.z) <= ChunkMeshManager.REBASE_THRESHOLD
+    ) {
+      return
+    }
+
+    const newOrigin: RenderOrigin = {
+      x: Math.round(camera.x / 16) * 16,
+      y: Math.round(camera.y / 16) * 16,
+      z: Math.round(camera.z / 16) * 16,
+    }
+    const delta: RenderOrigin = {
+      x: newOrigin.x - R.x,
+      y: newOrigin.y - R.y,
+      z: newOrigin.z - R.z,
+    }
+
+    this.globalLegacyBuffer?.rebase(delta)
+    this.globalLegacyBlendBuffer?.rebase(delta)
+
+    for (const poolEntry of this.activeSections.values()) {
+      const sectionKey = poolEntry.sectionKey
+      if (!sectionKey) continue
+      const sectionObject = this.sectionObjects[sectionKey]
+      if (!sectionObject) continue
+      setupLegacySectionMatrix(
+        poolEntry.mesh,
+        sectionObject.worldX ?? 0,
+        sectionObject.worldY ?? 0,
+        sectionObject.worldZ ?? 0,
+        newOrigin,
+      )
+    }
+
+    this.renderOrigin = newOrigin
+    this.globalLegacyBuffer?.setRenderOrigin(newOrigin)
+    this.globalLegacyBlendBuffer?.setRenderOrigin(newOrigin)
+  }
+
+  /** Whether a section still holds a pooled legacy mesh (defer / invariant fallback). */
+  sectionUsesPooledLegacyMesh (sectionKey: string): boolean {
+    return this.activeSections.has(sectionKey)
+  }
+
+  /**
+   * Shared section visibility + span groups for global legacy and cube buffers.
+   */
+  updateSectionCullAndSort (camera: THREE.Camera, cameraWorldX: number, cameraWorldY: number, cameraWorldZ: number): void {
+    this._legacyCullProjScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+    this._legacyCullFrustum.setFromProjectionMatrix(this._legacyCullProjScreen)
+
+    const visible = this._visibleSectionSpans
+    visible.length = 0
+
+    for (const [sectionKey, sectionObject] of Object.entries(this.sectionObjects)) {
+      if (sectionObject.worldX === undefined || !sectionObject.visible) continue
+      const { visible: inFrustum, distSq } = sectionIntersectsFrustum(
+        sectionObject.worldX,
+        sectionObject.worldY ?? 0,
+        sectionObject.worldZ ?? 0,
+        cameraWorldX,
+        cameraWorldY,
+        cameraWorldZ,
+        this._legacyCullFrustum,
+        this._legacyCullBox,
+        this._legacyCullBoxMin,
+        this._legacyCullBoxMax,
+      )
+      if (inFrustum) {
+        visible.push({ key: sectionKey, distSq })
+      }
+    }
+
+    this.globalLegacyBuffer?.updateDrawSpans(visible, 'opaque')
+    this.globalLegacyBlendBuffer?.updateDrawSpans(visible, 'sortedBlend')
+
+    const gb = this.globalBlockBuffer
+    if (gb) {
+      const visibleSlots: Array<{ start: number, count: number }> = []
+      gb.forEachSectionSlot((key, slot) => {
+        const entry = this.shaderSectionRaycastBoxes.get(key)
+        if (!entry) {
+          return
+        }
+        const { visible: inFrustum } = sectionIntersectsFrustum(
+          entry.sectionCenterX,
+          entry.sectionCenterY,
+          entry.sectionCenterZ,
+          cameraWorldX,
+          cameraWorldY,
+          cameraWorldZ,
+          this._legacyCullFrustum,
+          this._legacyCullBox,
+          this._legacyCullBoxMin,
+          this._legacyCullBoxMax,
+        )
+        if (!inFrustum) {
+          return
+        }
+        const drawStart = gb.getSectionDrawStart(key)
+        if (drawStart !== undefined) {
+          visibleSlots.push({ start: drawStart, count: slot.count })
+        }
+      })
+      const spans = buildVisibleCubeSpans(visibleSlots, gb.getHighWatermark())
+      gb.setVisibleSpans(spans)
+    }
+
+    for (const poolEntry of this.activeSections.values()) {
+      const sectionKey = poolEntry.sectionKey
+      if (!sectionKey) continue
+      const sectionObject = this.sectionObjects[sectionKey]
+      if (!sectionObject) continue
+
+      updateLegacySectionCullState(
+        poolEntry.mesh,
+        sectionObject.worldX ?? 0,
+        sectionObject.worldY ?? 0,
+        sectionObject.worldZ ?? 0,
+        cameraWorldX,
+        cameraWorldY,
+        cameraWorldZ,
+        this._legacyCullFrustum,
+        this._legacyCullBox,
+        this._legacyCullBoxMin,
+        this._legacyCullBoxMax,
+      )
+    }
+  }
+
+  markCullDirty (): void {
+    this.cullDirty = true
+  }
+
+  /** Compare camera pose; mark cull dirty when position or rotation changed. */
+  updateCullDirtyFromCamera (camera: THREE.Camera, cameraWorldX: number, cameraWorldY: number, cameraWorldZ: number): void {
+    camera.getWorldQuaternion(this._cullViewQuat)
+    if (!this._cullCamInitialized) {
+      this._lastCullCamPos.set(cameraWorldX, cameraWorldY, cameraWorldZ)
+      this._lastCullCamQuat.copy(this._cullViewQuat)
+      this._cullCamInitialized = true
+      this.cullDirty = true
+      return
+    }
+    const posChanged =
+      this._lastCullCamPos.x !== cameraWorldX ||
+      this._lastCullCamPos.y !== cameraWorldY ||
+      this._lastCullCamPos.z !== cameraWorldZ
+    const quatChanged =
+      this._lastCullCamQuat.x !== this._cullViewQuat.x ||
+      this._lastCullCamQuat.y !== this._cullViewQuat.y ||
+      this._lastCullCamQuat.z !== this._cullViewQuat.z ||
+      this._lastCullCamQuat.w !== this._cullViewQuat.w
+    if (posChanged || quatChanged) {
+      this._lastCullCamPos.set(cameraWorldX, cameraWorldY, cameraWorldZ)
+      this._lastCullCamQuat.copy(this._cullViewQuat)
+      this.markCullDirty()
+    }
+  }
+
+  clearCullDirty (): void {
+    this.cullDirty = false
+  }
+
+  setLegacyCameraOrigin (x: number, y: number, z: number): void {
+    const R = this.renderOrigin
+    setLegacyCameraOrigin(this.getLegacyShaderMaterial(), R, x, y, z)
+    setLegacyCameraOrigin(this.getGlobalLegacyShaderMaterial(), R, x, y, z)
+    setLegacyCameraOrigin(this.getGlobalLegacyBlendShaderMaterial(), R, x, y, z)
+    this.globalLegacyBuffer?.setCameraOrigin(x, y, z)
+    this.globalLegacyBlendBuffer?.setCameraOrigin(x, y, z)
+
+    const cubeMat = this.cubeShaderMaterial
+    if (cubeMat) {
+      const { originDelta, cameraOriginFrac } = computeCameraRelativeUniforms(R, x, y, z)
+      const sectionOriginRel = computeSectionOriginRel(R)
+      const u = cubeMat.uniforms.u_originDelta
+      if (u?.value?.set) {
+        u.value.set(originDelta.x, originDelta.y, originDelta.z)
+      }
+      const uf = cubeMat.uniforms.u_cameraOriginFrac
+      if (uf?.value?.set) {
+        uf.value.set(cameraOriginFrac.x, cameraOriginFrac.y, cameraOriginFrac.z)
+      }
+      const us = cubeMat.uniforms.u_sectionOriginRel
+      if (us?.value?.set) {
+        us.value.set(sectionOriginRel.x, sectionOriginRel.y, sectionOriginRel.z)
+      }
+    }
+  }
+
   private getCubeShaderMaterial (): THREE.ShaderMaterial | null {
     if (!this.isShaderCubesGpuEnabled()) return null
     if (!this.cubeShaderMaterial) {
@@ -207,15 +530,16 @@ export class ChunkMeshManager {
     return this.globalBlockBuffer
   }
 
-  /** Sci-fi reveal needs per-section shader meshes (or no global add) until the first wave completes. */
+  private shouldDeferLegacyOpaqueToPerSection (sectionKey: string): boolean {
+    return this.shouldDeferShaderToPerSection(sectionKey)
+  }
+
+  /** Sci-fi reveal keeps geometry off global buffers until the section finishes reveal. */
   private shouldDeferShaderToPerSection (sectionKey: string): boolean {
     const sciFi = this.worldRenderer.getModule<{
-      shouldUseRevealEffect?: (key: string) => boolean
-      isInInitialRevealCampaign?: () => boolean
+      shouldDeferSectionGeometry?: (key: string) => boolean
     }>('futuristicReveal')
-    if (!sciFi) return false
-    if (sciFi.isInInitialRevealCampaign?.()) return true
-    return sciFi.shouldUseRevealEffect?.(sectionKey) === true
+    return sciFi?.shouldDeferSectionGeometry?.(sectionKey) === true
   }
 
   /**
@@ -236,6 +560,7 @@ export class ChunkMeshManager {
 
     const global = this.getGlobalBlockBuffer()
     global?.addSection(sectionKey, words, count)
+    this.markCullDirty()
 
     const hadShaderAsPrimary = section.mesh === (section.shaderMesh as unknown as THREE.Mesh | undefined)
     if (section.shaderMesh) {
@@ -248,6 +573,104 @@ export class ChunkMeshManager {
     if (hadShaderAsPrimary) {
       section.mesh = undefined
     }
+  }
+
+  /**
+   * Move deferred per-section opaque legacy into the global buffer after reveal completes.
+   */
+  migrateDeferredLegacyToGlobal (sectionKey: string): void {
+    const section = this.sectionObjects[sectionKey]
+    if (!section) return
+
+    if (section.deferredLegacyOpaque) {
+      const { positions, colors, skyLights, blockLights, uvs, indices } = section.deferredLegacyOpaque
+      const wx = section.worldX
+      const wy = section.worldY
+      const wz = section.worldZ
+      if (wx !== undefined && wy !== undefined && wz !== undefined) {
+        this.getGlobalLegacyBuffer().addSection(
+          sectionKey,
+          { positions, colors, skyLights, blockLights, uvs, indices },
+          wx,
+          wy,
+          wz,
+        )
+      }
+      delete section.deferredLegacyOpaque
+    }
+
+    if (section.deferredLegacyBlend) {
+      const { positions, colors, skyLights, blockLights, uvs, indices } = section.deferredLegacyBlend
+      const wx = section.worldX
+      const wy = section.worldY
+      const wz = section.worldZ
+      if (wx !== undefined && wy !== undefined && wz !== undefined) {
+        this.getGlobalLegacyBlendBuffer().addSection(
+          sectionKey,
+          { positions, colors, skyLights, blockLights, uvs, indices },
+          wx,
+          wy,
+          wz,
+        )
+      }
+      delete section.deferredLegacyBlend
+      section.hasBlendMesh = false
+    }
+
+    if (!section.hasBlendMesh) {
+      const hadLegacyAsPrimary = section.mesh === this.activeSections.get(sectionKey)?.mesh
+      this.releasePooledMesh(sectionKey)
+      if (hadLegacyAsPrimary) {
+        section.mesh = section.shaderMesh as unknown as THREE.Mesh<THREE.BufferGeometry, THREE.Material> | undefined ?? undefined
+      }
+    }
+    this.markCullDirty()
+  }
+
+  raycastGlobalLegacySections (
+    raycaster: THREE.Raycaster,
+    origin: THREE.Vector3,
+    maxCenterDistance: number,
+  ): number | undefined {
+    const maxDistSq = maxCenterDistance * maxCenterDistance
+    const dirX = raycaster.ray.direction.x
+    const dirY = raycaster.ray.direction.y
+    const dirZ = raycaster.ray.direction.z
+    const far = raycaster.far
+    const halfExtent = LEGACY_SECTION_HALF_EXTENT + 0.01
+    const candidates: string[] = []
+    for (const [key, section] of Object.entries(this.sectionObjects)) {
+      if (section.worldX === undefined) continue
+      const dx = section.worldX - origin.x
+      const dy = (section.worldY ?? 0) - origin.y
+      const dz = (section.worldZ ?? 0) - origin.z
+      if (dx * dx + dy * dy + dz * dz > maxDistSq) continue
+      const inOpaque = this.globalLegacyBuffer?.hasSection(key) ?? false
+      const inBlend = this.globalLegacyBlendBuffer?.hasSection(key) ?? false
+      if (!inOpaque && !inBlend) continue
+      if (!sectionAabbIntersectsRay(
+        section.worldX,
+        section.worldY ?? 0,
+        section.worldZ ?? 0,
+        origin.x,
+        origin.y,
+        origin.z,
+        dirX,
+        dirY,
+        dirZ,
+        far,
+        halfExtent,
+      )) continue
+      candidates.push(key)
+    }
+
+    if (candidates.length === 0) return undefined
+
+    const hits: THREE.Intersection[] = []
+    this.globalLegacyBuffer?.raycastSections(raycaster, candidates, hits)
+    this.globalLegacyBlendBuffer?.raycastSections(raycaster, candidates, hits)
+
+    return hits[0]?.distance
   }
 
   registerShaderSectionRaycastBox (
@@ -362,8 +785,55 @@ export class ChunkMeshManager {
   /**
    * Update or create a section with new geometry data
    */
+  private uploadLegacyPooledMesh (
+    poolEntry: ChunkMeshPool,
+    geometryData: MesherGeometryOutput | MesherGeometryOutput['blend'],
+    sx: number,
+    sy: number,
+    sz: number,
+  ): THREE.Mesh<THREE.BufferGeometry, THREE.Material> {
+    const { mesh } = poolEntry
+    const geo = geometryData!
+    this.updateGeometryAttribute(mesh.geometry, 'position', geo.positions, 3)
+    this.updateGeometryAttribute(mesh.geometry, 'normal', geo.normals, 3)
+    this.updateGeometryAttribute(mesh.geometry, 'color', geo.colors, 3)
+    this.updateGeometryAttribute(mesh.geometry, 'a_skyLight', geo.skyLights, 1)
+    this.updateGeometryAttribute(mesh.geometry, 'a_blockLight', geo.blockLights, 1)
+    this.updateGeometryAttribute(mesh.geometry, 'uv', geo.uvs, 2)
+    mesh.geometry.index = new THREE.BufferAttribute(geo.indices as Uint32Array | Uint16Array, 1)
+    mesh.geometry.boundingBox = new THREE.Box3(
+      new THREE.Vector3(-8, -8, -8),
+      new THREE.Vector3(8, 8, 8),
+    )
+    mesh.geometry.boundingSphere = new THREE.Sphere(
+      new THREE.Vector3(0, 0, 0),
+      Math.sqrt(3 * 8 ** 2),
+    )
+    setupLegacySectionMatrix(mesh, sx, sy, sz, this.renderOrigin)
+    mesh.visible = false
+    mesh.name = 'mesh'
+    poolEntry.lastUsedTime = performance.now()
+    return mesh as THREE.Mesh<THREE.BufferGeometry, THREE.Material>
+  }
+
+  private acquirePooledSectionMesh (sectionKey: string): ChunkMeshPool | null {
+    let poolEntry = this.activeSections.get(sectionKey)
+    if (!poolEntry) {
+      poolEntry = this.acquireMesh()
+      if (!poolEntry) {
+        console.warn(`ChunkMeshManager: No available mesh in pool for section ${sectionKey}`)
+        return null
+      }
+      this.activeSections.set(sectionKey, poolEntry)
+      poolEntry.sectionKey = sectionKey
+    }
+    return poolEntry
+  }
+
   updateSection (sectionKey: string, geometryData: MesherGeometryOutput): SectionObject | null {
-    const hasLegacy = geometryData.positions.length > 0
+    const hasOpaque = geometryData.positions.length > 0
+    const hasBlend = (geometryData.blend?.positions.length ?? 0) > 0
+    const hasLegacy = hasOpaque || hasBlend
     const shaderData = geometryData.shaderCubes
     const hasShader = this.isShaderCubesGpuEnabled() && (shaderData?.count ?? 0) > 0
 
@@ -375,53 +845,115 @@ export class ChunkMeshManager {
     // Remove existing section object from scene if it exists
     let sectionObject = this.sectionObjects[sectionKey]
     if (sectionObject) {
-      this.cleanupSection(sectionKey)
+      this.cleanupSection(sectionKey, { forRemesh: true })
     }
 
-    if (!hasLegacy) {
+    if (!hasBlend) {
       this.releasePooledMesh(sectionKey)
     }
 
     let legacyMesh: THREE.Mesh<THREE.BufferGeometry, THREE.Material> | undefined
-    if (hasLegacy) {
-      let poolEntry = this.activeSections.get(sectionKey)
-      if (!poolEntry) {
-        poolEntry = this.acquireMesh()
-        if (!poolEntry) {
-          console.warn(`ChunkMeshManager: No available mesh in pool for section ${sectionKey}`)
-          return null
-        }
+    let deferredLegacyOpaque: LegacySectionGeometry | undefined
+    let deferredLegacyBlend: LegacySectionGeometry | undefined
+    let hasBlendMesh = false
 
-        this.activeSections.set(sectionKey, poolEntry)
-        poolEntry.sectionKey = sectionKey
+    if (hasOpaque) {
+      const opaqueGeo: LegacySectionGeometry = {
+        positions: geometryData.positions as Float32Array,
+        colors: geometryData.colors as Float32Array,
+        skyLights: geometryData.skyLights as Float32Array,
+        blockLights: geometryData.blockLights as Float32Array,
+        uvs: geometryData.uvs as Float32Array,
+        indices: geometryData.indices as Uint32Array | Uint16Array,
       }
+      const deferOpaque = this.shouldDeferLegacyOpaqueToPerSection(sectionKey)
+      if (deferOpaque) {
+        deferredLegacyOpaque = {
+          positions: new Float32Array(opaqueGeo.positions),
+          colors: new Float32Array(opaqueGeo.colors),
+          skyLights: new Float32Array(opaqueGeo.skyLights),
+          blockLights: new Float32Array(opaqueGeo.blockLights),
+          uvs: new Float32Array(opaqueGeo.uvs),
+          indices: opaqueGeo.indices instanceof Uint32Array
+            ? new Uint32Array(opaqueGeo.indices)
+            : new Uint16Array(opaqueGeo.indices),
+        }
+        if (!hasBlend) {
+          const poolEntry = this.acquirePooledSectionMesh(sectionKey)
+          if (!poolEntry) return null
+          legacyMesh = this.uploadLegacyPooledMesh(poolEntry, geometryData, geometryData.sx, geometryData.sy, geometryData.sz)
+        }
+      } else {
+        const added = this.getGlobalLegacyBuffer().addSection(
+          sectionKey,
+          opaqueGeo,
+          geometryData.sx,
+          geometryData.sy,
+          geometryData.sz,
+        )
+        if (!added) {
+          const poolEntry = this.acquirePooledSectionMesh(sectionKey)
+          if (!poolEntry) return null
+          legacyMesh = this.uploadLegacyPooledMesh(poolEntry, geometryData, geometryData.sx, geometryData.sy, geometryData.sz)
+        }
+      }
+    }
 
-      const { mesh } = poolEntry
-
-      this.updateGeometryAttribute(mesh.geometry, 'position', geometryData.positions, 3)
-      this.updateGeometryAttribute(mesh.geometry, 'normal', geometryData.normals, 3)
-      this.updateGeometryAttribute(mesh.geometry, 'color', geometryData.colors, 3)
-      this.updateGeometryAttribute(mesh.geometry, 'uv', geometryData.uvs, 2)
-
-      mesh.geometry.index = new THREE.BufferAttribute(geometryData.indices as Uint32Array | Uint16Array, 1)
-
-      mesh.geometry.boundingBox = new THREE.Box3(
-        new THREE.Vector3(-8, -8, -8),
-        new THREE.Vector3(8, 8, 8)
-      )
-      mesh.geometry.boundingSphere = new THREE.Sphere(
-        new THREE.Vector3(0, 0, 0),
-        Math.sqrt(3 * 8 ** 2)
-      )
-
-      this.worldRenderer.sceneOrigin.track(mesh, { updateMatrix: true })
-      mesh.position.set(geometryData.sx, geometryData.sy, geometryData.sz)
-      mesh.updateMatrix()
-      mesh.visible = true
-      mesh.name = 'mesh'
-
-      poolEntry.lastUsedTime = performance.now()
-      legacyMesh = mesh as THREE.Mesh<THREE.BufferGeometry, THREE.Material>
+    if (hasBlend && geometryData.blend) {
+      const blendGeo: LegacySectionGeometry = {
+        positions: geometryData.blend.positions as Float32Array,
+        colors: geometryData.blend.colors as Float32Array,
+        skyLights: geometryData.blend.skyLights as Float32Array,
+        blockLights: geometryData.blend.blockLights as Float32Array,
+        uvs: geometryData.blend.uvs as Float32Array,
+        indices: geometryData.blend.indices as Uint32Array | Uint16Array,
+      }
+      const deferBlend = this.shouldDeferLegacyOpaqueToPerSection(sectionKey)
+      if (deferBlend) {
+        deferredLegacyBlend = {
+          positions: new Float32Array(blendGeo.positions),
+          colors: new Float32Array(blendGeo.colors),
+          skyLights: new Float32Array(blendGeo.skyLights),
+          blockLights: new Float32Array(blendGeo.blockLights),
+          uvs: new Float32Array(blendGeo.uvs),
+          indices: blendGeo.indices instanceof Uint32Array
+            ? new Uint32Array(blendGeo.indices)
+            : new Uint16Array(blendGeo.indices),
+        }
+        const poolEntry = this.acquirePooledSectionMesh(sectionKey)
+        if (!poolEntry) return null
+        const blendMesh = this.uploadLegacyPooledMesh(
+          poolEntry,
+          geometryData.blend,
+          geometryData.sx,
+          geometryData.sy,
+          geometryData.sz,
+        )
+        legacyMesh = legacyMesh ?? blendMesh
+        hasBlendMesh = true
+      } else {
+        const added = this.getGlobalLegacyBlendBuffer().addSection(
+          sectionKey,
+          blendGeo,
+          geometryData.sx,
+          geometryData.sy,
+          geometryData.sz,
+        )
+        if (!added) {
+          console.warn(`ChunkMeshManager: blend invariant violation for section ${sectionKey}, using pooled mesh fallback`)
+          const poolEntry = this.acquirePooledSectionMesh(sectionKey)
+          if (!poolEntry) return null
+          const blendMesh = this.uploadLegacyPooledMesh(
+            poolEntry,
+            geometryData.blend,
+            geometryData.sx,
+            geometryData.sy,
+            geometryData.sz,
+          )
+          legacyMesh = legacyMesh ?? blendMesh
+          hasBlendMesh = true
+        }
+      }
     }
 
     const cubeMaterial = hasShader ? this.getCubeShaderMaterial() : null
@@ -454,6 +986,12 @@ export class ChunkMeshManager {
         sectionObject.mesh = shaderMesh as unknown as THREE.Mesh<THREE.BufferGeometry, THREE.Material>
       }
     }
+    if (deferredLegacyOpaque) {
+      sectionObject.deferredLegacyOpaque = deferredLegacyOpaque
+    }
+    if (deferredLegacyBlend) {
+      sectionObject.deferredLegacyBlend = deferredLegacyBlend
+    }
     if (hasShader && shaderData) {
       this.registerShaderSectionRaycastBox(
         sectionKey,
@@ -466,13 +1004,17 @@ export class ChunkMeshManager {
     }
 
     let tilesCount = 0
-    if (hasLegacy) {
+    if (hasOpaque) {
       tilesCount += geometryData.positions.length / 3 / 4
+    }
+    if (hasBlend && geometryData.blend) {
+      tilesCount += geometryData.blend.positions.length / 3 / 4
     }
     if (hasShader && shaderData) {
       tilesCount += shaderData.count
     }
     sectionObject.tilesCount = tilesCount
+    sectionObject.hasBlendMesh = hasBlendMesh
     sectionObject.blocksCount = geometryData.blocksCount
     sectionObject.worldX = geometryData.sx
     sectionObject.worldY = geometryData.sy
@@ -525,13 +1067,30 @@ export class ChunkMeshManager {
         bannersContainer.name = 'banners'
         sectionObject.bannersContainer = bannersContainer
         sectionObject.add(bannersContainer)
-        for (const [posKey, { isWall, rotation, blockName }] of Object.entries(geometryData.banners)) {
+        for (const [posKey, bannerMeta] of Object.entries(geometryData.banners)) {
+          const { isWall, rotation, blockName, blockLightNorm = 0, skyLightNorm = 1 } = bannerMeta
           const bannerBlockEntity = this.worldRenderer.blockEntities[posKey]
           if (!bannerBlockEntity) continue
           const [x, y, z] = posKey.split(',')
           const bannerTexture = getBannerTexture(this.worldRenderer, blockName, nbt.simplify(bannerBlockEntity))
           if (!bannerTexture) continue
-          const banner = createBannerMesh(new Vec3(+x, +y, +z), rotation, isWall, bannerTexture)
+          const skyLevel = this.blockEntityLightRegistry.getSkyLevel()
+          const banner = createBannerMesh(
+            new Vec3(+x, +y, +z),
+            rotation,
+            isWall,
+            bannerTexture,
+            blockLightNorm,
+            skyLightNorm,
+            skyLevel,
+          )
+          if (banner.bannerMaterial) {
+            this.blockEntityLightRegistry.register({
+              material: banner.bannerMaterial,
+              blockLightNorm,
+              skyLightNorm,
+            })
+          }
           const { x: bwx, y: bwy, z: bwz } = banner.position
           this.worldRenderer.sceneOrigin.track(banner)
           banner.position.set(bwx, bwy, bwz)
@@ -573,6 +1132,7 @@ export class ChunkMeshManager {
       if (!list.includes(sectionKey)) list.push(sectionKey)
     }
 
+    this.markCullDirty()
     return sectionObject
   }
 
@@ -746,7 +1306,7 @@ export class ChunkMeshManager {
     }
   }
 
-  cleanupSection (sectionKey: string) {
+  cleanupSection (sectionKey: string, opts?: { forRemesh?: boolean }) {
     // Remove section object from scene
     const sectionObject = this.sectionObjects[sectionKey]
     if (sectionObject) {
@@ -764,15 +1324,24 @@ export class ChunkMeshManager {
       }
       // Cleanup banner textures before disposing
       if (sectionObject.bannersContainer) {
-        sectionObject.bannersContainer.traverse((child) => {
-          if ((child as any).bannerTexture) {
-            releaseBannerTexture((child as any).bannerTexture)
+        for (const child of sectionObject.bannersContainer.children) {
+          const banner = child as THREE.Group & { bannerMaterial?: THREE.MeshBasicMaterial, bannerTexture?: THREE.Texture }
+          if (banner.bannerMaterial) {
+            this.blockEntityLightRegistry.unregister(banner.bannerMaterial)
           }
-        })
+          if (banner.bannerTexture) {
+            releaseBannerTexture(banner.bannerTexture)
+          }
+        }
         this.disposeContainer(sectionObject.bannersContainer)
       }
       this.globalBlockBuffer?.removeSection(sectionKey)
+      this.globalLegacyBuffer?.removeSection(sectionKey)
+      this.globalLegacyBlendBuffer?.removeSection(sectionKey)
       this.unregisterShaderSectionRaycastBox(sectionKey)
+      this.markCullDirty()
+      delete sectionObject.deferredLegacyOpaque
+      delete sectionObject.deferredLegacyBlend
       if (sectionObject.shaderMesh) {
         disposeShaderCubeMesh(sectionObject.shaderMesh)
         sectionObject.shaderMesh = undefined
@@ -780,7 +1349,7 @@ export class ChunkMeshManager {
       delete sectionObject.deferredShaderCubes
       // Dispose signs and heads containers
       if (sectionObject.signsContainer) {
-        this.disposeContainer(sectionObject.signsContainer)
+        this.disposeContainer(sectionObject.signsContainer, false)
       }
       if (sectionObject.headsContainer) {
         this.disposeContainer(sectionObject.headsContainer)
@@ -803,6 +1372,10 @@ export class ChunkMeshManager {
         sectionObject.boxHelper = undefined
       }
       delete this.sectionObjects[sectionKey]
+      if (!opts?.forRemesh) {
+        this.worldRenderer.getModule<{ onSectionRemoved?: (key: string) => void }>('futuristicReveal')
+          ?.onSectionRemoved?.(sectionKey)
+      }
     }
   }
 
@@ -859,7 +1432,7 @@ export class ChunkMeshManager {
    */
   updateBoxHelper (sectionKey: string, showChunkBorders: boolean, chunkBoxMaterial: THREE.Material = this.chunkBoxMaterial) {
     const sectionObject = this.sectionObjects[sectionKey]
-    if (!sectionObject?.mesh) return
+    if (!sectionObject) return
 
     if (showChunkBorders) {
       if (!sectionObject.boxHelper) {
@@ -1001,6 +1574,11 @@ export class ChunkMeshManager {
       }
     }
 
+    const legacyGlobalBytes = this.globalLegacyBuffer?.getMemoryBytes() ?? 0
+    const legacyBlendGlobalBytes = this.globalLegacyBlendBuffer?.getMemoryBytes() ?? 0
+    totalBytes += legacyGlobalBytes + legacyBlendGlobalBytes
+    positionBytes += legacyGlobalBytes + legacyBlendGlobalBytes
+
     for (const sectionObject of Object.values(this.sectionObjects)) {
       const geom = sectionObject.shaderMesh?.geometry
       if (!geom) continue
@@ -1093,8 +1671,18 @@ export class ChunkMeshManager {
     this.shaderSectionRaycastBoxes.clear()
     this.globalBlockBuffer?.dispose()
     this.globalBlockBuffer = null
+    this.globalLegacyBuffer?.dispose()
+    this.globalLegacyBuffer = null
+    this.globalLegacyBlendBuffer?.dispose()
+    this.globalLegacyBlendBuffer = null
     this.cubeShaderMaterial?.dispose()
     this.cubeShaderMaterial = null
+    this.legacyShaderMaterial?.dispose()
+    this.legacyShaderMaterial = null
+    this.globalLegacyShaderMaterial?.dispose()
+    this.globalLegacyShaderMaterial = null
+    this.globalLegacyBlendShaderMaterial?.dispose()
+    this.globalLegacyBlendShaderMaterial = null
     // Drop any pending near-first reveal state and cancel safety timers.
     this.pendingNearReveal.clear()
     for (const timer of this.nearRevealTimers.values()) clearTimeout(timer)
@@ -1108,7 +1696,7 @@ export class ChunkMeshManager {
   private acquireMesh (): ChunkMeshPool | undefined {
     if (this.bypassPooling) {
       const entry: ChunkMeshPool = {
-        mesh: new THREE.Mesh(new THREE.BufferGeometry(), this.material),
+        mesh: new THREE.Mesh(new THREE.BufferGeometry(), this.getLegacyShaderMaterial()),
         inUse: true,
         lastUsedTime: performance.now()
       }
@@ -1159,7 +1747,7 @@ export class ChunkMeshManager {
     // Add new meshes to pool
     for (let i = currentLength; i < newSize; i++) {
       const geometry = new THREE.BufferGeometry()
-      const mesh = new THREE.Mesh(geometry, this.material)
+      const mesh = new THREE.Mesh(geometry, this.getLegacyShaderMaterial())
       mesh.visible = false
       mesh.matrixAutoUpdate = false
       mesh.name = 'pooled-section-mesh'
@@ -1194,7 +1782,7 @@ export class ChunkMeshManager {
   }
 
   private clearGeometry (geometry: THREE.BufferGeometry) {
-    const attributes = ['position', 'normal', 'color', 'uv']
+    const attributes = ['position', 'normal', 'color', 'a_skyLight', 'a_blockLight', 'uv']
     for (const name of attributes) {
       if (geometry.hasAttribute(name)) {
         geometry.deleteAttribute(name)
@@ -1227,8 +1815,8 @@ export class ChunkMeshManager {
     }
   }
 
-  private disposeContainer (container: THREE.Group) {
-    disposeObject(container, true)
+  private disposeContainer (container: THREE.Group, cleanTextures = true) {
+    disposeObject(container, cleanTextures)
   }
 
   /**
@@ -1334,8 +1922,10 @@ export class ChunkMeshManager {
 }
 
 
+type SignTextureCacheEntry = { tex: THREE.Texture, signature: string }
+
 class SignHeadsRenderer {
-  chunkTextures = new Map<string, { [pos: string]: THREE.Texture }>()
+  chunkTextures = new Map<string, { [pos: string]: SignTextureCacheEntry }>()
 
   constructor (public worldRendererThree: WorldRendererThree) {
   }
@@ -1343,7 +1933,7 @@ class SignHeadsRenderer {
   dispose () {
     for (const [, textures] of this.chunkTextures) {
       for (const key of Object.keys(textures)) {
-        textures[key].dispose()
+        textures[key]!.tex.dispose()
       }
     }
     this.chunkTextures.clear()
@@ -1440,8 +2030,11 @@ class SignHeadsRenderer {
       this.chunkTextures.set(`${chunk[0]},${chunk[1]}`, textures)
     }
     const texturekey = `${position.x},${position.y},${position.z}`
-    // todo investigate bug and remove this so don't need to clean in section dirty
-    if (textures[texturekey]) return textures[texturekey]
+    const signature = JSON.stringify(blockEntity) + '|' + isHanging + '|' + backSide
+    const cached = textures[texturekey]
+    if (cached && cached.signature === signature) return cached.tex
+
+    if (cached?.tex) cached.tex.dispose()
 
     const PrismarineChat = PrismarineChatLoader(this.worldRendererThree.version)
     const canvas = renderSign(blockEntity, isHanging, PrismarineChat)
@@ -1450,7 +2043,7 @@ class SignHeadsRenderer {
     tex.magFilter = THREE.NearestFilter
     tex.minFilter = THREE.NearestFilter
     tex.needsUpdate = true
-    textures[texturekey] = tex
+    textures[texturekey] = { tex, signature }
     return tex
   }
 
@@ -1465,8 +2058,9 @@ class SignHeadsRenderer {
     const key = `${Math.floor(x / 16)},${Math.floor(z / 16)}`
     const textures = this.chunkTextures.get(key)
     if (!textures) return
-    for (const k of Object.keys(textures)) {
-      textures[k].dispose()
+    const disposedKeys = Object.keys(textures)
+    for (const k of disposedKeys) {
+      textures[k]!.tex.dispose()
       delete textures[k]
     }
   }

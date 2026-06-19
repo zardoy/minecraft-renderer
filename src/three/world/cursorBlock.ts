@@ -51,6 +51,7 @@ export class CursorBlock {
     const breakMaterial = new THREE.MeshBasicMaterial({
       transparent: true,
       blending: THREE.MultiplyBlending,
+      premultipliedAlpha: true,
       alphaTest: 0.5,
     })
     this.blockBreakMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), breakMaterial)

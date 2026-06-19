@@ -123,14 +123,14 @@ export async function initVR(worldRenderer: WorldRendererThree, documentRenderer
   let hand1: any = controllerModelFactory.createControllerModel(controller1)
   controller1.addEventListener('connected', (event) => {
     hand1.xrInputSource = event.data
-    manageXrInputSource(event.data, 'left')
+    manageXrInputSource(event.data as { gamepad: Gamepad | undefined, handedness?: string }, 'left')
     user.add(controller1)
   })
   controller1.add(hand1)
   let hand2: any = controllerModelFactory.createControllerModel(controller2)
   controller2.addEventListener('connected', (event) => {
     hand2.xrInputSource = event.data
-    manageXrInputSource(event.data, 'right')
+    manageXrInputSource(event.data as { gamepad: Gamepad | undefined, handedness?: string }, 'right')
     user.add(controller2)
   })
   controller2.add(hand2)

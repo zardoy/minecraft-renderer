@@ -80,7 +80,7 @@ export class ThreeJsMedia {
     }
   }
 
-  private createErrorTexture(width: number, height: number, background = 0xff_ff_ff, error = 'Failed to load'): THREE.CanvasTexture {
+  private createErrorTexture(width: number, height: number, background = 0xff_ff_ff, error = 'Failed to load'): THREE.CanvasTexture<OffscreenCanvas> {
     const canvas = new OffscreenCanvas(100, 100)
     const MAX_DIMENSION = 100
 
@@ -110,7 +110,7 @@ export class ThreeJsMedia {
     return texture
   }
 
-  private createBackgroundTexture(width: number, height: number, color = 0x00_00_00, opacity = 1): THREE.CanvasTexture {
+  private createBackgroundTexture(width: number, height: number, color = 0x00_00_00, opacity = 1): THREE.CanvasTexture<OffscreenCanvas> {
     const canvas = new OffscreenCanvas(1, 1)
     canvas.width = 1
     canvas.height = 1

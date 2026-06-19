@@ -32,6 +32,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   worldReadyResolvers = Promise.withResolvers<void>()
   worldReadyPromise = this.worldReadyResolvers.promise
   timeOfTheDay = 0
+  lastMesherSkyLight = 15
   worldSizeParams = { minY: 0, worldHeight: 256 }
   reactiveDebugParams = proxy({
     stopRendering: false,
@@ -694,6 +695,9 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
   timeUpdated?(newTime: number): void
 
+  /** Called when day-cycle sky-light bucket changes; Three.js overrides to remesh. */
+  protected onDayCycleSkyLightChanged?(_skyLight: number): void
+
   biomeUpdated?(biome: any): void
 
   biomeReset?(): void
@@ -1063,16 +1067,20 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     }, signal)
 
     bindAbortableListener(worldEmitter, 'time', (timeOfDay) => {
-      if (!this.worldRendererConfig.dayCycle) return
+      if (!this.worldRendererConfig.dayCycle) {
+        return
+      }
       this.timeUpdated?.(timeOfDay)
 
       this.timeOfTheDay = timeOfDay
 
-      // if (this.worldRendererConfig.skyLight === skyLight) return
-      // this.worldRendererConfig.skyLight = skyLight
-      // if (this instanceof WorldRendererThree) {
-      //   (this).rerenderAllChunks?.()
-      // }
+      const skyLight = (timeOfDay < 0 || timeOfDay > 24_000) ? 15 : calculateSkyLightSimple(timeOfDay)
+      if (this.lastMesherSkyLight === skyLight) return
+      this.lastMesherSkyLight = skyLight
+      if (this.workers.length > 0) {
+        this.sendWorkers({ config: { skyLight } } as WorkerSend)
+      }
+      this.onDayCycleSkyLightChanged?.(skyLight)
     }, signal)
 
     bindAbortableListener(worldEmitter, 'biomeUpdate', ({ biome }) => {

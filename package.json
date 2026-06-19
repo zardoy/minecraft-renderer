@@ -74,7 +74,7 @@
         "skinview3d": "^3.4.1",
         "stats-gl": "^1.0.5",
         "stats.js": "^0.17.0",
-        "three": "0.154.0",
+        "three": "0.184.0",
         "three-stdlib": "^2.36.1",
         "type-fest": "^5.3.0",
         "typed-emitter": "^2.1.0",
@@ -89,7 +89,7 @@
         "@types/lodash": "^4.17.21",
         "@types/react": "^19.2.7",
         "@types/stats.js": "^0.17.1",
-        "@types/three": "0.154.0",
+        "@types/three": "0.184.0",
         "@zardoy/react-util": "^0.2.7",
         "@zardoy/tsconfig": "^1.5.1",
         "contro-max": "*",
@@ -119,7 +119,8 @@
     "pnpm": {
         "overrides": {
             "prismarine-block": "github:zardoy/prismarine-block#next-era",
-            "prismarine-world": "github:zardoy/prismarine-world#next-era"
+            "prismarine-world": "github:zardoy/prismarine-world#next-era",
+            "@types/three": "0.184.0"
         },
         "ignoredBuiltDependencies": [
             "core-js"

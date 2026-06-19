@@ -170,7 +170,7 @@ const blockLight = chunk.getBlockLight(pos)
 const skyLight = chunk.getSkyLight(pos)
 
 // Combined light level
-const light = Math.max(blockLight, skyLight * skyLightMultiplier)
+const light = Math.max(blockLight, Math.min(skyLight, skyLightCap))
 
 // Light level to color multiplier
 const brightness = lightLevelToBrightness[light]

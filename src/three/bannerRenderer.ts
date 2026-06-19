@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { Vec3 } from 'vec3'
 import { createCanvas } from '../lib/utils'
+import { tintBannerMaterial } from '../lib/blockEntityLightRegistry'
 import type { WorldRendererThree } from './worldRendererThree'
 
 type BannerBlockEntity = {
@@ -227,8 +228,11 @@ export function createBannerMesh(
   position: Vec3,
   rotation: number,
   isWall: boolean,
-  texture: THREE.Texture
-): THREE.Group & { bannerTexture?: THREE.Texture } {
+  texture: THREE.Texture,
+  blockLightNorm = 0,
+  skyLightNorm = 1,
+  skyLevel = 1,
+): THREE.Group & { bannerTexture?: THREE.Texture, bannerMaterial?: THREE.MeshBasicMaterial } {
   const bannerWidth = 13.6 / 16
   const bannerHeight = 28 / 16
   const clothXOffset = 0
@@ -249,9 +253,11 @@ export function createBannerMesh(
     heightOffset = 0
   }
 
+  const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true })
+  tintBannerMaterial(material, blockLightNorm, skyLightNorm, skyLevel)
   const mesh = new THREE.Mesh(
     new THREE.PlaneGeometry(bannerWidth, bannerHeight),
-    new THREE.MeshBasicMaterial({ map: texture, transparent: true })
+    material,
   )
   mesh.renderOrder = 999
 
@@ -271,6 +277,7 @@ export function createBannerMesh(
   )
   group.add(mesh)
   group.bannerTexture = texture
+  group.bannerMaterial = material
   group.position.set(position.x + 0.5, position.y + heightOffset, position.z + 0.5)
   return group
 }

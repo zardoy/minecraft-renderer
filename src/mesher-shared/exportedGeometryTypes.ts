@@ -7,6 +7,17 @@ export interface ExportedSection {
     positions: number[]
     normals: number[]
     colors: number[]
+    skyLights: number[]
+    blockLights: number[]
+    uvs: number[]
+    indices: number[]
+  }
+  blendGeometry?: {
+    positions: number[]
+    normals: number[]
+    colors: number[]
+    skyLights: number[]
+    blockLights: number[]
     uvs: number[]
     indices: number[]
   }

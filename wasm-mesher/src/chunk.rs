@@ -58,14 +58,16 @@ pub struct WorldView<'a> {
     chunks: Vec<ChunkData<'a>>,
     world_min_y: i32,
     world_max_y: i32,
+    default_sky_light: u8,
 }
 
 impl<'a> WorldView<'a> {
-    pub fn new(chunks: Vec<ChunkData<'a>>, world_min_y: i32, world_max_y: i32) -> Self {
+    pub fn new(chunks: Vec<ChunkData<'a>>, world_min_y: i32, world_max_y: i32, default_sky_light: u8) -> Self {
         Self {
             chunks,
             world_min_y,
             world_max_y,
+            default_sky_light,
         }
     }
 
@@ -105,12 +107,12 @@ impl<'a> WorldView<'a> {
     #[inline(always)]
     pub fn get_sky_light(&self, x: i32, y: i32, z: i32) -> u8 {
         if y < self.world_min_y || y >= self.world_max_y {
-            return 15;
+            return self.default_sky_light;
         }
 
         self.get_chunk(x, z)
             .map(|chunk| chunk.get_sky_light(x, y, z))
-            .unwrap_or(15)
+            .unwrap_or(self.default_sky_light)
     }
 
     #[inline(always)]

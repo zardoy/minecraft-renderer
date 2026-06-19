@@ -162,7 +162,7 @@ export function applyRendererOptions(
   cfg.fetchPlayerSkins = o.loadPlayerSkins
   cfg.highlightBlockColor = o.highlightBlockColor
   cfg.wasmMesher = wasmActive
-  cfg.shaderCubeBlocks = o.rendererShaderCubeBlocks && wasmActive
+  cfg.shaderCubeBlocks = wasmActive
   cfg.disableMesherConversionCache = !!ctx.isSafari
 
   setSkinsConfig({ apiEnabled: o.loadPlayerSkins })

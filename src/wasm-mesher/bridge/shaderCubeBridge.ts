@@ -58,7 +58,11 @@ export interface ShaderCubeBlockInput {
   position: [number, number, number]
   visible_faces: number
   ao_data: number[][]
-  light_data: number[][]
+  /** @deprecated combined f32; prefer sky_light_data + block_light_data or light_combined */
+  light_data?: number[][]
+  sky_light_data?: number[][]
+  block_light_data?: number[][]
+  /** Per-corner nibble-packed byte: high=sky4, low=block4 */
   light_combined?: number[][]
 }
 
@@ -285,6 +289,12 @@ export function unpackTexIndexFromWord2(word2: number): number {
   return word2 & ((1 << WORD2.TEX_INDEX_BITS) - 1)
 }
 
+function packCornerLightByte (skyNorm: number, blockNorm: number): number {
+  const sky4 = Math.min(15, Math.round(Math.max(0, skyNorm) * 15))
+  const block4 = Math.min(15, Math.round(Math.max(0, blockNorm) * 15))
+  return ((sky4 << 4) | block4) & 0xff
+}
+
 function lightCombinedForFace(
   block: ShaderCubeBlockInput,
   faceDataIndex: number,
@@ -293,11 +303,13 @@ function lightCombinedForFace(
   if (packed && packed.length === 4) {
     return packed
   }
-  const floats = block.light_data[faceDataIndex] ?? [1, 1, 1, 1]
-  return floats.map((f) => {
-    if (f >= 1) return 255
-    return Math.min(255, Math.round(f * 255))
-  })
+  const sky = block.sky_light_data?.[faceDataIndex]
+  const blockL = block.block_light_data?.[faceDataIndex]
+  if (sky && blockL && sky.length === 4 && blockL.length === 4) {
+    return sky.map((s, i) => packCornerLightByte(s ?? 1, blockL[i] ?? 0))
+  }
+  const floats = block.light_data?.[faceDataIndex] ?? [1, 1, 1, 1]
+  return floats.map((f) => packCornerLightByte(f, 0))
 }
 
 function buildWasmFaceToDataIndex(visibleFaces: number): Record<number, number> {

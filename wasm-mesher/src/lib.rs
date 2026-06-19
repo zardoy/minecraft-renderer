@@ -698,7 +698,7 @@ fn generate_geometry_from_parsed_v16_v17_inner(
     let sky_ref: &[u8] = if sky_light.len() == total_blocks {
         sky_light
     } else {
-        sky_fill = vec![15u8; total_blocks];
+        sky_fill = vec![sky_light_value; total_blocks];
         &sky_fill
     };
     let block_ref: &[u8] = if block_light.len() == total_blocks {
@@ -1006,7 +1006,7 @@ fn generate_geometry_from_parsed_v16_v17_multi_inner(
         let total_blocks = parsed.block_states.len();
 
         let sky_in = &sky_light_list[i];
-        let sky = if sky_in.len() == total_blocks { sky_in.clone() } else { vec![15u8; total_blocks] };
+        let sky = if sky_in.len() == total_blocks { sky_in.clone() } else { vec![sky_light_value; total_blocks] };
         let block_in = &block_light_list[i];
         let block = if block_in.len() == total_blocks { block_in.clone() } else { vec![0u8; total_blocks] };
 

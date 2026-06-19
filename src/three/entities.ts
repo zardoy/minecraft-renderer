@@ -264,7 +264,7 @@ export class Entities {
   }
   debugMode: string
   onSkinUpdate: () => void
-  clock = new THREE.Clock()
+  clock = new THREE.Timer()
   currentlyRendering = true
   cachedMapsImages = {} as Record<number, string>
   itemFrameMaps = {} as Record<number, Array<THREE.Mesh<THREE.PlaneGeometry, THREE.MeshLambertMaterial>>>
@@ -404,6 +404,7 @@ export class Entities {
       this.setRendering(renderEntitiesConfig)
     }
 
+    this.clock.update(performance.now())
     const dt = Math.min(this.clock.getDelta(), 1 / 30)
     const botPos = this.worldRenderer.viewerChunkPosition
     const VISIBLE_DISTANCE = 10 * 10
@@ -677,7 +678,6 @@ export class Entities {
         earsTexture.magFilter = THREE.NearestFilter
         earsTexture.minFilter = THREE.NearestFilter
         earsTexture.needsUpdate = true
-        //@ts-expect-error
         playerObject.ears.map = earsTexture
         playerObject.ears.visible = true
       } else {
@@ -705,10 +705,8 @@ export class Entities {
       capeTexture.magFilter = THREE.NearestFilter
       capeTexture.minFilter = THREE.NearestFilter
       capeTexture.needsUpdate = true
-      //@ts-expect-error
       playerObject.cape.map = capeTexture
       playerObject.cape.visible = true
-      //@ts-expect-error
       playerObject.elytra.map = capeTexture
       this.onSkinUpdate?.()
 
@@ -901,9 +899,10 @@ export class Entities {
             // mesh.position.set(targetPos.x + 0.5 + 2, targetPos.y + 0.5, targetPos.z + 0.5)
             // viewer.scene.add(mesh)
             if (entity.name === 'item') {
-              const clock = new THREE.Clock()
+              const itemTimer = new THREE.Timer()
               mesh.onBeforeRender = () => {
-                const delta = clock.getDelta()
+                itemTimer.update(performance.now())
+                const delta = itemTimer.getDelta()
                 mesh!.rotation.y += delta
               }
             }

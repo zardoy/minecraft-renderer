@@ -75,6 +75,18 @@ export class World {
     this.config.version = version
   }
 
+  getChannelLightNorm (pos: Vec3): { block: number, sky: number } {
+    if (!(pos instanceof Vec3)) pos = new Vec3(...pos as [number, number, number])
+    if (!this.config.enableLighting) return { block: 0, sky: 1 }
+    const column = this.getColumnByPos(pos)
+    if (!column || !hasChunkSection(column, pos)) return { block: 0, sky: 1 }
+    const loc = posInChunk(pos)
+    return {
+      block: Math.min(15, column.getBlockLight(loc) + 2) / 15,
+      sky: Math.min(15, column.getSkyLight(loc) + 2) / 15,
+    }
+  }
+
   getLight(pos: Vec3, isNeighbor = false, skipMoreChecks = false, curBlockName = '') {
     // for easier testing
     if (!(pos instanceof Vec3)) pos = new Vec3(...pos as [number, number, number])
