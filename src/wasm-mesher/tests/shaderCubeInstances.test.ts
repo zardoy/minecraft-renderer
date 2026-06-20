@@ -22,6 +22,12 @@ import { renderWasmOutputToGeometry } from '../bridge/render-from-wasm'
 
 const VERSION = '1.16.5'
 const STONE = 1
+
+function requireShaderCubeResources() {
+  const resources = getShaderCubeResources()
+  if (!resources) throw new Error('shader cube resources unavailable in test')
+  return resources
+}
 /** mc-assets blocksAtlases.json → stone */
 const STONE_ATLAS_TILE_INDEX = 552
 
@@ -38,7 +44,7 @@ test('packWord2: AO diagonal flip sets bit 12', () => {
     light_data: [[1, 1, 1, 1]],
     light_combined: [[255, 255, 255, 255]],
   }
-  const { textureIndexMapping, tintPalette } = getShaderCubeResources()
+  const { textureIndexMapping, tintPalette } = requireShaderCubeResources()
   const model = {
     elements: [{
       faces: {
@@ -77,7 +83,7 @@ test('packWord0: section-local lx/ly/lz and face id', () => {
     light_data: [[0.5, 0.5, 0.5, 0.5]],
     light_combined: [[128, 128, 128, 128]],
   }
-  const { textureIndexMapping, tintPalette } = getShaderCubeResources()
+  const { textureIndexMapping, tintPalette } = requireShaderCubeResources()
   const model = {
     elements: [{
       faces: {
@@ -110,7 +116,7 @@ test('packWord0: section-local lx/ly/lz and face id', () => {
 })
 
 test('isShaderCubeBlock: rejects model rotation and sectionHeight !== 16', () => {
-  const { textureIndexMapping } = getShaderCubeResources()
+  const { textureIndexMapping } = requireShaderCubeResources()
   const baseModel = {
     elements: [{
       faces: {
@@ -221,7 +227,7 @@ test('south face: AO corners remapped to shader order (elemFaces [0,3,1,2] → s
     light_data: [[1, 1, 1, 1]],
     light_combined: [[10, 20, 30, 40]],
   }
-  const { textureIndexMapping, tintPalette } = getShaderCubeResources()
+  const { textureIndexMapping, tintPalette } = requireShaderCubeResources()
   const model = { elements: [{ faces: SIX_FACE_TEXTURES }] }
   tryBuildShaderCubeInstances(
     block,
@@ -247,7 +253,7 @@ test('south face: diagonal flip uses remapped AO (differs from raw elemFaces for
     light_data: [[1, 1, 1, 1]],
     light_combined: [[255, 255, 255, 255]],
   }
-  const { textureIndexMapping, tintPalette } = getShaderCubeResources()
+  const { textureIndexMapping, tintPalette } = requireShaderCubeResources()
   const model = { elements: [{ faces: SIX_FACE_TEXTURES }] }
   const opts = {
     sectionOrigin: { x: 0, y: 0, z: 0 },
@@ -284,7 +290,7 @@ test('doAO false: full bright AO/light and no diagonal flip', () => {
     light_data: [[0, 0, 0, 0]],
     light_combined: [[0, 0, 0, 0]],
   }
-  const { textureIndexMapping, tintPalette } = getShaderCubeResources()
+  const { textureIndexMapping, tintPalette } = requireShaderCubeResources()
   const model = { elements: [{ faces: SIX_FACE_TEXTURES }] }
   tryBuildShaderCubeInstances(
     block,
@@ -328,7 +334,7 @@ test.each(SECTION_ORIGIN_ROUND_TRIP_CASES)(
       light_data: [[1, 1, 1, 1]],
       light_combined: [[255, 255, 255, 255]],
     }
-    const { textureIndexMapping, tintPalette } = getShaderCubeResources()
+    const { textureIndexMapping, tintPalette } = requireShaderCubeResources()
     const model = { elements: [{ faces: SIX_FACE_TEXTURES }] }
     tryBuildShaderCubeInstances(
       block,
@@ -360,7 +366,7 @@ test('section index relative decode past 2^20: exact integer subtract', () => {
     light_data: [[1, 1, 1, 1]],
     light_combined: [[255, 255, 255, 255]],
   }
-  const { textureIndexMapping, tintPalette } = getShaderCubeResources()
+  const { textureIndexMapping, tintPalette } = requireShaderCubeResources()
   const model = { elements: [{ faces: SIX_FACE_TEXTURES }] }
   tryBuildShaderCubeInstances(
     block,

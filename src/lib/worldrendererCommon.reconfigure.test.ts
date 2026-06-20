@@ -5,6 +5,7 @@ import { proxy } from 'valtio'
 import * as worldRendererModule from './worldrendererCommon'
 import { WorldRendererCommon } from './worldrendererCommon'
 import { defaultWorldRendererConfig } from '../graphicsBackend/config'
+import { defaultPerformanceInstabilityFactors } from '../performanceMonitor'
 import { getInitialPlayerState } from '../playerState/playerState'
 import type { DisplayWorldOptions, GraphicsInitOptions } from '../graphicsBackend/types'
 
@@ -45,6 +46,8 @@ class TestWorldRenderer extends WorldRendererCommon {
   updateCamera() {}
   render() {}
   updateShowChunksBorder() {}
+  updatePlayerEntity() {}
+  worldStop() {}
 }
 
 function createRenderer(workerCount = 2, worldView?: DisplayWorldOptions['worldView']) {
@@ -55,7 +58,7 @@ function createRenderer(workerCount = 2, worldView?: DisplayWorldOptions['worldV
       heightmaps: {} as Record<string, Int16Array>,
       allChunksLoaded: false,
       mesherWork: false,
-      instabilityFactors: {},
+      instabilityFactors: defaultPerformanceInstabilityFactors(),
       intersectMedia: null,
     },
     renderer: '',

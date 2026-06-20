@@ -9,7 +9,7 @@ import type { WorldViewWorker } from '../worldView'
 export function bindAbortableListener<E extends keyof WorldViewEvents>(
   emitter: Pick<WorldViewWorker, 'on' | 'off'>,
   event: E,
-  handler: (...args: WorldViewEvents[E]) => void,
+  handler: (...args: Parameters<WorldViewEvents[E]>) => void,
   signal: AbortSignal
 ): void {
   emitter.on(event, handler as (...args: any[]) => void)

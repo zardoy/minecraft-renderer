@@ -551,7 +551,8 @@ export class Entities {
   currentSkinUrls = {} as Record<string, string>
 
   private isCanvasBlank(canvas: HTMLCanvasElement | OffscreenCanvas): boolean {
-    return !canvas.getContext('2d')
+    const ctx = canvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null
+    return !ctx
       ?.getImageData(0, 0, canvas.width, canvas.height).data
       .some(channel => channel !== 0)
   }

@@ -39,7 +39,7 @@ export function create3DItemMesh (
     throw new Error(`Invalid canvas dimensions: ${canvas.width}x${canvas.height}`)
   }
 
-  const ctx = canvas.getContext('2d')!
+  const ctx = canvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
   const { data } = imageData
 

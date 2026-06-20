@@ -269,7 +269,10 @@ export function createBannerMesh(
     mesh.position.set(clothXOffset, clothYOffset, clothZPosition + thickness / 2 + 0.004)
   }
 
-  const group = new THREE.Group() as THREE.Group & { bannerTexture?: THREE.Texture }
+  const group = new THREE.Group() as THREE.Group & {
+    bannerTexture?: THREE.Texture
+    bannerMaterial?: THREE.MeshBasicMaterial
+  }
   group.rotation.set(
     0,
     -THREE.MathUtils.degToRad(rotation * (isWall ? 90 : 45 / 2)),

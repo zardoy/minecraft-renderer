@@ -4,6 +4,7 @@ import { Vec3 } from 'vec3'
 import { proxy } from 'valtio'
 import { WorldRendererCommon } from './worldrendererCommon'
 import { defaultWorldRendererConfig } from '../graphicsBackend/config'
+import { defaultPerformanceInstabilityFactors } from '../performanceMonitor'
 import { getInitialPlayerState } from '../playerState/playerState'
 import type { DisplayWorldOptions, GraphicsInitOptions } from '../graphicsBackend/types'
 
@@ -44,16 +45,18 @@ class TestWorldRenderer extends WorldRendererCommon {
   updateCamera() {}
   render() {}
   updateShowChunksBorder() {}
+  updatePlayerEntity() {}
+  worldStop() {}
 }
 
 function createRenderer() {
   const rendererState = proxy({
     world: {
-      chunksLoaded: new Set<string>(),
-      heightmaps: new Map<string, Int16Array>(),
+      chunksLoaded: {} as Record<string, true>,
+      heightmaps: {} as Record<string, Int16Array>,
       allChunksLoaded: false,
       mesherWork: false,
-      instabilityFactors: {},
+      instabilityFactors: defaultPerformanceInstabilityFactors(),
       intersectMedia: null,
     },
     renderer: '',
@@ -72,6 +75,7 @@ function createRenderer() {
       avgRenderTime: 0,
       world: {
         chunksLoaded: new Set<string>(),
+        chunksLoadedCount: 0,
         chunksTotalNumber: 0,
         chunksFullInfo: '',
       },
@@ -92,7 +96,7 @@ function createRenderer() {
     },
   }
 
-  const renderer = new TestWorldRenderer(displayOptions.resourcesManager, displayOptions, initOptions)
+  const renderer = new TestWorldRenderer(displayOptions.resourcesManager, displayOptions as DisplayWorldOptions, initOptions)
   renderer.active = true
   renderer.workers = [{ postMessage: vi.fn() }, { postMessage: vi.fn() }]
   renderer.viewDistance = 16

@@ -1442,7 +1442,7 @@ export const initMesherWorker = (onGotMessage: (data: any) => void, workerName =
 let mesherMcDataTintsMissingWarned = false
 
 export const meshersSendMcData = (workers: Worker[], version: string, mcDataKeys = dynamicMcDataFiles, mcDataFull: IndexedData) => {
-  const mcData = {
+  const mcData: { version: IndexedData['version']; tints?: unknown; [key: string]: unknown } = {
     version: JSON.parse(JSON.stringify(mcDataFull.version))
   }
   for (const [finalKey, sourceKey] of Object.entries(mcDataKeys)) {

@@ -11,7 +11,7 @@ export type PlayerObjectType = PlayerObject & {
 
 /** Starfield + log-depth world: cutout skin mats need alphaTest and depthWrite (not mesh traverse). */
 export function configurePlayerSkinMaterials (playerObject: PlayerObject): void {
-  const skin = playerObject.skin
+  const skin = playerObject.skin as any
   const materials = [
     skin.layer1Material,
     skin.layer1MaterialBiased,

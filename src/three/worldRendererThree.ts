@@ -796,10 +796,6 @@ export class WorldRendererThree extends WorldRendererCommon {
     }
   }
 
-  override updateViewerPosition(pos: Vec3): void {
-    this.viewerChunkPosition = pos
-  }
-
   cameraSectionPositionUpdate() {
     // eslint-disable-next-line guard-for-in
     for (const key in this.sectionObjects) {
@@ -1587,7 +1583,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.chunkMeshManager.onChunkRemovedFromGate(`${x},${z}`)
   }
 
-  updateViewerPosition(pos: Vec3) {
+  override updateViewerPosition(pos: Vec3) {
     super.updateViewerPosition(pos)
     if (this.chunkMeshManager.pendingNearReveal.size > 0) {
       this.chunkMeshManager.tryRevealPending()

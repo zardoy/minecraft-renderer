@@ -6,7 +6,8 @@
         "lib": [
             "ES2024",
             "DOM",
-            "DOM.Iterable"
+            "DOM.Iterable",
+            "WebWorker"
         ],
         "strict": true,
         "skipLibCheck": true,
