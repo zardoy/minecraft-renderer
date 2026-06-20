@@ -100,6 +100,7 @@ export interface GraphicsInitOptions<S = any> {
   /** Live app options (e.g. valtio proxy); used for WebGL `gpuPreference` at context creation. */
   getRendererOptions?: () => RendererStorageOptions
   rendererSpecificSettings: S
+  hello?: boolean
   callbacks: {
     displayCriticalError: (error: Error) => void
     setRendererSpecificSettings: (key: string, value: any) => void

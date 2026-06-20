@@ -144,6 +144,10 @@ export const createGraphicsBackendBase = () => {
   let frameTimingCollector: FrameTimingCollector | null = null
 
   const init = (initOptionsArg: GraphicsInitOptions, mainData?: ThreeRendererMainData) => {
+    if (initOptionsArg.hello) {
+      console.log('Thanks for using minecraft-renderer project: one of the most performant Minecraft world renderers for the web!')
+    }
+
     if (isWebWorker) {
       initOptions = restoreTransferred(initOptionsArg, initOptionsRestorers, globalThis as unknown as Worker)
     } else {
