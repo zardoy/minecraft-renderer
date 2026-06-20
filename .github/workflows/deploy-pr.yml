@@ -1,5 +1,5 @@
 # Deploy minecraft-renderer PR build to Vercel via minecraft-web-client
-# Trigger: comment "/deploy" on a PR
+# Trigger: comment "/deploy" on a PR (optional arg: client PR number or branch; default client branch: next)
 name: Deploy PR
 on:
   issue_comment:
@@ -15,7 +15,6 @@ jobs:
       pull-requests: write  # for add-pr-comment
     env:
       DEP_NAME: minecraft-renderer
-      CLIENT_PR: 460  # minecraft-web-client PR with minecraft-renderer dep
     steps:
       - name: Parse CLIENT_REF from comment
         id: client_ref
@@ -26,14 +25,14 @@ jobs:
             echo "ref=" >> $GITHUB_OUTPUT
             echo "Using default branch (no ref)"
           elif [[ -z "$ARG" ]]; then
-            echo "ref=refs/pull/${{ env.CLIENT_PR }}/head" >> $GITHUB_OUTPUT
-            echo "Using client PR: ${{ env.CLIENT_PR }}"
+            echo "ref=next" >> $GITHUB_OUTPUT
+            echo "Using client branch: next"
           elif [[ "$ARG" =~ ^[0-9]+$ ]]; then
             echo "ref=refs/pull/${ARG}/head" >> $GITHUB_OUTPUT
-            echo "Using PR: $ARG"
+            echo "Using client PR: $ARG"
           else
-            echo "ref=" >> $GITHUB_OUTPUT
-            echo "Invalid PR number, using default branch"
+            echo "ref=$ARG" >> $GITHUB_OUTPUT
+            echo "Using client branch: $ARG"
           fi
 
       - name: Checkout minecraft-renderer (PR branch)
@@ -77,7 +76,7 @@ jobs:
           ARCHIVE=$(ls minecraft-renderer-*.tgz | head -1)
           ARCHIVE_SPEC="file:./$ARCHIVE"
           if command -v jq &>/dev/null; then
-            # Replace in dependencies (PR 460 has minecraft-renderer in dependencies)
+            # Replace in dependencies
             jq --arg spec "$ARCHIVE_SPEC" '.dependencies["minecraft-renderer"] = $spec' package.json > package.json.tmp
             mv package.json.tmp package.json
             # Also update devDependencies if present
