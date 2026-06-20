@@ -6,23 +6,9 @@ import type { MenuBackgroundView } from './activeView'
 import { resizeMenuBackgroundCamera } from './activeView'
 import { loadThreeJsTextureFromBitmap } from '../threeJsUtils'
 import { MENU_BACKGROUND_MOTION_DEFAULTS, MENU_BACKGROUND_OPTION_DEFAULTS } from './config'
-import {
-  V2_CAMERA_IDS,
-  V2_SCENE_IDS,
-  MINECRAFT_BLOCK_GROUP_IDS,
-  type V2CameraId,
-  type V2SceneId,
-  type MinecraftBlockGroupId,
-} from './v2Meta'
+import { V2_CAMERA_IDS, V2_SCENE_IDS, MINECRAFT_BLOCK_GROUP_IDS, type V2CameraId, type V2SceneId, type MinecraftBlockGroupId } from './v2Meta'
 
-export {
-  V2_SCENE_IDS,
-  V2_SCENE_LABELS,
-  V2_CAMERA_IDS,
-  V2_CAMERA_LABELS,
-  MINECRAFT_BLOCK_GROUP_IDS,
-  MINECRAFT_BLOCK_GROUP_LABELS,
-} from './v2Meta'
+export { V2_SCENE_IDS, V2_SCENE_LABELS, V2_CAMERA_IDS, V2_CAMERA_LABELS, MINECRAFT_BLOCK_GROUP_IDS, MINECRAFT_BLOCK_GROUP_LABELS } from './v2Meta'
 export type { V2SceneId, V2CameraId, MinecraftBlockGroupId } from './v2Meta'
 
 /** Mouse parallax scale (HTML prototype uses 1). */
@@ -43,41 +29,132 @@ export interface V2MenuBackgroundOptions {
 /** Block pools for textured floating cubes (selected via {@link V2MenuBackground.setBlockGroup}). */
 export const MINECRAFT_BLOCK_GROUPS = {
   mixed: [
-    'white_wool', 'cyan_wool', 'blue_wool', 'purple_wool',
-    'white_stained_glass', 'cyan_stained_glass', 'blue_stained_glass', 'purple_stained_glass',
-    'glowstone', 'sea_lantern', 'amethyst_block', 'copper_block', 'gold_block', 'diamond_block'
+    'white_wool',
+    'cyan_wool',
+    'blue_wool',
+    'purple_wool',
+    'white_stained_glass',
+    'cyan_stained_glass',
+    'blue_stained_glass',
+    'purple_stained_glass',
+    'glowstone',
+    'sea_lantern',
+    'amethyst_block',
+    'copper_block',
+    'gold_block',
+    'diamond_block'
   ],
   stainedGlass: [
-    'white_stained_glass', 'orange_stained_glass', 'magenta_stained_glass', 'light_blue_stained_glass',
-    'yellow_stained_glass', 'lime_stained_glass', 'pink_stained_glass', 'gray_stained_glass',
-    'light_gray_stained_glass', 'cyan_stained_glass', 'purple_stained_glass', 'blue_stained_glass',
-    'brown_stained_glass', 'green_stained_glass', 'red_stained_glass', 'black_stained_glass'
+    'white_stained_glass',
+    'orange_stained_glass',
+    'magenta_stained_glass',
+    'light_blue_stained_glass',
+    'yellow_stained_glass',
+    'lime_stained_glass',
+    'pink_stained_glass',
+    'gray_stained_glass',
+    'light_gray_stained_glass',
+    'cyan_stained_glass',
+    'purple_stained_glass',
+    'blue_stained_glass',
+    'brown_stained_glass',
+    'green_stained_glass',
+    'red_stained_glass',
+    'black_stained_glass'
   ],
   wool: [
-    'white_wool', 'orange_wool', 'magenta_wool', 'light_blue_wool', 'yellow_wool', 'lime_wool',
-    'pink_wool', 'gray_wool', 'light_gray_wool', 'cyan_wool', 'purple_wool', 'blue_wool',
-    'brown_wool', 'green_wool', 'red_wool', 'black_wool'
+    'white_wool',
+    'orange_wool',
+    'magenta_wool',
+    'light_blue_wool',
+    'yellow_wool',
+    'lime_wool',
+    'pink_wool',
+    'gray_wool',
+    'light_gray_wool',
+    'cyan_wool',
+    'purple_wool',
+    'blue_wool',
+    'brown_wool',
+    'green_wool',
+    'red_wool',
+    'black_wool'
   ],
   construction: [
-    'copper_block', 'exposed_copper', 'weathered_copper', 'oxidized_copper',
-    'cut_copper', 'exposed_cut_copper', 'weathered_cut_copper', 'oxidized_cut_copper',
-    'iron_block', 'gold_block', 'diamond_block', 'emerald_block', 'netherite_block',
-    'lapis_block', 'redstone_block', 'coal_block', 'quartz_block', 'amethyst_block',
-    'bricks', 'stone_bricks', 'deepslate_bricks', 'polished_blackstone'
+    'copper_block',
+    'exposed_copper',
+    'weathered_copper',
+    'oxidized_copper',
+    'cut_copper',
+    'exposed_cut_copper',
+    'weathered_cut_copper',
+    'oxidized_cut_copper',
+    'iron_block',
+    'gold_block',
+    'diamond_block',
+    'emerald_block',
+    'netherite_block',
+    'lapis_block',
+    'redstone_block',
+    'coal_block',
+    'quartz_block',
+    'amethyst_block',
+    'bricks',
+    'stone_bricks',
+    'deepslate_bricks',
+    'polished_blackstone'
   ],
-  glow: [
-    'glowstone', 'sea_lantern', 'shroomlight', 'ochre_froglight', 'verdant_froglight', 'pearlescent_froglight',
-    'redstone_lamp', 'beacon'
-  ],
+  glow: ['glowstone', 'sea_lantern', 'shroomlight', 'ochre_froglight', 'verdant_froglight', 'pearlescent_froglight', 'redstone_lamp', 'beacon'],
   world: [
-    'grass_block', 'podzol', 'mycelium', 'dirt', 'coarse_dirt', 'rooted_dirt', 'mud', 'clay',
-    'stone', 'cobblestone', 'mossy_cobblestone', 'deepslate', 'cobbled_deepslate', 'tuff', 'calcite',
-    'sand', 'red_sand', 'gravel', 'snow_block',
-    'coal_ore', 'deepslate_coal_ore', 'iron_ore', 'deepslate_iron_ore', 'copper_ore', 'deepslate_copper_ore',
-    'gold_ore', 'deepslate_gold_ore', 'diamond_ore', 'deepslate_diamond_ore', 'emerald_ore', 'deepslate_emerald_ore',
-    'lapis_ore', 'deepslate_lapis_ore', 'redstone_ore', 'deepslate_redstone_ore', 'nether_gold_ore', 'ancient_debris',
-    'oak_log', 'birch_log', 'spruce_log', 'jungle_log', 'acacia_log', 'dark_oak_log', 'mangrove_log', 'cherry_log',
-    'netherrack', 'soul_sand', 'basalt', 'end_stone'
+    'grass_block',
+    'podzol',
+    'mycelium',
+    'dirt',
+    'coarse_dirt',
+    'rooted_dirt',
+    'mud',
+    'clay',
+    'stone',
+    'cobblestone',
+    'mossy_cobblestone',
+    'deepslate',
+    'cobbled_deepslate',
+    'tuff',
+    'calcite',
+    'sand',
+    'red_sand',
+    'gravel',
+    'snow_block',
+    'coal_ore',
+    'deepslate_coal_ore',
+    'iron_ore',
+    'deepslate_iron_ore',
+    'copper_ore',
+    'deepslate_copper_ore',
+    'gold_ore',
+    'deepslate_gold_ore',
+    'diamond_ore',
+    'deepslate_diamond_ore',
+    'emerald_ore',
+    'deepslate_emerald_ore',
+    'lapis_ore',
+    'deepslate_lapis_ore',
+    'redstone_ore',
+    'deepslate_redstone_ore',
+    'nether_gold_ore',
+    'ancient_debris',
+    'oak_log',
+    'birch_log',
+    'spruce_log',
+    'jungle_log',
+    'acacia_log',
+    'dark_oak_log',
+    'mangrove_log',
+    'cherry_log',
+    'netherrack',
+    'soul_sand',
+    'basalt',
+    'end_stone'
   ]
 } as const
 
@@ -95,7 +172,7 @@ interface ScenePalette {
   pt2: number
   name: string
   /** Vertical (or radial) sky gradient instead of a flat scene background. */
-  gradientBg?: { top: number, mid?: number, bottom: number, radial?: boolean }
+  gradientBg?: { top: number; mid?: number; bottom: number; radial?: boolean }
   starColor?: number
   starOpacity?: number
   galaxyOpacity?: number
@@ -105,8 +182,8 @@ interface ScenePalette {
 }
 
 interface CameraMode {
-  pos: (t: number, mx: number, my: number) => { x: number, y: number, z: number }
-  look: (t: number, mx: number, my: number) => { x: number, y: number, z: number }
+  pos: (t: number, mx: number, my: number) => { x: number; y: number; z: number }
+  look: (t: number, mx: number, my: number) => { x: number; y: number; z: number }
   roll: (t: number, mx?: number) => number
   spd: number
 }
@@ -124,36 +201,60 @@ interface FloatingBlock {
 
 const PAL: Record<V2SceneId, ScenePalette> = {
   galaxy: {
-    bg: 0x02_04_12, fog: 0x02_04_12, fogD: 0.011,
+    bg: 0x02_04_12,
+    fog: 0x02_04_12,
+    fogD: 0.011,
     blocks: [0x00_f0_ff, 0x00_d4_ff, 0x00_b8_ff, 0x00_e8_ff, 0x22_cc_ff, 0x00_a8_ff],
     emit: [0x00_33_66, 0x00_22_55, 0x00_1a_44],
     nebula: [0x00_11_33, 0x11_00_22, 0x00_11_22],
     galFn: b => new THREE.Color(b * 0.05, b * 0.2, b),
-    ambient: 0x04_08_18, dir: 0x33_66_ff, pt1: 0x00_aa_ff, pt2: 0xff_44_ff, name: 'GALAXY'
+    ambient: 0x04_08_18,
+    dir: 0x33_66_ff,
+    pt1: 0x00_aa_ff,
+    pt2: 0xff_44_ff,
+    name: 'GALAXY'
   },
   nether: {
-    bg: 0x0e_01_00, fog: 0x0e_01_00, fogD: 0.016,
+    bg: 0x0e_01_00,
+    fog: 0x0e_01_00,
+    fogD: 0.016,
     blocks: [0xff_22_00, 0xff_66_00, 0xff_99_00, 0xcc_11_00, 0xff_44_22, 0xff_aa_00],
     emit: [0x22_08_00, 0x11_00_00, 0x33_11_00],
     nebula: [0x1a_04_00, 0x0d_00_00, 0x1a_08_00],
     galFn: b => new THREE.Color(b, b * 0.15, 0),
-    ambient: 0x18_02_00, dir: 0xff_33_00, pt1: 0xff_44_00, pt2: 0xff_aa_00, name: 'NETHER'
+    ambient: 0x18_02_00,
+    dir: 0xff_33_00,
+    pt1: 0xff_44_00,
+    pt2: 0xff_aa_00,
+    name: 'NETHER'
   },
   end: {
-    bg: 0x00_00_00, fog: 0x00_00_00, fogD: 0.009,
+    bg: 0x00_00_00,
+    fog: 0x00_00_00,
+    fogD: 0.009,
     blocks: [0x77_22_aa, 0xaa_44_cc, 0x55_00_77, 0xdd_aa_ff, 0x33_00_55, 0xbb_aa_ff],
     emit: [0x0a_00_15, 0x18_00_25, 0x05_00_10],
     nebula: [0x08_00_18, 0x0d_00_15, 0x04_00_0e],
     galFn: b => new THREE.Color(b * 0.4, 0, b),
-    ambient: 0x06_00_10, dir: 0x99_33_ff, pt1: 0xaa_44_ff, pt2: 0x44_00_aa, name: 'THE END'
+    ambient: 0x06_00_10,
+    dir: 0x99_33_ff,
+    pt1: 0xaa_44_ff,
+    pt2: 0x44_00_aa,
+    name: 'THE END'
   },
   cyber: {
-    bg: 0x0c_18_22, fog: 0x0c_18_22, fogD: 0.008,
+    bg: 0x0c_18_22,
+    fog: 0x0c_18_22,
+    fogD: 0.008,
     blocks: [0x00_ff_ff, 0x44_ff_cc, 0xaa_ff_44, 0x66_dd_ff, 0x88_ff_66, 0x00_ff_aa],
     emit: [0x0a_2a_33, 0x0a_33_22, 0x0a_28_38],
     nebula: [0x12_30_40, 0x18_38_28, 0x14_32_44],
     galFn: b => new THREE.Color(b * 0.15, b * 0.85, b * 0.95),
-    ambient: 0x1a_30_40, dir: 0x66_ff_cc, pt1: 0x44_ff_ee, pt2: 0x99_ff_44, name: 'CYBER',
+    ambient: 0x1a_30_40,
+    dir: 0x66_ff_cc,
+    pt1: 0x44_ff_ee,
+    pt2: 0x99_ff_44,
+    name: 'CYBER',
     starColor: 0xcc_f0_ff,
     starOpacity: 0.75,
     galaxyOpacity: 0.62,
@@ -166,10 +267,7 @@ const PAL: Record<V2SceneId, ScenePalette> = {
     fog: 0x78_88_a0,
     fogD: 0.006,
     gradientBg: { top: 0xd8_e4_f8, mid: 0xa0_b0_c8, bottom: 0x68_78_90, radial: true },
-    blocks: [
-      0xe8_f2_ff, 0xd0_e8_ff, 0xb8_d8_ff, 0xa0_c8_f8, 0x88_b8_f0, 0x70_a8_e8,
-      0x98_c8_ff, 0xc0_e0_ff, 0xf0_f8_ff, 0x78_b0_e8, 0xd8_ec_ff, 0xe0_e8_ff
-    ],
+    blocks: [0xe8_f2_ff, 0xd0_e8_ff, 0xb8_d8_ff, 0xa0_c8_f8, 0x88_b8_f0, 0x70_a8_e8, 0x98_c8_ff, 0xc0_e0_ff, 0xf0_f8_ff, 0x78_b0_e8, 0xd8_ec_ff, 0xe0_e8_ff],
     emit: [0x68_98_d0, 0x88_b0_e0, 0xa8_c8_f0, 0xc0_d8_f8],
     nebula: [0x90_a8_c8, 0xa8_c0_e0, 0xc0_d4_ec, 0xd8_e8_f8, 0x78_90_b0],
     galFn: b => {
@@ -249,7 +347,7 @@ const BCOUNT = 250
 const GCNT = 10_000
 const NCNT = 3000
 
-const rp = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)]
+const rp = <T>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)]
 
 const colorHex = (n: number) => '#' + n.toString(16).padStart(6, '0')
 
@@ -262,9 +360,7 @@ const makeSkyGradientTexture = (gradient: NonNullable<ScenePalette['gradientBg']
   if (!ctx) return null
   const w = canvas.width
   const h = canvas.height
-  const grad = gradient.radial
-    ? ctx.createRadialGradient(w / 2, h * 0.32, 0, w / 2, h * 0.32, h * 0.85)
-    : ctx.createLinearGradient(0, 0, 0, h)
+  const grad = gradient.radial ? ctx.createRadialGradient(w / 2, h * 0.32, 0, w / 2, h * 0.32, h * 0.85) : ctx.createLinearGradient(0, 0, 0, h)
   grad.addColorStop(0, colorHex(gradient.top))
   if (gradient.mid != null) grad.addColorStop(0.45, colorHex(gradient.mid))
   grad.addColorStop(1, colorHex(gradient.bottom))
@@ -335,12 +431,7 @@ export class V2MenuBackground implements MenuBackgroundView {
     this.scene.fog = new THREE.FogExp2(pal.fog, pal.fogD)
     this.applyScenePalette(pal)
 
-    this.camera = new THREE.PerspectiveCamera(
-      80,
-      this.documentRenderer.canvas.width / this.documentRenderer.canvas.height,
-      0.1,
-      700
-    )
+    this.camera = new THREE.PerspectiveCamera(80, this.documentRenderer.canvas.width / this.documentRenderer.canvas.height, 0.1, 700)
 
     this.ambient = new THREE.AmbientLight(pal.ambient, 2.5)
     this.scene.add(this.ambient)
@@ -367,13 +458,16 @@ export class V2MenuBackground implements MenuBackgroundView {
     const sp = new Float32Array(5000 * 3)
     for (let i = 0; i < 5000 * 3; i++) sp[i] = (Math.random() - 0.5) * 500
     sGeo.setAttribute('position', new THREE.BufferAttribute(sp, 3))
-    this.stars = new THREE.Points(sGeo, new THREE.PointsMaterial({
-      color: pal.starColor ?? 0xff_ff_ff,
-      size: 0.3,
-      transparent: true,
-      opacity: pal.starOpacity ?? 0.7,
-      sizeAttenuation: true
-    }))
+    this.stars = new THREE.Points(
+      sGeo,
+      new THREE.PointsMaterial({
+        color: pal.starColor ?? 0xff_ff_ff,
+        size: 0.3,
+        transparent: true,
+        opacity: pal.starOpacity ?? 0.7,
+        sizeAttenuation: true
+      })
+    )
     this.scene.add(this.stars)
 
     this.galGeo = new THREE.BufferGeometry()
@@ -396,9 +490,16 @@ export class V2MenuBackground implements MenuBackgroundView {
     }
     this.galGeo.setAttribute('position', new THREE.BufferAttribute(gp, 3))
     this.galGeo.setAttribute('color', new THREE.BufferAttribute(gc, 3))
-    this.galaxy = new THREE.Points(this.galGeo, new THREE.PointsMaterial({
-      size: 0.9, vertexColors: true, transparent: true, opacity: pal.galaxyOpacity ?? 0.55, sizeAttenuation: true
-    }))
+    this.galaxy = new THREE.Points(
+      this.galGeo,
+      new THREE.PointsMaterial({
+        size: 0.9,
+        vertexColors: true,
+        transparent: true,
+        opacity: pal.galaxyOpacity ?? 0.55,
+        sizeAttenuation: true
+      })
+    )
     this.scene.add(this.galaxy)
 
     this.nebGeo = new THREE.BufferGeometry()
@@ -418,9 +519,16 @@ export class V2MenuBackground implements MenuBackgroundView {
     }
     this.nebGeo.setAttribute('position', new THREE.BufferAttribute(np, 3))
     this.nebGeo.setAttribute('color', new THREE.BufferAttribute(nc, 3))
-    this.nebula = new THREE.Points(this.nebGeo, new THREE.PointsMaterial({
-      size: 3, vertexColors: true, transparent: true, opacity: pal.nebulaOpacity ?? 0.3, sizeAttenuation: true
-    }))
+    this.nebula = new THREE.Points(
+      this.nebGeo,
+      new THREE.PointsMaterial({
+        size: 3,
+        vertexColors: true,
+        transparent: true,
+        opacity: pal.nebulaOpacity ?? 0.3,
+        sizeAttenuation: true
+      })
+    )
     this.scene.add(this.nebula)
 
     this.addBackgroundTextPlane()
@@ -533,8 +641,8 @@ export class V2MenuBackground implements MenuBackgroundView {
           if (next) {
             this.gradientSkyTexture.dispose()
             this.gradientSkyTexture = next
-              ; (this.gradientSky.material as THREE.MeshBasicMaterial).map = next
-              ; (this.gradientSky.material as THREE.MeshBasicMaterial).needsUpdate = true
+            ;(this.gradientSky.material as THREE.MeshBasicMaterial).map = next
+            ;(this.gradientSky.material as THREE.MeshBasicMaterial).needsUpdate = true
           }
         }
       }
@@ -618,11 +726,7 @@ export class V2MenuBackground implements MenuBackgroundView {
     const mesh = new THREE.Mesh(this.bGeo, mat)
     const s = 0.3 + Math.random() * 3
     mesh.scale.setScalar(s)
-    mesh.position.set(
-      (Math.random() - 0.5) * 140,
-      (Math.random() - 0.5) * 70,
-      init ? -(Math.random() * 140) : -155 - Math.random() * 30
-    )
+    mesh.position.set((Math.random() - 0.5) * 140, (Math.random() - 0.5) * 70, init ? -(Math.random() * 140) : -155 - Math.random() * 30)
     mesh.rotation.set(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2)
     const d: FloatingBlock = {
       mesh,
@@ -676,9 +780,9 @@ export class V2MenuBackground implements MenuBackgroundView {
 
   private resolveBlockAtlasUv(
     blockName: string,
-    textures: Record<string, { u: number, v: number, su?: number, sv?: number }>,
+    textures: Record<string, { u: number; v: number; su?: number; sv?: number }>,
     atlasJson: { suSv: number }
-  ): { u: number, v: number, su: number, sv: number } | null {
+  ): { u: number; v: number; su: number; sv: number } | null {
     const pick = (key: string) => {
       const tex = textures[key]
       if (!tex) return null
@@ -860,11 +964,7 @@ export class V2MenuBackground implements MenuBackgroundView {
         b.mesh.material.opacity = base * pulse
       }
       if (b.mesh.position.z > this.camera.position.z + 15) {
-        b.mesh.position.set(
-          (Math.random() - 0.5) * 140,
-          (Math.random() - 0.5) * 70,
-          this.camera.position.z - 155 - Math.random() * 30
-        )
+        b.mesh.position.set((Math.random() - 0.5) * 140, (Math.random() - 0.5) * 70, this.camera.position.z - 155 - Math.random() * 30)
       }
     }
 

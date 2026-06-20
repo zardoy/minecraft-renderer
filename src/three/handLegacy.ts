@@ -2,7 +2,6 @@ import * as THREE from 'three'
 import { loadSkinFromUsername, loadSkinImage } from '../lib/utils/skins'
 import { steveTexture } from './entities'
 
-
 export const getMyHand = async (image?: string, userName?: string) => {
   let newMap: THREE.Texture
   if (!image && !userName) {
@@ -38,21 +37,12 @@ export const getMyHand = async (image?: string, userName?: string) => {
   return group
 }
 
-function setUVs (
-  box: THREE.BoxGeometry,
-  u: number,
-  v: number,
-  width: number,
-  height: number,
-  depth: number,
-  textureWidth: number,
-  textureHeight: number
-): void {
+function setUVs(box: THREE.BoxGeometry, u: number, v: number, width: number, height: number, depth: number, textureWidth: number, textureHeight: number): void {
   const toFaceVertices = (x1: number, y1: number, x2: number, y2: number) => [
     new THREE.Vector2(x1 / textureWidth, 1 - y2 / textureHeight),
     new THREE.Vector2(x2 / textureWidth, 1 - y2 / textureHeight),
     new THREE.Vector2(x2 / textureWidth, 1 - y1 / textureHeight),
-    new THREE.Vector2(x1 / textureWidth, 1 - y1 / textureHeight),
+    new THREE.Vector2(x1 / textureWidth, 1 - y1 / textureHeight)
   ]
 
   const top = toFaceVertices(u + depth, v, u + width + depth, v + depth)
@@ -84,6 +74,6 @@ function setUVs (
   uvAttr.needsUpdate = true
 }
 
-function setSkinUVs (box: THREE.BoxGeometry, u: number, v: number, width: number, height: number, depth: number): void {
+function setSkinUVs(box: THREE.BoxGeometry, u: number, v: number, width: number, height: number, depth: number): void {
   setUVs(box, u, v, width, height, depth, 64, 64)
 }

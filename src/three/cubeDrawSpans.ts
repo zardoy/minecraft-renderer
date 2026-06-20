@@ -1,18 +1,14 @@
-import {
-  FULL_DRAW_VISIBLE_FRACTION,
-  MAX_OPAQUE_SPANS,
-  SPAN_GAP_TOLERANCE_QUADS,
-} from './globalLegacyBuffer'
+import { FULL_DRAW_VISIBLE_FRACTION, MAX_OPAQUE_SPANS, SPAN_GAP_TOLERANCE_QUADS } from './globalLegacyBuffer'
 
 export const MAX_CUBE_SPANS = MAX_OPAQUE_SPANS
 export const SPAN_GAP_TOLERANCE_FACES = SPAN_GAP_TOLERANCE_QUADS
 export { FULL_DRAW_VISIBLE_FRACTION }
 
-export type CubeDrawSpan = { start: number, count: number }
+export type CubeDrawSpan = { start: number; count: number }
 
-export type VisibleCubeSlot = { start: number, count: number }
+export type VisibleCubeSlot = { start: number; count: number }
 
-function mergeCubeSpans (spans: CubeDrawSpan[]): void {
+function mergeCubeSpans(spans: CubeDrawSpan[]): void {
   if (spans.length < 2) return
   let i = 0
   while (i < spans.length - 1) {
@@ -28,7 +24,7 @@ function mergeCubeSpans (spans: CubeDrawSpan[]): void {
   }
 }
 
-function capCubeSpans (spans: CubeDrawSpan[]): void {
+function capCubeSpans(spans: CubeDrawSpan[]): void {
   while (spans.length > MAX_CUBE_SPANS) {
     let bestIdx = 0
     let bestGap = Infinity
@@ -50,10 +46,7 @@ function capCubeSpans (spans: CubeDrawSpan[]): void {
  * Merge/cap visible face-instance ranges for WEBGL_multi_draw (option B).
  * Instance indices — no *6 scaling on span values.
  */
-export function buildVisibleCubeSpans (
-  visibleSlots: VisibleCubeSlot[],
-  highWatermark: number,
-): CubeDrawSpan[] {
+export function buildVisibleCubeSpans(visibleSlots: VisibleCubeSlot[], highWatermark: number): CubeDrawSpan[] {
   if (visibleSlots.length === 0 || highWatermark === 0) return []
 
   let visibleFaceCount = 0

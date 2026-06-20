@@ -21,8 +21,8 @@ test('Known blocks are not rendered', () => {
 
   let time = 0
   let times = 0
-  const missingBlocks = {}/*  as {[number, number]} */
-  const erroredBlocks = {}/*  as {[number, number]} */
+  const missingBlocks = {} /*  as {[number, number]} */
+  const erroredBlocks = {} /*  as {[number, number]} */
   for (const block of mcData.blocksArray) {
     if (ignoreAsExpected.has(block.name)) continue
     // if (block.maxStateId! - block.minStateId! > 100) continue

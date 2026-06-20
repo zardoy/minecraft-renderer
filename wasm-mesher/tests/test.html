@@ -1,285 +1,297 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>WASM Mesher Test</title>
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            max-width: 800px;
-            margin: 40px auto;
-            padding: 20px;
-            background: #1a1a1a;
-            color: #fff;
-        }
-        .container {
-            background: #2a2a2a;
-            padding: 20px;
-            border-radius: 8px;
-        }
-        button {
-            padding: 12px 24px;
-            background: #4a9eff;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-            margin: 10px 5px;
-        }
-        button:hover {
-            background: #3a8eef;
-        }
-        button:disabled {
-            background: #555;
-            cursor: not-allowed;
-        }
-        #output {
-            margin-top: 20px;
-            padding: 15px;
-            background: #1a1a1a;
-            border-radius: 5px;
-            font-family: 'Courier New', monospace;
-            font-size: 14px;
-            white-space: pre-wrap;
-            max-height: 400px;
-            overflow-y: auto;
-        }
-        .success { color: #4ade80; }
-        .error { color: #f87171; }
-        .info { color: #60a5fa; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        max-width: 800px;
+        margin: 40px auto;
+        padding: 20px;
+        background: #1a1a1a;
+        color: #fff;
+      }
+      .container {
+        background: #2a2a2a;
+        padding: 20px;
+        border-radius: 8px;
+      }
+      button {
+        padding: 12px 24px;
+        background: #4a9eff;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 16px;
+        margin: 10px 5px;
+      }
+      button:hover {
+        background: #3a8eef;
+      }
+      button:disabled {
+        background: #555;
+        cursor: not-allowed;
+      }
+      #output {
+        margin-top: 20px;
+        padding: 15px;
+        background: #1a1a1a;
+        border-radius: 5px;
+        font-family: 'Courier New', monospace;
+        font-size: 14px;
+        white-space: pre-wrap;
+        max-height: 400px;
+        overflow-y: auto;
+      }
+      .success {
+        color: #4ade80;
+      }
+      .error {
+        color: #f87171;
+      }
+      .info {
+        color: #60a5fa;
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <div class="container">
-        <h1>🚀 WASM Mesher Test</h1>
-        <p>Test the Rust-compiled WebAssembly mesher in the browser.</p>
+      <h1>🚀 WASM Mesher Test</h1>
+      <p>Test the Rust-compiled WebAssembly mesher in the browser.</p>
 
-        <button id="testBtn" onclick="runTest()">Run Test</button>
-        <button id="debugBtn" onclick="runDebugTest()">Debug Array Test</button>
-        <button onclick="clearOutput()">Clear</button>
+      <button id="testBtn" onclick="runTest()">Run Test</button>
+      <button id="debugBtn" onclick="runDebugTest()">Debug Array Test</button>
+      <button onclick="clearOutput()">Clear</button>
 
-        <div id="output"></div>
+      <div id="output"></div>
     </div>
 
     <script type="module">
-        let wasmModule = null;
-        let isInitialized = false;
+      let wasmModule = null
+      let isInitialized = false
 
-        async function initWasm() {
-            if (isInitialized) return;
+      async function initWasm() {
+        if (isInitialized) return
 
-            try {
-                log('Initializing WASM module...', 'info');
-                const wasm = await import('./pkg/wasm_mesher.js');
-                await wasm.default();
-                wasmModule = wasm;
-                isInitialized = true;
-                log('✅ WASM module initialized!', 'success');
-                return true;
-            } catch (error) {
-                log(`❌ Failed to initialize WASM: ${error.message}`, 'error');
-                log(`   Make sure you've built the WASM package with: wasm-pack build --target web`, 'error');
-                return false;
-            }
+        try {
+          log('Initializing WASM module...', 'info')
+          const wasm = await import('./pkg/wasm_mesher.js')
+          await wasm.default()
+          wasmModule = wasm
+          isInitialized = true
+          log('✅ WASM module initialized!', 'success')
+          return true
+        } catch (error) {
+          log(`❌ Failed to initialize WASM: ${error.message}`, 'error')
+          log(`   Make sure you've built the WASM package with: wasm-pack build --target web`, 'error')
+          return false
+        }
+      }
+
+      window.runTest = async function () {
+        const btn = document.getElementById('testBtn')
+        btn.disabled = true
+        btn.textContent = 'Running...'
+
+        clearOutput()
+
+        if (!(await initWasm())) {
+          btn.disabled = false
+          btn.textContent = 'Run Test'
+          return
         }
 
-        window.runTest = async function() {
-            const btn = document.getElementById('testBtn');
-            btn.disabled = true;
-            btn.textContent = 'Running...';
+        try {
+          log('\nGenerating test geometry...', 'info')
 
-            clearOutput();
+          // Create test data
+          const SECTION_SIZE = 16
+          const SECTION_HEIGHT = 256
+          const WORLD_HEIGHT = 384
+          const WORLD_MIN_Y = -64
 
-            if (!await initWasm()) {
-                btn.disabled = false;
-                btn.textContent = 'Run Test';
-                return;
-            }
+          const totalBlocks = SECTION_SIZE * SECTION_SIZE * WORLD_HEIGHT
 
-            try {
-                log('\nGenerating test geometry...', 'info');
+          const blockStates = new Uint16Array(totalBlocks)
+          const blockLight = new Uint8Array(totalBlocks)
+          const skyLight = new Uint8Array(totalBlocks)
+          const biomes = new Uint8Array(totalBlocks)
 
-                // Create test data
-                const SECTION_SIZE = 16;
-                const SECTION_HEIGHT = 256;
-                const WORLD_HEIGHT = 384;
-                const WORLD_MIN_Y = -64;
+          // Fill with test pattern: stone at y=0
+          for (let x = 0; x < SECTION_SIZE; x++) {
+            for (let z = 0; z < SECTION_SIZE; z++) {
+              for (let y = 0; y < WORLD_HEIGHT; y++) {
+                const idx = x + z * SECTION_SIZE + y * SECTION_SIZE * SECTION_SIZE
 
-                const totalBlocks = SECTION_SIZE * SECTION_SIZE * WORLD_HEIGHT;
-
-                const blockStates = new Uint16Array(totalBlocks);
-                const blockLight = new Uint8Array(totalBlocks);
-                const skyLight = new Uint8Array(totalBlocks);
-                const biomes = new Uint8Array(totalBlocks);
-
-                // Fill with test pattern: stone at y=0
-                for (let x = 0; x < SECTION_SIZE; x++) {
-                    for (let z = 0; z < SECTION_SIZE; z++) {
-                        for (let y = 0; y < WORLD_HEIGHT; y++) {
-                            const idx = x + z * SECTION_SIZE + y * SECTION_SIZE * SECTION_SIZE;
-
-                            if (y === 0) {
-                                blockStates[idx] = 1; // Stone
-                                blockLight[idx] = 0;
-                                skyLight[idx] = 15;
-                            } else {
-                                blockStates[idx] = 0; // Air
-                                blockLight[idx] = 0;
-                                skyLight[idx] = 15;
-                            }
-                            biomes[idx] = 1;
-                        }
-                    }
+                if (y === 0) {
+                  blockStates[idx] = 1 // Stone
+                  blockLight[idx] = 0
+                  skyLight[idx] = 15
+                } else {
+                  blockStates[idx] = 0 // Air
+                  blockLight[idx] = 0
+                  skyLight[idx] = 15
                 }
-
-                const invisibleBlocks = new Uint16Array([0]);
-                const transparentBlocks = new Uint16Array([]);
-                const noAoBlocks = new Uint16Array([]);
-                const cullIdenticalBlocks = new Uint16Array([]);
-                const occludingBlocks = new Uint16Array([]);
-
-                const startTime = performance.now();
-
-                const result = wasmModule.generate_geometry(
-                    0, WORLD_MIN_Y, 0, SECTION_HEIGHT,
-                    WORLD_MIN_Y, WORLD_MIN_Y + WORLD_HEIGHT,
-                    WORLD_MIN_Y,
-                    blockStates, blockLight, skyLight, biomes,
-                    invisibleBlocks, transparentBlocks, noAoBlocks, cullIdenticalBlocks, occludingBlocks,
-                    true, false, 15
-                );
-
-                const endTime = performance.now();
-                const duration = endTime - startTime;
-
-                log(`\n✅ Geometry generated in ${duration.toFixed(2)}ms`, 'success');
-                log(`   Block iterations: ${result.block_iterations.toLocaleString()}`, 'info');
-                log(`   Positions: ${result.positions.length} floats (${(result.positions.length / 3).toFixed(0)} vertices)`, 'info');
-                log(`   Normals: ${result.normals.length} floats`, 'info');
-                log(`   Colors: ${result.colors.length} floats`, 'info');
-                log(`   UVs: ${result.uvs.length} floats`, 'info');
-                log(`   Indices: ${result.indices.length} (${result.indices_count} triangles)`, 'info');
-
-                if (result.positions.length > 0) {
-                    log(`\n   First vertex: [${result.positions[0].toFixed(2)}, ${result.positions[1].toFixed(2)}, ${result.positions[2].toFixed(2)}]`, 'success');
-                }
-
-            } catch (error) {
-                log(`\n❌ Error: ${error.message}`, 'error');
-                console.error(error);
-            } finally {
-                btn.disabled = false;
-                btn.textContent = 'Run Test';
+                biomes[idx] = 1
+              }
             }
-        };
+          }
 
-        window.runDebugTest = async function() {
-            const btn = document.getElementById('debugBtn');
-            btn.disabled = true;
-            btn.textContent = 'Running...';
+          const invisibleBlocks = new Uint16Array([0])
+          const transparentBlocks = new Uint16Array([])
+          const noAoBlocks = new Uint16Array([])
+          const cullIdenticalBlocks = new Uint16Array([])
+          const occludingBlocks = new Uint16Array([])
 
-            clearOutput();
+          const startTime = performance.now()
 
-            if (!await initWasm()) {
-                btn.disabled = false;
-                btn.textContent = 'Debug Array Test';
-                return;
-            }
+          const result = wasmModule.generate_geometry(
+            0,
+            WORLD_MIN_Y,
+            0,
+            SECTION_HEIGHT,
+            WORLD_MIN_Y,
+            WORLD_MIN_Y + WORLD_HEIGHT,
+            WORLD_MIN_Y,
+            blockStates,
+            blockLight,
+            skyLight,
+            biomes,
+            invisibleBlocks,
+            transparentBlocks,
+            noAoBlocks,
+            cullIdenticalBlocks,
+            occludingBlocks,
+            true,
+            false,
+            15
+          )
 
-            try {
-                log('\n🔍 Testing array passing with debug_roundtrip_arrays...', 'info');
+          const endTime = performance.now()
+          const duration = endTime - startTime
 
-                // Create simple test arrays
-                const SECTION_SIZE = 16;
-                const SECTION_HEIGHT = 256;
-                const totalBlocks = SECTION_SIZE * SECTION_SIZE * SECTION_HEIGHT;
+          log(`\n✅ Geometry generated in ${duration.toFixed(2)}ms`, 'success')
+          log(`   Block iterations: ${result.block_iterations.toLocaleString()}`, 'info')
+          log(`   Positions: ${result.positions.length} floats (${(result.positions.length / 3).toFixed(0)} vertices)`, 'info')
+          log(`   Normals: ${result.normals.length} floats`, 'info')
+          log(`   Colors: ${result.colors.length} floats`, 'info')
+          log(`   UVs: ${result.uvs.length} floats`, 'info')
+          log(`   Indices: ${result.indices.length} (${result.indices_count} triangles)`, 'info')
 
-                log(`Creating test arrays with ${totalBlocks.toLocaleString()} elements...`, 'info');
+          if (result.positions.length > 0) {
+            log(`\n   First vertex: [${result.positions[0].toFixed(2)}, ${result.positions[1].toFixed(2)}, ${result.positions[2].toFixed(2)}]`, 'success')
+          }
+        } catch (error) {
+          log(`\n❌ Error: ${error.message}`, 'error')
+          console.error(error)
+        } finally {
+          btn.disabled = false
+          btn.textContent = 'Run Test'
+        }
+      }
 
-                // Create simple test data with known values
-                const blockStates = new Uint16Array(totalBlocks);
-                const blockLight = new Uint8Array(totalBlocks);
-                const skyLight = new Uint8Array(totalBlocks);
-                const biomes = new Uint8Array(totalBlocks);
+      window.runDebugTest = async function () {
+        const btn = document.getElementById('debugBtn')
+        btn.disabled = true
+        btn.textContent = 'Running...'
 
-                // Fill with simple pattern: first 1000 elements have specific values
-                for (let i = 0; i < Math.min(1000, totalBlocks); i++) {
-                    blockStates[i] = (i % 100) + 1; // Values 1-100
-                    blockLight[i] = (i % 16); // Values 0-15
-                    skyLight[i] = 15 - (i % 16); // Values 15-0
-                    biomes[i] = (i % 10) + 1; // Values 1-10
-                }
+        clearOutput()
 
-                log(`Set first 1000 elements with test pattern`, 'info');
-                log(`Sample values: blockStates[0]=${blockStates[0]}, blockStates[1]=${blockStates[1]}, blockStates[999]=${blockStates[999]}`, 'info');
-
-                // Ensure arrays are contiguous (copy to new arrays)
-                const blockStatesArray = new Uint16Array(blockStates);
-                const blockLightArray = new Uint8Array(blockLight);
-                const skyLightArray = new Uint8Array(skyLight);
-                const biomesArrayArray = new Uint8Array(biomes);
-
-                log('Array validation:', 'info');
-                log(`  blockStates.length: ${blockStatesArray.length.toLocaleString()}`, 'info');
-                log(`  blockStates.byteOffset: ${blockStatesArray.byteOffset} (should be 0)`, 'info');
-                log(`  blockStates.byteLength === buffer.byteLength: ${blockStatesArray.byteLength === blockStatesArray.buffer.byteLength}`, 'info');
-
-                // Call the debug method
-                log('\nCalling wasm.debug_roundtrip_arrays...', 'info');
-                const startTime = performance.now();
-
-                const debugResult = wasmModule.debug_roundtrip_arrays(
-                    blockStatesArray,
-                    blockLightArray,
-                    skyLightArray,
-                    biomesArrayArray
-                );
-
-                const endTime = performance.now();
-                const duration = endTime - startTime;
-
-                log(`✅ Debug call completed in ${duration.toFixed(2)}ms`, 'success');
-                log(`Result: ${JSON.stringify(debugResult, null, 2)}`, 'success');
-
-                // Check if the result shows the issue
-                if (debugResult && typeof debugResult === 'object') {
-                    if (debugResult.block_states_sum === 0) {
-                        log('⚠️  WARNING: block_states_sum is 0 - WASM may be seeing all zeros!', 'error');
-                    } else {
-                        log(`✅ block_states_sum is non-zero: ${debugResult.block_states_sum}`, 'success');
-                    }
-
-                    if (debugResult.array_sizes) {
-                        log(`Array sizes received by WASM: ${JSON.stringify(debugResult.array_sizes)}`, 'info');
-                    }
-                }
-
-            } catch (error) {
-                log(`\n❌ Error: ${error.message}`, 'error');
-                console.error(error);
-            } finally {
-                btn.disabled = false;
-                btn.textContent = 'Debug Array Test';
-            }
-        };
-
-        window.clearOutput = function() {
-            document.getElementById('output').textContent = '';
-        };
-
-        function log(message, type = 'info') {
-            const output = document.getElementById('output');
-            const className = type === 'success' ? 'success' : type === 'error' ? 'error' : 'info';
-            output.innerHTML += `<span class="${className}">${message}</span>\n`;
-            output.scrollTop = output.scrollHeight;
+        if (!(await initWasm())) {
+          btn.disabled = false
+          btn.textContent = 'Debug Array Test'
+          return
         }
 
-        // Auto-initialize on load
-        window.addEventListener('load', async () => {
-            log('Ready! Click "Run Test" to test the WASM mesher.', 'info');
-        });
+        try {
+          log('\n🔍 Testing array passing with debug_roundtrip_arrays...', 'info')
+
+          // Create simple test arrays
+          const SECTION_SIZE = 16
+          const SECTION_HEIGHT = 256
+          const totalBlocks = SECTION_SIZE * SECTION_SIZE * SECTION_HEIGHT
+
+          log(`Creating test arrays with ${totalBlocks.toLocaleString()} elements...`, 'info')
+
+          // Create simple test data with known values
+          const blockStates = new Uint16Array(totalBlocks)
+          const blockLight = new Uint8Array(totalBlocks)
+          const skyLight = new Uint8Array(totalBlocks)
+          const biomes = new Uint8Array(totalBlocks)
+
+          // Fill with simple pattern: first 1000 elements have specific values
+          for (let i = 0; i < Math.min(1000, totalBlocks); i++) {
+            blockStates[i] = (i % 100) + 1 // Values 1-100
+            blockLight[i] = i % 16 // Values 0-15
+            skyLight[i] = 15 - (i % 16) // Values 15-0
+            biomes[i] = (i % 10) + 1 // Values 1-10
+          }
+
+          log(`Set first 1000 elements with test pattern`, 'info')
+          log(`Sample values: blockStates[0]=${blockStates[0]}, blockStates[1]=${blockStates[1]}, blockStates[999]=${blockStates[999]}`, 'info')
+
+          // Ensure arrays are contiguous (copy to new arrays)
+          const blockStatesArray = new Uint16Array(blockStates)
+          const blockLightArray = new Uint8Array(blockLight)
+          const skyLightArray = new Uint8Array(skyLight)
+          const biomesArrayArray = new Uint8Array(biomes)
+
+          log('Array validation:', 'info')
+          log(`  blockStates.length: ${blockStatesArray.length.toLocaleString()}`, 'info')
+          log(`  blockStates.byteOffset: ${blockStatesArray.byteOffset} (should be 0)`, 'info')
+          log(`  blockStates.byteLength === buffer.byteLength: ${blockStatesArray.byteLength === blockStatesArray.buffer.byteLength}`, 'info')
+
+          // Call the debug method
+          log('\nCalling wasm.debug_roundtrip_arrays...', 'info')
+          const startTime = performance.now()
+
+          const debugResult = wasmModule.debug_roundtrip_arrays(blockStatesArray, blockLightArray, skyLightArray, biomesArrayArray)
+
+          const endTime = performance.now()
+          const duration = endTime - startTime
+
+          log(`✅ Debug call completed in ${duration.toFixed(2)}ms`, 'success')
+          log(`Result: ${JSON.stringify(debugResult, null, 2)}`, 'success')
+
+          // Check if the result shows the issue
+          if (debugResult && typeof debugResult === 'object') {
+            if (debugResult.block_states_sum === 0) {
+              log('⚠️  WARNING: block_states_sum is 0 - WASM may be seeing all zeros!', 'error')
+            } else {
+              log(`✅ block_states_sum is non-zero: ${debugResult.block_states_sum}`, 'success')
+            }
+
+            if (debugResult.array_sizes) {
+              log(`Array sizes received by WASM: ${JSON.stringify(debugResult.array_sizes)}`, 'info')
+            }
+          }
+        } catch (error) {
+          log(`\n❌ Error: ${error.message}`, 'error')
+          console.error(error)
+        } finally {
+          btn.disabled = false
+          btn.textContent = 'Debug Array Test'
+        }
+      }
+
+      window.clearOutput = function () {
+        document.getElementById('output').textContent = ''
+      }
+
+      function log(message, type = 'info') {
+        const output = document.getElementById('output')
+        const className = type === 'success' ? 'success' : type === 'error' ? 'error' : 'info'
+        output.innerHTML += `<span class="${className}">${message}</span>\n`
+        output.scrollTop = output.scrollHeight
+      }
+
+      // Auto-initialize on load
+      window.addEventListener('load', async () => {
+        log('Ready! Click "Run Test" to test the WASM mesher.', 'info')
+      })
     </script>
-</body>
+  </body>
 </html>

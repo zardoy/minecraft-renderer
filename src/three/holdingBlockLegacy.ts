@@ -19,82 +19,36 @@ import { getFirstPersonItemSpecificProps, getHandItemRenderKey } from './holding
 
 const rotationPositionData = {
   itemRight: {
-    'rotation': [
-      0,
-      -90,
-      25
-    ],
-    'translation': [
-      1.13,
-      3.2,
-      1.13
-    ],
-    'scale': [
-      0.68,
-      0.68,
-      0.68
-    ]
+    rotation: [0, -90, 25],
+    translation: [1.13, 3.2, 1.13],
+    scale: [0.68, 0.68, 0.68]
   },
   itemLeft: {
-    'rotation': [
-      0,
-      90,
-      -25
-    ],
-    'translation': [
-      1.13,
-      3.2,
-      1.13
-    ],
-    'scale': [
-      0.68,
-      0.68,
-      0.68
-    ]
+    rotation: [0, 90, -25],
+    translation: [1.13, 3.2, 1.13],
+    scale: [0.68, 0.68, 0.68]
   },
   blockRight: {
-    'rotation': [
-      0,
-      45,
-      0
-    ],
-    'translation': [
-      0,
-      0,
-      0
-    ],
-    'scale': [
-      0.4,
-      0.4,
-      0.4
-    ]
+    rotation: [0, 45, 0],
+    translation: [0, 0, 0],
+    scale: [0.4, 0.4, 0.4]
   },
   blockLeft: {
-    'rotation': [
-      0,
-      225,
-      0
-    ],
-    'translation': [
-      0,
-      0,
-      0
-    ],
-    'scale': [
-      0.4,
-      0.4,
-      0.4
-    ]
+    rotation: [0, 225, 0],
+    translation: [0, 0, 0],
+    scale: [0.4, 0.4, 0.4]
   }
 }
 
 export default class HoldingBlockLegacy implements IHoldingBlock {
   // TODO refactor with the tree builder for better visual understanding
   holdingBlock: THREE.Object3D | undefined = undefined
-  blockSwapAnimation: {
-    switcher: SmoothSwitcher
-    // hidden: boolean
-  } | undefined = undefined
+  blockSwapAnimation:
+    | {
+        switcher: SmoothSwitcher
+        // hidden: boolean
+      }
+    | undefined = undefined
   cameraGroup = new THREE.Mesh()
   objectOuterGroup = new THREE.Group() // 3
   objectInnerGroup = new THREE.Group() // 4
@@ -117,51 +71,63 @@ export default class HoldingBlockLegacy implements IHoldingBlock {
   private disposed = false
   unsubs: Array<() => void> = []
 
-  constructor(public worldRenderer: WorldRendererThree, public offHand = false) {
+  constructor(
+    public worldRenderer: WorldRendererThree,
+    public offHand = false
+  ) {
     this.initCameraGroup()
-    this.unsubs.push(subscribeKey(this.worldRenderer.playerStateReactive, 'heldItemMain', () => {
-      if (!this.offHand) {
-        this.updateItem()
-      }
-    }))
-    this.unsubs.push(subscribeKey(this.worldRenderer.playerStateReactive, 'heldItemOff', () => {
-      if (this.offHand) {
-        this.updateItem()
-      }
-    }))
+    this.unsubs.push(
+      subscribeKey(this.worldRenderer.playerStateReactive, 'heldItemMain', () => {
+        if (!this.offHand) {
+          this.updateItem()
+        }
+      })
+    )
+    this.unsubs.push(
+      subscribeKey(this.worldRenderer.playerStateReactive, 'heldItemOff', () => {
+        if (this.offHand) {
+          this.updateItem()
+        }
+      })
+    )
     this.config = worldRenderer.displayOptions.inWorldRenderingConfig
 
     this.offHandDisplay = this.offHand
     // this.offHandDisplay = true
     if (!this.offHand) {
       // load default hand
-      void getMyHand().then((hand) => {
-        if (this.disposed) return
-        this.playerHand = hand
-        // trigger update
-        this.updateItem()
-      }).then(() => {
-        if (this.disposed) return
-        // now watch over the player skin
-        const unsub = watchProperty(
-          async () => {
-            return getMyHand(this.worldRenderer.playerStateReactive.playerSkin, this.worldRenderer.playerStateReactive.onlineMode ? this.worldRenderer.playerStateReactive.username : undefined)
-          },
-          this.worldRenderer.playerStateReactive,
-          'playerSkin',
-          (newHand) => {
-            if (newHand) {
-              this.playerHand = newHand
-              // trigger update
-              this.updateItem()
+      void getMyHand()
+        .then(hand => {
+          if (this.disposed) return
+          this.playerHand = hand
+          // trigger update
+          this.updateItem()
+        })
+        .then(() => {
+          if (this.disposed) return
+          // now watch over the player skin
+          const unsub = watchProperty(
+            async () => {
+              return getMyHand(
+                this.worldRenderer.playerStateReactive.playerSkin,
+                this.worldRenderer.playerStateReactive.onlineMode ? this.worldRenderer.playerStateReactive.username : undefined
+              )
+            },
+            this.worldRenderer.playerStateReactive,
+            'playerSkin',
+            newHand => {
+              if (newHand) {
+                this.playerHand = newHand
+                // trigger update
+                this.updateItem()
+              }
+            },
+            oldHand => {
+              disposeObject(oldHand!, true)
             }
-          },
-          (oldHand) => {
-            disposeObject(oldHand!, true)
-          }
-        )
-        this.unsubs.push(unsub)
-      })
+          )
+          this.unsubs.push(unsub)
+        })
     }
   }
 
@@ -174,7 +140,7 @@ export default class HoldingBlockLegacy implements IHoldingBlock {
       void this.setNewItem()
     } else {
       void this.setNewItem({
-        type: 'hand',
+        type: 'hand'
       })
     }
   }
@@ -194,7 +160,8 @@ export default class HoldingBlockLegacy implements IHoldingBlock {
   render(originalCamera: THREE.PerspectiveCamera, renderer: THREE.WebGLRenderer, ambientLight: THREE.AmbientLight, directionalLight: THREE.DirectionalLight) {
     if (!this.lastHeldItem) return
     const now = performance.now()
-    if (this.lastUpdate && now - this.lastUpdate > 50) { // one tick
+    if (this.lastUpdate && now - this.lastUpdate > 50) {
+      // one tick
       void this.replaceItemModel(this.lastHeldItem)
     }
 
@@ -279,14 +246,14 @@ export default class HoldingBlockLegacy implements IHoldingBlock {
     //   throw new Error(`forceState does not match current state ${forceState} !== ${newState}`)
     // }
 
-    const targetY = this.objectInnerGroup.position.y + (this.objectInnerGroup.scale.y * 1.5 * (newState === 'appeared' ? 1 : -1))
+    const targetY = this.objectInnerGroup.position.y + this.objectInnerGroup.scale.y * 1.5 * (newState === 'appeared' ? 1 : -1)
 
     // if (newState === this.blockSwapAnimation.switcher.transitioningToStateName) {
     //   return false
     // }
 
     let cancelled = false
-    return new Promise<boolean>((resolve) => {
+    return new Promise<boolean>(resolve => {
       this.blockSwapAnimation!.switcher.transitionTo(
         { y: targetY },
         newState,
@@ -317,16 +284,11 @@ export default class HoldingBlockLegacy implements IHoldingBlock {
     // const aspect = viewerSize.width / viewerSize.height
     const aspect = 1
 
-
     // Adjust the position based on the aspect ratio
     const { position, scale: scaleData } = this.getHandHeld3d()
     const distance = -position.z
     const side = this.offHandModeLegacy ? -1 : 1
-    this.objectOuterGroup.position.set(
-      distance * position.x * aspect * side,
-      distance * position.y,
-      -distance
-    )
+    this.objectOuterGroup.position.set(distance * position.x * aspect * side, distance * position.y, -distance)
 
     // const scale = Math.min(0.8, Math.max(1, 1 * aspect))
     const scale = scaleData * 2.22 * 0.2
@@ -340,10 +302,15 @@ export default class HoldingBlockLegacy implements IHoldingBlock {
 
     let blockInner: THREE.Object3D | undefined
     if (handItem.type === 'item' || handItem.type === 'block') {
-      const result = this.worldRenderer.entities.getItemMesh({
-        ...handItem.fullItem,
-        itemId: handItem.id,
-      }, getFirstPersonItemSpecificProps(this.worldRenderer), false, this.lastItemModelName)
+      const result = this.worldRenderer.entities.getItemMesh(
+        {
+          ...handItem.fullItem,
+          itemId: handItem.id
+        },
+        getFirstPersonItemSpecificProps(this.worldRenderer),
+        false,
+        this.lastItemModelName
+      )
       if (result) {
         const { mesh: itemMesh, isBlock, modelName } = result
         if (isBlock) {
@@ -390,8 +357,6 @@ export default class HoldingBlockLegacy implements IHoldingBlock {
     this.holdingBlock?.removeFromParent()
     this.holdingBlock = result.model
     this.holdingBlockInnerGroup.add(result.model)
-
-
   }
 
   testUnknownBlockSwitch() {
@@ -567,7 +532,10 @@ class HandIdleAnimator {
 
   private readonly debugGui: DebugGui
 
-  constructor(public handMesh: THREE.Object3D, public playerState: PlayerStateRenderer) {
+  constructor(
+    public handMesh: THREE.Object3D,
+    public playerState: PlayerStateRenderer
+  ) {
     this.handMesh = handMesh
     this.globalTime = 0
     this.currentState = 'NOT_MOVING'
@@ -596,12 +564,24 @@ class HandIdleAnimator {
       },
       (property, value) => {
         switch (property) {
-          case 'x': this.handMesh.position.x = value; break
-          case 'y': this.handMesh.position.y = value; break
-          case 'z': this.handMesh.position.z = value; break
-          case 'rotationX': this.handMesh.rotation.x = value; break
-          case 'rotationY': this.handMesh.rotation.y = value; break
-          case 'rotationZ': this.handMesh.rotation.z = value; break
+          case 'x':
+            this.handMesh.position.x = value
+            break
+          case 'y':
+            this.handMesh.position.y = value
+            break
+          case 'z':
+            this.handMesh.position.z = value
+            break
+          case 'rotationX':
+            this.handMesh.rotation.x = value
+            break
+          case 'rotationY':
+            this.handMesh.rotation.y = value
+            break
+          case 'rotationZ':
+            this.handMesh.rotation.z = value
+            break
         }
       },
       {
@@ -627,10 +607,13 @@ class HandIdleAnimator {
     this.idleOffset.rotationZ = this.handMesh.rotation.z - this.defaultPosition.rotationZ
 
     this.idleTween = new tweenJs.Tween(this.idleOffset, this.tween)
-      .to({
-        y: 0.05,
-        rotationZ: 0.05
-      }, 3000)
+      .to(
+        {
+          y: 0.05,
+          rotationZ: 0.05
+        },
+        3000
+      )
       .easing(tweenJs.Easing.Sinusoidal.InOut)
       .yoyo(true)
       .repeat(Infinity)
@@ -728,8 +711,7 @@ class HandIdleAnimator {
     }
 
     // If we're not transitioning between states and in a stable state that should have idle animation
-    if (!this.stateSwitcher.isTransitioning &&
-      (this.currentState === 'NOT_MOVING' || this.currentState === 'SNEAKING')) {
+    if (!this.stateSwitcher.isTransitioning && (this.currentState === 'NOT_MOVING' || this.currentState === 'SNEAKING')) {
       // Start idle animation if not already running
       if (!this.idleTween?.isPlaying()) {
         this.startIdleAnimation()
@@ -743,8 +725,7 @@ class HandIdleAnimator {
     }
 
     // If we're in a movement state and not transitioning, update the movement animation
-    if (!this.stateSwitcher.isTransitioning &&
-      (this.currentState === 'WALKING' || this.currentState === 'SPRINTING')) {
+    if (!this.stateSwitcher.isTransitioning && (this.currentState === 'WALKING' || this.currentState === 'SPRINTING')) {
       const stateTransform = this.getStateTransform(this.currentState, this.globalTime)
       Object.assign(this.handMesh.position, stateTransform)
       Object.assign(this.handMesh.rotation, {

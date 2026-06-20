@@ -26,10 +26,7 @@ export interface MenuBackgroundOptions {
   resourcesManager?: ResourcesManager
 }
 
-export function resolveMenuBackgroundMode(
-  options?: MenuBackgroundOptions,
-  singleFileBuild = false
-): MenuBackgroundMode {
+export function resolveMenuBackgroundMode(options?: MenuBackgroundOptions, singleFileBuild = false): MenuBackgroundMode {
   if (options?.mode) return options.mode
   if (singleFileBuild) return 'worldBlocks'
   return MENU_BACKGROUND_OPTION_DEFAULTS.mode

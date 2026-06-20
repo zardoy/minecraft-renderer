@@ -6,7 +6,7 @@ import {
   drawCubeSpans,
   logMultiDrawTierOnce,
   type CubeMultiDrawScratch,
-  type MultiDrawCaps,
+  type MultiDrawCaps
 } from './cubeMultiDraw'
 import { VERTICES_PER_FACE, computeSectionOriginRel } from './shaders/cubeBlockShader'
 import { computeCameraRelativeUniforms, type RenderOrigin } from './shaders/legacyBlockShader'
@@ -18,7 +18,7 @@ type WebGLRendererInternals = THREE.WebGLRenderer & {
   }
 }
 
-type TierCAttrBinding = { loc: number, buffer: WebGLBuffer }
+type TierCAttrBinding = { loc: number; buffer: WebGLBuffer }
 type TierCAttrState = {
   w0: TierCAttrBinding
   w1: TierCAttrBinding
@@ -28,13 +28,13 @@ type TierCAttrState = {
 
 // Linear growth (NOT doubling) to keep iOS allocation spikes bounded to one increment.
 // Reference: prismarine-web-client PR #90 (webgl) and #120 (webgpu) both grow by +1M faces.
-const INITIAL_CAPACITY_FACES = 512_000      // ~8 MB up front (4 words × 4 B), well under 1M
-const GROWTH_INCREMENT_FACES = 1_000_000    // +16 MB per growth step instead of doubling
-const MAX_UPLOAD_FACES_PER_FRAME = 15_000   // face-indexed budget (chunksStorage uses 10k blocks)
+const INITIAL_CAPACITY_FACES = 512_000 // ~8 MB up front (4 words × 4 B), well under 1M
+const GROWTH_INCREMENT_FACES = 1_000_000 // +16 MB per growth step instead of doubling
+const MAX_UPLOAD_FACES_PER_FRAME = 15_000 // face-indexed budget (chunksStorage uses 10k blocks)
 const FRAGMENTATION_THRESHOLD = 0.25
 const EMPTY_W2 = packWord2Empty()
 
-type PendingMove = { key: string, oldStart: number, newStart: number, count: number }
+type PendingMove = { key: string; oldStart: number; newStart: number; count: number }
 
 export type GlobalBlockBufferShaderData = {
   words: Uint32Array
@@ -53,10 +53,10 @@ export class GlobalBlockBuffer {
   private w1: Uint32Array
   private w2: Uint32Array
   private w3: Uint32Array
-  private readonly sectionSlots = new Map<string, { start: number, count: number }>()
-  private freeList: Array<{ start: number, count: number }> = []
+  private readonly sectionSlots = new Map<string, { start: number; count: number }>()
+  private freeList: Array<{ start: number; count: number }> = []
   private highWatermark = 0
-  private pendingRanges: Array<{ start: number, end: number }> = []
+  private pendingRanges: Array<{ start: number; end: number }> = []
   private pendingMove: PendingMove | null = null
   private visibleSpans: CubeDrawSpan[] = []
   private readonly _drawScratch: CubeMultiDrawScratch = createCubeMultiDrawScratch()
@@ -66,10 +66,7 @@ export class GlobalBlockBuffer {
   private tierCGl: WebGL2RenderingContext | null = null
   private debugOverlay = false
 
-  constructor (
-    material: THREE.ShaderMaterial,
-    scene: THREE.Object3D,
-  ) {
+  constructor(material: THREE.ShaderMaterial, scene: THREE.Object3D) {
     this.capacityFaces = INITIAL_CAPACITY_FACES
     this.w0 = new Uint32Array(this.capacityFaces)
     this.w1 = new Uint32Array(this.capacityFaces)
@@ -114,14 +111,12 @@ export class GlobalBlockBuffer {
         this.multiDrawCaps,
         this.visibleSpans,
         this._drawScratch,
-        this.multiDrawCaps.tier === 'C'
-          ? (g, spans) => this.drawTierCSpans(g, spans, renderer, shaderMaterial)
-          : undefined,
+        this.multiDrawCaps.tier === 'C' ? (g, spans) => this.drawTierCSpans(g, spans, renderer, shaderMaterial) : undefined
       )
     }
   }
 
-  setDebugOverlay (enabled: boolean): void {
+  setDebugOverlay(enabled: boolean): void {
     this.debugOverlay = enabled
   }
 
@@ -130,46 +125,46 @@ export class GlobalBlockBuffer {
    * setDrawRange(0,0) skips bindingStates.setup in r0.184 — use 6 verts + instanceCount=0
    * so program/VAO stay bound while renderInstances no-ops at primcount===0.
    */
-  suppressThreeDraw (): void {
+  suppressThreeDraw(): void {
     const geometry = this.mesh.geometry
     geometry.setDrawRange(0, VERTICES_PER_FACE)
     geometry.instanceCount = 0
   }
 
-  setVisibleSpans (spans: CubeDrawSpan[]): void {
+  setVisibleSpans(spans: CubeDrawSpan[]): void {
     this.visibleSpans = spans
   }
 
-  getVisibleSpans (): readonly CubeDrawSpan[] {
+  getVisibleSpans(): readonly CubeDrawSpan[] {
     return this.visibleSpans
   }
 
-  forEachSectionSlot (cb: (key: string, slot: { start: number, count: number }) => void): void {
+  forEachSectionSlot(cb: (key: string, slot: { start: number; count: number }) => void): void {
     for (const [key, slot] of this.sectionSlots) {
       cb(key, slot)
     }
   }
 
-  getSectionDrawStart (sectionKey: string): number | undefined {
+  getSectionDrawStart(sectionKey: string): number | undefined {
     const slot = this.sectionSlots.get(sectionKey)
     if (!slot) return undefined
     if (this.pendingMove?.key === sectionKey) return this.pendingMove.oldStart
     return slot.start
   }
 
-  getHighWatermark (): number {
+  getHighWatermark(): number {
     return this.highWatermark
   }
 
-  hasPendingUploads (): boolean {
+  hasPendingUploads(): boolean {
     return this.pendingRanges.length > 0
   }
 
-  getPendingMove (): PendingMove | null {
+  getPendingMove(): PendingMove | null {
     return this.pendingMove
   }
 
-  addSection (sectionKey: string, words: Uint32Array, faceCount: number): void {
+  addSection(sectionKey: string, words: Uint32Array, faceCount: number): void {
     if (faceCount <= 0) {
       this.removeSection(sectionKey)
       return
@@ -207,21 +202,21 @@ export class GlobalBlockBuffer {
     this.mesh.geometry.instanceCount = this.highWatermark
   }
 
-  hasSection (sectionKey: string): boolean {
+  hasSection(sectionKey: string): boolean {
     return this.sectionSlots.has(sectionKey)
   }
 
-  getSectionSlot (sectionKey: string): { start: number, count: number } | undefined {
+  getSectionSlot(sectionKey: string): { start: number; count: number } | undefined {
     return this.sectionSlots.get(sectionKey)
   }
 
   /** Fetch fresh each raycast — growCapacity reallocates the backing array. */
-  getW0 (): Uint32Array {
+  getW0(): Uint32Array {
     return this.w0
   }
 
   /** Copy live GPU words and remove the section (sci-fi reveal hide / restore). */
-  takeSectionData (sectionKey: string): GlobalBlockBufferShaderData | undefined {
+  takeSectionData(sectionKey: string): GlobalBlockBufferShaderData | undefined {
     const slot = this.sectionSlots.get(sectionKey)
     if (!slot) return undefined
 
@@ -239,7 +234,7 @@ export class GlobalBlockBuffer {
     return { words, count: slot.count }
   }
 
-  removeSection (sectionKey: string): void {
+  removeSection(sectionKey: string): void {
     const slot = this.sectionSlots.get(sectionKey)
     if (!slot) return
 
@@ -271,7 +266,7 @@ export class GlobalBlockBuffer {
   }
 
   /** One interior-hole move per frame when fragmentation exceeds threshold; deferred shrink. */
-  compactStep (): void {
+  compactStep(): void {
     if (this.pendingMove) {
       const { newStart, count } = this.pendingMove
       if (this.rangeFullyUploaded(newStart, newStart + count - 1)) {
@@ -300,7 +295,7 @@ export class GlobalBlockBuffer {
     this.pendingMove = { key: section.key, oldStart, newStart, count: section.count }
   }
 
-  uploadDirtyRange (): void {
+  uploadDirtyRange(): void {
     const r = this.pendingRanges[0]
     if (!r) return
 
@@ -319,7 +314,7 @@ export class GlobalBlockBuffer {
     else r.start = offset + count
   }
 
-  setCameraOrigin (renderOrigin: RenderOrigin, x: number, y: number, z: number): void {
+  setCameraOrigin(renderOrigin: RenderOrigin, x: number, y: number, z: number): void {
     const { originDelta, cameraOriginFrac } = computeCameraRelativeUniforms(renderOrigin, x, y, z)
     const sectionOriginRel = computeSectionOriginRel(renderOrigin)
     const u = this.mesh.material.uniforms.u_originDelta
@@ -336,7 +331,7 @@ export class GlobalBlockBuffer {
     }
   }
 
-  reset (): void {
+  reset(): void {
     this.sectionSlots.clear()
     this.freeList.length = 0
     this.highWatermark = 0
@@ -351,14 +346,14 @@ export class GlobalBlockBuffer {
     this.invalidateTierCVao()
   }
 
-  dispose (): void {
+  dispose(): void {
     this.invalidateTierCVao()
     this.mesh.parent?.remove(this.mesh)
     this.mesh.geometry.dispose()
     this.reset()
   }
 
-  private invalidateTierCVao (): void {
+  private invalidateTierCVao(): void {
     if (this.tierCVao && this.tierCGl) {
       this.tierCGl.deleteVertexArray(this.tierCVao)
     }
@@ -366,12 +361,7 @@ export class GlobalBlockBuffer {
     this.tierCAttrs = null
   }
 
-  private drawTierCSpans (
-    gl: WebGL2RenderingContext,
-    spans: readonly CubeDrawSpan[],
-    renderer: THREE.WebGLRenderer,
-    material: THREE.ShaderMaterial,
-  ): void {
+  private drawTierCSpans(gl: WebGL2RenderingContext, spans: readonly CubeDrawSpan[], renderer: THREE.WebGLRenderer, material: THREE.ShaderMaterial): void {
     this.ensureTierCVao(gl, renderer, material)
     if (!this.tierCVao || !this.tierCAttrs) return
 
@@ -392,11 +382,7 @@ export class GlobalBlockBuffer {
     gl.bindVertexArray(null)
   }
 
-  private ensureTierCVao (
-    gl: WebGL2RenderingContext,
-    renderer: THREE.WebGLRenderer,
-    material: THREE.ShaderMaterial,
-  ): void {
+  private ensureTierCVao(gl: WebGL2RenderingContext, renderer: THREE.WebGLRenderer, material: THREE.ShaderMaterial): void {
     this.tierCGl = gl
     const internals = renderer as WebGLRendererInternals
     const materialProps = internals.properties.get(material) as { currentProgram: { program: WebGLProgram } }
@@ -446,19 +432,19 @@ export class GlobalBlockBuffer {
       w0: { loc: w0Loc, buffer: w0Buf },
       w1: { loc: w1Loc, buffer: w1Buf },
       w2: { loc: w2Loc, buffer: w2Buf },
-      w3: { loc: w3Loc, buffer: w3Buf },
+      w3: { loc: w3Loc, buffer: w3Buf }
     }
   }
 
-  private markDirty (start: number, end: number): void {
+  private markDirty(start: number, end: number): void {
     this.pendingRanges.push({ start, end })
     this.pendingRanges.sort((a, b) => a.start - b.start)
     this.mergePendingRanges()
   }
 
-  private mergePendingRanges (): void {
+  private mergePendingRanges(): void {
     if (this.pendingRanges.length < 2) return
-    const merged: Array<{ start: number, end: number }> = []
+    const merged: Array<{ start: number; end: number }> = []
     let cur = this.pendingRanges[0]!
     for (let i = 1; i < this.pendingRanges.length; i++) {
       const next = this.pendingRanges[i]!
@@ -473,7 +459,7 @@ export class GlobalBlockBuffer {
     this.pendingRanges = merged
   }
 
-  private takeFreeSlot (count: number): { start: number, count: number } | undefined {
+  private takeFreeSlot(count: number): { start: number; count: number } | undefined {
     for (let i = 0; i < this.freeList.length; i++) {
       const slot = this.freeList[i]!
       if (slot.count >= count) {
@@ -487,15 +473,15 @@ export class GlobalBlockBuffer {
     return undefined
   }
 
-  private insertFreeSlot (slot: { start: number, count: number }): void {
+  private insertFreeSlot(slot: { start: number; count: number }): void {
     this.freeList.push(slot)
     this.freeList.sort((a, b) => a.start - b.start)
     this.mergeFreeList()
   }
 
-  private mergeFreeList (): void {
+  private mergeFreeList(): void {
     if (this.freeList.length < 2) return
-    const merged: Array<{ start: number, count: number }> = []
+    const merged: Array<{ start: number; count: number }> = []
     let cur = this.freeList[0]!
     for (let i = 1; i < this.freeList.length; i++) {
       const next = this.freeList[i]!
@@ -510,7 +496,7 @@ export class GlobalBlockBuffer {
     this.freeList = merged
   }
 
-  private interiorFreeFaces (): number {
+  private interiorFreeFaces(): number {
     let total = 0
     for (const slot of this.freeList) {
       if (slot.start < this.highWatermark) total += slot.count
@@ -518,8 +504,8 @@ export class GlobalBlockBuffer {
     return total
   }
 
-  private findMovableSection (maxCount: number): { key: string, start: number, count: number } | undefined {
-    const sections: Array<{ key: string, start: number, count: number }> = []
+  private findMovableSection(maxCount: number): { key: string; start: number; count: number } | undefined {
+    const sections: Array<{ key: string; start: number; count: number }> = []
     for (const [key, slot] of this.sectionSlots) {
       sections.push({ key, start: slot.start, count: slot.count })
     }
@@ -527,7 +513,7 @@ export class GlobalBlockBuffer {
 
     sections.sort((a, b) => {
       if (b.start !== a.start) return b.start - a.start
-      return (b.start + b.count) - (a.start + a.count)
+      return b.start + b.count - (a.start + a.count)
     })
 
     const tailmost = sections[0]!
@@ -535,9 +521,7 @@ export class GlobalBlockBuffer {
       return tailmost
     }
 
-    const candidates = sections
-      .filter(s => s.count <= maxCount)
-      .sort((a, b) => b.count - a.count)
+    const candidates = sections.filter(s => s.count <= maxCount).sort((a, b) => b.count - a.count)
 
     for (const s of candidates) {
       if (this.findLowestInteriorHole(s.start, s.count)) return s
@@ -545,10 +529,7 @@ export class GlobalBlockBuffer {
     return undefined
   }
 
-  private findLowestInteriorHole (
-    sectionStart: number,
-    count: number,
-  ): { start: number, count: number, index: number } | undefined {
+  private findLowestInteriorHole(sectionStart: number, count: number): { start: number; count: number; index: number } | undefined {
     for (let i = 0; i < this.freeList.length; i++) {
       const slot = this.freeList[i]!
       if (slot.start < sectionStart && slot.count >= count) {
@@ -558,7 +539,7 @@ export class GlobalBlockBuffer {
     return undefined
   }
 
-  private reserveFreeSlotAt (index: number, count: number): { start: number, count: number } {
+  private reserveFreeSlotAt(index: number, count: number): { start: number; count: number } {
     const slot = this.freeList[index]!
     this.freeList.splice(index, 1)
     if (slot.count === count) return { start: slot.start, count }
@@ -567,21 +548,21 @@ export class GlobalBlockBuffer {
     return used
   }
 
-  private copySectionRange (oldStart: number, newStart: number, count: number): void {
+  private copySectionRange(oldStart: number, newStart: number, count: number): void {
     this.w0.copyWithin(newStart, oldStart, oldStart + count)
     this.w1.copyWithin(newStart, oldStart, oldStart + count)
     this.w2.copyWithin(newStart, oldStart, oldStart + count)
     this.w3.copyWithin(newStart, oldStart, oldStart + count)
   }
 
-  private rangeFullyUploaded (start: number, end: number): boolean {
+  private rangeFullyUploaded(start: number, end: number): boolean {
     for (const r of this.pendingRanges) {
       if (r.start <= end && r.end >= start) return false
     }
     return true
   }
 
-  private finalizePendingMove (): void {
+  private finalizePendingMove(): void {
     const move = this.pendingMove
     if (!move) return
 
@@ -601,7 +582,7 @@ export class GlobalBlockBuffer {
     this.pendingMove = null
   }
 
-  private shrinkHighWatermark (): void {
+  private shrinkHighWatermark(): void {
     while (this.highWatermark > 0) {
       const tail = this.highWatermark - 1
       const free = this.freeList.find(s => s.start <= tail && s.start + s.count > tail)
@@ -612,7 +593,7 @@ export class GlobalBlockBuffer {
     }
   }
 
-  private growCapacity (minFaces: number): void {
+  private growCapacity(minFaces: number): void {
     // Moved CPU data at newStart survives nw*.set(); pendingRanges cleared below anyway.
     if (this.pendingMove) this.finalizePendingMove()
 
@@ -643,7 +624,7 @@ export class GlobalBlockBuffer {
       if (prev) {
         geometry.deleteAttribute(name)
         if ('dispose' in prev && typeof (prev as { dispose?: () => void }).dispose === 'function') {
-          (prev as { dispose: () => void }).dispose()
+          ;(prev as { dispose: () => void }).dispose()
         }
       }
       const attr = new THREE.InstancedBufferAttribute(arr, 1)

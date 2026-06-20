@@ -4,12 +4,7 @@ export { resizeMenuBackgroundCamera } from './activeView'
 export type { MenuBackgroundMode, MenuBackgroundOptions } from './types'
 export { resolveMenuBackgroundMode } from './types'
 export { ClassicMenuBackground } from './classic'
-export type {
-  V2SceneId,
-  V2CameraId,
-  V2MenuBackgroundOptions,
-  MinecraftBlockGroupId
-} from './v2'
+export type { V2SceneId, V2CameraId, V2MenuBackgroundOptions, MinecraftBlockGroupId } from './v2'
 export {
   V2MenuBackground,
   V2_SCENE_IDS,
@@ -22,11 +17,7 @@ export {
 } from './v2'
 export { WorldBlocksMenuBackground } from './worldBlocks'
 export { MenuBackgroundRenderer } from './renderer'
-export {
-  MENU_BACKGROUND_OPTION_DEFAULTS,
-  MENU_BACKGROUND_MOTION_DEFAULTS,
-  menuBackgroundSpeedToMultiplier
-} from './config'
+export { MENU_BACKGROUND_OPTION_DEFAULTS, MENU_BACKGROUND_MOTION_DEFAULTS, menuBackgroundSpeedToMultiplier } from './config'
 export {
   RENDERER_DEFAULT_OPTIONS,
   RENDERER_OPTIONS_META,

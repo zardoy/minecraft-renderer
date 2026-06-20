@@ -15,7 +15,7 @@ export function resolveBlockPropertiesForMeshing(
   blockProvider: WorldBlockProvider,
   blockStateId: number,
   PrismarineBlockCtor: { fromStateId: (id: number, biome: number) => Block }
-): { name: string, properties: Record<string, unknown> } {
+): { name: string; properties: Record<string, unknown> } {
   if (world?.preflat) {
     const block = world.getBlock(cursor, blockProvider, {})
     if (block) {
@@ -44,7 +44,7 @@ export function preflatBlockCalculation(block: Block, world: World, position: Ve
       const props = {}
       let changed = false
       for (const [i, neighbor] of neighbors.entries()) {
-        const isConnectedToSolid = isSolidConnection ? (neighbor && !neighbor.transparent) : false
+        const isConnectedToSolid = isSolidConnection ? neighbor && !neighbor.transparent : false
         if (isConnectedToSolid || neighbor?.name === block.name) {
           props[['south', 'north', 'east', 'west'][i]] = 'true'
           changed = true

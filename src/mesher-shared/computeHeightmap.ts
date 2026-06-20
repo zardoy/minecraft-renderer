@@ -42,9 +42,7 @@ export function computeHeightmap(world: World, chunkX: number, chunkZ: number): 
       // when we hit worldMinY with the column still entirely invisible/empty.
       // Only the former is a real surface; the latter is the empty-column
       // case and must use the sentinel to match Rust's encoding.
-      heightmap[index] = block && !INVISIBLE_BLOCKS.has(block.name)
-        ? blockPos.y
-        : EMPTY_COLUMN_HEIGHTMAP_SENTINEL
+      heightmap[index] = block && !INVISIBLE_BLOCKS.has(block.name) ? blockPos.y : EMPTY_COLUMN_HEIGHTMAP_SENTINEL
     }
   }
   return heightmap
@@ -58,7 +56,7 @@ export function computeHeightmap(world: World, chunkX: number, chunkZ: number): 
  * Test fixtures (see `wasm-mesher/test-section-boundary.ts`) invoke this helper
  * directly to exercise the real handler path end-to-end.
  */
-export function handleGetHeightmap(world: World, x: number, z: number): { key: string, heightmap: Int16Array } {
+export function handleGetHeightmap(world: World, x: number, z: number): { key: string; heightmap: Int16Array } {
   const heightmap = computeHeightmap(world, x, z)
   const key = `${Math.floor(x / 16)},${Math.floor(z / 16)}`
   return { key, heightmap }

@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { Vec3 } from 'vec3'
 import { World } from './world'
 
-function mockColumn (blockLight: number, skyLight: number, withSection = true) {
+function mockColumn(blockLight: number, skyLight: number, withSection = true) {
   return {
     getBlockLight: () => blockLight,
-    getSkyLight: () => skyLight,
+    getSkyLight: () => skyLight
   }
 }
 

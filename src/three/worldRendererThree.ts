@@ -45,8 +45,7 @@ export class WorldRendererThree extends WorldRendererCommon {
   private static readonly LEGACY_TO_PHYSICAL_LIGHT = Math.PI
 
   protected override isShaderCubeBlocksEnabled(): boolean {
-    return this.worldRendererConfig.shaderCubeBlocks === true
-      && !!this.renderer?.capabilities?.isWebGL2
+    return this.worldRendererConfig.shaderCubeBlocks === true && !!this.renderer?.capabilities?.isWebGL2
   }
   chunkMeshManager: ChunkMeshManager
   get sectionObjects() {
@@ -91,7 +90,7 @@ export class WorldRendererThree extends WorldRendererCommon {
    */
   camera!: THREE.PerspectiveCamera
   renderTimeAvg = 0
-  private pendingSectionUpdates = new Map<string, { geometry: MesherGeometryOutput, key: string, type: string }>()
+  private pendingSectionUpdates = new Map<string, { geometry: MesherGeometryOutput; key: string; type: string }>()
   /**
    * Per-section buffering timestamps for `applyPendingSectionUpdates`.
    * Each section gets its own deadline so a continuous stream of updates
@@ -109,19 +108,19 @@ export class WorldRendererThree extends WorldRendererCommon {
   private modules = {} as Record<string, RegisteredModule>
   sectionsOffsetsAnimations = {} as {
     [chunkKey: string]: {
-      time: number,
+      time: number
       // also specifies direction
-      speedX: number,
-      speedY: number,
-      speedZ: number,
+      speedX: number
+      speedY: number
+      speedZ: number
 
-      currentOffsetX: number,
-      currentOffsetY: number,
-      currentOffsetZ: number,
+      currentOffsetX: number
+      currentOffsetY: number
+      currentOffsetZ: number
 
-      limitX?: number,
-      limitY?: number,
-      limitZ?: number,
+      limitX?: number
+      limitY?: number
+      limitZ?: number
     }
   }
   fountains: Fountain[] = []
@@ -138,8 +137,8 @@ export class WorldRendererThree extends WorldRendererCommon {
 
   private readonly _tmpCameraPos = new THREE.Vector3()
 
-  private currentPosTween?: tweenJs.Tween<{ x: number, y: number, z: number }>
-  private currentRotTween?: tweenJs.Tween<{ pitch: number, yaw: number }>
+  private currentPosTween?: tweenJs.Tween<{ x: number; y: number; z: number }>
+  private currentRotTween?: tweenJs.Tween<{ pitch: number; yaw: number }>
 
   // Pre-allocated objects for getThirdPersonCamera (avoid per-frame allocs)
   private readonly _tpDirection = new THREE.Vector3()
@@ -160,7 +159,11 @@ export class WorldRendererThree extends WorldRendererCommon {
     return this.chunkMeshManager.getTotalBlocks()
   }
 
-  constructor(public renderer: THREE.WebGLRenderer, public initOptions: GraphicsInitOptions, public displayOptions: DisplayWorldOptions) {
+  constructor(
+    public renderer: THREE.WebGLRenderer,
+    public initOptions: GraphicsInitOptions,
+    public displayOptions: DisplayWorldOptions
+  ) {
     if (!displayOptions.resourcesManager) throw new Error('resourcesManager is required in displayOptions')
     super(displayOptions.resourcesManager, displayOptions, initOptions)
 
@@ -172,13 +175,13 @@ export class WorldRendererThree extends WorldRendererCommon {
 
     // Initialize chunk mesh manager
     this.chunkMeshManager = new ChunkMeshManager(this, this.scene, this.material, this.worldSizeParams.worldHeight, this.viewDistance)
-    this.onRenderDistanceChanged = (viewDistance) => {
+    this.onRenderDistanceChanged = viewDistance => {
       this.chunkMeshManager.updateViewDistance(viewDistance)
     }
 
     // Final lightmap values TBD — compare against https://v99.mcraft.fun/
     if (typeof window !== 'undefined') {
-      (window as any).setBlockLightmap = (params: { curve?: number, minBrightness?: number, gamma?: number }) => {
+      ;(window as any).setBlockLightmap = (params: { curve?: number; minBrightness?: number; gamma?: number }) => {
         this.chunkMeshManager.setBlockLightmapParams(params)
       }
     }
@@ -210,7 +213,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.cinimaticScript = new CinimaticScriptRunner(
       this,
       (pos, yaw, pitch) => this.setCinimaticCamera(pos, yaw, pitch),
-      (fov) => this.setCinimaticFov(fov),
+      fov => this.setCinimaticFov(fov),
       () => ({
         position: new Vec3(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z),
         yaw: this.cameraShake.getBaseRotation().yaw,
@@ -248,7 +251,7 @@ export class WorldRendererThree extends WorldRendererCommon {
       manifest,
       controller,
       enabled: false,
-      toggle: () => this.toggleModule(manifest.id),
+      toggle: () => this.toggleModule(manifest.id)
     }
 
     this.modules[manifest.id] = registered
@@ -257,7 +260,6 @@ export class WorldRendererThree extends WorldRendererCommon {
       this.toggleModule(manifest.id, true)
     }
   }
-
 
   /**
    * Enable a module
@@ -405,7 +407,7 @@ export class WorldRendererThree extends WorldRendererCommon {
         self._cameraPositionAccessWarned = true
         console.warn(
           '[WorldRendererThree] Do not set camera.position to world coordinates — it is scene-local. ' +
-          'Use cameraWorldPos and sceneOrigin.update() to move the camera.'
+            'Use cameraWorldPos and sceneOrigin.update() to move the camera.'
         )
       }
     }
@@ -414,7 +416,7 @@ export class WorldRendererThree extends WorldRendererCommon {
         if ((prop === 'x' || prop === 'y' || prop === 'z') && typeof value === 'number' && Math.abs(value) > WORLD_COORD_THRESHOLD) {
           warnOnce()
         }
-        ; (target as any)[prop] = value
+        ;(target as any)[prop] = value
         return true
       },
       get(target, prop, receiver) {
@@ -461,7 +463,12 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
 
   downloadWorldGeometry() {
-    downloadWorldGeometry(this, new THREE.Vector3(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z), this.cameraShake.getBaseRotation(), 'world-geometry.json')
+    downloadWorldGeometry(
+      this,
+      new THREE.Vector3(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z),
+      this.cameraShake.getBaseRotation(),
+      'world-geometry.json'
+    )
   }
 
   updateEntity(e, isPosUpdate = false) {
@@ -508,27 +515,27 @@ export class WorldRendererThree extends WorldRendererCommon {
 
   override watchReactivePlayerState() {
     super.watchReactivePlayerState()
-    this.onReactivePlayerStateUpdated('inWater', (value) => {
+    this.onReactivePlayerStateUpdated('inWater', value => {
       this.skyboxRenderer.updateWaterState(value, this.playerStateReactive.waterBreathing)
     })
-    this.onReactivePlayerStateUpdated('waterBreathing', (value) => {
+    this.onReactivePlayerStateUpdated('waterBreathing', value => {
       this.skyboxRenderer.updateWaterState(this.playerStateReactive.inWater, value)
     })
-    this.onReactivePlayerStateUpdated('ambientLight', (value) => {
+    this.onReactivePlayerStateUpdated('ambientLight', value => {
       if (!value) return
       this.ambientLight.intensity = value * WorldRendererThree.LEGACY_TO_PHYSICAL_LIGHT
     })
-    this.onReactivePlayerStateUpdated('directionalLight', (value) => {
+    this.onReactivePlayerStateUpdated('directionalLight', value => {
       if (!value) return
       this.directionalLight.intensity = value * WorldRendererThree.LEGACY_TO_PHYSICAL_LIGHT
     })
-    this.onReactivePlayerStateUpdated('lookingAtBlock', (value) => {
+    this.onReactivePlayerStateUpdated('lookingAtBlock', value => {
       this.cursorBlock.setHighlightCursorBlock(value ? new Vec3(value.x, value.y, value.z) : null, value?.shapes)
     })
-    this.onReactivePlayerStateUpdated('diggingBlock', (value) => {
+    this.onReactivePlayerStateUpdated('diggingBlock', value => {
       this.cursorBlock.updateBreakAnimation(value ? { x: value.x, y: value.y, z: value.z } : undefined, value?.stage ?? null, value?.mergedShape)
     })
-    this.onReactivePlayerStateUpdated('perspective', (value) => {
+    this.onReactivePlayerStateUpdated('perspective', value => {
       // Update camera perspective when it changes
       const vecPos = new Vec3(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
       this.updateCamera(vecPos, this.cameraShake.getBaseRotation().yaw, this.cameraShake.getBaseRotation().pitch)
@@ -538,10 +545,10 @@ export class WorldRendererThree extends WorldRendererCommon {
 
   override watchReactiveConfig() {
     super.watchReactiveConfig()
-    this.onReactiveConfigUpdated('showChunkBorders', (value) => {
+    this.onReactiveConfigUpdated('showChunkBorders', value => {
       this.updateShowChunksBorder(value)
     })
-    this.onReactiveConfigUpdated('defaultSkybox', (value) => {
+    this.onReactiveConfigUpdated('defaultSkybox', value => {
       this.skyboxRenderer.updateDefaultSkybox(value)
     })
     this.onReactiveConfigUpdated('shaderCubeDebugMode', () => {
@@ -553,7 +560,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     })
 
     let currentHandRenderer = this.displayOptions.inWorldRenderingConfig.handRenderer
-    this.onReactiveConfigUpdated('handRenderer', (value) => {
+    this.onReactiveConfigUpdated('handRenderer', value => {
       if (value === currentHandRenderer) return
       currentHandRenderer = value
       const wasReady = this.holdingBlock.ready
@@ -735,9 +742,12 @@ export class WorldRendererThree extends WorldRendererCommon {
   demoItem() {
     //@ts-expect-error
     const pos = cursorBlockRel(0, 1, 0).position
-    const { mesh } = this.entities.getItemMesh({
-      itemId: 541,
-    }, {})!
+    const { mesh } = this.entities.getItemMesh(
+      {
+        itemId: 541
+      },
+      {}
+    )!
     mesh.position.set(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5)
     // mesh.scale.set(0.5, 0.5, 0.5)
     const helper = new THREE.BoxHelper(mesh, 0xff_ff_00)
@@ -784,9 +794,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     const renderOrder = 500 - chunkDistance
 
     // Cubes in globalBlockBuffer may leave sectionObj.mesh unset.
-    const drawable = sectionObj.mesh
-      ?? sectionObj.shaderMesh
-      ?? sectionObj.children.find(child => child.name === 'mesh' || child.name === 'shaderMesh')
+    const drawable = sectionObj.mesh ?? sectionObj.shaderMesh ?? sectionObj.children.find(child => child.name === 'mesh' || child.name === 'shaderMesh')
     if (drawable) {
       drawable.renderOrder = renderOrder
     }
@@ -831,17 +839,16 @@ export class WorldRendererThree extends WorldRendererCommon {
         // the just-updated section and a stale neighbor (sky-flicker bug).
         const [sx, sy, sz] = key.split(',').map(Number)
         const neighborKeys = [
-          `${sx - 16},${sy},${sz}`, `${sx + 16},${sy},${sz}`,
-          `${sx},${sy - sectionHeight},${sz}`, `${sx},${sy + sectionHeight},${sz}`,
-          `${sx},${sy},${sz - 16}`, `${sx},${sy},${sz + 16}`,
+          `${sx - 16},${sy},${sz}`,
+          `${sx + 16},${sy},${sz}`,
+          `${sx},${sy - sectionHeight},${sz}`,
+          `${sx},${sy + sectionHeight},${sz}`,
+          `${sx},${sy},${sz - 16}`,
+          `${sx},${sy},${sz + 16}`
         ]
         let neighborBusy = false
         for (const neighborKey of neighborKeys) {
-          if (
-            this.sectionsWaiting.has(neighborKey) &&
-            !this.pendingSectionUpdates.has(neighborKey) &&
-            this.sectionObjects[neighborKey]
-          ) {
+          if (this.sectionsWaiting.has(neighborKey) && !this.pendingSectionUpdates.has(neighborKey) && this.sectionObjects[neighborKey]) {
             neighborBusy = true
             break
           }
@@ -875,8 +882,9 @@ export class WorldRendererThree extends WorldRendererCommon {
       const sectionObject = this.chunkMeshManager.updateSection(update.key, update.geometry)
       this.updatePosDataChunk(update.key)
       if (sectionObject) {
-        this.getModule<{ onSectionMeshed?: (key: string, geometry: MesherGeometryOutput, section: typeof sectionObject) => void }>('futuristicReveal')
-          ?.onSectionMeshed?.(update.key, update.geometry, sectionObject)
+        this.getModule<{ onSectionMeshed?: (key: string, geometry: MesherGeometryOutput, section: typeof sectionObject) => void }>(
+          'futuristicReveal'
+        )?.onSectionMeshed?.(update.key, update.geometry, sectionObject)
       }
     }
   }
@@ -890,7 +898,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     }
   }
 
-  handleWorkerMessage(data: { geometry: MesherGeometryOutput, key, type }): void {
+  handleWorkerMessage(data: { geometry: MesherGeometryOutput; key; type }): void {
     if (data.type === 'geometry') {
       const chunkCoords = data.key.split(',')
       const chunkKey = `${chunkCoords[0]},${chunkCoords[2]}`
@@ -917,12 +925,12 @@ export class WorldRendererThree extends WorldRendererCommon {
       const sectionObject = this.chunkMeshManager.updateSection(data.key, data.geometry)
       this.updatePosDataChunk(data.key)
       if (sectionObject) {
-        this.getModule<{ onSectionMeshed?: (key: string, geometry: MesherGeometryOutput, section: typeof sectionObject) => void }>('futuristicReveal')
-          ?.onSectionMeshed?.(data.key, data.geometry, sectionObject)
+        this.getModule<{ onSectionMeshed?: (key: string, geometry: MesherGeometryOutput, section: typeof sectionObject) => void }>(
+          'futuristicReveal'
+        )?.onSectionMeshed?.(data.key, data.geometry, sectionObject)
       }
     }
   }
-
 
   getCameraPosition(target?: THREE.Vector3): THREE.Vector3 {
     return (target ?? this._tmpCameraPos).set(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
@@ -930,11 +938,7 @@ export class WorldRendererThree extends WorldRendererCommon {
 
   getSectionCameraPosition() {
     const pos = this.getCameraPosition()
-    return new Vec3(
-      Math.floor(pos.x / 16),
-      Math.floor(pos.y / 16),
-      Math.floor(pos.z / 16)
-    )
+    return new Vec3(Math.floor(pos.x / 16), Math.floor(pos.y / 16), Math.floor(pos.z / 16))
   }
 
   updateCameraSectionPos() {
@@ -1017,30 +1021,17 @@ export class WorldRendererThree extends WorldRendererCommon {
     }
 
     // Shader cubes in global buffer: tight per-section AABBs (no mesh raycast).
-    const boxHit = this.chunkMeshManager.raycastShaderSectionAABBs(
-      pos,
-      direction,
-      finalDistance,
-      maxCenterDistance,
-    )
+    const boxHit = this.chunkMeshManager.raycastShaderSectionAABBs(pos, direction, finalDistance, maxCenterDistance)
     if (boxHit !== undefined) {
       finalDistance = Math.max(0.5, boxHit - 0.2)
     }
 
-    const legacyGlobalHit = this.chunkMeshManager.raycastGlobalLegacySections(
-      raycaster,
-      pos,
-      maxCenterDistance,
-    )
+    const legacyGlobalHit = this.chunkMeshManager.raycastGlobalLegacySections(raycaster, pos, maxCenterDistance)
     if (legacyGlobalHit !== undefined) {
       finalDistance = Math.max(0.5, legacyGlobalHit - 0.2)
     }
 
-    const finalPos = new Vec3(
-      pos.x + direction.x * finalDistance,
-      pos.y + direction.y * finalDistance,
-      pos.z + direction.z * finalDistance
-    )
+    const finalPos = new Vec3(pos.x + direction.x * finalDistance, pos.y + direction.y * finalDistance, pos.z + direction.z * finalDistance)
 
     return finalPos
   }
@@ -1060,11 +1051,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     }
 
     // Convert world position to scene-relative coordinates
-    const scenePos = new THREE.Vector3(
-      this.sceneOrigin.toSceneX(pos.x),
-      this.sceneOrigin.toSceneY(pos.y),
-      this.sceneOrigin.toSceneZ(pos.z)
-    )
+    const scenePos = new THREE.Vector3(this.sceneOrigin.toSceneX(pos.x), this.sceneOrigin.toSceneY(pos.y), this.sceneOrigin.toSceneZ(pos.z))
 
     // Create raycast arrow
     this.debugRaycastHelper = new THREE.ArrowHelper(
@@ -1154,9 +1141,7 @@ export class WorldRendererThree extends WorldRendererCommon {
 
       this.currentPosTween?.stop()
       // Use instant camera updates (0 delay) in playground mode when camera controls are enabled
-      const tweenDelay = this.displayOptions.inWorldRenderingConfig.instantCameraUpdate
-        ? 0
-        : (this.playerStateUtils.isSpectatingEntity() ? 150 : 50)
+      const tweenDelay = this.displayOptions.inWorldRenderingConfig.instantCameraUpdate ? 0 : this.playerStateUtils.isSpectatingEntity() ? 150 : 50
       this.currentPosTween = new tweenJs.Tween(this.cameraWorldPos)
         .to({ x: pos.x, y: pos.y, z: pos.z }, tweenDelay)
         .onUpdate(() => {
@@ -1178,8 +1163,10 @@ export class WorldRendererThree extends WorldRendererCommon {
         yawOffset = Math.PI * 2
       }
       this.currentRotTween?.stop()
-      this.currentRotTween = new tweenJs.Tween(rotation).to({ pitch, yaw: yaw + yawOffset }, 100)
-        .onUpdate(params => this.cameraShake.setBaseRotation(params.pitch, params.yaw - yawOffset)).start()
+      this.currentRotTween = new tweenJs.Tween(rotation)
+        .to({ pitch, yaw: yaw + yawOffset }, 100)
+        .onUpdate(params => this.cameraShake.setBaseRotation(params.pitch, params.yaw - yawOffset))
+        .start()
     } else {
       this.currentRotTween?.stop()
       this.cameraShake.setBaseRotation(pitch, yaw)
@@ -1188,11 +1175,7 @@ export class WorldRendererThree extends WorldRendererCommon {
       if (perspective === 'third_person_back' || perspective === 'third_person_front') {
         // Use getThirdPersonCamera for proper raycasting with max distance of 4
         const currentWorldPos = new THREE.Vector3(this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
-        const thirdPersonPos = this.getThirdPersonCamera(
-          currentWorldPos,
-          yaw,
-          pitch
-        )
+        const thirdPersonPos = this.getThirdPersonCamera(currentWorldPos, yaw, pitch)
 
         const distance = currentWorldPos.distanceTo(new THREE.Vector3(thirdPersonPos.x, thirdPersonPos.y, thirdPersonPos.z))
         // Apply Z offset based on perspective and calculated distance
@@ -1226,14 +1209,20 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
 
   debugChunksVisibilityOverride() {
-    const { chunksRenderAboveOverride, chunksRenderBelowOverride, chunksRenderDistanceOverride, chunksRenderAboveEnabled, chunksRenderBelowEnabled, chunksRenderDistanceEnabled } = this.reactiveDebugParams
+    const {
+      chunksRenderAboveOverride,
+      chunksRenderBelowOverride,
+      chunksRenderDistanceOverride,
+      chunksRenderAboveEnabled,
+      chunksRenderBelowEnabled,
+      chunksRenderDistanceEnabled
+    } = this.reactiveDebugParams
 
     const sectionHeight = this.getSectionHeight()
     const baseY = this.cameraSectionPos.y * sectionHeight
 
     if (
-      this.displayOptions.inWorldRenderingConfig.enableDebugOverlay &&
-      chunksRenderAboveOverride !== undefined ||
+      (this.displayOptions.inWorldRenderingConfig.enableDebugOverlay && chunksRenderAboveOverride !== undefined) ||
       chunksRenderBelowOverride !== undefined ||
       chunksRenderDistanceOverride !== undefined
     ) {
@@ -1242,11 +1231,19 @@ export class WorldRendererThree extends WorldRendererCommon {
         const [x, y, z] = key.split(',').map(Number)
         const isVisible =
           // eslint-disable-next-line no-constant-binary-expression, sonarjs/no-redundant-boolean
-          (chunksRenderAboveEnabled && chunksRenderAboveOverride !== undefined) ? y <= (baseY + chunksRenderAboveOverride) : true &&
-            // eslint-disable-next-line @stylistic/indent-binary-ops, no-constant-binary-expression, sonarjs/no-redundant-boolean
-            (chunksRenderBelowEnabled && chunksRenderBelowOverride !== undefined) ? y >= (baseY - chunksRenderBelowOverride) : true &&
-              // eslint-disable-next-line @stylistic/indent-binary-ops
-              (chunksRenderDistanceEnabled && chunksRenderDistanceOverride !== undefined) ? Math.abs(y - baseY) <= chunksRenderDistanceOverride : true
+          chunksRenderAboveEnabled && chunksRenderAboveOverride !== undefined
+            ? y <= baseY + chunksRenderAboveOverride
+            : true &&
+                // eslint-disable-next-line @stylistic/indent-binary-ops, no-constant-binary-expression, sonarjs/no-redundant-boolean
+                chunksRenderBelowEnabled &&
+                chunksRenderBelowOverride !== undefined
+              ? y >= baseY - chunksRenderBelowOverride
+              : true &&
+                  // eslint-disable-next-line @stylistic/indent-binary-ops
+                  chunksRenderDistanceEnabled &&
+                  chunksRenderDistanceOverride !== undefined
+                ? Math.abs(y - baseY) <= chunksRenderDistanceOverride
+                : true
 
         object.visible = isVisible
       }
@@ -1265,9 +1262,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.debugChunksVisibilityOverride()
     const start = performance.now()
     this.lastRendered = performance.now()
-    const deltaTime = this.lastRenderTime > 0
-      ? Math.min(Math.max((start - this.lastRenderTime) / 1000, 0), 0.1)
-      : 1 / 60
+    const deltaTime = this.lastRenderTime > 0 ? Math.min(Math.max((start - this.lastRenderTime) / 1000, 0), 0.1) : 1 / 60
     this.lastRenderTime = start
     this.cursorBlock.render()
     this.updateSectionOffsets()
@@ -1291,7 +1286,10 @@ export class WorldRendererThree extends WorldRendererCommon {
     }
 
     // eslint-disable-next-line @typescript-eslint/non-nullable-type-assertion-style
-    const cam = this.cameraGroupVr instanceof THREE.Group ? this.cameraGroupVr.children.find(child => child instanceof THREE.PerspectiveCamera) as THREE.PerspectiveCamera : this.camera
+    const cam =
+      this.cameraGroupVr instanceof THREE.Group
+        ? (this.cameraGroupVr.children.find(child => child instanceof THREE.PerspectiveCamera) as THREE.PerspectiveCamera)
+        : this.camera
     // Flush buffered section geometry before reveal tick (calls onSectionMeshed synchronously in handleWorkerMessage).
     this.applyPendingSectionUpdates()
     const sciFiNow = performance.now()
@@ -1324,12 +1322,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.chunkMeshManager.setLegacyCameraOrigin(camX, camY, camZ)
     this.chunkMeshManager.updateCullDirtyFromCamera(cam, camX, camY, camZ)
     if (this.chunkMeshManager.cullDirty) {
-      this.chunkMeshManager.updateSectionCullAndSort(
-        cam,
-        this.cameraWorldPos.x,
-        this.cameraWorldPos.y,
-        this.cameraWorldPos.z,
-      )
+      this.chunkMeshManager.updateSectionCullAndSort(cam, this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
       this.chunkMeshManager.clearCullDirty()
     }
     this.renderer.render(this.scene, cam)
@@ -1365,14 +1358,14 @@ export class WorldRendererThree extends WorldRendererCommon {
       this.chunkMeshManager.recordRenderTime(totalTime)
     }
     this.renderTimeAvgCount++
-    this.renderTimeAvg = ((this.renderTimeAvg * (this.renderTimeAvgCount - 1)) + totalTime) / this.renderTimeAvgCount
+    this.renderTimeAvg = (this.renderTimeAvg * (this.renderTimeAvgCount - 1) + totalTime) / this.renderTimeAvgCount
     this.renderTimeMax = Math.max(this.renderTimeMax, totalTime)
 
     this.performanceMonitor.onFrame({
       totalMs: totalTime,
       entitiesMs: entitiesRenderMs,
       loadedTextureCount: this.renderer.info.memory.textures,
-      fps: this.lastFps,
+      fps: this.lastFps
     })
   }
 
@@ -1390,8 +1383,7 @@ export class WorldRendererThree extends WorldRendererCommon {
       let skinUrl = decodedData.textures?.SKIN?.url
       const { skinTexturesProxy } = this.worldRendererConfig
       if (skinTexturesProxy) {
-        skinUrl = skinUrl?.replace('http://textures.minecraft.net/', skinTexturesProxy)
-          .replace('https://textures.minecraft.net/', skinTexturesProxy)
+        skinUrl = skinUrl?.replace('http://textures.minecraft.net/', skinTexturesProxy).replace('https://textures.minecraft.net/', skinTexturesProxy)
       }
 
       const mesh = getMesh(this, skinUrl, armorModel.head as any)
@@ -1404,11 +1396,7 @@ export class WorldRendererThree extends WorldRendererCommon {
       group.add(mesh)
       this.sceneOrigin.track(group)
       group.position.set(position.x + 0.5, position.y + 0.045, position.z + 0.5)
-      group.rotation.set(
-        0,
-        -THREE.MathUtils.degToRad(rotation * (isWall ? 90 : 45 / 2)),
-        0
-      )
+      group.rotation.set(0, -THREE.MathUtils.degToRad(rotation * (isWall ? 90 : 45 / 2)), 0)
       group.scale.set(0.8, 0.8, 0.8)
       return group
     } catch (err) {
@@ -1423,7 +1411,8 @@ export class WorldRendererThree extends WorldRendererCommon {
     }
   }
 
-  rerenderAllChunks() { // todo not clear what to do with loading chunks
+  rerenderAllChunks() {
+    // todo not clear what to do with loading chunks
     for (const key of Object.keys(this.sectionObjects)) {
       const [x, y, z] = key.split(',').map(Number)
       this.setSectionDirty(new Vec3(x, y, z))
@@ -1457,12 +1446,14 @@ export class WorldRendererThree extends WorldRendererCommon {
 
   getLoadedChunksRelative(pos: Vec3, includeY = false) {
     const [currentX, currentY, currentZ] = sectionPos(pos)
-    return Object.fromEntries(Object.entries(this.sectionObjects).map(([key, o]) => {
-      const [xRaw, yRaw, zRaw] = key.split(',').map(Number)
-      const [x, y, z] = sectionPos({ x: xRaw, y: yRaw, z: zRaw })
-      const setKey = includeY ? `${x - currentX},${y - currentY},${z - currentZ}` : `${x - currentX},${z - currentZ}`
-      return [setKey, o]
-    }))
+    return Object.fromEntries(
+      Object.entries(this.sectionObjects).map(([key, o]) => {
+        const [xRaw, yRaw, zRaw] = key.split(',').map(Number)
+        const [x, y, z] = sectionPos({ x: xRaw, y: yRaw, z: zRaw })
+        const setKey = includeY ? `${x - currentX},${y - currentY},${z - currentZ}` : `${x - currentX},${z - currentZ}`
+        return [setKey, o]
+      })
+    )
   }
 
   readdChunks() {
@@ -1607,11 +1598,7 @@ export class WorldRendererThree extends WorldRendererCommon {
       // Apply the offset to the section object (compose with camera-relative base position)
       const section = this.sectionObjects[key]
       if (section) {
-        section.position.set(
-          anim.currentOffsetX,
-          anim.currentOffsetY,
-          anim.currentOffsetZ
-        )
+        section.position.set(anim.currentOffsetX, anim.currentOffsetY, anim.currentOffsetZ)
         section.updateMatrix()
       }
     }

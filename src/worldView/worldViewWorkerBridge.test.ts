@@ -6,7 +6,7 @@ describe('WorldViewWorker.restoreTransferred bridge', () => {
     const addSpy = vi.fn()
     const worker = {
       addEventListener: addSpy,
-      removeEventListener: vi.fn(),
+      removeEventListener: vi.fn()
     } as unknown as Worker
 
     WorldViewWorker.restoreTransferred({}, worker)
@@ -25,7 +25,7 @@ describe('WorldViewWorker.restoreTransferred bridge', () => {
       addEventListener: (_type: string, handler: (event: MessageEvent) => void) => {
         listeners.push(handler)
       },
-      removeEventListener: () => {},
+      removeEventListener: () => {}
     } as unknown as Worker
 
     const first = WorldViewWorker.restoreTransferred({}, worker)
@@ -46,8 +46,8 @@ describe('WorldViewWorker.restoreTransferred bridge', () => {
         class: WorldViewWorker.restorerName,
         type: 'event',
         eventName: 'loadChunk',
-        args: [{ x: 0, z: 0, chunk: {}, worldConfig: {}, isLightUpdate: false }],
-      },
+        args: [{ x: 0, z: 0, chunk: {}, worldConfig: {}, isLightUpdate: false }]
+      }
     } as MessageEvent)
 
     expect(firstCalls).toBe(0)

@@ -78,11 +78,7 @@ export class MenuBackgroundRenderer {
           this.abortController.signal
         )
       case 'worldBlocks':
-        return new WorldBlocksMenuBackground(
-          this.documentRenderer,
-          this.options,
-          this.abortController.signal
-        )
+        return new WorldBlocksMenuBackground(this.documentRenderer, this.options, this.abortController.signal)
       default:
         return new ClassicMenuBackground(this.documentRenderer)
     }

@@ -14,7 +14,7 @@ export { preflatBlockCalculation, resolveBlockPropertiesForMeshing } from './blo
 
 // Log function disabled by default for zero overhead in production hot loops
 const ENABLE_TS_LOGS = false
-const tsLog = ENABLE_TS_LOGS ? console.log : () => { }
+const tsLog = ENABLE_TS_LOGS ? console.log : () => {}
 
 let blockProvider: WorldBlockProvider
 
@@ -34,12 +34,12 @@ export type MesherGeometryBucket = {
   indicesCount: number
 }
 
-function vertexTintAoColor (
+function vertexTintAoColor(
   tint: [number, number, number],
   ao: number,
   faceDir: [number, number, number],
   shadingTheme: 'vanilla' | 'high-contrast',
-  cardinalLight: string,
+  cardinalLight: string
 ): [number, number, number] {
   const sideShading = getSideShading(faceDir, shadingTheme, cardinalLight)
   if (shadingTheme === 'high-contrast') {
@@ -50,7 +50,7 @@ function vertexTintAoColor (
   return [tint[0] * f, tint[1] * f, tint[2] * f]
 }
 
-export function isSemiTransparentBlockName (name: string): boolean {
+export function isSemiTransparentBlockName(name: string): boolean {
   return semiTransparentBlocks.includes(name)
 }
 
@@ -94,7 +94,8 @@ function tintToGl(tint) {
 function getLiquidRenderHeight(world: World, block: WorldBlock | null, type: number, pos: Vec3, isWater: boolean, isRealWater: boolean) {
   if ((isWater && !isRealWater) || (block && isBlockWaterlogged(block))) return 8 / 9
   if (!block || block.type !== type) return 1 / 9
-  if (block.metadata === 0) { // source block
+  if (block.metadata === 0) {
+    // source block
     const blockAbove = world.getBlock(pos.offset(0, 1, 0))
     if (blockAbove && blockAbove.type === type) return 1
     return 8 / 9
@@ -102,15 +103,16 @@ function getLiquidRenderHeight(world: World, block: WorldBlock | null, type: num
   return ((block.metadata >= 8 ? 8 : 7 - block.metadata) + 1) / 9
 }
 
-
 const isCube = (block: Block) => {
   if (!block || block.transparent) return false
   if (block.isCube) return true
   if (!block.models?.length || block.models.length !== 1) return false
   // all variants
-  return block.models[0].every(v => v.elements.every(e => {
-    return e.from[0] === 0 && e.from[1] === 0 && e.from[2] === 0 && e.to[0] === 16 && e.to[1] === 16 && e.to[2] === 16
-  }))
+  return block.models[0].every(v =>
+    v.elements.every(e => {
+      return e.from[0] === 0 && e.from[1] === 0 && e.from[2] === 0 && e.to[0] === 16 && e.to[1] === 16 && e.to[2] === 16
+    })
+  )
 }
 
 const getVec = (v: Vec3, dir: Vec3) => {
@@ -120,7 +122,17 @@ const getVec = (v: Vec3, dir: Vec3) => {
   return v.plus(dir)
 }
 
-function renderLiquid(world: World, cursor: Vec3, texture: any | undefined, type: number, biome: string, water: boolean, bucket: MesherGeometryBucket, attr: MesherGeometryOutput, isRealWater: boolean) {
+function renderLiquid(
+  world: World,
+  cursor: Vec3,
+  texture: any | undefined,
+  type: number,
+  biome: string,
+  water: boolean,
+  bucket: MesherGeometryBucket,
+  attr: MesherGeometryOutput,
+  isRealWater: boolean
+) {
   const heights: number[] = []
   for (let z = -1; z <= 1; z++) {
     for (let x = -1; x <= 1; x++) {
@@ -140,7 +152,7 @@ function renderLiquid(world: World, cursor: Vec3, texture: any | undefined, type
     const { dir, corners, mask1, mask2 } = elemFaces[face]
     const isUp = dir[1] === 1
 
-    const neighborPos = cursor.offset(...dir as [number, number, number])
+    const neighborPos = cursor.offset(...(dir as [number, number, number]))
     const neighbor = world.getBlock(neighborPos)
     if (!neighbor) continue
     if (neighbor.type === type || (water && (neighbor.name === 'water' || isBlockWaterlogged(neighbor)))) continue
@@ -159,13 +171,13 @@ function renderLiquid(world: World, cursor: Vec3, texture: any | undefined, type
       const tiles = attr.tiles as Tiles
       tiles[`${cursor.x},${cursor.y},${cursor.z}`] ??= {
         block: 'water',
-        faces: [],
+        faces: []
       }
       tiles[`${cursor.x},${cursor.y},${cursor.z}`].faces.push({
         face,
         neighbor: `${neighborPos.x},${neighborPos.y},${neighborPos.z}`,
         side: 0, // todo
-        textureIndex: 0,
+        textureIndex: 0
         // texture: eFace.texture.name,
       })
     }
@@ -200,7 +212,7 @@ function renderLiquid(world: World, cursor: Vec3, texture: any | undefined, type
         const side1Dir: [number, number, number] = [dx * mask1[0], dy * mask1[1], dz * mask1[2]]
         const side2Dir: [number, number, number] = [dx * mask2[0], dy * mask2[1], dz * mask2[2]]
 
-        const dirVec = new Vec3(...dir as [number, number, number])
+        const dirVec = new Vec3(...(dir as [number, number, number]))
 
         const side1LightDir = getVec(new Vec3(...side1Dir), dirVec)
         const side2DirLight = getVec(new Vec3(...side2Dir), dirVec)
@@ -256,7 +268,7 @@ const identicalCull = (currentElement: BlockElement, neighbor: Block, direction:
     '1,0,0': 'east',
     '-1,0,0': 'west',
     '0,0,1': 'south',
-    '0,0,-1': 'north',
+    '0,0,-1': 'north'
   }[dirStr]!
   const elemCompareForm = {
     '0,1,0': (e: BlockElement) => `${e.from[0]},${e.from[2]}:${e.to[0]},${e.to[2]}`,
@@ -264,7 +276,7 @@ const identicalCull = (currentElement: BlockElement, neighbor: Block, direction:
     '1,0,0': (e: BlockElement) => `${e.from[2]},${e.from[1]}:${e.to[2]},${e.to[1]}`,
     '-1,0,0': (e: BlockElement) => `${e.to[2]},${e.to[1]}:${e.from[2]},${e.from[1]}`,
     '0,0,1': (e: BlockElement) => `${e.from[1]},${e.from[2]}:${e.to[1]},${e.to[2]}`,
-    '0,0,-1': (e: BlockElement) => `${e.to[1]},${e.to[2]}:${e.from[1]},${e.from[2]}`,
+    '0,0,-1': (e: BlockElement) => `${e.to[1]},${e.to[2]}:${e.from[1]},${e.from[2]}`
   }[dirStr]!
   const elementEdgeValidator = {
     '0,1,0': (e: BlockElement) => currentElement.from[1] === 0 && e.to[2] === 16,
@@ -272,7 +284,7 @@ const identicalCull = (currentElement: BlockElement, neighbor: Block, direction:
     '1,0,0': (e: BlockElement) => currentElement.from[0] === 0 && e.to[1] === 16,
     '-1,0,0': (e: BlockElement) => currentElement.from[0] === 0 && e.to[1] === 16,
     '0,0,1': (e: BlockElement) => currentElement.from[2] === 0 && e.to[0] === 16,
-    '0,0,-1': (e: BlockElement) => currentElement.from[2] === 0 && e.to[0] === 16,
+    '0,0,-1': (e: BlockElement) => currentElement.from[2] === 0 && e.to[0] === 16
   }[dirStr]!
   const useVar = 0
   const models = neighbor.models?.map(m => m[useVar] ?? m[0]) ?? []
@@ -288,7 +300,18 @@ const identicalCull = (currentElement: BlockElement, neighbor: Block, direction:
 
 let needSectionRecomputeOnChange = false
 
-function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: boolean, bucket: MesherGeometryBucket, attr: MesherGeometryOutput, globalMatrix: any, globalShift: any, block: Block, biome: string) {
+function renderElement(
+  world: World,
+  cursor: Vec3,
+  element: BlockElement,
+  doAO: boolean,
+  bucket: MesherGeometryBucket,
+  attr: MesherGeometryOutput,
+  globalMatrix: any,
+  globalShift: any,
+  block: Block,
+  biome: string
+) {
   const position = cursor
   // const key = `${position.x},${position.y},${position.z}`
   // if (!globalThis.allowedBlocks.includes(key)) return
@@ -335,9 +358,7 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
       if (eFace.tintindex === 0) {
         if (block.name === 'redstone_wire') {
           tint = tints.redstone[`${block.getProperties().power}`]
-        } else if (block.name === 'birch_leaves' ||
-          block.name === 'spruce_leaves' ||
-          block.name === 'lily_pad') {
+        } else if (block.name === 'birch_leaves' || block.name === 'spruce_leaves' || block.name === 'lily_pad') {
           tint = tints.constant[block.name]
         } else if (block.name.includes('leaves') || block.name === 'vine') {
           tint = tints.foliage[biome]
@@ -352,31 +373,22 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
     if (face === 'down') {
       r += 180
     }
-    const uvcs = Math.cos(r * Math.PI / 180)
-    const uvsn = -Math.sin(r * Math.PI / 180)
+    const uvcs = Math.cos((r * Math.PI) / 180)
+    const uvsn = -Math.sin((r * Math.PI) / 180)
 
     let localMatrix = null as any
     let localShift = null as any
 
     if (element.rotation && !needTiles) {
       // Rescale support for block model rotations
-      localMatrix = buildRotationMatrix(
-        element.rotation.axis,
-        element.rotation.angle
-      )
+      localMatrix = buildRotationMatrix(element.rotation.axis, element.rotation.angle)
 
-      localShift = vecsub3(
-        element.rotation.origin,
-        matmul3(
-          localMatrix,
-          element.rotation.origin
-        )
-      )
+      localShift = vecsub3(element.rotation.origin, matmul3(localMatrix, element.rotation.origin))
 
       // Apply rescale if specified
       if (element.rotation.rescale) {
         const FIT_TO_BLOCK_SCALE_MULTIPLIER = 2 - Math.sqrt(2)
-        const angleRad = element.rotation.angle * Math.PI / 180
+        const angleRad = (element.rotation.angle * Math.PI) / 180
         const scale = Math.abs(Math.sin(angleRad)) * FIT_TO_BLOCK_SCALE_MULTIPLIER
 
         // Get axis vector components (1 for the rotation axis, 0 for others)
@@ -395,13 +407,7 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
         localMatrix = matmulmat3(localMatrix, scaleMatrix)
 
         // Recalculate shift with the new matrix
-        localShift = vecsub3(
-          element.rotation.origin,
-          matmul3(
-            localMatrix,
-            element.rotation.origin
-          )
-        )
+        localShift = vecsub3(element.rotation.origin, matmul3(localMatrix, element.rotation.origin))
       }
     }
 
@@ -411,22 +417,15 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
     const baseChannels = world.getChannelLightNorm(neighborPos)
     const faceDir = dir as [number, number, number]
     for (const pos of corners) {
-      let vertex = [
-        (pos[0] ? maxx : minx),
-        (pos[1] ? maxy : miny),
-        (pos[2] ? maxz : minz)
-      ]
+      let vertex = [pos[0] ? maxx : minx, pos[1] ? maxy : miny, pos[2] ? maxz : minz]
 
-      if (!needTiles) { // 10%
+      if (!needTiles) {
+        // 10%
         vertex = vecadd3(matmul3(localMatrix, vertex), localShift)
         vertex = vecadd3(matmul3(globalMatrix, vertex), globalShift)
         vertex = vertex.map(v => v / 16)
 
-        const worldPos = [
-          vertex[0] + (cursor.x & 15) - 8,
-          vertex[1] + (cursor.y & 15) - 8,
-          vertex[2] + (cursor.z & 15) - 8
-        ]
+        const worldPos = [vertex[0] + (cursor.x & 15) - 8, vertex[1] + (cursor.y & 15) - 8, vertex[2] + (cursor.z & 15) - 8]
 
         tsLog(`[TS]     Corner ${pos.join(',')}: vertex=[${vertex.map(v => v.toFixed(3)).join(',')}], worldPos=[${worldPos.map(v => v.toFixed(3)).join(',')}]`)
 
@@ -438,7 +437,9 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
         const basev = (pos[3] - 0.5) * uvsn + (pos[4] - 0.5) * uvcs + 0.5
         const finalU = baseu * su + u
         const finalV = basev * sv + v
-        tsLog(`[TS]       UV: cornerUV=[${pos[3]},${pos[4]}], baseUV=[${baseu.toFixed(6)},${basev.toFixed(6)}], finalUV=[${finalU.toFixed(6)},${finalV.toFixed(6)}], texture=[u=${u},v=${v},su=${su},sv=${sv}], rotation=${r}`)
+        tsLog(
+          `[TS]       UV: cornerUV=[${pos[3]},${pos[4]}], baseUV=[${baseu.toFixed(6)},${basev.toFixed(6)}], finalUV=[${finalU.toFixed(6)},${finalV.toFixed(6)}], texture=[u=${u},v=${v},su=${su},sv=${sv}], rotation=${r}`
+        )
         bucket.uvs.push(finalU, finalV)
       }
 
@@ -478,7 +479,7 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
         const side2Block = world.shouldMakeAo(side2) ? 1 : 0
         const cornerBlock = world.shouldMakeAo(corner) ? 1 : 0
 
-        ao = (side1Block && side2Block) ? 0 : (3 - (side1Block + side2Block + cornerBlock))
+        ao = side1Block && side2Block ? 0 : 3 - (side1Block + side2Block + cornerBlock)
         aos.push(ao)
 
         const cornerIdx = aos.length - 1
@@ -499,7 +500,7 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
       const tiles = attr.tiles as Tiles
       tiles[`${cursor.x},${cursor.y},${cursor.z}`] ??= {
         block: block.name,
-        faces: [],
+        faces: []
       }
       const needsOnlyOneFace = false
       const isTilesEmpty = tiles[`${cursor.x},${cursor.y},${cursor.z}`].faces.length < 1
@@ -512,7 +513,7 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
           light: Math.max(baseChannels.block, baseChannels.sky),
           tint: lightWithColor,
           //@ts-expect-error debug prop
-          texture: eFace.texture.debugName || block.name,
+          texture: eFace.texture.debugName || block.name
         } satisfies BlockType['faces'][number])
       }
     }
@@ -544,13 +545,7 @@ function renderElement(world: World, cursor: Vec3, element: BlockElement, doAO: 
   }
 }
 
-const ALWAYS_WATERLOGGED = new Set([
-  'seagrass',
-  'tall_seagrass',
-  'kelp',
-  'kelp_plant',
-  'bubble_column'
-])
+const ALWAYS_WATERLOGGED = new Set(['seagrass', 'tall_seagrass', 'kelp', 'kelp_plant', 'bubble_column'])
 const isBlockWaterlogged = (block: Block) => {
   return block.getProperties().waterlogged === true || block.getProperties().waterlogged === 'true' || ALWAYS_WATERLOGGED.has(block.name)
 }
@@ -598,7 +593,7 @@ export function getSectionGeometry(sx: number, sy: number, sz: number, world: Wo
     blockLights: attr.blockLights as number[],
     uvs: attr.uvs as number[],
     indices: attr.indices as number[],
-    indicesCount: attr.indicesCount,
+    indicesCount: attr.indicesCount
   }
   const blendBucket: MesherGeometryBucket = {
     positions: [],
@@ -608,7 +603,7 @@ export function getSectionGeometry(sx: number, sy: number, sz: number, world: Wo
     blockLights: [],
     uvs: [],
     indices: [],
-    indicesCount: 0,
+    indicesCount: 0
   }
 
   const cursor = new Vec3(0, 0, 0)
@@ -620,7 +615,8 @@ export function getSectionGeometry(sx: number, sy: number, sz: number, world: Wo
         collectBlockEntityMetadata(block, cursor.x, cursor.y, cursor.z, attr, { disableBlockEntityTextures: world.config.disableBlockEntityTextures }, world)
         const biome = block.biome.name
 
-        if (world.preflat) { // 10% perf
+        if (world.preflat) {
+          // 10% perf
           const patchProperties = preflatBlockCalculation(block, world, cursor)
           if (patchProperties) {
             block._originalProperties ??= block._properties
@@ -672,9 +668,9 @@ export function getSectionGeometry(sx: number, sy: number, sz: number, world: Wo
             let globalShift = null as any
             for (const axis of ['x', 'y', 'z'] as const) {
               if (axis in model) {
-                globalMatrix = globalMatrix ?
-                  matmulmat3(globalMatrix, buildRotationMatrix(axis, -(model[axis] ?? 0))) :
-                  buildRotationMatrix(axis, -(model[axis] ?? 0))
+                globalMatrix = globalMatrix
+                  ? matmulmat3(globalMatrix, buildRotationMatrix(axis, -(model[axis] ?? 0)))
+                  : buildRotationMatrix(axis, -(model[axis] ?? 0))
               }
             }
             if (globalMatrix) {
@@ -731,9 +727,7 @@ export function getSectionGeometry(sx: number, sy: number, sz: number, world: Wo
       skyLights: new Float32Array(blendBucket.skyLights),
       blockLights: new Float32Array(blendBucket.blockLights),
       uvs: new Float32Array(blendBucket.uvs),
-      indices: blendUsing32
-        ? new Uint32Array(blendBucket.indices)
-        : new Uint16Array(blendBucket.indices),
+      indices: blendUsing32 ? new Uint32Array(blendBucket.indices) : new Uint16Array(blendBucket.indices)
     }
   }
 
@@ -757,20 +751,23 @@ export function getSectionGeometry(sx: number, sy: number, sz: number, world: Wo
 
 // copied from three.js
 function arrayNeedsUint32(array) {
-
   // assumes larger values usually on last
 
   for (let i = array.length - 1; i >= 0; --i) {
-
     if (array[i] >= 65_535) return true // account for PRIMITIVE_RESTART_FIXED_INDEX, #24565
-
   }
 
   return false
-
 }
 
-export const setBlockStatesData = (blockstatesModels, blocksAtlas: any, _needTiles = false, useUnknownBlockModel = true, version = 'latest', mcData = (globalThis as any).mcData) => {
+export const setBlockStatesData = (
+  blockstatesModels,
+  blocksAtlas: any,
+  _needTiles = false,
+  useUnknownBlockModel = true,
+  version = 'latest',
+  mcData = (globalThis as any).mcData
+) => {
   blockProvider = worldBlockProvider(blockstatesModels, blocksAtlas, version)
   globalThis.blockProvider = blockProvider
   if (useUnknownBlockModel) {
@@ -806,7 +803,7 @@ export const setBlockStatesData = (blockstatesModels, blocksAtlas: any, _needTil
 
 export function computeWireframeEdgesJS(positions: Float32Array | number[], indices: Uint32Array | Uint16Array | number[]): Float32Array {
   const pos = positions instanceof Float32Array ? positions : new Float32Array(positions as number[])
-  const idx = indices instanceof Uint32Array ? indices : (indices instanceof Uint16Array ? new Uint32Array(indices) : new Uint32Array(indices as number[]))
+  const idx = indices instanceof Uint32Array ? indices : indices instanceof Uint16Array ? new Uint32Array(indices) : new Uint32Array(indices as number[])
 
   const linePositions: number[] = []
   const edgeSet = new Set<number>()
@@ -824,13 +821,7 @@ export function computeWireframeEdgesJS(positions: Float32Array | number[], indi
   return new Float32Array(linePositions)
 }
 
-function addEdgeJS(
-  positions: Float32Array,
-  i0: number,
-  i1: number,
-  linePositions: number[],
-  edgeSet: Set<number>
-): void {
+function addEdgeJS(positions: Float32Array, i0: number, i1: number, linePositions: number[], edgeSet: Set<number>): void {
   const minI = i0 < i1 ? i0 : i1
   const maxI = i0 < i1 ? i1 : i0
   // Pack two indices into a single number (safe while indices < 2^24 — far above per-section vertex counts).
@@ -839,8 +830,5 @@ function addEdgeJS(
   if (edgeSet.has(key)) return
   edgeSet.add(key)
 
-  linePositions.push(
-    positions[i0 * 3]!, positions[i0 * 3 + 1]!, positions[i0 * 3 + 2]!,
-    positions[i1 * 3]!, positions[i1 * 3 + 1]!, positions[i1 * 3 + 2]!
-  )
+  linePositions.push(positions[i0 * 3]!, positions[i0 * 3 + 1]!, positions[i0 * 3 + 2]!, positions[i1 * 3]!, positions[i1 * 3 + 1]!, positions[i1 * 3 + 2]!)
 }

@@ -12,21 +12,15 @@ import { Canvas2DOverlay } from './canvas2DOverlay'
 // STEP 1: Create the overlay
 // ============================================
 export function addBlackBoxOverlay(documentRenderer: DocumentRenderer) {
-  const overlay = new Canvas2DOverlay(
-    documentRenderer.renderer,
-    documentRenderer.canvas
-  )
+  const overlay = new Canvas2DOverlay(documentRenderer.renderer, documentRenderer.canvas)
 
   // ============================================
   // STEP 2: Hook into the render loop
   // ============================================
-  documentRenderer.onRender.push((sizeChanged) => {
+  documentRenderer.onRender.push(sizeChanged => {
     // Update overlay camera when canvas size changes
     if (sizeChanged) {
-      overlay.updateSize(
-        documentRenderer.canvas.width,
-        documentRenderer.canvas.height
-      )
+      overlay.updateSize(documentRenderer.canvas.width, documentRenderer.canvas.height)
     }
 
     // Clear previous frame's overlay
@@ -42,12 +36,12 @@ export function addBlackBoxOverlay(documentRenderer: DocumentRenderer) {
     const y = documentRenderer.canvas.height - boxSize - 10 // 10px from bottom
 
     overlay.drawRect(
-      x,        // x position
-      y,        // y position
-      boxSize,  // width
-      boxSize,  // height
+      x, // x position
+      y, // y position
+      boxSize, // width
+      boxSize, // height
       0x000000, // color (black)
-      0.8       // opacity (80%)
+      0.8 // opacity (80%)
     )
 
     // ============================================
@@ -81,12 +75,9 @@ const overlay = addBlackBoxOverlay(documentRenderer)
 // Add More Elements
 // ============================================
 export function addMultipleElements(documentRenderer: DocumentRenderer) {
-  const overlay = new Canvas2DOverlay(
-    documentRenderer.renderer,
-    documentRenderer.canvas
-  )
+  const overlay = new Canvas2DOverlay(documentRenderer.renderer, documentRenderer.canvas)
 
-  documentRenderer.onRender.push((sizeChanged) => {
+  documentRenderer.onRender.push(sizeChanged => {
     if (sizeChanged) {
       overlay.updateSize(documentRenderer.canvas.width, documentRenderer.canvas.height)
     }
@@ -95,14 +86,7 @@ export function addMultipleElements(documentRenderer: DocumentRenderer) {
 
     // Bottom-left black box
     const boxSize = 100
-    overlay.drawRect(
-      10,
-      documentRenderer.canvas.height - boxSize - 10,
-      boxSize,
-      boxSize,
-      0x000000,
-      0.8
-    )
+    overlay.drawRect(10, documentRenderer.canvas.height - boxSize - 10, boxSize, boxSize, 0x000000, 0.8)
 
     // Add label inside the box
     overlay.drawText('Info', 15, documentRenderer.canvas.height - boxSize, {
@@ -143,16 +127,10 @@ export function addMultipleElements(documentRenderer: DocumentRenderer) {
 // ============================================
 // Dynamic Data Example
 // ============================================
-export function addDynamicOverlay(
-  documentRenderer: DocumentRenderer,
-  getData: () => { fps: number; x: number; y: number; z: number }
-) {
-  const overlay = new Canvas2DOverlay(
-    documentRenderer.renderer,
-    documentRenderer.canvas
-  )
+export function addDynamicOverlay(documentRenderer: DocumentRenderer, getData: () => { fps: number; x: number; y: number; z: number }) {
+  const overlay = new Canvas2DOverlay(documentRenderer.renderer, documentRenderer.canvas)
 
-  documentRenderer.onRender.push((sizeChanged) => {
+  documentRenderer.onRender.push(sizeChanged => {
     if (sizeChanged) {
       overlay.updateSize(documentRenderer.canvas.width, documentRenderer.canvas.height)
     }
@@ -207,10 +185,7 @@ export function addDynamicOverlay(
 import { WebGLDirect2DOverlay } from './canvas2DOverlay'
 
 export function addHighPerformanceOverlay(documentRenderer: DocumentRenderer) {
-  const overlay = new WebGLDirect2DOverlay(
-    documentRenderer.renderer,
-    documentRenderer.canvas
-  )
+  const overlay = new WebGLDirect2DOverlay(documentRenderer.renderer, documentRenderer.canvas)
 
   documentRenderer.onRender.push(() => {
     // Direct WebGL rendering - very fast!
@@ -222,21 +197,16 @@ export function addHighPerformanceOverlay(documentRenderer: DocumentRenderer) {
     const y = documentRenderer.canvas.height - boxSize - 10
 
     overlay.drawRect(
-      x,        // x
-      y,        // y
-      boxSize,  // width
-      boxSize,  // height
-      0,        // red (0-1)
-      0,        // green (0-1)
-      0,        // blue (0-1)
-      0.8       // alpha (0-1)
+      x, // x
+      y, // y
+      boxSize, // width
+      boxSize, // height
+      0, // red (0-1)
+      0, // green (0-1)
+      0, // blue (0-1)
+      0.8 // alpha (0-1)
     )
   })
 
   return overlay
 }
-
-
-
-
-

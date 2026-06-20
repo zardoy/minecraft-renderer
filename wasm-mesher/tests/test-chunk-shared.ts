@@ -26,17 +26,8 @@ export async function testChunkShared(wasm: typeof import('../pkg/wasm_mesher.js
   // console.log(`   Total blocks: ${conversionResult.blockStates.length.toLocaleString()}`)
   // console.log(`   Non-air blocks: ${conversionResult.blockCount.toLocaleString()}\n`)
 
-  const {
-    blockStates,
-    blockLight,
-    skyLight,
-    biomesArray,
-    invisibleBlocks,
-    transparentBlocks,
-    noAoBlocks,
-    cullIdenticalBlocks,
-    occludingBlocks
-  } = conversionResult
+  const { blockStates, blockLight, skyLight, biomesArray, invisibleBlocks, transparentBlocks, noAoBlocks, cullIdenticalBlocks, occludingBlocks } =
+    conversionResult
 
   // Run WASM mesher
   console.log('Running WASM mesher...')
@@ -45,28 +36,53 @@ export async function testChunkShared(wasm: typeof import('../pkg/wasm_mesher.js
 
   if (doWarmup) {
     wasm.generate_geometry(
-      0, WORLD_MIN_Y, 0, WORLD_HEIGHT,
-      WORLD_MIN_Y, WORLD_MIN_Y + WORLD_HEIGHT,
+      0,
       WORLD_MIN_Y,
-      blockStates, blockLight, skyLight, biomesArray,
-      invisibleBlocks, transparentBlocks, noAoBlocks, cullIdenticalBlocks, occludingBlocks,
-      true, false, 15
+      0,
+      WORLD_HEIGHT,
+      WORLD_MIN_Y,
+      WORLD_MIN_Y + WORLD_HEIGHT,
+      WORLD_MIN_Y,
+      blockStates,
+      blockLight,
+      skyLight,
+      biomesArray,
+      invisibleBlocks,
+      transparentBlocks,
+      noAoBlocks,
+      cullIdenticalBlocks,
+      occludingBlocks,
+      true,
+      false,
+      15
     )
   }
 
   const result = wasm.generate_geometry(
-    0, WORLD_MIN_Y, 0, WORLD_HEIGHT,
-    WORLD_MIN_Y, WORLD_MIN_Y + WORLD_HEIGHT,
+    0,
     WORLD_MIN_Y,
-    blockStates, blockLight, skyLight, biomesArray,
-    invisibleBlocks, transparentBlocks, noAoBlocks, cullIdenticalBlocks, occludingBlocks,
-    true, false, 15
+    0,
+    WORLD_HEIGHT,
+    WORLD_MIN_Y,
+    WORLD_MIN_Y + WORLD_HEIGHT,
+    WORLD_MIN_Y,
+    blockStates,
+    blockLight,
+    skyLight,
+    biomesArray,
+    invisibleBlocks,
+    transparentBlocks,
+    noAoBlocks,
+    cullIdenticalBlocks,
+    occludingBlocks,
+    true,
+    false,
+    15
   )
 
   // Check for non-zero block states
   const nonZeroBlocks = Array.from(blockStates).filter(b => b !== 0).length
   console.log(`  Non-zero block states: ${nonZeroBlocks.toLocaleString()}`)
-
 
   const mesherEnd = performance.now()
   const mesherTime = mesherEnd - mesherStart
@@ -83,7 +99,9 @@ export async function testChunkShared(wasm: typeof import('../pkg/wasm_mesher.js
   console.log(`   Total faces: ${result.blocks.reduce((acc, b) => acc + b.ao_data.length, 0).toLocaleString()}`)
   console.log(`   Result blocks array length: ${result.blocks.length}`)
   if (result.blocks.length > 0) {
-    console.log(`   First block: state=${result.blocks[0].block_state_id}, faces=${result.blocks[0].visible_faces}, ao_data.length=${result.blocks[0].ao_data.length}`)
+    console.log(
+      `   First block: state=${result.blocks[0].block_state_id}, faces=${result.blocks[0].visible_faces}, ao_data.length=${result.blocks[0].ao_data.length}`
+    )
   }
   console.log()
 

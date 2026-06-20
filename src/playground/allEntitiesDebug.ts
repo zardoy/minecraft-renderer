@@ -31,17 +31,19 @@ export const displayEntitiesDebugList = (mcData: IndexedData) => {
 
   // Test entities
   const results: Array<{
-    entity: string;
-    supported: boolean;
-    type?: 'obj' | 'bedrock' | 'gltf' | 'special';
-    mappedFrom?: string;
-    textureMap?: boolean;
-    errors?: string[];
+    entity: string
+    supported: boolean
+    type?: 'obj' | 'bedrock' | 'gltf' | 'special'
+    mappedFrom?: string
+    textureMap?: boolean
+    errors?: string[]
   }> = []
-  const entityNames = Object.keys(mcData.entitiesArray.reduce((acc, entity) => {
-    acc[entity.name] = true
-    return acc
-  }, {}))
+  const entityNames = Object.keys(
+    mcData.entitiesArray.reduce((acc, entity) => {
+      acc[entity.name] = true
+      return acc
+    }, {})
+  )
 
   // Add loading indicator
   const loading = document.createElement('div')
@@ -56,13 +58,12 @@ export const displayEntitiesDebugList = (mcData: IndexedData) => {
       results.push({
         entity,
         supported: true,
-        type: 'special',
+        type: 'special'
       })
       continue
     }
 
     try {
-
       const { mesh: entityMesh } = new EntityMesh(version, entity, undefined, {}, debugFlags)
       // find the most distant pos child
       globalThis.objects ??= {}
@@ -164,9 +165,11 @@ export const displayEntitiesDebugList = (mcData: IndexedData) => {
   }
 
   // log object with errors per entity
-  const errors = results.filter(r => r.errors).map(r => ({
-    entity: r.entity,
-    errors: r.errors
-  }))
+  const errors = results
+    .filter(r => r.errors)
+    .map(r => ({
+      entity: r.entity,
+      errors: r.errors
+    }))
   console.log(errors)
 }

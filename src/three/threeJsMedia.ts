@@ -10,14 +10,14 @@ type ControlModeConfig = {
 }
 
 interface MediaProperties {
-  position: { x: number, y: number, z: number }
-  size: { width: number, height: number }
+  position: { x: number; y: number; z: number }
+  size: { width: number; height: number }
   src: string
   rotation?: 0 | 1 | 2 | 3 // 0-3 for 0°, 90°, 180°, 270°
   doubleSide?: boolean
   background?: number // Hexadecimal color (e.g., 0x000000 for black)
   opacity?: number // 0-1 value for transparency
-  uvMapping?: { startU: number, endU: number, startV: number, endV: number }
+  uvMapping?: { startU: number; endU: number; startV: number; endV: number }
   allowOrigins?: string[] | boolean
   loop?: boolean
   volume?: number
@@ -33,12 +33,7 @@ interface MediaData {
   video: HTMLVideoElement | undefined
   pausedBecuaseHidden: boolean
   texture: THREE.Texture
-  updateUVMapping: (config: {
-    startU: number
-    endU: number
-    startV: number
-    endV: number
-  }) => void
+  updateUVMapping: (config: { startU: number; endU: number; startV: number; endV: number }) => void
   positionalAudio?: THREE.PositionalAudio
   hadAutoPlayError?: boolean
   ended?: boolean
@@ -94,7 +89,7 @@ export class ThreeJsMedia {
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
     // Add background color
-    ctx.fillStyle = `rgba(${background >> 16 & 255}, ${background >> 8 & 255}, ${background & 255}, 1)`
+    ctx.fillStyle = `rgba(${(background >> 16) & 255}, ${(background >> 8) & 255}, ${background & 255}, 1)`
     ctx.fillRect(0, 0, canvas.width, canvas.height)
 
     // Add red text with size relative to canvas dimensions
@@ -166,7 +161,13 @@ export class ThreeJsMedia {
 
     const originSecurityError = props.allowOrigins !== undefined && !this.validateOrigin(props.src, props.allowOrigins)
     if (originSecurityError) {
-      console.warn('Remote resource blocked due to security policy', props.src, 'allowed origins:', props.allowOrigins, 'you can control it with `remoteContentNotSameOrigin` option')
+      console.warn(
+        'Remote resource blocked due to security policy',
+        props.src,
+        'allowed origins:',
+        props.allowOrigins,
+        'you can control it with `remoteContentNotSameOrigin` option'
+      )
       props.src = ''
     }
 
@@ -246,12 +247,11 @@ export class ThreeJsMedia {
       })
     }
 
-
     // Create background texture first
     const backgroundTexture = this.createBackgroundTexture(
       props.size.width,
       props.size.height,
-      props.background,
+      props.background
       // props.opacity ?? 1
     )
 
@@ -277,30 +277,32 @@ export class ThreeJsMedia {
     if (video) {
       texture = new THREE.VideoTexture(video)
     } else if (workerVideoUnsupported) {
-      texture = this.createErrorTexture(
-        props.size.width,
-        props.size.height,
-        props.background,
-        'Video unavailable (multi-thread)',
-      )
+      texture = this.createErrorTexture(props.size.width, props.size.height, props.background, 'Video unavailable (multi-thread)')
     } else if (isWebWorker) {
       const loaded = loadThreeJsTextureFromUrlSync(props.src)
       texture = loaded.texture
       texture.minFilter = THREE.NearestFilter
       texture.magFilter = THREE.NearestFilter
-      void loaded.promise.then(() => {
-        if (this.customMedia.get(id)?.texture === texture) {
-          material.map = texture
-          material.needsUpdate = true
-        }
-      }).catch(() => handleError())
+      void loaded.promise
+        .then(() => {
+          if (this.customMedia.get(id)?.texture === texture) {
+            material.map = texture
+            material.needsUpdate = true
+          }
+        })
+        .catch(() => handleError())
     } else {
-      texture = new THREE.TextureLoader().load(props.src, () => {
-        if (this.customMedia.get(id)?.texture === texture) {
-          material.map = texture
-          material.needsUpdate = true
-        }
-      }, undefined, () => handleError()) // todo cache
+      texture = new THREE.TextureLoader().load(
+        props.src,
+        () => {
+          if (this.customMedia.get(id)?.texture === texture) {
+            material.map = texture
+            material.needsUpdate = true
+          }
+        },
+        undefined,
+        () => handleError()
+      ) // todo cache
     }
     texture.minFilter = THREE.NearestFilter
     texture.magFilter = THREE.NearestFilter
@@ -311,7 +313,13 @@ export class ThreeJsMedia {
     // Create inner mesh for offsets
     const mesh = new THREE.Mesh(geometry, material)
 
-    const { mesh: panel } = this.positionMeshExact(mesh, THREE.MathUtils.degToRad((props.rotation ?? 0) * 90), props.position, props.size.width, props.size.height)
+    const { mesh: panel } = this.positionMeshExact(
+      mesh,
+      THREE.MathUtils.degToRad((props.rotation ?? 0) * 90),
+      props.position,
+      props.size.width,
+      props.size.height
+    )
 
     scene.add(panel)
 
@@ -335,7 +343,7 @@ export class ThreeJsMedia {
     }
 
     // UV mapping configuration
-    const updateUVMapping = (config: { startU: number, endU: number, startV: number, endV: number }) => {
+    const updateUVMapping = (config: { startU: number; endU: number; startV: number; endV: number }) => {
       const uvs = geometry.attributes.uv.array as Float32Array
       uvs[0] = config.startU
       uvs[1] = config.startV
@@ -367,7 +375,7 @@ export class ThreeJsMedia {
         if (videoData.destroyed) return
         console.error(`Failed to play video ${id}:`, err)
         // TODO!
-        const t = /* translate ??  */(txt => txt)
+        const t = /* translate ??  */ txt => txt
         handleError(err.name === 'NotAllowedError' || err.name === 'AbortError' ? t('Waiting for user interaction') : t('Failed to auto play'))
       }
     }
@@ -397,14 +405,15 @@ export class ThreeJsMedia {
         return
       }
 
-      void videoData.video.play()
+      void videoData.video
+        .play()
         .then(() => {
           videoData.hadAutoPlayError = false
           console.log(`Playing video ${id}`)
         })
         .catch(err => {
           if (videoData.pausedBecuaseHidden) return
-          if (err.name === 'NotAllowedError' || err.name === 'AbortError' || err.message?.includes('not allowed') && !videoData.pausedBecuaseHidden) {
+          if (err.name === 'NotAllowedError' || err.name === 'AbortError' || (err.message?.includes('not allowed') && !videoData.pausedBecuaseHidden)) {
             videoData.hadAutoPlayError = true
           }
           videoData.handleError(err)
@@ -517,14 +526,7 @@ export class ThreeJsMedia {
    * @param depth Depth of the mesh (default: 1)
    * @returns The positioned mesh for chaining
    */
-  positionMeshExact(
-    mesh: THREE.Mesh,
-    rotation: number,
-    startPosition: { x: number, y: number, z: number },
-    width: number,
-    height: number,
-    depth = 1
-  ) {
+  positionMeshExact(mesh: THREE.Mesh, rotation: number, startPosition: { x: number; y: number; z: number }, width: number, height: number, depth = 1) {
     // avoid z-fighting with the ground plane
     if (rotation === 0) {
       startPosition.z += 0.001
@@ -535,7 +537,7 @@ export class ThreeJsMedia {
     if (rotation === Math.PI) {
       startPosition.z -= 0.001
     }
-    if (rotation === 3 * Math.PI / 2) {
+    if (rotation === (3 * Math.PI) / 2) {
       startPosition.x += 0.001
     }
 
@@ -546,11 +548,10 @@ export class ThreeJsMedia {
     if (rotation === Math.PI) {
       startPosition.x += 1
     }
-    if (rotation === 3 * Math.PI / 2) {
+    if (rotation === (3 * Math.PI) / 2) {
       startPosition.z += 1
       startPosition.x += 1
     }
-
 
     // First, clean up any previous transformations
     mesh.matrix.identity()
@@ -562,7 +563,7 @@ export class ThreeJsMedia {
     // We need to set up the proper orientation for our use case
     // Rotate the plane to face the correct direction based on the rotation parameter
     mesh.rotateY(rotation)
-    if (rotation === Math.PI / 2 || rotation === 3 * Math.PI / 2) {
+    if (rotation === Math.PI / 2 || rotation === (3 * Math.PI) / 2) {
       mesh.rotateZ(-Math.PI)
       mesh.rotateX(-Math.PI)
     }
@@ -584,36 +585,24 @@ export class ThreeJsMedia {
     debugGroup.add(mesh)
 
     // Add a marker at the starting position (should be exactly at pos)
-    const startMarker = new THREE.Mesh(
-      new THREE.BoxGeometry(0.1, 0.1, 0.1),
-      new THREE.MeshBasicMaterial({ color: 0xff_00_00 })
-    )
+    const startMarker = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), new THREE.MeshBasicMaterial({ color: 0xff_00_00 }))
     startMarker.position.set(startPosition.x, startPosition.y, startPosition.z)
     debugGroup.add(startMarker)
 
     // Add a marker at the end position (width units away in the rotated direction)
     const endX = startPosition.x + Math.cos(rotation) * width
     const endZ = startPosition.z + Math.sin(rotation) * width
-    const endYMarker = new THREE.Mesh(
-      new THREE.BoxGeometry(0.1, 0.1, 0.1),
-      new THREE.MeshBasicMaterial({ color: 0x00_00_ff })
-    )
+    const endYMarker = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), new THREE.MeshBasicMaterial({ color: 0x00_00_ff }))
     endYMarker.position.set(startPosition.x, startPosition.y + height, startPosition.z)
     debugGroup.add(endYMarker)
 
     // Add a marker at the width endpoint
-    const endWidthMarker = new THREE.Mesh(
-      new THREE.BoxGeometry(0.1, 0.1, 0.1),
-      new THREE.MeshBasicMaterial({ color: 0xff_ff_00 })
-    )
+    const endWidthMarker = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), new THREE.MeshBasicMaterial({ color: 0xff_ff_00 }))
     endWidthMarker.position.set(endX, startPosition.y, endZ)
     debugGroup.add(endWidthMarker)
 
     // Add a marker at the corner diagonal endpoint (both width and height)
-    const endCornerMarker = new THREE.Mesh(
-      new THREE.BoxGeometry(0.1, 0.1, 0.1),
-      new THREE.MeshBasicMaterial({ color: 0xff_00_ff })
-    )
+    const endCornerMarker = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), new THREE.MeshBasicMaterial({ color: 0xff_00_ff }))
     endCornerMarker.position.set(endX, startPosition.y + height, endZ)
     debugGroup.add(endCornerMarker)
 
@@ -623,12 +612,7 @@ export class ThreeJsMedia {
       this.worldRenderer.sceneOrigin.toSceneY(startPosition.y),
       this.worldRenderer.sceneOrigin.toSceneZ(startPosition.z)
     )
-    const directionHelper = new THREE.ArrowHelper(
-      new THREE.Vector3(Math.cos(rotation), 0, Math.sin(rotation)),
-      sceneStartPos,
-      1,
-      0xff_00_00
-    )
+    const directionHelper = new THREE.ArrowHelper(new THREE.Vector3(Math.cos(rotation), 0, Math.sin(rotation)), sceneStartPos, 1, 0xff_00_00)
     debugGroup.add(directionHelper)
 
     return {
@@ -707,8 +691,7 @@ export class ThreeJsMedia {
       // Find if this object belongs to any media
       for (const [id, videoData] of this.customMedia.entries()) {
         // Check if the intersected object is part of our media mesh
-        if (intersectedObject === videoData.mesh ||
-          videoData.mesh.children.includes(intersectedObject)) {
+        if (intersectedObject === videoData.mesh || videoData.mesh.children.includes(intersectedObject)) {
           const { uv } = intersection
           if (uv) {
             const result = {

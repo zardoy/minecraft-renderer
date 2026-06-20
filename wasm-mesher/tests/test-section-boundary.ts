@@ -26,8 +26,8 @@ const WORLD_HEIGHT = WORLD_MAX_Y - WORLD_MIN_Y
 const STONE = 1 // 1.16.5 stone state id
 
 // ---- Face-mask layout (matches FACE_DIRS in wasm-mesher Rust source / render-from-wasm.ts) ----
-const FACE_UP = 1 << 0    // +Y
-const FACE_DOWN = 1 << 1  // -Y
+const FACE_UP = 1 << 0 // +Y
+const FACE_DOWN = 1 << 1 // -Y
 
 function makeChunk(): PCChunk {
   const Chunk = ChunkLoader(VERSION) as any
@@ -49,23 +49,28 @@ function meshSection(chunk: PCChunk, sectionY: number, sectionHeight: number) {
   const sectionDataEndY = Math.min(sectionY + sectionHeight + 1, WORLD_MAX_Y)
   const sectionDataHeight = sectionDataEndY - sectionDataStartY
 
-  const conv = convertChunkToWasm(
-    chunk,
-    VERSION,
-    0, 0,
-    WORLD_MIN_Y, WORLD_MAX_Y,
-    sectionDataStartY,
-    sectionDataHeight
-  )
+  const conv = convertChunkToWasm(chunk, VERSION, 0, 0, WORLD_MIN_Y, WORLD_MAX_Y, sectionDataStartY, sectionDataHeight)
 
   return wasm.generate_geometry(
-    0, sectionY, 0, sectionHeight,
-    WORLD_MIN_Y, WORLD_MAX_Y,
+    0,
+    sectionY,
+    0,
+    sectionHeight,
+    WORLD_MIN_Y,
+    WORLD_MAX_Y,
     sectionDataStartY,
-    conv.blockStates, conv.blockLight, conv.skyLight, conv.biomesArray,
-    conv.invisibleBlocks, conv.transparentBlocks, conv.noAoBlocks,
-    conv.cullIdenticalBlocks, conv.occludingBlocks,
-    true, false, 15
+    conv.blockStates,
+    conv.blockLight,
+    conv.skyLight,
+    conv.biomesArray,
+    conv.invisibleBlocks,
+    conv.transparentBlocks,
+    conv.noAoBlocks,
+    conv.cullIdenticalBlocks,
+    conv.occludingBlocks,
+    true,
+    false,
+    15
   )
 }
 
@@ -93,9 +98,7 @@ function testSectionBoundary() {
   console.log(`  lower section: top faces emitted at y=15: ${topFacesAtSeamLower} (expected 0)`)
   console.log(`  lower section: total emitted blocks: ${lower.blocks.length}`)
   if (topFacesAtSeamLower !== 0) {
-    throw new Error(
-      `Section-boundary regression (lower): expected 0 top faces at y=15 (occluded by y=16 stone), got ${topFacesAtSeamLower}`
-    )
+    throw new Error(`Section-boundary regression (lower): expected 0 top faces at y=15 (occluded by y=16 stone), got ${topFacesAtSeamLower}`)
   }
 
   // Upper section: y=16..31. Mesh and count bottom-faces at y=16.
@@ -104,9 +107,7 @@ function testSectionBoundary() {
   console.log(`  upper section: bottom faces emitted at y=16: ${bottomFacesAtSeamUpper} (expected 0)`)
   console.log(`  upper section: total emitted blocks: ${upper.blocks.length}`)
   if (bottomFacesAtSeamUpper !== 0) {
-    throw new Error(
-      `Section-boundary regression (upper): expected 0 bottom faces at y=16 (occluded by y=15 stone), got ${bottomFacesAtSeamUpper}`
-    )
+    throw new Error(`Section-boundary regression (upper): expected 0 bottom faces at y=16 (occluded by y=15 stone), got ${bottomFacesAtSeamUpper}`)
   }
 
   console.log('  ✅ Section-boundary fixture passed')
@@ -174,9 +175,7 @@ function testHeightmapParity() {
   const helperHeightmap = computeHeightmap(buildWorld(), 0, 0)
   for (let i = 0; i < 256; i++) {
     if (helperHeightmap[i] !== reference[i]) {
-      throw new Error(
-        `computeHeightmap mismatch at index ${i}: got ${helperHeightmap[i]}, expected ${reference[i]}`
-      )
+      throw new Error(`computeHeightmap mismatch at index ${i}: got ${helperHeightmap[i]}, expected ${reference[i]}`)
     }
   }
 
@@ -194,9 +193,7 @@ function testHeightmapParity() {
   }
   for (let i = 0; i < 256; i++) {
     if (handlerOut.heightmap[i] !== reference[i]) {
-      throw new Error(
-        `handleGetHeightmap mismatch at index ${i}: got ${handlerOut.heightmap[i]}, expected ${reference[i]}`
-      )
+      throw new Error(`handleGetHeightmap mismatch at index ${i}: got ${handlerOut.heightmap[i]}, expected ${reference[i]}`)
     }
   }
 
@@ -219,7 +216,7 @@ function testHeightmapParity() {
     if (!/handleGetHeightmap\s*\(\s*world\s*,/.test(src)) {
       throw new Error(
         `${relPath}: handler no longer delegates to handleGetHeightmap(world, …). ` +
-        `If you intentionally inlined the logic, update test-section-boundary.ts to assert the new path matches the independent reference.`
+          `If you intentionally inlined the logic, update test-section-boundary.ts to assert the new path matches the independent reference.`
       )
     }
   }

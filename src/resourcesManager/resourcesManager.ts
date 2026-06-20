@@ -26,9 +26,7 @@ type ItemDefinitionsStore = ReturnType<typeof getLoadedItemDefinitionsStore>
 
 let workerItemDefinitionsStore: ItemDefinitionsStore | null = null
 
-export function getItemsDefinitionsStoreForRender (
-  resources: LoadedResourcesTransferrable
-): ItemDefinitionsStore {
+export function getItemsDefinitionsStoreForRender(resources: LoadedResourcesTransferrable): ItemDefinitionsStore {
   if (!isWebWorker) {
     ensureItemsDefinitionsStore(resources)
     return resources.itemsDefinitionsStore
@@ -39,13 +37,11 @@ export function getItemsDefinitionsStoreForRender (
   return workerItemDefinitionsStore
 }
 
-export function ensureItemsDefinitionsStore (resources: LoadedResourcesTransferrable): void {
+export function ensureItemsDefinitionsStore(resources: LoadedResourcesTransferrable): void {
   if (isWebWorker) return
   const store = resources.itemsDefinitionsStore as { get?: unknown }
   if (typeof store?.get === 'function') return
-  resources.itemsDefinitionsStore = getLoadedItemDefinitionsStore(
-    resources.sourceItemDefinitionsJson ?? itemDefinitionsJson
-  )
+  resources.itemsDefinitionsStore = getLoadedItemDefinitionsStore(resources.sourceItemDefinitionsJson ?? itemDefinitionsJson)
 }
 
 export class LoadedResourcesTransferrable {
@@ -65,11 +61,11 @@ export class LoadedResourcesTransferrable {
   /** array where the index represents the custom model data value, and the element at that index is the model path to use */
   customItemModelNames: Record<string, string[]> = {}
   customTextures: {
-    items?: { tileSize: number | undefined, textures: Record<string, HTMLImageElement> }
-    blocks?: { tileSize: number | undefined, textures: Record<string, HTMLImageElement> }
-    armor?: { tileSize: number | undefined, textures: Record<string, HTMLImageElement> }
+    items?: { tileSize: number | undefined; textures: Record<string, HTMLImageElement> }
+    blocks?: { tileSize: number | undefined; textures: Record<string, HTMLImageElement> }
+    armor?: { tileSize: number | undefined; textures: Record<string, HTMLImageElement> }
   } = {}
-  guiAtlas: { json: any, image: ImageBitmap } | null = null
+  guiAtlas: { json: any; image: ImageBitmap } | null = null
   guiAtlasVersion = 0
 
   itemsRenderer: ItemsRenderer | undefined
@@ -89,8 +85,7 @@ export class LoadedResourcesTransferrable {
       ensureItemsDefinitionsStore(this)
     }
     if (this.version) {
-      const globalMc = (globalThis as { loadedData?: IndexedData, mcData?: IndexedData }).loadedData
-        ?? (globalThis as { mcData?: IndexedData }).mcData
+      const globalMc = (globalThis as { loadedData?: IndexedData; mcData?: IndexedData }).loadedData ?? (globalThis as { mcData?: IndexedData }).mcData
       if (isWebWorker && globalMc?.entitiesByName) {
         this.mcData = globalMc
       } else {
@@ -111,8 +106,11 @@ export class LoadedResourcesTransferrable {
       if (!Object.prototype.hasOwnProperty.call(this, key)) continue
       if (typeof this[key] === 'function') continue
       if (
-        key === 'itemsRenderer' || key === 'worldBlockProvider' || key === 'mcData'
-        || key === 'itemsDefinitionsStore' || key === 'sourceItemDefinitionsJson'
+        key === 'itemsRenderer' ||
+        key === 'worldBlockProvider' ||
+        key === 'mcData' ||
+        key === 'itemsDefinitionsStore' ||
+        key === 'sourceItemDefinitionsJson'
       ) {
         continue
       }
@@ -124,7 +122,6 @@ export class LoadedResourcesTransferrable {
     delete cloned.sourceItemDefinitionsJson
     return cloned as LoadedResourcesTransferrable
   }
-
 }
 
 export interface ResourcesCurrentConfig {
@@ -150,7 +147,7 @@ const STABLE_MODELS_VERSION = '1.21.4'
 export class ResourcesManager extends (EventEmitter as new () => TypedEmitter<ResourceManagerEvents>) {
   static restorerName = 'ResourcesManager'
 
-  rebuildWorkerRenderers (resources: LoadedResourcesTransferrable): void {
+  rebuildWorkerRenderers(resources: LoadedResourcesTransferrable): void {
     if (!isWebWorker) return
     if (!resources.version || !resources.blockstatesModels || !resources.blocksAtlasJson) return
 
@@ -162,17 +159,8 @@ export class ResourcesManager extends (EventEmitter as new () => TypedEmitter<Re
       this.itemsAtlasParser = new AtlasParser(this.sourceItemsAtlases, '')
     }
 
-    resources.itemsRenderer = new ItemsRenderer(
-      resources.version,
-      resources.blockstatesModels,
-      this.itemsAtlasParser,
-      this.blocksAtlasParser
-    )
-    resources.worldBlockProvider = worldBlockProvider(
-      resources.blockstatesModels,
-      this.blocksAtlasParser.atlas,
-      STABLE_MODELS_VERSION
-    )
+    resources.itemsRenderer = new ItemsRenderer(resources.version, resources.blockstatesModels, this.itemsAtlasParser, this.blocksAtlasParser)
+    resources.worldBlockProvider = worldBlockProvider(resources.blockstatesModels, this.blocksAtlasParser.atlas, STABLE_MODELS_VERSION)
   }
 
   static restoreTransferred(data: any, worker?: Worker) {
@@ -198,7 +186,7 @@ export class ResourcesManager extends (EventEmitter as new () => TypedEmitter<Re
     return resourcesManager
   }
 
-  enrichTransferSnapshot (transfer?: LoadedResourcesTransferrable): LoadedResourcesTransferrable | undefined {
+  enrichTransferSnapshot(transfer?: LoadedResourcesTransferrable): LoadedResourcesTransferrable | undefined {
     if (!transfer) return transfer
     if (this.itemsAtlasParser?.atlas?.latest) {
       transfer.itemsAtlasJson = this.itemsAtlasParser.atlas.latest
@@ -219,24 +207,22 @@ export class ResourcesManager extends (EventEmitter as new () => TypedEmitter<Re
           class: ResourcesManager.restorerName,
           type: 'event',
           eventName,
-          args: sanitizeWorkerEventArgs(args),
+          args: sanitizeWorkerEventArgs(args)
         })
         // todo handle assetsInventoryReady
         if (eventName === 'assetsTexturesUpdated' || eventName === 'assetsInventoryReady') {
-          const currentResources = this.enrichTransferSnapshot(
-            this.currentResources?.prepareForTransfer(),
-          )
+          const currentResources = this.enrichTransferSnapshot(this.currentResources?.prepareForTransfer())
           worker.postMessage({
             class: ResourcesManager.restorerName,
             type: 'newResources',
-            currentResources,
+            currentResources
           })
         }
       }) as any
     }
     return {
       __restorer: ResourcesManager.restorerName,
-      currentResources: this.enrichTransferSnapshot(this.currentResources?.prepareForTransfer()),
+      currentResources: this.enrichTransferSnapshot(this.currentResources?.prepareForTransfer())
     }
   }
 
@@ -295,28 +281,21 @@ export class ResourcesManager extends (EventEmitter as new () => TypedEmitter<Re
     }
 
     console.time('recreateAtlases')
-    await Promise.all([
-      this.recreateBlockAtlas(resources),
-      this.recreateItemsAtlas(resources)
-    ])
+    await Promise.all([this.recreateBlockAtlas(resources), this.recreateItemsAtlas(resources)])
     console.timeEnd('recreateAtlases')
 
     if (abortController.signal.aborted) return
 
     if (resources.version && resources.blockstatesModels && this.itemsAtlasParser && this.blocksAtlasParser) {
-      resources.itemsRenderer = new ItemsRenderer(
-        resources.version,
-        resources.blockstatesModels,
-        this.itemsAtlasParser,
-        this.blocksAtlasParser
-      )
+      resources.itemsRenderer = new ItemsRenderer(resources.version, resources.blockstatesModels, this.itemsAtlasParser, this.blocksAtlasParser)
     }
 
     if (abortController.signal.aborted) return
 
     this.currentResources = resources
     resources.allReady = true
-    if (!unstableSkipEvent) { // todo rework resourcepack optimization
+    if (!unstableSkipEvent) {
+      // todo rework resourcepack optimization
       this.emit('assetsTexturesUpdated')
     }
 
@@ -347,7 +326,7 @@ export class ResourcesManager extends (EventEmitter as new () => TypedEmitter<Re
     console.time('createBlocksAtlas')
     const { atlas: blocksAtlas, canvas: blocksCanvas } = await blocksAssetsParser.makeNewAtlas(
       resources.texturesVersion,
-      (textureName) => {
+      textureName => {
         if (this.currentConfig!.includeOnlyBlocks && !this.currentConfig!.includeOnlyBlocks.includes(textureName)) return false
         const texture = resources.customTextures.blocks?.textures[textureName]
         return blockTexturesChanges[textureName] ?? texture
@@ -356,7 +335,7 @@ export class ResourcesManager extends (EventEmitter as new () => TypedEmitter<Re
       undefined,
       customBlockTextures,
       {
-        needHorizontalIndexes: !!this.currentConfig!.includeOnlyBlocks,
+        needHorizontalIndexes: !!this.currentConfig!.includeOnlyBlocks
       }
     )
     console.timeEnd('createBlocksAtlas')
@@ -365,11 +344,7 @@ export class ResourcesManager extends (EventEmitter as new () => TypedEmitter<Re
     resources.blocksAtlasImage = await createImageBitmap(blocksCanvas)
     resources.blocksAtlasJson = this.blocksAtlasParser.atlas.latest
 
-    resources.worldBlockProvider = worldBlockProvider(
-      resources.blockstatesModels,
-      this.blocksAtlasParser.atlas,
-      STABLE_MODELS_VERSION
-    )
+    resources.worldBlockProvider = worldBlockProvider(resources.blockstatesModels, this.blocksAtlasParser.atlas, STABLE_MODELS_VERSION)
   }
 
   async recreateItemsAtlas(resources: LoadedResourcesTransferrable = this.currentResources!) {
@@ -377,7 +352,7 @@ export class ResourcesManager extends (EventEmitter as new () => TypedEmitter<Re
     const customItemTextures = Object.keys(resources.customTextures.items?.textures ?? {})
     const { atlas: itemsAtlas, canvas: itemsCanvas } = await itemsAssetsParser.makeNewAtlas(
       resources.texturesVersion,
-      (textureName) => {
+      textureName => {
         const texture = resources.customTextures.items?.textures[textureName]
         if (!texture) return
         return texture

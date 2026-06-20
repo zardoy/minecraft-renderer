@@ -5,6 +5,6 @@ export default defineConfig({
     alias: {
       'prismarine-registry': './noop.js',
       'prismarine-nbt': './noop.js'
-    },
-  },
+    }
+  }
 })

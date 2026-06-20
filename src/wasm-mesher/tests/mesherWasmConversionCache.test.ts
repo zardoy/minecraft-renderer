@@ -4,7 +4,7 @@ import {
   _peekConversionCache,
   clearConversionCache,
   getOrConvertColumn,
-  invalidateConversion,
+  invalidateConversion
 } from '../worker/mesherWasmConversionCache'
 import type { ChunkConversionResult } from '../bridge/convertChunk'
 
@@ -18,7 +18,7 @@ const makeResult = (tag: number): ChunkConversionResult => ({
   noAoBlocks: new Uint16Array(0),
   cullIdenticalBlocks: new Uint16Array(0),
   occludingBlocks: new Uint16Array(0),
-  blockCount: 0,
+  blockCount: 0
 })
 
 describe('mesherWasmConversionCache', () => {

@@ -41,19 +41,19 @@ in `pkg/` next to this README.
 
 ## Public API (lib.rs)
 
-| `js_name`                          | Purpose                                                                    |
-| ---------------------------------- | -------------------------------------------------------------------------- |
-| `generate_geometry`                | Mesh a single section. Inputs: block-state arrays, biomes, light, palettes. |
-| `generate_geometry_multi`          | Mesh many sections in one call (full column).                              |
-| `parseChunkDump118`                | Parse `column.dump()` bytes (1.18+) → `{blockStates, biomes}` typed arrays. |
-| `parseChunkDump118FullColumn`      | Same + lays out blocks/biomes in `convertChunkToWasm` order.               |
-| `parseChunkDump118FullColumnAll`   | Variant-1 production drop-in: parses blocks + biomes + skyLight + blockLight in one call. |
-| `parseChunkDump118NoMarshal`       | Bench-only: parses dump but returns checksum, no Vec materialisation.      |
-| `unpackLightSection118`            | Unpack a single 4-bit packed light section.                                |
-| `generateGeometryFromDump118`      | Variant-3 PoC: fused parse + mesh in one Rust call (kept for experiments). |
-| `parseMapChunkV18Plus`             | Parse a raw `map_chunk` packet payload, 1.18+ format.                      |
-| `parseChunkSectionsV16V17`         | Parse 1.16 / 1.17 chunk sections (palette + bit-packed states).            |
-| `parseUpdateLightV17`              | Parse a 1.17 `update_light` packet.                                        |
+| `js_name`                        | Purpose                                                                                   |
+| -------------------------------- | ----------------------------------------------------------------------------------------- |
+| `generate_geometry`              | Mesh a single section. Inputs: block-state arrays, biomes, light, palettes.               |
+| `generate_geometry_multi`        | Mesh many sections in one call (full column).                                             |
+| `parseChunkDump118`              | Parse `column.dump()` bytes (1.18+) → `{blockStates, biomes}` typed arrays.               |
+| `parseChunkDump118FullColumn`    | Same + lays out blocks/biomes in `convertChunkToWasm` order.                              |
+| `parseChunkDump118FullColumnAll` | Variant-1 production drop-in: parses blocks + biomes + skyLight + blockLight in one call. |
+| `parseChunkDump118NoMarshal`     | Bench-only: parses dump but returns checksum, no Vec materialisation.                     |
+| `unpackLightSection118`          | Unpack a single 4-bit packed light section.                                               |
+| `generateGeometryFromDump118`    | Variant-3 PoC: fused parse + mesh in one Rust call (kept for experiments).                |
+| `parseMapChunkV18Plus`           | Parse a raw `map_chunk` packet payload, 1.18+ format.                                     |
+| `parseChunkSectionsV16V17`       | Parse 1.16 / 1.17 chunk sections (palette + bit-packed states).                           |
+| `parseUpdateLightV17`            | Parse a 1.17 `update_light` packet.                                                       |
 
 History of why each entry-point exists is in
 `docs/issues/issue-15-wasm/history.md`.

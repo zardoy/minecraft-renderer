@@ -10,14 +10,8 @@ let lastY = 40
 /** Class for advanced stats pane; host app should set z-index (see integrating app global CSS). */
 export const MC_RENDERER_DEBUG_OVERLAY_CLASS = 'mc-renderer-debug-overlay'
 
-export const addNewStat = (
-  id: string,
-  width = 80,
-  x = rightOffset,
-  y = lastY,
-  opts?: { className?: string },
-) => {
-  if (isWebWorker) return { updateText() { }, setVisibility() { } }
+export const addNewStat = (id: string, width = 80, x = rightOffset, y = lastY, opts?: { className?: string }) => {
+  if (isWebWorker) return { updateText() {}, setVisibility() {} }
 
   const pane = document.createElement('div')
   pane.style.position = 'fixed'
@@ -37,7 +31,8 @@ export const addNewStat = (
   pane.style.pointerEvents = 'none'
   document.body.appendChild(pane)
   stats[id] = pane
-  if (y === undefined && x === rightOffset) { // otherwise it's a custom position
+  if (y === undefined && x === rightOffset) {
+    // otherwise it's a custom position
     // rightOffset += width
     lastY += 20
   }
@@ -53,8 +48,11 @@ export const addNewStat = (
   }
 }
 
-export const addNewStat2 = (id: string, { top, bottom, right, left, displayOnlyWhenWider }: { top?: number, bottom?: number, right?: number, left?: number, displayOnlyWhenWider?: number }) => {
-  if (isWebWorker) return { updateText() { }, setVisibility() { } }
+export const addNewStat2 = (
+  id: string,
+  { top, bottom, right, left, displayOnlyWhenWider }: { top?: number; bottom?: number; right?: number; left?: number; displayOnlyWhenWider?: number }
+) => {
+  if (isWebWorker) return { updateText() {}, setVisibility() {} }
 
   if (top === undefined && bottom === undefined) top = 0
   const pane = document.createElement('div')
@@ -120,7 +118,7 @@ export const removeAllStats = () => {
   }
 }
 
-export const removeStat = (id) => {
+export const removeStat = id => {
   if (isWebWorker || !stats[id]) return
   stats[id].remove()
   delete stats[id]

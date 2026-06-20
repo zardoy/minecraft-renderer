@@ -25,7 +25,7 @@ let wasmPlugin = {
       if (args.namespace === 'wasm-stub') {
         return {
           path: args.path,
-          namespace: 'wasm-binary',
+          namespace: 'wasm-binary'
         }
       }
 
@@ -41,30 +41,30 @@ let wasmPlugin = {
       }
       return {
         path: path.isAbsolute(args.path) ? args.path : path.join(args.resolveDir, args.path),
-        namespace: 'wasm-stub',
+        namespace: 'wasm-stub'
       }
     })
 
     // Virtual modules in the "wasm-stub" namespace are filled with
     // the JavaScript code for compiling the WebAssembly binary. The
     // binary itself is imported from a second virtual module.
-    build.onLoad({ filter: /.*/, namespace: 'wasm-stub' }, async (args) => ({
+    build.onLoad({ filter: /.*/, namespace: 'wasm-stub' }, async args => ({
       contents: `import wasm from ${JSON.stringify(args.path)}
         export default (imports) =>
           WebAssembly.instantiate(wasm, imports).then(
             result => result.instance.exports)
-        export { wasm as wasmBinary }`,
+        export { wasm as wasmBinary }`
     }))
 
     // Virtual modules in the "wasm-binary" namespace contain the
     // actual bytes of the WebAssembly file. This uses esbuild's
     // built-in "binary" loader instead of manually embedding the
     // binary data inside JavaScript code ourselves.
-    build.onLoad({ filter: /.*/, namespace: 'wasm-binary' }, async (args) => ({
+    build.onLoad({ filter: /.*/, namespace: 'wasm-binary' }, async args => ({
       contents: await fs.promises.readFile(args.path),
-      loader: 'binary',
+      loader: 'binary'
     }))
-  },
+  }
 }
 
 const buildOptions = createWorkerBuildOptions({
@@ -78,7 +78,7 @@ const buildOptions = createWorkerBuildOptions({
     // instead of dist/wasm-mesher/worker/mesherWasm.js.
     entryNames: '[name]',
     entryPoints: [path.join(rootDir, './src/wasm-mesher/worker/mesherWasm.ts'), path.join(rootDir, './src/mesher-legacy/mesher.ts')],
-    plugins: [wasmPlugin],
+    plugins: [wasmPlugin]
   }
 })
 

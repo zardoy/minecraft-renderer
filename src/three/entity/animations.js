@@ -1,7 +1,7 @@
 //@ts-check
 import { PlayerAnimation } from 'skinview3d'
 
-const clamp01 = (v) => Math.max(0, Math.min(1, v))
+const clamp01 = v => Math.max(0, Math.min(1, v))
 const mix = (a, b, t) => a + (b - a) * t
 
 function updateElytraRightWing(player) {
@@ -90,7 +90,7 @@ export class WalkingGeneralSwing extends PlayerAnimation {
       capeRot: player.cape.rotation.clone(),
 
       elytraPos: player.elytra.position.clone(),
-      elytraRot: player.elytra.rotation.clone(),
+      elytraRot: player.elytra.rotation.clone()
     }
   }
 
@@ -213,7 +213,7 @@ const HitAnimation = {
       player.skin.leftArm.position.z = swing * 0.3
       player.skin.leftArm.position.x = 5 - swing * 0.05
     }
-  },
+  }
 }
 
 function applyCrouchPose(player, crouchBlend) {

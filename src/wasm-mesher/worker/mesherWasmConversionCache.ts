@@ -77,13 +77,7 @@ export function getOrConvertColumn(
     return { result: convert(), hit: false }
   }
   const e = cache.get(k)
-  if (
-    e
-    && e.chunkRef === chunkRef
-    && e.version === version
-    && e.worldMinY === worldMinY
-    && e.worldMaxY === worldMaxY
-  ) {
+  if (e && e.chunkRef === chunkRef && e.version === version && e.worldMinY === worldMinY && e.worldMaxY === worldMaxY) {
     // Defense-in-depth: if the live world ref no longer matches the stored
     // ref, the explicit invalidation path was missed somewhere upstream.
     if (liveChunkRef !== undefined && liveChunkRef !== e.chunkRef) {
@@ -141,7 +135,7 @@ export function getConversionCacheSize(): number {
   return cache.size
 }
 
-export function consumeConversionCacheStats(): { hits: number, misses: number } {
+export function consumeConversionCacheStats(): { hits: number; misses: number } {
   const r = { hits, misses }
   hits = 0
   misses = 0

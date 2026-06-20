@@ -18,7 +18,7 @@ export class DebugGui {
   private readonly initialValues: Record<string, any> = {} // Store initial values
   private initialized = false
 
-  constructor (id: string, target: any, params?: string[], paramsMeta?: Record<string, ParamMeta>) {
+  constructor(id: string, target: any, params?: string[], paramsMeta?: Record<string, ParamMeta>) {
     // If in web worker, don't initialize anything
     if (isWebWorker) return
 
@@ -38,7 +38,7 @@ export class DebugGui {
   }
 
   // Initialize and show the GUI
-  activate () {
+  activate() {
     if (isWebWorker) return this
 
     if (!this.initialized && this.gui) {
@@ -51,20 +51,20 @@ export class DebugGui {
   }
 
   // Getter for visibility
-  get visible (): boolean {
+  get visible(): boolean {
     if (isWebWorker) return false
     return this._visible
   }
 
   // Setter for visibility
-  set visible (value: boolean) {
+  set visible(value: boolean) {
     if (isWebWorker || !this.gui) return
     this._visible = value
     this.gui.domElement.style.display = value ? 'block' : 'none'
     this.saveVisibility()
   }
 
-  private loadSavedValues () {
+  private loadSavedValues() {
     if (isWebWorker) return
     try {
       const saved = localStorage.getItem(this.storageKey)
@@ -85,7 +85,7 @@ export class DebugGui {
     }
   }
 
-  private saveValues (deleteKey = false) {
+  private saveValues(deleteKey = false) {
     if (isWebWorker) return
     try {
       const values = {}
@@ -102,7 +102,7 @@ export class DebugGui {
     }
   }
 
-  private saveVisibility () {
+  private saveVisibility() {
     if (isWebWorker) return
     try {
       localStorage.setItem(`${this.storageKey}_visible`, this._visible.toString())
@@ -111,21 +111,28 @@ export class DebugGui {
     }
   }
 
-  private setupControls () {
+  private setupControls() {
     if (isWebWorker || !this.gui) return
 
     // Add visibility toggle at the top
     this.gui.add(this, 'visible').name('Show Controls')
-    this.gui.add({ resetAll: () => {
-      if (!this.gui) return
-      for (const param of this.params) {
-        this.target[param] = this.initialValues[param]
-      }
-      this.saveValues(true)
-      this.gui.destroy()
-      this.gui = new GUI()
-      this.setupControls()
-    } }, 'resetAll').name('Reset All Parameters')
+    this.gui
+      .add(
+        {
+          resetAll: () => {
+            if (!this.gui) return
+            for (const param of this.params) {
+              this.target[param] = this.initialValues[param]
+            }
+            this.saveValues(true)
+            this.gui.destroy()
+            this.gui = new GUI()
+            this.setupControls()
+          }
+        },
+        'resetAll'
+      )
+      .name('Reset All Parameters')
 
     for (const param of this.params) {
       const value = this.target[param]
@@ -137,54 +144,50 @@ export class DebugGui {
         const max = meta.max ?? value + Math.abs(value * 2)
         const step = meta.step ?? Math.abs(value) / 100
 
-        this.gui.add(this.target, param, min, max, step)
-          .onChange(() => this.saveValues())
+        this.gui.add(this.target, param, min, max, step).onChange(() => this.saveValues())
       } else if (typeof value === 'boolean') {
         // For booleans, create a checkbox
-        this.gui.add(this.target, param)
-          .onChange(() => this.saveValues())
+        this.gui.add(this.target, param).onChange(() => this.saveValues())
       } else if (typeof value === 'string' && ['x', 'y', 'z'].includes(param)) {
         // Special case for xyz coordinates
         const min = meta.min ?? -10
         const max = meta.max ?? 10
         const step = meta.step ?? 0.1
 
-        this.gui.add(this.target, param, min, max, step)
-          .onChange(() => this.saveValues())
+        this.gui.add(this.target, param, min, max, step).onChange(() => this.saveValues())
       } else if (Array.isArray(value)) {
         // For arrays, create a dropdown
-        this.gui.add(this.target, param, value)
-          .onChange(() => this.saveValues())
+        this.gui.add(this.target, param, value).onChange(() => this.saveValues())
       }
     }
   }
 
   // Method to manually trigger save
-  save () {
+  save() {
     if (isWebWorker) return
     this.saveValues()
     this.saveVisibility()
   }
 
   // Method to destroy the GUI and clean up
-  destroy () {
+  destroy() {
     if (isWebWorker || !this.gui) return
     this.saveVisibility()
     this.gui.destroy()
   }
 
   // Toggle visibility
-  toggle () {
+  toggle() {
     this.visible = !this.visible
   }
 
   // Show the GUI
-  show () {
+  show() {
     this.visible = true
   }
 
   // Hide the GUI
-  hide () {
+  hide() {
     this.visible = false
   }
 }

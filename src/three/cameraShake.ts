@@ -4,9 +4,13 @@ import { WorldRendererThree } from './worldRendererThree'
 
 export class CameraShake {
   private rollAngle = 0
-  private get damageRollAmount() { return 5 }
-  private get damageAnimDuration() { return 200 }
-  private rollAnimation?: { startTime: number, startRoll: number, targetRoll: number, duration: number, returnToZero?: boolean }
+  private get damageRollAmount() {
+    return 5
+  }
+  private get damageAnimDuration() {
+    return 200
+  }
+  private rollAnimation?: { startTime: number; startRoll: number; targetRoll: number; duration: number; returnToZero?: boolean }
   private basePitch = 0
   private baseYaw = 0
   private cameraBobInput: CameraBobInput | null = null
@@ -15,7 +19,10 @@ export class CameraShake {
     this.cameraBobInput = input
   }
 
-  constructor(public worldRenderer: WorldRendererThree, public onRenderCallbacks: Array<(deltaTime: number) => void>) {
+  constructor(
+    public worldRenderer: WorldRendererThree,
+    public onRenderCallbacks: Array<(deltaTime: number) => void>
+  ) {
     onRenderCallbacks.push(() => {
       this.update()
     })
@@ -132,10 +139,12 @@ export class CameraShake {
     const normalizedAngle = ((angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)
     const tolerance = 0.01 // Tolerance for considering an angle "ideal"
 
-    if (Math.abs(normalizedAngle) < tolerance ||
+    if (
+      Math.abs(normalizedAngle) < tolerance ||
       Math.abs(normalizedAngle - Math.PI / 2) < tolerance ||
       Math.abs(normalizedAngle - Math.PI) < tolerance ||
-      Math.abs(normalizedAngle - 3 * Math.PI / 2) < tolerance) {
+      Math.abs(normalizedAngle - (3 * Math.PI) / 2) < tolerance
+    ) {
       return angle + offset
     }
 

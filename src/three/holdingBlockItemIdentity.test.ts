@@ -5,12 +5,12 @@ test('hand item render key ignores live use state but keeps first-person display
   const getItemRenderData = vi.fn(() => ({ modelName: 'item/bow' }))
   const worldRenderer = {
     playerStateReactive: {
-      itemUsageTicks: 20,
+      itemUsageTicks: 20
     },
     resourcesManager: {
-      currentResources: {},
+      currentResources: {}
     },
-    getItemRenderData,
+    getItemRenderData
   } as any
 
   const handItem = {
@@ -18,8 +18,8 @@ test('hand item render key ignores live use state but keeps first-person display
     id: 261,
     name: 'minecraft:bow',
     fullItem: {
-      count: 1,
-    },
+      count: 1
+    }
   } as const
 
   const activeKey = getHandItemRenderKey(worldRenderer, handItem)
@@ -27,16 +27,24 @@ test('hand item render key ignores live use state but keeps first-person display
   const idleKey = getHandItemRenderKey(worldRenderer, handItem)
 
   expect(activeKey).toBe(idleKey)
-  expect(getItemRenderData).toHaveBeenNthCalledWith(1, {
-    ...handItem.fullItem,
-    itemId: handItem.id,
-  }, {
-    'minecraft:display_context': 'firstperson',
-  })
-  expect(getItemRenderData).toHaveBeenNthCalledWith(2, {
-    ...handItem.fullItem,
-    itemId: handItem.id,
-  }, {
-    'minecraft:display_context': 'firstperson',
-  })
+  expect(getItemRenderData).toHaveBeenNthCalledWith(
+    1,
+    {
+      ...handItem.fullItem,
+      itemId: handItem.id
+    },
+    {
+      'minecraft:display_context': 'firstperson'
+    }
+  )
+  expect(getItemRenderData).toHaveBeenNthCalledWith(
+    2,
+    {
+      ...handItem.fullItem,
+      itemId: handItem.id
+    },
+    {
+      'minecraft:display_context': 'firstperson'
+    }
+  )
 })

@@ -14,7 +14,7 @@ export function example1_SimpleBlackBox(documentRenderer: DocumentRenderer) {
   const overlay = new Canvas2DOverlay(documentRenderer.renderer, documentRenderer.canvas)
 
   // Register to render overlay after main scene
-  documentRenderer.onRender.push((sizeChanged) => {
+  documentRenderer.onRender.push(sizeChanged => {
     if (sizeChanged) {
       overlay.updateSize(documentRenderer.canvas.width, documentRenderer.canvas.height)
     }
@@ -45,7 +45,7 @@ export function example2_FPSCounter(documentRenderer: DocumentRenderer) {
   let lastTime = performance.now()
   let frameCount = 0
 
-  documentRenderer.onRender.push((sizeChanged) => {
+  documentRenderer.onRender.push(sizeChanged => {
     if (sizeChanged) {
       overlay.updateSize(documentRenderer.canvas.width, documentRenderer.canvas.height)
     }
@@ -81,13 +81,10 @@ export function example2_FPSCounter(documentRenderer: DocumentRenderer) {
 // ============================================
 // EXAMPLE 3: Coordinate Display (Bottom-Left)
 // ============================================
-export function example3_CoordinateDisplay(
-  documentRenderer: DocumentRenderer,
-  getPosition: () => { x: number; y: number; z: number }
-) {
+export function example3_CoordinateDisplay(documentRenderer: DocumentRenderer, getPosition: () => { x: number; y: number; z: number }) {
   const overlay = new Canvas2DOverlay(documentRenderer.renderer, documentRenderer.canvas)
 
-  documentRenderer.onRender.push((sizeChanged) => {
+  documentRenderer.onRender.push(sizeChanged => {
     if (sizeChanged) {
       overlay.updateSize(documentRenderer.canvas.width, documentRenderer.canvas.height)
     }
@@ -129,13 +126,10 @@ export function example3_CoordinateDisplay(
 // ============================================
 // EXAMPLE 4: Mini-map (Top-Right Corner)
 // ============================================
-export function example4_MiniMap(
-  documentRenderer: DocumentRenderer,
-  playerPos: { x: number; z: number }
-) {
+export function example4_MiniMap(documentRenderer: DocumentRenderer, playerPos: { x: number; z: number }) {
   const overlay = new Canvas2DOverlay(documentRenderer.renderer, documentRenderer.canvas)
 
-  documentRenderer.onRender.push((sizeChanged) => {
+  documentRenderer.onRender.push(sizeChanged => {
     if (sizeChanged) {
       overlay.updateSize(documentRenderer.canvas.width, documentRenderer.canvas.height)
     }
@@ -196,13 +190,10 @@ export function example5_DirectWebGL(documentRenderer: DocumentRenderer) {
 // ============================================
 // EXAMPLE 6: Health/Status Bar
 // ============================================
-export function example6_HealthBar(
-  documentRenderer: DocumentRenderer,
-  getHealth: () => { current: number; max: number }
-) {
+export function example6_HealthBar(documentRenderer: DocumentRenderer, getHealth: () => { current: number; max: number }) {
   const overlay = new Canvas2DOverlay(documentRenderer.renderer, documentRenderer.canvas)
 
-  documentRenderer.onRender.push((sizeChanged) => {
+  documentRenderer.onRender.push(sizeChanged => {
     if (sizeChanged) {
       overlay.updateSize(documentRenderer.canvas.width, documentRenderer.canvas.height)
     }
@@ -248,7 +239,7 @@ export function example6_HealthBar(
 export function example7_DebugGrid(documentRenderer: DocumentRenderer) {
   const overlay = new Canvas2DOverlay(documentRenderer.renderer, documentRenderer.canvas)
 
-  documentRenderer.onRender.push((sizeChanged) => {
+  documentRenderer.onRender.push(sizeChanged => {
     if (sizeChanged) {
       overlay.updateSize(documentRenderer.canvas.width, documentRenderer.canvas.height)
     }
@@ -261,10 +252,7 @@ export function example7_DebugGrid(documentRenderer: DocumentRenderer) {
 
     // Draw vertical lines
     for (let x = 0; x < width; x += gridSize) {
-      const points = [
-        new THREE.Vector3(x, 0, 0),
-        new THREE.Vector3(x, height, 0)
-      ]
+      const points = [new THREE.Vector3(x, 0, 0), new THREE.Vector3(x, height, 0)]
       const geometry = new THREE.BufferGeometry().setFromPoints(points)
       const material = new THREE.LineBasicMaterial({ color: 0x333333, opacity: 0.3, transparent: true })
       const line = new THREE.Line(geometry, material)
@@ -274,10 +262,7 @@ export function example7_DebugGrid(documentRenderer: DocumentRenderer) {
 
     // Draw horizontal lines
     for (let y = 0; y < height; y += gridSize) {
-      const points = [
-        new THREE.Vector3(0, y, 0),
-        new THREE.Vector3(width, y, 0)
-      ]
+      const points = [new THREE.Vector3(0, y, 0), new THREE.Vector3(width, y, 0)]
       const geometry = new THREE.BufferGeometry().setFromPoints(points)
       const material = new THREE.LineBasicMaterial({ color: 0x333333, opacity: 0.3, transparent: true })
       const line = new THREE.Line(geometry, material)
@@ -300,7 +285,7 @@ export function integrateWithDocumentRenderer(documentRenderer: DocumentRenderer
 
   // Add to render loop
   const originalRender = documentRenderer.render
-  documentRenderer.render = (sizeChanged) => {
+  documentRenderer.render = sizeChanged => {
     // Call original render
     originalRender.call(documentRenderer, sizeChanged)
 
@@ -332,7 +317,7 @@ export function workerCompatibleOverlay(documentRenderer: DocumentRenderer) {
   // This works the same in both main thread and worker!
   const overlay = new Canvas2DOverlay(documentRenderer.renderer, documentRenderer.canvas)
 
-  documentRenderer.onRender.push((sizeChanged) => {
+  documentRenderer.onRender.push(sizeChanged => {
     if (sizeChanged) {
       overlay.updateSize(documentRenderer.canvas.width, documentRenderer.canvas.height)
     }
@@ -354,8 +339,3 @@ export function workerCompatibleOverlay(documentRenderer: DocumentRenderer) {
 
   return overlay
 }
-
-
-
-
-

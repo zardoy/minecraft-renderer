@@ -1,4 +1,4 @@
-export function menuBackgroundAssetUrl (...segments: string[]): string {
+export function menuBackgroundAssetUrl(...segments: string[]): string {
   const relative = segments.filter(s => s.length > 0).join('/')
   const base =
     typeof globalThis.location !== 'undefined' && globalThis.location.href

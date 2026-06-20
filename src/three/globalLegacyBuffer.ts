@@ -21,7 +21,7 @@ export type GlobalLegacyBufferOptions = {
   growthIncrementQuads?: number
 }
 
-export type VisibleSectionSpan = { key: string, distSq: number }
+export type VisibleSectionSpan = { key: string; distSq: number }
 
 export type LegacySectionGeometry = {
   positions: Float32Array
@@ -55,18 +55,14 @@ export class GlobalLegacyBuffer {
   private uvs: Float32Array
   private aOrigin: Float32Array
   private indices: Uint32Array
-  private readonly sectionSlots = new Map<string, { start: number, count: number }>()
-  private freeList: Array<{ start: number, count: number }> = []
+  private readonly sectionSlots = new Map<string, { start: number; count: number }>()
+  private freeList: Array<{ start: number; count: number }> = []
   private highWatermark = 0
-  private pendingRanges: Array<{ start: number, end: number }> = []
-  private readonly _spanScratch: Array<{ start: number, count: number }> = []
+  private pendingRanges: Array<{ start: number; end: number }> = []
+  private readonly _spanScratch: Array<{ start: number; count: number }> = []
   private renderOrigin: RenderOrigin = { x: 0, y: 0, z: 0 }
 
-  constructor (
-    material: THREE.ShaderMaterial,
-    scene: THREE.Object3D,
-    opts?: GlobalLegacyBufferOptions,
-  ) {
+  constructor(material: THREE.ShaderMaterial, scene: THREE.Object3D, opts?: GlobalLegacyBufferOptions) {
     this.material = material
     this.growthIncrementQuads = opts?.growthIncrementQuads ?? DEFAULT_GROWTH_INCREMENT_QUADS
     this.capacityQuads = opts?.initialCapacityQuads ?? DEFAULT_INITIAL_CAPACITY_QUADS
@@ -110,7 +106,7 @@ export class GlobalLegacyBuffer {
     this.syncDefaultDrawGroups()
   }
 
-  private syncDefaultDrawGroups (): void {
+  private syncDefaultDrawGroups(): void {
     const geometry = this.mesh.geometry
     geometry.clearGroups()
     const indexCount = this.highWatermark * INDICES_PER_QUAD
@@ -120,13 +116,7 @@ export class GlobalLegacyBuffer {
     geometry.setDrawRange(0, indexCount)
   }
 
-  addSection (
-    sectionKey: string,
-    geo: LegacySectionGeometry,
-    sx: number,
-    sy: number,
-    sz: number,
-  ): boolean {
+  addSection(sectionKey: string, geo: LegacySectionGeometry, sx: number, sy: number, sz: number): boolean {
     const vertCount = geo.positions.length / FLOATS_PER_VERT
     const quadCount = vertCount / VERTS_PER_QUAD
     if (vertCount === 0 || quadCount * VERTS_PER_QUAD !== vertCount) {
@@ -187,7 +177,7 @@ export class GlobalLegacyBuffer {
     return true
   }
 
-  updateDrawSpans (visible: VisibleSectionSpan[], mode: 'opaque' | 'sortedBlend'): void {
+  updateDrawSpans(visible: VisibleSectionSpan[], mode: 'opaque' | 'sortedBlend'): void {
     const geometry = this.mesh.geometry
     geometry.clearGroups()
 
@@ -238,7 +228,7 @@ export class GlobalLegacyBuffer {
     geometry.setDrawRange(0, this.highWatermark * INDICES_PER_QUAD)
   }
 
-  private mergeOpaqueSpans (spans: Array<{ start: number, count: number }>): void {
+  private mergeOpaqueSpans(spans: Array<{ start: number; count: number }>): void {
     if (spans.length < 2) return
     let i = 0
     while (i < spans.length - 1) {
@@ -254,7 +244,7 @@ export class GlobalLegacyBuffer {
     }
   }
 
-  private capOpaqueSpans (spans: Array<{ start: number, count: number }>): void {
+  private capOpaqueSpans(spans: Array<{ start: number; count: number }>): void {
     while (spans.length > MAX_OPAQUE_SPANS) {
       let bestIdx = 0
       let bestGap = Infinity
@@ -272,22 +262,22 @@ export class GlobalLegacyBuffer {
     }
   }
 
-  hasSection (sectionKey: string): boolean {
+  hasSection(sectionKey: string): boolean {
     return this.sectionSlots.has(sectionKey)
   }
 
-  getSectionSlot (sectionKey: string): { start: number, count: number } | undefined {
+  getSectionSlot(sectionKey: string): { start: number; count: number } | undefined {
     return this.sectionSlots.get(sectionKey)
   }
 
-  takeSectionData (sectionKey: string): LegacySectionGeometryData | undefined {
+  takeSectionData(sectionKey: string): LegacySectionGeometryData | undefined {
     const data = this.getSectionGeometryData(sectionKey)
     if (!data) return undefined
     this.removeSection(sectionKey)
     return data
   }
 
-  getSectionGeometryData (sectionKey: string): LegacySectionGeometryData | undefined {
+  getSectionGeometryData(sectionKey: string): LegacySectionGeometryData | undefined {
     const slot = this.sectionSlots.get(sectionKey)
     if (!slot) return undefined
 
@@ -318,7 +308,7 @@ export class GlobalLegacyBuffer {
     return { positions, colors, skyLights, blockLights, uvs, indices, sx, sy, sz }
   }
 
-  removeSection (sectionKey: string): void {
+  removeSection(sectionKey: string): void {
     const slot = this.sectionSlots.get(sectionKey)
     if (!slot) return
 
@@ -335,11 +325,11 @@ export class GlobalLegacyBuffer {
     this.syncDefaultDrawGroups()
   }
 
-  hasPendingUploads (): boolean {
+  hasPendingUploads(): boolean {
     return this.pendingRanges.length > 0
   }
 
-  uploadDirtyRange (): void {
+  uploadDirtyRange(): void {
     const r = this.pendingRanges[0]
     if (!r) return
 
@@ -390,11 +380,11 @@ export class GlobalLegacyBuffer {
     else r.start = quadOffset + quadCount
   }
 
-  setRenderOrigin (renderOrigin: RenderOrigin): void {
+  setRenderOrigin(renderOrigin: RenderOrigin): void {
     this.renderOrigin = { ...renderOrigin }
   }
 
-  rebase (delta: RenderOrigin): void {
+  rebase(delta: RenderOrigin): void {
     if (this.highWatermark === 0) return
     for (const slot of this.sectionSlots.values()) {
       const dstVertBase = slot.start * VERTS_PER_QUAD
@@ -413,7 +403,7 @@ export class GlobalLegacyBuffer {
     this.renderOrigin.z += delta.z
   }
 
-  setCameraOrigin (x: number, y: number, z: number): void {
+  setCameraOrigin(x: number, y: number, z: number): void {
     const { originDelta, cameraOriginFrac } = computeCameraRelativeUniforms(this.renderOrigin, x, y, z)
     const u = this.material.uniforms.u_originDelta
     if (u?.value?.set) u.value.set(originDelta.x, originDelta.y, originDelta.z)
@@ -421,19 +411,11 @@ export class GlobalLegacyBuffer {
     if (uf?.value?.set) uf.value.set(cameraOriginFrac.x, cameraOriginFrac.y, cameraOriginFrac.z)
   }
 
-  raycastSections (
-    raycaster: THREE.Raycaster,
-    sectionKeys: Iterable<string>,
-    out: THREE.Intersection[],
-  ): THREE.Intersection[] {
+  raycastSections(raycaster: THREE.Raycaster, sectionKeys: Iterable<string>, out: THREE.Intersection[]): THREE.Intersection[] {
     const ray = raycaster.ray
     const closest = raycaster.near
     const far = raycaster.far
-    _raycastOrigin.copy(ray.origin).sub(_raycastRenderOrigin.set(
-      this.renderOrigin.x,
-      this.renderOrigin.y,
-      this.renderOrigin.z,
-    ))
+    _raycastOrigin.copy(ray.origin).sub(_raycastRenderOrigin.set(this.renderOrigin.x, this.renderOrigin.y, this.renderOrigin.z))
     _raycastRay.origin.copy(_raycastOrigin)
     _raycastRay.direction.copy(ray.direction)
 
@@ -452,19 +434,14 @@ export class GlobalLegacyBuffer {
         const i2 = this.indices[dstIndexBase + i + 2]!
         if (i0 === i1 && i1 === i2) continue
 
-        const hit = intersectTriangle(
-          _raycastRay,
-          this.positions, this.aOrigin, dstFloatBase,
-          i0, i1, i2,
-          closest, far,
-        )
+        const hit = intersectTriangle(_raycastRay, this.positions, this.aOrigin, dstFloatBase, i0, i1, i2, closest, far)
         if (hit !== null) {
           out.push({
             distance: hit,
             point: ray.at(hit, new THREE.Vector3()),
             object: this.mesh,
             face: null,
-            faceIndex: Math.floor(i / 3),
+            faceIndex: Math.floor(i / 3)
           })
         }
       }
@@ -474,13 +451,12 @@ export class GlobalLegacyBuffer {
     return out
   }
 
-  getMemoryBytes (): number {
+  getMemoryBytes(): number {
     const verts = this.capacityQuads * VERTS_PER_QUAD
-    return verts * (FLOATS_PER_VERT * 3 + FLOATS_PER_LIGHT_VERT * 2 + FLOATS_PER_UV_VERT) * 4
-      + this.capacityQuads * INDICES_PER_QUAD * 4
+    return verts * (FLOATS_PER_VERT * 3 + FLOATS_PER_LIGHT_VERT * 2 + FLOATS_PER_UV_VERT) * 4 + this.capacityQuads * INDICES_PER_QUAD * 4
   }
 
-  reset (): void {
+  reset(): void {
     this.sectionSlots.clear()
     this.freeList.length = 0
     this.highWatermark = 0
@@ -488,21 +464,21 @@ export class GlobalLegacyBuffer {
     this.syncDefaultDrawGroups()
   }
 
-  dispose (): void {
+  dispose(): void {
     this.mesh.parent?.remove(this.mesh)
     this.mesh.geometry.dispose()
     this.reset()
   }
 
-  private markDirty (start: number, end: number): void {
+  private markDirty(start: number, end: number): void {
     this.pendingRanges.push({ start, end })
     this.pendingRanges.sort((a, b) => a.start - b.start)
     this.mergePendingRanges()
   }
 
-  private mergePendingRanges (): void {
+  private mergePendingRanges(): void {
     if (this.pendingRanges.length < 2) return
-    const merged: Array<{ start: number, end: number }> = []
+    const merged: Array<{ start: number; end: number }> = []
     let cur = this.pendingRanges[0]!
     for (let i = 1; i < this.pendingRanges.length; i++) {
       const next = this.pendingRanges[i]!
@@ -517,7 +493,7 @@ export class GlobalLegacyBuffer {
     this.pendingRanges = merged
   }
 
-  private takeFreeSlot (count: number): { start: number, count: number } | undefined {
+  private takeFreeSlot(count: number): { start: number; count: number } | undefined {
     for (let i = 0; i < this.freeList.length; i++) {
       const slot = this.freeList[i]!
       if (slot.count >= count) {
@@ -531,15 +507,15 @@ export class GlobalLegacyBuffer {
     return undefined
   }
 
-  private insertFreeSlot (slot: { start: number, count: number }): void {
+  private insertFreeSlot(slot: { start: number; count: number }): void {
     this.freeList.push(slot)
     this.freeList.sort((a, b) => a.start - b.start)
     this.mergeFreeList()
   }
 
-  private mergeFreeList (): void {
+  private mergeFreeList(): void {
     if (this.freeList.length < 2) return
-    const merged: Array<{ start: number, count: number }> = []
+    const merged: Array<{ start: number; count: number }> = []
     let cur = this.freeList[0]!
     for (let i = 1; i < this.freeList.length; i++) {
       const next = this.freeList[i]!
@@ -554,7 +530,7 @@ export class GlobalLegacyBuffer {
     this.freeList = merged
   }
 
-  private shrinkHighWatermark (): void {
+  private shrinkHighWatermark(): void {
     while (this.highWatermark > 0) {
       const tail = this.highWatermark - 1
       const free = this.freeList.find(s => s.start <= tail && s.start + s.count > tail)
@@ -565,7 +541,7 @@ export class GlobalLegacyBuffer {
     }
   }
 
-  private growCapacity (minQuads: number): void {
+  private growCapacity(minQuads: number): void {
     let newCap = this.capacityQuads
     while (newCap < minQuads) newCap += this.growthIncrementQuads
 
@@ -632,22 +608,12 @@ const _raycastOrigin = new THREE.Vector3()
 const _raycastRenderOrigin = new THREE.Vector3()
 const _raycastRay = new THREE.Ray()
 
-function readWorldVertex (
-  positions: Float32Array,
-  aOrigin: Float32Array,
-  floatBase: number,
-  vertIndex: number,
-  target: THREE.Vector3,
-): void {
+function readWorldVertex(positions: Float32Array, aOrigin: Float32Array, floatBase: number, vertIndex: number, target: THREE.Vector3): void {
   const f = floatBase + vertIndex * FLOATS_PER_VERT
-  target.set(
-    aOrigin[f]! + positions[f]!,
-    aOrigin[f + 1]! + positions[f + 1]!,
-    aOrigin[f + 2]! + positions[f + 2]!,
-  )
+  target.set(aOrigin[f]! + positions[f]!, aOrigin[f + 1]! + positions[f + 1]!, aOrigin[f + 2]! + positions[f + 2]!)
 }
 
-function intersectTriangle (
+function intersectTriangle(
   ray: THREE.Ray,
   positions: Float32Array,
   aOrigin: Float32Array,
@@ -656,7 +622,7 @@ function intersectTriangle (
   i1: number,
   i2: number,
   near: number,
-  far: number,
+  far: number
 ): number | null {
   readWorldVertex(positions, aOrigin, floatBase, i0, _vA)
   readWorldVertex(positions, aOrigin, floatBase, i1, _vB)
@@ -677,7 +643,7 @@ function intersectTriangle (
   return t
 }
 
-function pointInTriangle (p: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3): boolean {
+function pointInTriangle(p: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3): boolean {
   _edge1.subVectors(b, a)
   _edge2.subVectors(c, a)
   const n = _normal.crossVectors(_edge1, _edge2).normalize()

@@ -1,9 +1,5 @@
 export type { FramePerformanceSample, PerformanceInstabilityFactors } from './types'
 export { defaultPerformanceInstabilityFactors } from './types'
-export {
-  LONG_RENDER_TIME_MS,
-  LOW_FPS_THRESHOLD,
-  HIGH_TEXTURE_COUNT,
-} from './constants'
+export { LONG_RENDER_TIME_MS, LOW_FPS_THRESHOLD, HIGH_TEXTURE_COUNT } from './constants'
 export { PerformanceMonitor } from './PerformanceMonitor'
 export { formatPerformanceFactorsDebug } from './formatPerformanceFactorsDebug'

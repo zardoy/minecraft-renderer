@@ -8,7 +8,15 @@ import { proxy, subscribe } from 'valtio'
 import type { ResourcesManagerTransferred } from '../resourcesManager/resourcesManager'
 import { dynamicMcDataFiles } from './buildSharedConfig.mjs'
 import { DisplayWorldOptions, GraphicsInitOptions, RendererReactiveState, SoundSystem } from '../graphicsBackend/types'
-import { HighestBlockInfo, CustomBlockModels, BlockStateModelInfo, getBlockAssetsCacheKey, MesherConfig, MesherMainEvent, SECTION_HEIGHT } from '../mesher-shared/shared'
+import {
+  HighestBlockInfo,
+  CustomBlockModels,
+  BlockStateModelInfo,
+  getBlockAssetsCacheKey,
+  MesherConfig,
+  MesherMainEvent,
+  SECTION_HEIGHT
+} from '../mesher-shared/shared'
 import { chunkPos } from './simpleUtils'
 import { addNewStat, MC_RENDERER_DEBUG_OVERLAY_CLASS, removeAllStats, updatePanesVisibility, updateStatText } from './ui/newStats'
 import { getPlayerStateUtils } from '../graphicsBackend/playerState'
@@ -42,7 +50,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     chunksRenderBelowEnabled: false,
     chunksRenderDistanceOverride: undefined as number | undefined,
     chunksRenderDistanceEnabled: false,
-    disableEntities: false,
+    disableEntities: false
     // disableParticles: false
   })
 
@@ -89,7 +97,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   isProcessingQueue = false
   ONMESSAGE_TIME_LIMIT = 30 // ms
 
-  handleResize = () => { }
+  handleResize = () => {}
   highestBlocksByChunks = new Map<string, { [chunkKey: string]: HighestBlockInfo }>()
   blockEntities = {}
 
@@ -130,7 +138,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   private mesherPoolSnapshot = {
     mesherWorkers: -1,
     wasmMesher: false,
-    dedicatedChangeWorker: false,
+    dedicatedChangeWorker: false
   }
   private mesherReconfigureQueue: Promise<void> = Promise.resolve()
   private heightmapDebounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -202,7 +210,11 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     return (this.initOptions.config.statsVisible ?? 0) > 1
   }
 
-  constructor(public readonly resourcesManager: ResourcesManagerTransferred, public displayOptions: DisplayWorldOptions, public initOptions: GraphicsInitOptions) {
+  constructor(
+    public readonly resourcesManager: ResourcesManagerTransferred,
+    public displayOptions: DisplayWorldOptions,
+    public initOptions: GraphicsInitOptions
+  ) {
     this.snapshotInitialValues()
     this.worldRendererConfig = displayOptions.inWorldRenderingConfig
     this.playerStateReactive = displayOptions.playerStateReactive!
@@ -269,12 +281,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       if (!this.active) return
       await this.updateAssetsData()
     }
-    bindAbortableEmitterListener(
-      this.resourcesManager,
-      'assetsTexturesUpdated',
-      onAssetsTexturesUpdated,
-      this.abortController.signal
-    )
+    bindAbortableEmitterListener(this.resourcesManager, 'assetsTexturesUpdated', onAssetsTexturesUpdated, this.abortController.signal)
 
     this.watchReactivePlayerState()
     this.watchReactiveConfig()
@@ -282,7 +289,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.worldReadyResolvers.resolve()
   }
 
-  snapshotInitialValues() { }
+  snapshotInitialValues() {}
 
   wasChunkSentToWorker(chunkKey: string) {
     return this.loadedChunks[chunkKey]
@@ -304,7 +311,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     }
   }
 
-  async getBlockInfo(blockPos: { x: number, y: number, z: number }, stateId: number) {
+  async getBlockInfo(blockPos: { x: number; y: number; z: number }, stateId: number) {
     const CHUNK_SIZE = 16
     const chunkKey = `${Math.floor(blockPos.x / CHUNK_SIZE) * CHUNK_SIZE},${Math.floor(blockPos.z / CHUNK_SIZE) * CHUNK_SIZE}`
     const customBlockName = this.protocolCustomBlocks.get(chunkKey)?.[`${blockPos.x},${blockPos.y},${blockPos.z}`]
@@ -322,14 +329,17 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
   private createMesherWorker() {
     const script = this.getMesherWorkerScript()
-    return initMesherWorker((data) => {
-      if (Array.isArray(data)) {
-        this.messageQueue.push(...data)
-      } else {
-        this.messageQueue.push(data)
-      }
-      void this.processMessageQueue('worker')
-    }, script === 'wasm' ? 'mesherWasm.js' : 'mesher.js')
+    return initMesherWorker(
+      data => {
+        if (Array.isArray(data)) {
+          this.messageQueue.push(...data)
+        } else {
+          this.messageQueue.push(data)
+        }
+        void this.processMessageQueue('worker')
+      },
+      script === 'wasm' ? 'mesherWasm.js' : 'mesher.js'
+    )
   }
 
   initWorkers(numWorkers = this.worldRendererConfig.mesherWorkers) {
@@ -342,7 +352,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.mesherPoolSnapshot = {
       mesherWorkers: this.worldRendererConfig.mesherWorkers,
       wasmMesher: this.worldRendererConfig.wasmMesher,
-      dedicatedChangeWorker: this.worldRendererConfig.dedicatedChangeWorker,
+      dedicatedChangeWorker: this.worldRendererConfig.dedicatedChangeWorker
     }
   }
 
@@ -352,11 +362,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     const tryReconfigure = () => {
       const cfg = this.worldRendererConfig
       const snap = this.mesherPoolSnapshot
-      if (
-        cfg.mesherWorkers === snap.mesherWorkers &&
-        cfg.wasmMesher === snap.wasmMesher &&
-        cfg.dedicatedChangeWorker === snap.dedicatedChangeWorker
-      ) {
+      if (cfg.mesherWorkers === snap.mesherWorkers && cfg.wasmMesher === snap.wasmMesher && cfg.dedicatedChangeWorker === snap.dedicatedChangeWorker) {
         return
       }
       this.syncMesherPoolSnapshot()
@@ -364,16 +370,14 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     }
 
     for (const key of ['mesherWorkers', 'wasmMesher', 'dedicatedChangeWorker'] as const) {
-      this.valtioUnsubs.push(
-        this.onReactiveConfigUpdated(key, tryReconfigure, false)
-      )
+      this.valtioUnsubs.push(this.onReactiveConfigUpdated(key, tryReconfigure, false))
     }
   }
 
   private enqueueMesherWorkersReconfigure() {
     this.mesherReconfigureQueue = this.mesherReconfigureQueue
       .then(() => this.reconfigureMesherWorkers())
-      .catch((err) => {
+      .catch(err => {
         console.error('[Mesher] Failed to reconfigure workers:', err)
       })
   }
@@ -449,7 +453,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
   onReactiveConfigUpdated<T extends keyof typeof this.worldRendererConfig>(
     key: T,
-    callback: (value: typeof this.worldRendererConfig[T]) => void,
+    callback: (value: (typeof this.worldRendererConfig)[T]) => void,
     initial = true
   ) {
     if (initial) {
@@ -461,19 +465,19 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     return subscribeKey(this.worldRendererConfig, key, callback)
   }
 
-  onReactiveDebugUpdated<T extends keyof typeof this.reactiveDebugParams>(key: T, callback: (value: typeof this.reactiveDebugParams[T]) => void) {
+  onReactiveDebugUpdated<T extends keyof typeof this.reactiveDebugParams>(key: T, callback: (value: (typeof this.reactiveDebugParams)[T]) => void) {
     callback(this.reactiveDebugParams[key])
     subscribeKey(this.reactiveDebugParams, key, callback)
   }
 
   watchReactivePlayerState() {
     this.valtioUnsubs.push(
-      this.onReactivePlayerStateUpdated('backgroundColor', (value) => {
+      this.onReactivePlayerStateUpdated('backgroundColor', value => {
         this.changeBackgroundColor(value)
       })
     )
     this.valtioUnsubs.push(
-      this.onReactivePlayerStateUpdated('cardinalLight', (value) => {
+      this.onReactivePlayerStateUpdated('cardinalLight', value => {
         this.changeCardinalLight(value)
       })
     )
@@ -481,7 +485,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
   watchReactiveConfig() {
     this.valtioUnsubs.push(
-      this.onReactiveConfigUpdated('fetchPlayerSkins', (value) => {
+      this.onReactiveConfigUpdated('fetchPlayerSkins', value => {
         setSkinsConfig({ apiEnabled: value })
       })
     )
@@ -490,7 +494,12 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   async processMessageQueue(source: string) {
     if (this.isProcessingQueue || this.messageQueue.length === 0) return
     this.logWorkerWork(`# ${source} processing queue`)
-    if (this.lastRendered && performance.now() - this.lastRendered > this.ONMESSAGE_TIME_LIMIT && this.worldRendererConfig._experimentalSmoothChunkLoading && this.renderingActive) {
+    if (
+      this.lastRendered &&
+      performance.now() - this.lastRendered > this.ONMESSAGE_TIME_LIMIT &&
+      this.worldRendererConfig._experimentalSmoothChunkLoading &&
+      this.renderingActive
+    ) {
       const start = performance.now()
       await new Promise(resolve => {
         requestAnimationFrame(resolve)
@@ -511,7 +520,10 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       }
 
       // Check if we've exceeded the time limit
-      if (processingStopped || (performance.now() - startTime > this.ONMESSAGE_TIME_LIMIT && this.renderingActive && this.worldRendererConfig._experimentalSmoothChunkLoading)) {
+      if (
+        processingStopped ||
+        (performance.now() - startTime > this.ONMESSAGE_TIME_LIMIT && this.renderingActive && this.worldRendererConfig._experimentalSmoothChunkLoading)
+      ) {
         // If we have more messages and exceeded time limit, schedule next batch
         if (this.messageQueue.length > 0) {
           requestAnimationFrame(async () => {
@@ -543,7 +555,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       const chunkCoords = data.key.split(',').map(Number)
       this.lastChunkDistance = Math.max(...this.getDistance(new Vec3(chunkCoords[0], 0, chunkCoords[2])))
     }
-    if (data.type === 'sectionFinished') { // on after load & unload section
+    if (data.type === 'sectionFinished') {
+      // on after load & unload section
       this.logWorkerWork(`<- ${data.workerIndex} sectionFinished ${data.key} ${JSON.stringify({ processTime: data.processTime })}`)
       if (!this.sectionsWaiting.has(data.key)) {
         console.debug(`sectionFinished for non-outstanding section ${data.key} (viewDistance=${this.viewDistance})`)
@@ -557,7 +570,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
       const chunkCoords = data.key.split(',').map(Number)
       const chunkKey = `${chunkCoords[0]},${chunkCoords[2]}`
-      if (this.loadedChunks[chunkKey]) { // ensure chunk data was added, not a neighbor chunk update
+      if (this.loadedChunks[chunkKey]) {
+        // ensure chunk data was added, not a neighbor chunk update
         let loaded = true
         const sectionHeight = this.getSectionHeight()
         for (let y = this.worldMinYRender; y < this.worldSizeParams.worldHeight; y += sectionHeight) {
@@ -600,15 +614,15 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       this.renderUpdateEmitter.emit('update')
       if (data.processTime) {
         this.workersProcessAverageTimeCount++
-        this.workersProcessAverageTime = ((this.workersProcessAverageTime * (this.workersProcessAverageTimeCount - 1)) + data.processTime) / this.workersProcessAverageTimeCount
+        this.workersProcessAverageTime =
+          (this.workersProcessAverageTime * (this.workersProcessAverageTimeCount - 1) + data.processTime) / this.workersProcessAverageTimeCount
         this.maxWorkersProcessTime = Math.max(this.maxWorkersProcessTime, data.processTime)
       }
-      if (typeof data.pre === 'number' && typeof data.wasm === 'number' && typeof data.post === 'number'
-          && (data.pre > 0 || data.wasm > 0 || data.post > 0)) {
+      if (typeof data.pre === 'number' && typeof data.wasm === 'number' && typeof data.post === 'number' && (data.pre > 0 || data.wasm > 0 || data.post > 0)) {
         const n = ++this.workersPhaseSampleCount
-        this.workersPreAverageTime = ((this.workersPreAverageTime * (n - 1)) + data.pre) / n
-        this.workersWasmAverageTime = ((this.workersWasmAverageTime * (n - 1)) + data.wasm) / n
-        this.workersPostAverageTime = ((this.workersPostAverageTime * (n - 1)) + data.post) / n
+        this.workersPreAverageTime = (this.workersPreAverageTime * (n - 1) + data.pre) / n
+        this.workersWasmAverageTime = (this.workersWasmAverageTime * (n - 1) + data.wasm) / n
+        this.workersPostAverageTime = (this.workersPostAverageTime * (n - 1) + data.post) / n
         // Pre-stage substages — additive schema; treat undefined as 0 so
         // events from older mesher builds don't poison the running mean.
         const ptc = typeof data.preTargetConvert === 'number' ? data.preTargetConvert : 0
@@ -618,11 +632,11 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         const po = typeof data.preOther === 'number' ? data.preOther : 0
         const pch = typeof data.preCacheHits === 'number' ? data.preCacheHits : 0
         const pcm = typeof data.preCacheMisses === 'number' ? data.preCacheMisses : 0
-        this.workersPreTargetConvertAverageTime = ((this.workersPreTargetConvertAverageTime * (n - 1)) + ptc) / n
-        this.workersPreNeighborConvertAverageTime = ((this.workersPreNeighborConvertAverageTime * (n - 1)) + pnc) / n
-        this.workersPreNeighborCountAverage = ((this.workersPreNeighborCountAverage * (n - 1)) + pncn) / n
-        this.workersPreTypedArrayBuildAverageTime = ((this.workersPreTypedArrayBuildAverageTime * (n - 1)) + ptab) / n
-        this.workersPreOtherAverageTime = ((this.workersPreOtherAverageTime * (n - 1)) + po) / n
+        this.workersPreTargetConvertAverageTime = (this.workersPreTargetConvertAverageTime * (n - 1) + ptc) / n
+        this.workersPreNeighborConvertAverageTime = (this.workersPreNeighborConvertAverageTime * (n - 1) + pnc) / n
+        this.workersPreNeighborCountAverage = (this.workersPreNeighborCountAverage * (n - 1) + pncn) / n
+        this.workersPreTypedArrayBuildAverageTime = (this.workersPreTypedArrayBuildAverageTime * (n - 1) + ptab) / n
+        this.workersPreOtherAverageTime = (this.workersPreOtherAverageTime * (n - 1) + po) / n
         this.workersPreCacheHitsTotal += pch
         this.workersPreCacheMissesTotal += pcm
         if (this.worldRendererConfig.debugWasmPerf && n % WorldRendererCommon.PHASE_PERF_LOG_INTERVAL === 0) {
@@ -640,7 +654,9 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
           const cacheTotal = this.workersPreCacheHitsTotal + this.workersPreCacheMissesTotal
           const cacheHitPct = cacheTotal > 0 ? (this.workersPreCacheHitsTotal / cacheTotal) * 100 : 0
           // eslint-disable-next-line no-console
-          console.log(`[wasm-mesher perf] n=${n} pre=${this.workersPreAverageTime.toFixed(2)}ms (${prePct.toFixed(1)}%) wasm=${this.workersWasmAverageTime.toFixed(2)}ms (${wasmPct.toFixed(1)}%) post=${this.workersPostAverageTime.toFixed(2)}ms (${postPct.toFixed(1)}%) | pre.targetConvert=${this.workersPreTargetConvertAverageTime.toFixed(2)}ms (${tgtPct.toFixed(1)}%) pre.neighborConvert=${this.workersPreNeighborConvertAverageTime.toFixed(2)}ms (${nbrPct.toFixed(1)}%) [n̄=${nbrCnt.toFixed(2)}, per-nbr=${nbrPerAvg.toFixed(2)}ms] pre.typedArrayBuild=${this.workersPreTypedArrayBuildAverageTime.toFixed(2)}ms (${tabPct.toFixed(1)}%) pre.other=${this.workersPreOtherAverageTime.toFixed(2)}ms (${othPct.toFixed(1)}%) | pre.cache hits=${this.workersPreCacheHitsTotal} misses=${this.workersPreCacheMissesTotal} (${cacheHitPct.toFixed(1)}% hit)`)
+          console.log(
+            `[wasm-mesher perf] n=${n} pre=${this.workersPreAverageTime.toFixed(2)}ms (${prePct.toFixed(1)}%) wasm=${this.workersWasmAverageTime.toFixed(2)}ms (${wasmPct.toFixed(1)}%) post=${this.workersPostAverageTime.toFixed(2)}ms (${postPct.toFixed(1)}%) | pre.targetConvert=${this.workersPreTargetConvertAverageTime.toFixed(2)}ms (${tgtPct.toFixed(1)}%) pre.neighborConvert=${this.workersPreNeighborConvertAverageTime.toFixed(2)}ms (${nbrPct.toFixed(1)}%) [n̄=${nbrCnt.toFixed(2)}, per-nbr=${nbrPerAvg.toFixed(2)}ms] pre.typedArrayBuild=${this.workersPreTypedArrayBuildAverageTime.toFixed(2)}ms (${tabPct.toFixed(1)}%) pre.other=${this.workersPreOtherAverageTime.toFixed(2)}ms (${othPct.toFixed(1)}%) | pre.cache hits=${this.workersPreCacheHitsTotal} misses=${this.workersPreCacheMissesTotal} (${cacheHitPct.toFixed(1)}% hit)`
+          )
         }
       }
     }
@@ -678,7 +694,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.updateChunksStats()
   }
 
-  changeHandSwingingState(isAnimationPlaying: boolean, isLeftHand: boolean): void { }
+  changeHandSwingingState(isAnimationPlaying: boolean, isLeftHand: boolean): void {}
 
   abstract handleWorkerMessage(data: WorkerReceive): void
 
@@ -768,7 +784,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
   getMesherConfig(): MesherConfig {
     const timeOfDay = this.timeOfTheDay
-    const skyLight = (timeOfDay < 0 || timeOfDay > 24_000) ? 15 : calculateSkyLightSimple(timeOfDay)
+    const skyLight = timeOfDay < 0 || timeOfDay > 24_000 ? 15 : calculateSkyLightSimple(timeOfDay)
     return {
       version: this.version,
       enableLighting: this.worldRendererConfig.enableLighting,
@@ -785,7 +801,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       worldMaxY: this.worldMinYRender + this.worldSizeParams.worldHeight,
       disableConversionCache: this.worldRendererConfig.disableMesherConversionCache,
       computeWireframeEdges: this.worldRendererConfig.futuristicReveal === true,
-      shaderCubeBlocks: this.isShaderCubeBlocksEnabled(),
+      shaderCubeBlocks: this.isShaderCubeBlocksEnabled()
     }
   }
 
@@ -809,7 +825,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
           latest: resources.blocksAtlasJson
         },
         blockstatesModels,
-        config: this.getMesherConfig(),
+        config: this.getMesherConfig()
       })
     }
 
@@ -867,10 +883,13 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       this.workers[0].postMessage({
         type: 'getHeightmap',
         x,
-        z,
+        z
       })
     }
-    this.logWorkerWork(() => `-> chunk ${JSON.stringify({ x, z, chunkLength: chunk.length, customBlockModelsLength: customBlockModels ? Object.keys(customBlockModels).length : 0 })}`)
+    this.logWorkerWork(
+      () =>
+        `-> chunk ${JSON.stringify({ x, z, chunkLength: chunk.length, customBlockModelsLength: customBlockModels ? Object.keys(customBlockModels).length : 0 })}`
+    )
     this.mesherLogReader?.chunkReceived(x, z, chunk.length)
     const sectionHeight = this.getSectionHeight()
     const CHUNK_SIZE = 16
@@ -932,7 +951,9 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       const sectionKey = `${x},${y},${z}`
       const waitingCount = this.sectionsWaiting.get(sectionKey)
       if (waitingCount !== undefined && waitingCount > 0) {
-        console.debug(`[removeColumn] clearing non-zero sectionsWaiting for ${sectionKey}: ${waitingCount} (chunk ${x},${z}, viewDistance=${this.viewDistance})`)
+        console.debug(
+          `[removeColumn] clearing non-zero sectionsWaiting for ${sectionKey}: ${waitingCount} (chunk ${x},${z}, viewDistance=${this.viewDistance})`
+        )
       }
       this.sectionsWaiting.delete(sectionKey)
       delete this.finishedSections[sectionKey]
@@ -970,126 +991,206 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     void set()
   }
 
-  updateEntity(e: any, isUpdate = false) { }
+  updateEntity(e: any, isUpdate = false) {}
 
   abstract updatePlayerEntity?(e: any): void
 
-  lightUpdate(chunkX: number, chunkZ: number) { }
+  lightUpdate(chunkX: number, chunkZ: number) {}
 
   connect(worldView: WorldViewWorker) {
     const worldEmitter = worldView
     const signal = this.abortController.signal
 
-    bindAbortableListener(worldEmitter, 'entity', (e) => {
-      this.updateEntity(e, false)
-    }, signal)
-    bindAbortableListener(worldEmitter, 'entityMoved', (e) => {
-      this.updateEntity(e, true)
-    }, signal)
-    bindAbortableListener(worldEmitter, 'playerEntity', (e) => {
-      this.updatePlayerEntity?.(e)
-    }, signal)
+    bindAbortableListener(
+      worldEmitter,
+      'entity',
+      e => {
+        this.updateEntity(e, false)
+      },
+      signal
+    )
+    bindAbortableListener(
+      worldEmitter,
+      'entityMoved',
+      e => {
+        this.updateEntity(e, true)
+      },
+      signal
+    )
+    bindAbortableListener(
+      worldEmitter,
+      'playerEntity',
+      e => {
+        this.updatePlayerEntity?.(e)
+      },
+      signal
+    )
 
     let currentLoadChunkBatch = null as {
       timeout
       data
     } | null
-    bindAbortableListener(worldEmitter, 'loadChunk', ({ x, z, chunk, worldConfig, isLightUpdate }) => {
-      this.worldSizeParams = worldConfig
-      this.queuedChunks.add(`${x},${z}`)
-      const args = [x, z, chunk, isLightUpdate]
-      if (!currentLoadChunkBatch) {
-        // add a setting to use debounce instead
-        currentLoadChunkBatch = {
-          data: [],
-          timeout: setTimeout(() => {
-            for (const args of currentLoadChunkBatch!.data) {
-              this.queuedChunks.delete(`${args[0]},${args[1]}`)
-              this.addColumn(...args as Parameters<typeof this.addColumn>)
-            }
-            for (const fn of this.queuedFunctions) {
-              fn()
-            }
-            this.queuedFunctions = []
-            currentLoadChunkBatch = null
-          }, this.worldRendererConfig.addChunksBatchWaitTime)
+    bindAbortableListener(
+      worldEmitter,
+      'loadChunk',
+      ({ x, z, chunk, worldConfig, isLightUpdate }) => {
+        this.worldSizeParams = worldConfig
+        this.queuedChunks.add(`${x},${z}`)
+        const args = [x, z, chunk, isLightUpdate]
+        if (!currentLoadChunkBatch) {
+          // add a setting to use debounce instead
+          currentLoadChunkBatch = {
+            data: [],
+            timeout: setTimeout(() => {
+              for (const args of currentLoadChunkBatch!.data) {
+                this.queuedChunks.delete(`${args[0]},${args[1]}`)
+                this.addColumn(...(args as Parameters<typeof this.addColumn>))
+              }
+              for (const fn of this.queuedFunctions) {
+                fn()
+              }
+              this.queuedFunctions = []
+              currentLoadChunkBatch = null
+            }, this.worldRendererConfig.addChunksBatchWaitTime)
+          }
         }
-      }
-      currentLoadChunkBatch.data.push(args)
-    }, signal)
+        currentLoadChunkBatch.data.push(args)
+      },
+      signal
+    )
     // todo remove and use other architecture instead so data flow is clear
-    bindAbortableListener(worldEmitter, 'blockEntities', (blockEntities) => {
-      this.blockEntities = blockEntities
-    }, signal)
+    bindAbortableListener(
+      worldEmitter,
+      'blockEntities',
+      blockEntities => {
+        this.blockEntities = blockEntities
+      },
+      signal
+    )
 
-    bindAbortableListener(worldEmitter, 'unloadChunk', ({ x, z }) => {
-      this.removeColumn(x, z)
-    }, signal)
+    bindAbortableListener(
+      worldEmitter,
+      'unloadChunk',
+      ({ x, z }) => {
+        this.removeColumn(x, z)
+      },
+      signal
+    )
 
-    bindAbortableListener(worldEmitter, 'blockUpdate', ({ pos, stateId }) => {
-      this.setBlockStateId(new Vec3(pos.x, pos.y, pos.z), stateId)
-    }, signal)
+    bindAbortableListener(
+      worldEmitter,
+      'blockUpdate',
+      ({ pos, stateId }) => {
+        this.setBlockStateId(new Vec3(pos.x, pos.y, pos.z), stateId)
+      },
+      signal
+    )
 
-    bindAbortableListener(worldEmitter, 'chunkPosUpdate', ({ pos }) => {
-      this.updateViewerPosition(pos)
-    }, signal)
+    bindAbortableListener(
+      worldEmitter,
+      'chunkPosUpdate',
+      ({ pos }) => {
+        this.updateViewerPosition(pos)
+      },
+      signal
+    )
 
-    bindAbortableListener(worldEmitter, 'end', () => {
-      this.worldStop?.()
-    }, signal)
+    bindAbortableListener(
+      worldEmitter,
+      'end',
+      () => {
+        this.worldStop?.()
+      },
+      signal
+    )
 
-    bindAbortableListener(worldEmitter, 'renderDistance', (d) => {
-      this.viewDistance = d
-      this.chunksLength = d === 0 ? 1 : generateSpiralMatrix(d).length
-      this.allChunksFinished = Object.keys(this.finishedChunks).length === this.chunksLength
-      this.onRenderDistanceChanged?.(d)
-    }, signal)
+    bindAbortableListener(
+      worldEmitter,
+      'renderDistance',
+      d => {
+        this.viewDistance = d
+        this.chunksLength = d === 0 ? 1 : generateSpiralMatrix(d).length
+        this.allChunksFinished = Object.keys(this.finishedChunks).length === this.chunksLength
+        this.onRenderDistanceChanged?.(d)
+      },
+      signal
+    )
 
-    bindAbortableListener(worldEmitter, 'markAsLoaded', ({ x, z }) => {
-      this.markAsLoaded(x, z)
-    }, signal)
+    bindAbortableListener(
+      worldEmitter,
+      'markAsLoaded',
+      ({ x, z }) => {
+        this.markAsLoaded(x, z)
+      },
+      signal
+    )
 
-    bindAbortableListener(worldEmitter, 'updateLight', ({ pos }) => {
-      this.lightUpdate(pos.x, pos.z)
-    }, signal)
+    bindAbortableListener(
+      worldEmitter,
+      'updateLight',
+      ({ pos }) => {
+        this.lightUpdate(pos.x, pos.z)
+      },
+      signal
+    )
 
-    bindAbortableListener(worldEmitter, 'onWorldSwitch', () => {
-      for (const fn of this.onWorldSwitched) {
-        try {
-          fn()
-        } catch (e) {
-          setTimeout(() => {
-            console.log('[Renderer Backend] Error in onWorldSwitched:')
-            throw e
-          }, 0)
+    bindAbortableListener(
+      worldEmitter,
+      'onWorldSwitch',
+      () => {
+        for (const fn of this.onWorldSwitched) {
+          try {
+            fn()
+          } catch (e) {
+            setTimeout(() => {
+              console.log('[Renderer Backend] Error in onWorldSwitched:')
+              throw e
+            }, 0)
+          }
         }
-      }
-    }, signal)
+      },
+      signal
+    )
 
-    bindAbortableListener(worldEmitter, 'time', (timeOfDay) => {
-      if (!this.worldRendererConfig.dayCycle) {
-        return
-      }
-      this.timeUpdated?.(timeOfDay)
+    bindAbortableListener(
+      worldEmitter,
+      'time',
+      timeOfDay => {
+        if (!this.worldRendererConfig.dayCycle) {
+          return
+        }
+        this.timeUpdated?.(timeOfDay)
 
-      this.timeOfTheDay = timeOfDay
+        this.timeOfTheDay = timeOfDay
 
-      const skyLight = (timeOfDay < 0 || timeOfDay > 24_000) ? 15 : calculateSkyLightSimple(timeOfDay)
-      if (this.lastMesherSkyLight === skyLight) return
-      this.lastMesherSkyLight = skyLight
-      if (this.workers.length > 0) {
-        this.sendWorkers({ config: { skyLight } } as WorkerSend)
-      }
-      this.onDayCycleSkyLightChanged?.(skyLight)
-    }, signal)
+        const skyLight = timeOfDay < 0 || timeOfDay > 24_000 ? 15 : calculateSkyLightSimple(timeOfDay)
+        if (this.lastMesherSkyLight === skyLight) return
+        this.lastMesherSkyLight = skyLight
+        if (this.workers.length > 0) {
+          this.sendWorkers({ config: { skyLight } } as WorkerSend)
+        }
+        this.onDayCycleSkyLightChanged?.(skyLight)
+      },
+      signal
+    )
 
-    bindAbortableListener(worldEmitter, 'biomeUpdate', ({ biome }) => {
-      this.biomeUpdated?.(biome)
-    }, signal)
+    bindAbortableListener(
+      worldEmitter,
+      'biomeUpdate',
+      ({ biome }) => {
+        this.biomeUpdated?.(biome)
+      },
+      signal
+    )
 
-    bindAbortableListener(worldEmitter, 'biomeReset', () => {
-      this.biomeReset?.()
-    }, signal)
+    bindAbortableListener(
+      worldEmitter,
+      'biomeReset',
+      () => {
+        this.biomeReset?.()
+      },
+      signal
+    )
   }
 
   setBlockStateIdInner(pos: Vec3, stateId: number | undefined, needAoRecalculation = true) {
@@ -1117,10 +1218,13 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       if (!this.worldRendererConfig.wasmMesher) {
         const existing = this.heightmapDebounceTimers.get(chunkKey2)
         if (existing) clearTimeout(existing)
-        this.heightmapDebounceTimers.set(chunkKey2, setTimeout(() => {
-          this.heightmapDebounceTimers.delete(chunkKey2)
-          this.workers[0]?.postMessage({ type: 'getHeightmap', x: chunkCornerX, z: chunkCornerZ })
-        }, 100))
+        this.heightmapDebounceTimers.set(
+          chunkKey2,
+          setTimeout(() => {
+            this.heightmapDebounceTimers.delete(chunkKey2)
+            this.workers[0]?.postMessage({ type: 'getHeightmap', x: chunkCornerX, z: chunkCornerZ })
+          }, 100)
+        )
       }
     }
     this.logWorkerWork(`-> blockUpdate ${JSON.stringify({ pos, stateId, customBlockModels })}`)
@@ -1131,7 +1235,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       if ((pos.x & 15) === 0) this.setSectionDirty(pos.offset(-CHUNK_SIZE, 0, 0), true, true)
       if ((pos.x & 15) === 15) this.setSectionDirty(pos.offset(CHUNK_SIZE, 0, 0), true, true)
       if ((pos.y & (sectionHeight - 1)) === 0) this.setSectionDirty(pos.offset(0, -sectionHeight, 0), true, true)
-      if ((pos.y & (sectionHeight - 1)) === (sectionHeight - 1)) this.setSectionDirty(pos.offset(0, sectionHeight, 0), true, true)
+      if ((pos.y & (sectionHeight - 1)) === sectionHeight - 1) this.setSectionDirty(pos.offset(0, sectionHeight, 0), true, true)
       if ((pos.z & 15) === 0) this.setSectionDirty(pos.offset(0, 0, -CHUNK_SIZE), true, true)
       if ((pos.z & 15) === 15) this.setSectionDirty(pos.offset(0, 0, CHUNK_SIZE), true, true)
 
@@ -1152,10 +1256,14 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         if ((pos.z & 15) === 15 && (pos.y & (sectionHeight - 1)) === 0) this.setSectionDirty(pos.offset(0, -sectionHeight, CHUNK_SIZE), true, true)
 
         // x & z neighbors
-        if ((pos.y & (sectionHeight - 1)) === 0 && (pos.x & 15) === 0 && (pos.z & 15) === 0) this.setSectionDirty(pos.offset(-CHUNK_SIZE, -sectionHeight, -CHUNK_SIZE), true, true)
-        if ((pos.y & (sectionHeight - 1)) === 0 && (pos.x & 15) === 15 && (pos.z & 15) === 0) this.setSectionDirty(pos.offset(CHUNK_SIZE, -sectionHeight, -CHUNK_SIZE), true, true)
-        if ((pos.y & (sectionHeight - 1)) === 0 && (pos.x & 15) === 0 && (pos.z & 15) === 15) this.setSectionDirty(pos.offset(-CHUNK_SIZE, -sectionHeight, CHUNK_SIZE), true, true)
-        if ((pos.y & (sectionHeight - 1)) === 0 && (pos.x & 15) === 15 && (pos.z & 15) === 15) this.setSectionDirty(pos.offset(CHUNK_SIZE, -sectionHeight, CHUNK_SIZE), true, true)
+        if ((pos.y & (sectionHeight - 1)) === 0 && (pos.x & 15) === 0 && (pos.z & 15) === 0)
+          this.setSectionDirty(pos.offset(-CHUNK_SIZE, -sectionHeight, -CHUNK_SIZE), true, true)
+        if ((pos.y & (sectionHeight - 1)) === 0 && (pos.x & 15) === 15 && (pos.z & 15) === 0)
+          this.setSectionDirty(pos.offset(CHUNK_SIZE, -sectionHeight, -CHUNK_SIZE), true, true)
+        if ((pos.y & (sectionHeight - 1)) === 0 && (pos.x & 15) === 0 && (pos.z & 15) === 15)
+          this.setSectionDirty(pos.offset(-CHUNK_SIZE, -sectionHeight, CHUNK_SIZE), true, true)
+        if ((pos.y & (sectionHeight - 1)) === 0 && (pos.x & 15) === 15 && (pos.z & 15) === 15)
+          this.setSectionDirty(pos.offset(CHUNK_SIZE, -sectionHeight, CHUNK_SIZE), true, true)
       }
     }
   }
@@ -1210,13 +1318,15 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   async debugGetWorkerCustomBlockModel(pos: Vec3) {
     const data = [] as Array<Promise<string>>
     for (const worker of this.workers) {
-      data.push(new Promise((resolve) => {
-        worker.addEventListener('message', (e) => {
-          if (e.data.type === 'customBlockModel') {
-            resolve(e.data.customBlockModel)
-          }
+      data.push(
+        new Promise(resolve => {
+          worker.addEventListener('message', e => {
+            if (e.data.type === 'customBlockModel') {
+              resolve(e.data.customBlockModel)
+            }
+          })
         })
-      }))
+      )
       worker.postMessage({
         type: 'getCustomBlockModel',
         pos
@@ -1225,7 +1335,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     return Promise.all(data)
   }
 
-  setSectionDirty(pos: Vec3, value = true, useChangeWorker = false) { // value false is used for unloading chunks
+  setSectionDirty(pos: Vec3, value = true, useChangeWorker = false) {
+    // value false is used for unloading chunks
     if (!this.forceCallFromMesherReplayer && this.mesherLogReader) return
 
     if (this.viewDistance === -1) throw new Error('viewDistance not set')
@@ -1253,30 +1364,36 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
       // Schedule trailing dispatch after throttle window
       if (!this.sectionDirtyTimers.has(key)) {
-        this.sectionDirtyTimers.set(key, setTimeout(() => {
-          const args = this.sectionDirtyPendingArgs.get(key)
-          this.sectionDirtyCount.delete(key)
-          this.sectionDirtyTimers.delete(key)
-          this.sectionDirtyPendingArgs.delete(key)
-          if (args) {
-            this._dispatchDirtyImmediate(args.pos, args.value, args.useChangeWorker)
-          }
-        }, WorldRendererCommon.GEOMETRY_THROTTLE_DELAY))
+        this.sectionDirtyTimers.set(
+          key,
+          setTimeout(() => {
+            const args = this.sectionDirtyPendingArgs.get(key)
+            this.sectionDirtyCount.delete(key)
+            this.sectionDirtyTimers.delete(key)
+            this.sectionDirtyPendingArgs.delete(key)
+            if (args) {
+              this._dispatchDirtyImmediate(args.pos, args.value, args.useChangeWorker)
+            }
+          }, WorldRendererCommon.GEOMETRY_THROTTLE_DELAY)
+        )
       }
     } else {
       // Subsequent requests — throttle: store latest args, existing timer will dispatch
       this.sectionDirtyPendingArgs.set(key, { pos, value, useChangeWorker })
 
       if (!this.sectionDirtyTimers.has(key)) {
-        this.sectionDirtyTimers.set(key, setTimeout(() => {
-          const args = this.sectionDirtyPendingArgs.get(key)
-          this.sectionDirtyCount.delete(key)
-          this.sectionDirtyTimers.delete(key)
-          this.sectionDirtyPendingArgs.delete(key)
-          if (args) {
-            this._dispatchDirtyImmediate(args.pos, args.value, args.useChangeWorker)
-          }
-        }, WorldRendererCommon.GEOMETRY_THROTTLE_DELAY))
+        this.sectionDirtyTimers.set(
+          key,
+          setTimeout(() => {
+            const args = this.sectionDirtyPendingArgs.get(key)
+            this.sectionDirtyCount.delete(key)
+            this.sectionDirtyTimers.delete(key)
+            this.sectionDirtyPendingArgs.delete(key)
+            if (args) {
+              this._dispatchDirtyImmediate(args.pos, args.value, args.useChangeWorker)
+            }
+          }, WorldRendererCommon.GEOMETRY_THROTTLE_DELAY)
+        )
       }
     }
   }
@@ -1301,7 +1418,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         y: pos.y,
         z: pos.z,
         value,
-        config: this.getMesherConfig(),
+        config: this.getMesherConfig()
       })
     } else {
       this.toWorkerMessagesQueue[hash] ??= []
@@ -1311,7 +1428,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         y: pos.y,
         z: pos.z,
         value,
-        config: this.getMesherConfig(),
+        config: this.getMesherConfig()
       })
       this.dispatchMessages()
     }
@@ -1327,7 +1444,9 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         const messages = this.toWorkerMessagesQueue[workerIndex]
         worker.postMessage(messages)
         for (const message of messages) {
-          this.logWorkerWork(`-> ${workerIndex} dispatchMessages ${message.type} ${JSON.stringify({ x: message.x, y: message.y, z: message.z, value: message.value })}`)
+          this.logWorkerWork(
+            `-> ${workerIndex} dispatchMessages ${message.type} ${JSON.stringify({ x: message.x, y: message.y, z: message.z, value: message.value })}`
+          )
         }
       }
       this.toWorkerMessagesQueue = {}
@@ -1435,7 +1554,10 @@ export const initMesherWorker = (onGotMessage: (data: any) => void, workerName =
   worker.onmessage = ({ data }) => {
     onGotMessage(data)
   }
-  if (worker.on) worker.on('message', (data) => { worker.onmessage({ data }) })
+  if (worker.on)
+    worker.on('message', data => {
+      worker.onmessage({ data })
+    })
   return worker
 }
 
@@ -1466,19 +1588,24 @@ export const meshersSendMcDataAwait = (
   mcDataFull: IndexedData,
   timeoutMs = 10_000
 ): Promise<void> => {
-  return Promise.all(workers.map(worker => new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      worker.removeEventListener('message', handler as EventListener)
-      reject(new Error(`mcData transfer timeout (${timeoutMs}ms)`))
-    }, timeoutMs)
-    const handler = ({ data }: MessageEvent) => {
-      if (data?.type === 'mcDataApplied') {
-        clearTimeout(timeout)
-        worker.removeEventListener('message', handler as EventListener)
-        resolve()
-      }
-    }
-    worker.addEventListener('message', handler as EventListener)
-    meshersSendMcData([worker], version, mcDataKeys, mcDataFull)
-  }))).then(() => undefined)
+  return Promise.all(
+    workers.map(
+      worker =>
+        new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            worker.removeEventListener('message', handler as EventListener)
+            reject(new Error(`mcData transfer timeout (${timeoutMs}ms)`))
+          }, timeoutMs)
+          const handler = ({ data }: MessageEvent) => {
+            if (data?.type === 'mcDataApplied') {
+              clearTimeout(timeout)
+              worker.removeEventListener('message', handler as EventListener)
+              resolve()
+            }
+          }
+          worker.addEventListener('message', handler as EventListener)
+          meshersSendMcData([worker], version, mcDataKeys, mcDataFull)
+        })
+    )
+  ).then(() => undefined)
 }

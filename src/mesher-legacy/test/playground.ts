@@ -7,7 +7,7 @@ const addPositions = [
   [[0, 1, 0], 'stone'],
   [[0, -1, 0], 'stone'],
   [[0, 0, 1], 'stone'],
-  [[0, 0, -1], 'stone'],
+  [[0, 0, -1], 'stone']
 ] as const
 
 const { mesherWorld, getGeometry, pos, mcData } = setup('1.21.1', addPositions as any)

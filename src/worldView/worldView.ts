@@ -29,12 +29,7 @@ export const sectionPos = (pos: { x: number; y: number; z: number }): [number, n
 /**
  * Delayed iterator for chunk loading with configurable delay.
  */
-export const delayedIterator = async <T>(
-  arr: T[],
-  delay: number,
-  exec: (item: T, index: number) => Promise<void>,
-  chunkSize = 1
-): Promise<void> => {
+export const delayedIterator = async <T>(arr: T[], delay: number, exec: (item: T, index: number) => Promise<void>, chunkSize = 1): Promise<void> => {
   for (let i = 0; i < arr.length; i += chunkSize) {
     if (delay) {
       await new Promise(resolve => setTimeout(resolve, delay))
@@ -117,7 +112,7 @@ export interface WorldProvider {
 export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldViewEvents>) {
   spiralNumber = 0
   gotPanicLastTime = false
-  panicChunksReload = () => { }
+  panicChunksReload = () => {}
   loadedChunks: Record<ChunkPosKey, boolean> = {}
   inLoading = false
   chunkReceiveTimes: number[] = []
@@ -126,13 +121,16 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
   panicTimeout?: ReturnType<typeof setTimeout>
   readonly lastPos: Vec3
   eventListeners: Record<string, any> = {}
-  debugChunksInfo: Record<ChunkPosKey, {
-    loads: Array<{
-      dataLength: number
-      reason: string
-      time: number
-    }>
-  }> = {}
+  debugChunksInfo: Record<
+    ChunkPosKey,
+    {
+      loads: Array<{
+        dataLength: number
+        reason: string
+        time: number
+      }>
+    }
+  > = {}
 
   waitingSpiralChunksLoad: Record<ChunkPosKey, (value: boolean) => void> = {}
 
@@ -162,12 +160,12 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
           class: WorldViewWorker.restorerName,
           type: 'event',
           eventName,
-          args: sanitizeWorkerEventArgs(args),
+          args: sanitizeWorkerEventArgs(args)
         })
       }) as any
     }
     return {
-      __restorer: WorldViewWorker.restorerName,
+      __restorer: WorldViewWorker.restorerName
     }
   }
 
@@ -210,9 +208,7 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
     this.emitterGotConnected(bot)
 
     const [botX, botZ] = chunkPos(pos)
-    const positions = generateSpiralMatrix(this.viewDistance).map(
-      ([x, z]) => new Vec3((botX + x) * 16, 0, (botZ + z) * 16)
-    )
+    const positions = generateSpiralMatrix(this.viewDistance).map(([x, z]) => new Vec3((botX + x) * 16, 0, (botZ + z) * 16))
 
     this.lastPos.update(pos)
     await this._loadChunks(positions, pos)
@@ -250,7 +246,7 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
     let continueLoading = true
     this.inLoading = true
 
-    await delayedIterator(positions, this.addWaitTime, async (pos) => {
+    await delayedIterator(positions, this.addWaitTime, async pos => {
       if (!continueLoading || this.loadedChunks[`${pos.x},${pos.z}`]) return
 
       // Wait for chunk to be available from server
@@ -276,25 +272,19 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
   /**
    * Load a chunk at the given position.
    */
-  async loadChunk(
-    pos: { x: number; z: number; y?: number },
-    isLightUpdate = false,
-    reason = 'spiral'
-  ): Promise<void> {
+  async loadChunk(pos: { x: number; z: number; y?: number }, isLightUpdate = false, reason = 'spiral'): Promise<void> {
     const [botX, botZ] = chunkPos(this.lastPos)
     const dx = Math.abs(botX - Math.floor(pos.x / 16))
     const dz = Math.abs(botZ - Math.floor(pos.z / 16))
 
     if (dx <= this.viewDistance && dz <= this.viewDistance) {
-      const column = await this.world.getColumnAt(
-        pos.y !== undefined ? (pos as Vec3) : new Vec3(pos.x, 0, pos.z)
-      )
+      const column = await this.world.getColumnAt(pos.y !== undefined ? (pos as Vec3) : new Vec3(pos.x, 0, pos.z))
 
       if (column) {
         const chunk = column.toJson()
         const worldConfig: WorldSizeParams = {
           minY: column.minY ?? 0,
-          worldHeight: column.worldHeight ?? 256,
+          worldHeight: column.worldHeight ?? 256
         }
 
         this.emit('loadChunk', {
@@ -311,7 +301,7 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
         this.debugChunksInfo[`${pos.x},${pos.z}`].loads.push({
           dataLength: chunk.length,
           reason,
-          time: Date.now(),
+          time: Date.now()
         })
       } else if (this.isPlayground) {
         this.emit('markAsLoaded', { x: pos.x, z: pos.z })
@@ -355,18 +345,23 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
    */
   emitterGotConnected(bot?: any): void {
     // Skip if in offscreen/worker context
-    const isOffscreen = typeof (globalThis as any).WorkerGlobalScope !== 'undefined' &&
-      globalThis instanceof (globalThis as any).WorkerGlobalScope
+    const isOffscreen = typeof (globalThis as any).WorkerGlobalScope !== 'undefined' && globalThis instanceof (globalThis as any).WorkerGlobalScope
 
     if (isOffscreen || !bot) return
 
-    this.emit('blockEntities', new Proxy({}, {
-      get(_target, posKey, receiver) {
-        if (typeof posKey !== 'string') return
-        const [x, y, z] = posKey.split(',').map(Number)
-        return bot.world.getBlock(new Vec3(x, y, z))?.entity
-      },
-    }))
+    this.emit(
+      'blockEntities',
+      new Proxy(
+        {},
+        {
+          get(_target, posKey, receiver) {
+            if (typeof posKey !== 'string') return
+            const [x, y, z] = posKey.split(',').map(Number)
+            return bot.world.getBlock(new Vec3(x, y, z))?.entity
+          }
+        }
+      )
+    )
   }
 
   lastBiomeId: number | null = null

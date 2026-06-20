@@ -4,11 +4,7 @@
 
 import { proxy } from 'valtio'
 import { defaultPerformanceInstabilityFactors } from '../performanceMonitor'
-import type {
-  GraphicsBackendConfig,
-  RendererReactiveState,
-  NonReactiveState
-} from './types'
+import type { GraphicsBackendConfig, RendererReactiveState, NonReactiveState } from './types'
 
 /**
  * Default world renderer configuration.

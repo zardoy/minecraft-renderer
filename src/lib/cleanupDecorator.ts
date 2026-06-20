@@ -1,4 +1,4 @@
-export function buildCleanupDecorator (cleanupMethod: string) {
+export function buildCleanupDecorator(cleanupMethod: string) {
   return function () {
     return function (_target: { snapshotInitialValues }, propertyKey: string) {
       const target = _target as any
@@ -12,7 +12,7 @@ export function buildCleanupDecorator (cleanupMethod: string) {
         }
         target._snapshotMethodPatched = true
       }
-      (target._toCleanup ??= []).push(propertyKey)
+      ;(target._toCleanup ??= []).push(propertyKey)
       if (!target._cleanupPatched) {
         const originalMethod = target[cleanupMethod]
         target[cleanupMethod] = function () {

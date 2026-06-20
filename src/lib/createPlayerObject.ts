@@ -10,14 +10,9 @@ export type PlayerObjectType = PlayerObject & {
 }
 
 /** Starfield + log-depth world: cutout skin mats need alphaTest and depthWrite (not mesh traverse). */
-export function configurePlayerSkinMaterials (playerObject: PlayerObject): void {
+export function configurePlayerSkinMaterials(playerObject: PlayerObject): void {
   const skin = playerObject.skin as any
-  const materials = [
-    skin.layer1Material,
-    skin.layer1MaterialBiased,
-    skin.layer2Material,
-    skin.layer2MaterialBiased,
-  ]
+  const materials = [skin.layer1Material, skin.layer1MaterialBiased, skin.layer2Material, skin.layer2MaterialBiased]
   for (const mat of materials) {
     mat.transparent = true
     mat.alphaTest = 0.1
@@ -25,14 +20,10 @@ export function configurePlayerSkinMaterials (playerObject: PlayerObject): void 
   }
 }
 
-export function createPlayerObject (options: {
-  username?: string
-  uuid?: string
-  scale?: number
-}): {
-    playerObject: PlayerObjectType
-    wrapper: THREE.Group
-  } {
+export function createPlayerObject(options: { username?: string; uuid?: string; scale?: number }): {
+  playerObject: PlayerObjectType
+  wrapper: THREE.Group
+} {
   const wrapper = new THREE.Group()
   const playerObject = new PlayerObject() as PlayerObjectType
 
@@ -43,7 +34,7 @@ export function createPlayerObject (options: {
   configurePlayerSkinMaterials(playerObject)
 
   wrapper.add(playerObject as any)
-  const scale = options.scale ?? (1 / 16)
+  const scale = options.scale ?? 1 / 16
   wrapper.scale.set(scale, scale, scale)
   wrapper.rotation.set(0, Math.PI, 0)
 
@@ -56,11 +47,13 @@ export function createPlayerObject (options: {
 }
 
 export const applySkinToPlayerObject = async (playerObject: PlayerObjectType, skinUrl: string) => {
-  return loadSkinImage(skinUrl || stevePngUrl).then(({ canvas }) => {
-    const skinTexture = new THREE.CanvasTexture(canvas)
-    skinTexture.magFilter = THREE.NearestFilter
-    skinTexture.minFilter = THREE.NearestFilter
-    skinTexture.needsUpdate = true
-    playerObject.skin.map = skinTexture as any
-  }).catch(console.error)
+  return loadSkinImage(skinUrl || stevePngUrl)
+    .then(({ canvas }) => {
+      const skinTexture = new THREE.CanvasTexture(canvas)
+      skinTexture.magFilter = THREE.NearestFilter
+      skinTexture.minFilter = THREE.NearestFilter
+      skinTexture.needsUpdate = true
+      playerObject.skin.map = skinTexture as any
+    })
+    .catch(console.error)
 }

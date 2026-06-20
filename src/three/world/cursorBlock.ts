@@ -28,7 +28,7 @@ export class CursorBlock {
   }
 
   cursorLineMaterial!: LineMaterial
-  interactionLines: null | { blockPos: Vec3, mesh: THREE.Group, shapePositions: BlocksShapes | undefined } = null
+  interactionLines: null | { blockPos: Vec3; mesh: THREE.Group; shapePositions: BlocksShapes | undefined } = null
   prevColor: string | undefined
   blockBreakMesh: THREE.Mesh
   breakTextures: THREE.Texture[] = []
@@ -36,12 +36,20 @@ export class CursorBlock {
   constructor(public readonly worldRenderer: WorldRendererThree) {
     // Initialize break mesh and textures
     const destroyStagesImages = [
-      destroyStage0, destroyStage1, destroyStage2, destroyStage3, destroyStage4,
-      destroyStage5, destroyStage6, destroyStage7, destroyStage8, destroyStage9
+      destroyStage0,
+      destroyStage1,
+      destroyStage2,
+      destroyStage3,
+      destroyStage4,
+      destroyStage5,
+      destroyStage6,
+      destroyStage7,
+      destroyStage8,
+      destroyStage9
     ]
 
     for (let i = 0; i < 10; i++) {
-      void loadThreeJsTextureFromUrl(destroyStagesImages[i]).then((texture) => {
+      void loadThreeJsTextureFromUrl(destroyStagesImages[i]).then(texture => {
         texture.magFilter = THREE.NearestFilter
         texture.minFilter = THREE.NearestFilter
         this.breakTextures.push(texture)
@@ -52,7 +60,7 @@ export class CursorBlock {
       transparent: true,
       blending: THREE.MultiplyBlending,
       premultipliedAlpha: true,
-      alphaTest: 0.5,
+      alphaTest: 0.5
     })
     this.blockBreakMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), breakMaterial)
     this.blockBreakMesh.visible = false
@@ -91,14 +99,14 @@ export class CursorBlock {
             return inCreative ? 0x40_80_ff : 0x00_00_00
         }
       })(),
-      linewidth: Math.max(pixelRatio * 0.7, 1) * 2,
+      linewidth: Math.max(pixelRatio * 0.7, 1) * 2
       // dashed: true,
       // dashSize: 5,
     })
     this.prevColor = this.worldRenderer.worldRendererConfig.highlightBlockColor
   }
 
-  updateBreakAnimation(blockPosition: { x: number, y: number, z: number } | undefined, stage: number | null, mergedShape?: BlockShape) {
+  updateBreakAnimation(blockPosition: { x: number; y: number; z: number } | undefined, stage: number | null, mergedShape?: BlockShape) {
     this.hideBreakAnimation()
     if (stage === null || !blockPosition || !mergedShape) return
 
@@ -107,10 +115,9 @@ export class CursorBlock {
     this.blockBreakMesh.scale.set(width * 1.001, height * 1.001, depth * 1.001)
     position.add(new Vec3(blockPosition.x, blockPosition.y, blockPosition.z))
     this.blockBreakMesh.position.set(position.x, position.y, position.z)
-    this.blockBreakMesh.visible = true;
-
-    (this.blockBreakMesh.material as THREE.MeshBasicMaterial).map = this.breakTextures[stage] ?? this.breakTextures.at(-1);
-    (this.blockBreakMesh.material as THREE.MeshBasicMaterial).needsUpdate = true
+    this.blockBreakMesh.visible = true
+    ;(this.blockBreakMesh.material as THREE.MeshBasicMaterial).map = this.breakTextures[stage] ?? this.breakTextures.at(-1)
+    ;(this.blockBreakMesh.material as THREE.MeshBasicMaterial).needsUpdate = true
   }
 
   hideBreakAnimation() {
@@ -128,7 +135,13 @@ export class CursorBlock {
   }
 
   setHighlightCursorBlock(blockPos: Vec3 | null, shapePositions?: BlocksShapes, force = false): void {
-    if (blockPos && this.interactionLines && blockPos.equals(this.interactionLines.blockPos) && sameArray(shapePositions ?? [], this.interactionLines.shapePositions ?? []) && !force) {
+    if (
+      blockPos &&
+      this.interactionLines &&
+      blockPos.equals(this.interactionLines.blockPos) &&
+      sameArray(shapePositions ?? [], this.interactionLines.shapePositions ?? []) &&
+      !force
+    ) {
       return
     }
     if (this.interactionLines !== null) {

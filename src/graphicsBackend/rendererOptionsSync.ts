@@ -25,23 +25,25 @@ export interface RendererOptionsSubscribeHooks {
   isSafari?: boolean
   isCypress?: boolean
   getWindowFocused?: () => boolean
-  onRegisterFocusHandlers?: (handlers: { onFocus: () => void, onBlur: () => void }) => void
+  onRegisterFocusHandlers?: (handlers: { onFocus: () => void; onBlur: () => void }) => void
 }
 
 export interface RendererWorldViewLike {
   keepChunksDistance: number
 }
 
-export function menuBackgroundOptionsFromStorage(o: Pick<
-  RendererStorageOptions,
-  | 'menuBackgroundMode'
-  | 'menuBackgroundMinecraftTextures'
-  | 'menuBackgroundV2Scene'
-  | 'menuBackgroundV2Camera'
-  | 'menuBackgroundV2BlockGroup'
-  | 'menuBackgroundV2CameraSpeed'
-  | 'menuBackgroundV2BlockSpeed'
->): MenuBackgroundOptions {
+export function menuBackgroundOptionsFromStorage(
+  o: Pick<
+    RendererStorageOptions,
+    | 'menuBackgroundMode'
+    | 'menuBackgroundMinecraftTextures'
+    | 'menuBackgroundV2Scene'
+    | 'menuBackgroundV2Camera'
+    | 'menuBackgroundV2BlockGroup'
+    | 'menuBackgroundV2CameraSpeed'
+    | 'menuBackgroundV2BlockSpeed'
+  >
+): MenuBackgroundOptions {
   return {
     mode: o.menuBackgroundMode as MenuBackgroundOptions['mode'],
     useMinecraftTextures: o.menuBackgroundMinecraftTextures,
@@ -49,7 +51,7 @@ export function menuBackgroundOptionsFromStorage(o: Pick<
     v2Camera: o.menuBackgroundV2Camera as V2CameraId,
     v2BlockGroup: o.menuBackgroundV2BlockGroup as MinecraftBlockGroupId,
     v2CameraSpeed: menuBackgroundSpeedToMultiplier(o.menuBackgroundV2CameraSpeed),
-    v2BlockSpeed: menuBackgroundSpeedToMultiplier(o.menuBackgroundV2BlockSpeed),
+    v2BlockSpeed: menuBackgroundSpeedToMultiplier(o.menuBackgroundV2BlockSpeed)
   }
 }
 
@@ -57,11 +59,7 @@ export function applyMenuBackgroundLiveOptions(
   menu: MenuBackgroundRenderer,
   o: Pick<
     RendererStorageOptions,
-    | 'menuBackgroundV2Scene'
-    | 'menuBackgroundV2Camera'
-    | 'menuBackgroundV2BlockGroup'
-    | 'menuBackgroundV2CameraSpeed'
-    | 'menuBackgroundV2BlockSpeed'
+    'menuBackgroundV2Scene' | 'menuBackgroundV2Camera' | 'menuBackgroundV2BlockGroup' | 'menuBackgroundV2CameraSpeed' | 'menuBackgroundV2BlockSpeed'
   >
 ): void {
   const v2 = menu.v2
@@ -77,11 +75,7 @@ function resolveWasmMesherActive(o: RendererStorageOptions): boolean {
   return o.rendererMesher !== 'legacy-js'
 }
 
-function applyMesherWorkersPreset(
-  appViewer: AppViewer,
-  o: RendererStorageOptions,
-  wasmActive: boolean
-): void {
+function applyMesherWorkersPreset(appViewer: AppViewer, o: RendererStorageOptions, wasmActive: boolean): void {
   const cfg = appViewer.inWorldRenderingConfig
   const override = o.rendererMeshersCountOverride
   const applyMesherWorkers = (workers: number) => {
@@ -103,11 +97,7 @@ function applyMesherWorkersPreset(
   }
 }
 
-function applyFpsLimit(
-  appViewer: AppViewer,
-  o: RendererStorageOptions,
-  windowFocused: boolean
-): void {
+function applyFpsLimit(appViewer: AppViewer, o: RendererStorageOptions, windowFocused: boolean): void {
   const backgroundFpsLimit = o.backgroundRendering
   const normalFpsLimit = o.frameLimit
 
@@ -122,11 +112,7 @@ function applyFpsLimit(
   }
 }
 
-function applyStatsVisible(
-  appViewer: AppViewer,
-  o: RendererStorageOptions,
-  ctx: ApplyRendererOptionsContext
-): void {
+function applyStatsVisible(appViewer: AppViewer, o: RendererStorageOptions, ctx: ApplyRendererOptionsContext): void {
   const { renderDebug } = o
   if (renderDebug === 'none' || ctx.isCypress) {
     appViewer.config.statsVisible = 0
@@ -138,11 +124,7 @@ function applyStatsVisible(
 }
 
 // ensure no object assigns to the config
-export function applyRendererOptions(
-  appViewer: AppViewer,
-  o: RendererStorageOptions,
-  ctx: ApplyRendererOptionsContext = {}
-): void {
+export function applyRendererOptions(appViewer: AppViewer, o: RendererStorageOptions, ctx: ApplyRendererOptionsContext = {}): void {
   const cfg = appViewer.inWorldRenderingConfig
   const wasmActive = resolveWasmMesherActive(o)
 
@@ -179,10 +161,7 @@ export function applyRendererOptions(
 export function applyRendererWorldViewOptions(
   appViewer: AppViewer,
   worldView: RendererWorldViewLike,
-  o: Pick<
-    RendererStorageOptions,
-    'keepChunksDistance' | 'renderEars' | 'showHand' | 'viewBobbing' | 'dayCycleAndLighting'
-  >
+  o: Pick<RendererStorageOptions, 'keepChunksDistance' | 'renderEars' | 'showHand' | 'viewBobbing' | 'dayCycleAndLighting'>
 ): void {
   worldView.keepChunksDistance = o.keepChunksDistance
   const cfg = appViewer.inWorldRenderingConfig
@@ -210,7 +189,7 @@ export function subscribeRendererOptions<T extends RendererStorageOptions>(
     applyRendererOptions(appViewer, snapshot, {
       isSafari: hooks.isSafari,
       isCypress: hooks.isCypress,
-      windowFocused,
+      windowFocused
     })
 
     if (appViewer.currentDisplay === 'menu') {
@@ -229,18 +208,13 @@ export function subscribeRendererOptions<T extends RendererStorageOptions>(
     onBlur: () => {
       windowFocused = false
       run()
-    },
+    }
   })
 
   return subscribe(optionsProxy, run)
 }
 
 /** Call when mineflayer bot is created (lighting depends on protocol features). */
-export function applyRendererEnableLighting(
-  appViewer: AppViewer,
-  newVersionsLighting: boolean,
-  blockStateIdSupported: boolean
-): void {
-  appViewer.inWorldRenderingConfig.enableLighting =
-    !blockStateIdSupported || newVersionsLighting
+export function applyRendererEnableLighting(appViewer: AppViewer, newVersionsLighting: boolean, blockStateIdSupported: boolean): void {
+  appViewer.inWorldRenderingConfig.enableLighting = !blockStateIdSupported || newVersionsLighting
 }

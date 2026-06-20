@@ -26,15 +26,18 @@ function initThreeWorker(onGotMessage: (data: any) => void) {
   worker.onmessage = ({ data }) => {
     onGotMessage(data)
   }
-  if (worker.on) worker.on('message', (data) => { worker.onmessage({ data }) })
+  if (worker.on)
+    worker.on('message', data => {
+      worker.onmessage({ data })
+    })
   return worker
 }
 
-export const createGraphicsBackendOffThread: GraphicsBackendLoader = async (initOptions) => {
+export const createGraphicsBackendOffThread: GraphicsBackendLoader = async initOptions => {
   const workerSideChannel = {
-    onMessage: (_data: unknown) => {},
+    onMessage: (_data: unknown) => {}
   }
-  const worker = initThreeWorker((data) => {
+  const worker = initThreeWorker(data => {
     workerSideChannel.onMessage(data)
   })
   type WorkerType = ReturnType<ReturnType<typeof createGraphicsBackendBase>['workerProxy']>
@@ -71,7 +74,7 @@ export const createGraphicsBackendOffThread: GraphicsBackendLoader = async (init
         const workerThreeSendData = {
           ...dynamicMcDataFiles,
           items: 'itemsArray',
-          entities: 'entitiesArray',
+          entities: 'entitiesArray'
         }
         await meshersSendMcDataAwait([worker], MENU_BACKGROUND_MC_VERSION, workerThreeSendData, mcData)
       }
@@ -87,7 +90,7 @@ export const createGraphicsBackendOffThread: GraphicsBackendLoader = async (init
       const worldView = options.worldView as unknown as WorldView
       workerSideChannel.onMessage = (data: any) => {
         if (data?.type === 'reloadLoadedChunks') {
-          void worldView.reloadLoadedChunks().catch((err) => {
+          void worldView.reloadLoadedChunks().catch(err => {
             console.error('[Renderer] Failed to reload chunks after mesher reconfigure:', err)
           })
         }
@@ -96,14 +99,9 @@ export const createGraphicsBackendOffThread: GraphicsBackendLoader = async (init
       const workerThreeSendData = {
         ...dynamicMcDataFiles,
         items: 'itemsArray',
-        entities: 'entitiesArray',
+        entities: 'entitiesArray'
       }
-      await meshersSendMcDataAwait(
-        [worker],
-        options.version,
-        workerThreeSendData,
-        options.resourcesManager.currentResources.mcData
-      )
+      await meshersSendMcDataAwait([worker], options.version, workerThreeSendData, options.resourcesManager.currentResources.mcData)
       console.log('mc data sent to three worker')
 
       options.inWorldRenderingConfig['__syncToWorker'] = true
@@ -129,7 +127,6 @@ export const createGraphicsBackendOffThread: GraphicsBackendLoader = async (init
       }
       proxy.updateSizeExternal(canvas.size.width, canvas.size.height, window.devicePixelRatio || 1)
 
-
       const fpsStat = addNewStat('fps')
       setInterval(() => {
         const { fps, avgRenderTime, worstRenderTime } = options.nonReactiveState
@@ -138,7 +135,7 @@ export const createGraphicsBackendOffThread: GraphicsBackendLoader = async (init
       }, 1000)
 
       const chunksStat = addNewStat('downloaded-chunks', 100, 140, 20, {
-        className: MC_RENDERER_DEBUG_OVERLAY_CLASS,
+        className: MC_RENDERER_DEBUG_OVERLAY_CLASS
       })
       setInterval(() => {
         const advanced = (initOptions.config.statsVisible ?? 0) > 1

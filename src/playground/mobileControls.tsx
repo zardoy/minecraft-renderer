@@ -4,15 +4,15 @@ import { proxy, ref, useSnapshot } from 'valtio'
 export type ButtonName = 'jump' | 'sneak'
 
 export const joystickPointer = proxy({
-  pointer: null as { x: number, y: number, pointerId: number } | null,
-  joystickInner: null as HTMLDivElement | null,
+  pointer: null as { x: number; y: number; pointerId: number } | null,
+  joystickInner: null as HTMLDivElement | null
 })
 
 export const cameraPointer = proxy({
-  pointer: null as { x: number, y: number, pointerId: number } | null,
+  pointer: null as { x: number; y: number; pointerId: number } | null
 })
 
-export const handleMovementStickDelta = (e?: { clientX: number, clientY: number }) => {
+export const handleMovementStickDelta = (e?: { clientX: number; clientY: number }) => {
   const max = 32
   let x = 0
   let y = 0
@@ -31,7 +31,7 @@ export const handleMovementStickDelta = (e?: { clientX: number, clientY: number 
   const vector = {
     x: x / max,
     y: 0,
-    z: y / max,
+    z: y / max
   }
 
   console.log('Movement vector:', vector)
@@ -81,12 +81,12 @@ export const MobileControls = () => {
 
     const buttonPositions = {
       jump: [85, 60],
-      sneak: [85, 75],
+      sneak: [85, 75]
     }
 
     const buttonIcons = {
       jump: '↑',
-      sneak: '↓',
+      sneak: '↓'
     }
 
     return {
@@ -107,7 +107,7 @@ export const MobileControls = () => {
         fontSize: '16px',
         userSelect: 'none',
         transform: 'translate(-50%, -50%)',
-        border: '2px solid rgba(255, 255, 255, 0.3)',
+        border: '2px solid rgba(255, 255, 255, 0.3)'
       } satisfies CSSProperties,
       onPointerDown(e: PType) {
         const elem = e.currentTarget as HTMLElement
@@ -117,7 +117,7 @@ export const MobileControls = () => {
       },
       onPointerUp: pointerup,
       onLostPointerCapture: pointerup,
-      children: buttonIcons[name],
+      children: buttonIcons[name]
     }
   }
 
@@ -129,140 +129,144 @@ export const MobileControls = () => {
 
   if (!usingTouch) return null
 
-  return <div>
-    {/* Movement Joystick */}
-    <div
-      className='movement_joystick_outer'
-      ref={joystickOuter}
-      style={{
-        display: movementPointer ? 'flex' : 'none',
-        borderRadius: '50%',
-        width: joystickSize,
-        height: joystickSize,
-        border: '2px solid rgba(0, 0, 0, 0.5)',
-        backgroundColor: 'rgba(255, 255, 255, 0.3)',
-        position: 'fixed',
-        justifyContent: 'center',
-        alignItems: 'center',
-        transform: 'translate(-50%, -50%)',
-        zIndex: Z_INDEX_INTERACTIBLE,
-        ...(movementPointer ? {
-          left: `${movementPointer.x / window.innerWidth * 100}%`,
-          top: `${movementPointer.y / window.innerHeight * 100}%`
-        } : {}),
-      }}
-    >
+  return (
+    <div>
+      {/* Movement Joystick */}
       <div
-        className='movement_joystick_inner'
+        className="movement_joystick_outer"
+        ref={joystickOuter}
         style={{
+          display: movementPointer ? 'flex' : 'none',
           borderRadius: '50%',
-          width: joystickSize * 0.35,
-          height: joystickSize * 0.35,
-          backgroundColor: 'rgba(0, 0, 0, 0.5)',
-          position: 'absolute',
+          width: joystickSize,
+          height: joystickSize,
+          border: '2px solid rgba(0, 0, 0, 0.5)',
+          backgroundColor: 'rgba(255, 255, 255, 0.3)',
+          position: 'fixed',
+          justifyContent: 'center',
+          alignItems: 'center',
+          transform: 'translate(-50%, -50%)',
+          zIndex: Z_INDEX_INTERACTIBLE,
+          ...(movementPointer
+            ? {
+                left: `${(movementPointer.x / window.innerWidth) * 100}%`,
+                top: `${(movementPointer.y / window.innerHeight) * 100}%`
+              }
+            : {})
         }}
-        ref={joystickInner}
+      >
+        <div
+          className="movement_joystick_inner"
+          style={{
+            borderRadius: '50%',
+            width: joystickSize * 0.35,
+            height: joystickSize * 0.35,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            position: 'absolute'
+          }}
+          ref={joystickInner}
+        />
+      </div>
+
+      {/* Up/Down Action Buttons */}
+      <div {...buttonProps('jump')} />
+      <div {...buttonProps('sneak')} />
+
+      {/* Movement touch area (left half of screen) */}
+      <div
+        style={{
+          position: 'fixed',
+          left: '0',
+          top: '0',
+          width: '50%',
+          height: '100%',
+          zIndex: Z_INDEX_INTERACTIBLE - 1
+        }}
+        onPointerDown={e => {
+          if (joystickPointer.pointer) return
+
+          joystickPointer.pointer = {
+            x: e.clientX,
+            y: e.clientY,
+            pointerId: e.pointerId
+          }
+
+          const elem = e.currentTarget as HTMLElement
+          elem.setPointerCapture(e.pointerId)
+        }}
+        onPointerMove={e => {
+          if (!joystickPointer.pointer || e.pointerId !== joystickPointer.pointer.pointerId) return
+
+          handleMovementStickDelta({
+            clientX: e.clientX,
+            clientY: e.clientY
+          })
+        }}
+        onPointerUp={e => {
+          if (!joystickPointer.pointer || e.pointerId !== joystickPointer.pointer.pointerId) return
+
+          joystickPointer.pointer = null
+          handleMovementStickDelta() // Reset position
+
+          const elem = e.currentTarget as HTMLElement
+          elem.releasePointerCapture(e.pointerId)
+        }}
+        onLostPointerCapture={e => {
+          if (!joystickPointer.pointer || e.pointerId !== joystickPointer.pointer.pointerId) return
+
+          joystickPointer.pointer = null
+          handleMovementStickDelta() // Reset position
+        }}
+      />
+
+      {/* Camera rotation touch area (right half of screen, excluding buttons) */}
+      <div
+        style={{
+          position: 'fixed',
+          right: '0',
+          top: '0',
+          width: '50%',
+          height: '100%',
+          zIndex: Z_INDEX_INTERACTIBLE - 2
+        }}
+        onPointerDown={e => {
+          if (cameraPointer.pointer) return
+
+          cameraPointer.pointer = {
+            x: e.clientX,
+            y: e.clientY,
+            pointerId: e.pointerId
+          }
+
+          const elem = e.currentTarget as HTMLElement
+          elem.setPointerCapture(e.pointerId)
+        }}
+        onPointerMove={e => {
+          if (!cameraPointer.pointer || e.pointerId !== cameraPointer.pointer.pointerId) return
+
+          const deltaX = e.clientX - cameraPointer.pointer.x
+          const deltaY = e.clientY - cameraPointer.pointer.y
+
+          handleCameraRotation(deltaX, deltaY)
+
+          // Update pointer position for continuous rotation
+          cameraPointer.pointer.x = e.clientX
+          cameraPointer.pointer.y = e.clientY
+        }}
+        onPointerUp={e => {
+          if (!cameraPointer.pointer || e.pointerId !== cameraPointer.pointer.pointerId) return
+
+          cameraPointer.pointer = null
+
+          const elem = e.currentTarget as HTMLElement
+          elem.releasePointerCapture(e.pointerId)
+        }}
+        onLostPointerCapture={e => {
+          if (!cameraPointer.pointer || e.pointerId !== cameraPointer.pointer.pointerId) return
+
+          cameraPointer.pointer = null
+        }}
       />
     </div>
-
-    {/* Up/Down Action Buttons */}
-    <div {...buttonProps('jump')} />
-    <div {...buttonProps('sneak')} />
-
-    {/* Movement touch area (left half of screen) */}
-    <div
-      style={{
-        position: 'fixed',
-        left: '0',
-        top: '0',
-        width: '50%',
-        height: '100%',
-        zIndex: Z_INDEX_INTERACTIBLE - 1,
-      }}
-      onPointerDown={(e) => {
-        if (joystickPointer.pointer) return
-
-        joystickPointer.pointer = {
-          x: e.clientX,
-          y: e.clientY,
-          pointerId: e.pointerId,
-        }
-
-        const elem = e.currentTarget as HTMLElement
-        elem.setPointerCapture(e.pointerId)
-      }}
-      onPointerMove={(e) => {
-        if (!joystickPointer.pointer || e.pointerId !== joystickPointer.pointer.pointerId) return
-
-        handleMovementStickDelta({
-          clientX: e.clientX,
-          clientY: e.clientY,
-        })
-      }}
-      onPointerUp={(e) => {
-        if (!joystickPointer.pointer || e.pointerId !== joystickPointer.pointer.pointerId) return
-
-        joystickPointer.pointer = null
-        handleMovementStickDelta() // Reset position
-
-        const elem = e.currentTarget as HTMLElement
-        elem.releasePointerCapture(e.pointerId)
-      }}
-      onLostPointerCapture={(e) => {
-        if (!joystickPointer.pointer || e.pointerId !== joystickPointer.pointer.pointerId) return
-
-        joystickPointer.pointer = null
-        handleMovementStickDelta() // Reset position
-      }}
-    />
-
-    {/* Camera rotation touch area (right half of screen, excluding buttons) */}
-    <div
-      style={{
-        position: 'fixed',
-        right: '0',
-        top: '0',
-        width: '50%',
-        height: '100%',
-        zIndex: Z_INDEX_INTERACTIBLE - 2,
-      }}
-      onPointerDown={(e) => {
-        if (cameraPointer.pointer) return
-
-        cameraPointer.pointer = {
-          x: e.clientX,
-          y: e.clientY,
-          pointerId: e.pointerId,
-        }
-
-        const elem = e.currentTarget as HTMLElement
-        elem.setPointerCapture(e.pointerId)
-      }}
-      onPointerMove={(e) => {
-        if (!cameraPointer.pointer || e.pointerId !== cameraPointer.pointer.pointerId) return
-
-        const deltaX = e.clientX - cameraPointer.pointer.x
-        const deltaY = e.clientY - cameraPointer.pointer.y
-
-        handleCameraRotation(deltaX, deltaY)
-
-        // Update pointer position for continuous rotation
-        cameraPointer.pointer.x = e.clientX
-        cameraPointer.pointer.y = e.clientY
-      }}
-      onPointerUp={(e) => {
-        if (!cameraPointer.pointer || e.pointerId !== cameraPointer.pointer.pointerId) return
-
-        cameraPointer.pointer = null
-
-        const elem = e.currentTarget as HTMLElement
-        elem.releasePointerCapture(e.pointerId)
-      }}
-      onLostPointerCapture={(e) => {
-        if (!cameraPointer.pointer || e.pointerId !== cameraPointer.pointer.pointerId) return
-
-        cameraPointer.pointer = null
-      }}
-    />
-  </div>
+  )
 }

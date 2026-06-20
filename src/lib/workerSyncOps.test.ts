@@ -1,14 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { proxy, subscribe } from 'valtio'
 import { Vec3 } from 'vec3'
-import {
-  applySyncOps,
-  getWorkerSyncStatsForTest,
-  resetWorkerSyncStatsForTest,
-  sendWorkerSyncOps,
-  setByPath,
-  type WireSyncOp,
-} from './workerProxy'
+import { applySyncOps, getWorkerSyncStatsForTest, resetWorkerSyncStatsForTest, sendWorkerSyncOps, setByPath, type WireSyncOp } from './workerProxy'
 import { defaultPerformanceInstabilityFactors } from '../performanceMonitor'
 
 const fakeWorker = () => {
@@ -22,22 +15,23 @@ const fakeWorker = () => {
     addEventListener: vi.fn((_type: string, listener: (event: { data: any }) => void) => {
       listeners.push(listener)
     }),
-    removeEventListener: vi.fn(),
+    removeEventListener: vi.fn()
   } as unknown as Worker
 }
 
-const makeRendererState = () => proxy({
-  world: {
-    chunksLoaded: {} as Record<string, true>,
-    heightmaps: {} as Record<string, Int16Array>,
-    allChunksLoaded: false,
-    mesherWork: false,
-    instabilityFactors: defaultPerformanceInstabilityFactors(),
-    intersectMedia: null as null | object,
-  },
-  renderer: '...',
-  preventEscapeMenu: false,
-})
+const makeRendererState = () =>
+  proxy({
+    world: {
+      chunksLoaded: {} as Record<string, true>,
+      heightmaps: {} as Record<string, Int16Array>,
+      allChunksLoaded: false,
+      mesherWork: false,
+      instabilityFactors: defaultPerformanceInstabilityFactors(),
+      intersectMedia: null as null | object
+    },
+    renderer: '...',
+    preventEscapeMenu: false
+  })
 
 describe('workerSyncOps', () => {
   it('set op round-trips mesherWork', () => {
@@ -74,11 +68,17 @@ describe('workerSyncOps', () => {
     sender.world.heightmaps['0,0'] = source
     const receiver = makeRendererState()
     const buf = sender.world.heightmaps['0,0']!
-    applySyncOps(receiver, [{
-      kind: 'set',
-      path: ['world', 'heightmaps', '0,0'],
-      value: new Int16Array(buf),
-    }], fakeWorker())
+    applySyncOps(
+      receiver,
+      [
+        {
+          kind: 'set',
+          path: ['world', 'heightmaps', '0,0'],
+          value: new Int16Array(buf)
+        }
+      ],
+      fakeWorker()
+    )
     expect([...receiver.world.heightmaps['0,0']!]).toEqual([1, 2, 3])
     expect(sender.world.heightmaps['0,0']![0]).toBe(1)
   })
@@ -86,11 +86,17 @@ describe('workerSyncOps', () => {
   it('Vec3 value survives via restorer', () => {
     const target = makeRendererState() as any
     const vec = new Vec3(1, 2, 3)
-    applySyncOps(target, [{
-      kind: 'set',
-      path: ['world', 'intersectMedia'],
-      value: { pos: { x: 1, y: 2, z: 3, __restorer: 'Vec3' } },
-    }], fakeWorker())
+    applySyncOps(
+      target,
+      [
+        {
+          kind: 'set',
+          path: ['world', 'intersectMedia'],
+          value: { pos: { x: 1, y: 2, z: 3, __restorer: 'Vec3' } }
+        }
+      ],
+      fakeWorker()
+    )
     expect(target.world.intersectMedia.pos).toBeInstanceOf(Vec3)
     expect(target.world.intersectMedia.pos.x).toBe(1)
   })
@@ -104,8 +110,8 @@ describe('workerSyncOps', () => {
       messageCount++
       expect(data.ops.length).toBeGreaterThanOrEqual(2)
     })
-    await new Promise<void>((resolve) => {
-      subscribe(source, (ops) => {
+    await new Promise<void>(resolve => {
+      subscribe(source, ops => {
         sendWorkerSyncOps(syncId, ops, worker, 'toWorker', 'test')
         resolve()
       })
@@ -127,20 +133,31 @@ describe('workerSyncOps', () => {
 
     it('one postMessage increments toWorker by 1 regardless of op count', () => {
       const worker = fakeWorker()
-      sendWorkerSyncOps('id', [
-        ['set', ['world', 'mesherWork'], true, false],
-        ['set', ['renderer'], 'x', '...'],
-      ], worker, 'toWorker', 'test')
+      sendWorkerSyncOps(
+        'id',
+        [
+          ['set', ['world', 'mesherWork'], true, false],
+          ['set', ['renderer'], 'x', '...']
+        ],
+        worker,
+        'toWorker',
+        'test'
+      )
       expect(worker.postMessage).toHaveBeenCalledTimes(1)
       expect(getWorkerSyncStatsForTest().toWorker).toBe(1)
     })
 
     it('applySyncOps with fromWorker counts one receive per message', () => {
       const target = makeRendererState()
-      applySyncOps(target, [
-        { kind: 'set', path: ['world', 'mesherWork'], value: true },
-        { kind: 'set', path: ['renderer'], value: 'y' },
-      ], fakeWorker(), 'fromWorker')
+      applySyncOps(
+        target,
+        [
+          { kind: 'set', path: ['world', 'mesherWork'], value: true },
+          { kind: 'set', path: ['renderer'], value: 'y' }
+        ],
+        fakeWorker(),
+        'fromWorker'
+      )
       expect(getWorkerSyncStatsForTest().fromWorker).toBe(1)
     })
   })

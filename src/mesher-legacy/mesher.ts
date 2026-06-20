@@ -4,14 +4,16 @@ import { getSectionGeometry, setBlockStatesData as setMesherData, computeWirefra
 import { BlockStateModelInfo } from '../mesher-shared/shared'
 import { handleGetHeightmap, EMPTY_COLUMN_HEIGHTMAP_SENTINEL } from '../mesher-shared/computeHeightmap'
 
-globalThis.structuredClone ??= (value) => JSON.parse(JSON.stringify(value))
+globalThis.structuredClone ??= value => JSON.parse(JSON.stringify(value))
 
 if (globalThis.module && module.require) {
   // If we are in a node environement, we need to fake some env variables
   const r = module.require
   const { parentPort } = r('worker_threads')
   global.self = parentPort
-  global.postMessage = (value, transferList) => { parentPort.postMessage(value, transferList) }
+  global.postMessage = (value, transferList) => {
+    parentPort.postMessage(value, transferList)
+  }
   global.performance = r('perf_hooks').performance
 }
 
@@ -43,7 +45,10 @@ const postMessage = (data, transferList = []) => {
 
 function drainQueue(from, to) {
   const messages = queuedMessages.slice(from, to)
-  global.postMessage(messages.map(m => m.data), messages.flatMap(m => m.transferList) as unknown as string)
+  global.postMessage(
+    messages.map(m => m.data),
+    messages.flatMap(m => m.transferList) as unknown as string
+  )
   queuedMessages = queuedMessages.slice(to)
 }
 
@@ -174,7 +179,7 @@ const handleMessage = data => {
         type: 'mc-web-pong',
         workerIndex: replyWorkerIndex,
         t: data.t,
-        recvAt: typeof performance !== 'undefined' ? performance.now() : undefined,
+        recvAt: typeof performance !== 'undefined' ? performance.now() : undefined
       })
       break
     }

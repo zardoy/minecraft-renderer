@@ -21,7 +21,7 @@ const fillers = {
       for (let z = 0; z < 16; z++) {
         for (let y = -64; y < 320; y++) {
           // Create a 3D checkerboard pattern where each block is surrounded by air
-          const isEvalPoint = (x % 3 === 0) && (z % 3 === 0) && (y % 3 === 0)
+          const isEvalPoint = x % 3 === 0 && z % 3 === 0 && y % 3 === 0
           // chunk.setBlockStateId(new Vec3(x, y, z), isEvalPoint ? 1 : 0)
           chunk.setBlockType(new Vec3(x, y, z), isEvalPoint ? 1 : 0)
         }

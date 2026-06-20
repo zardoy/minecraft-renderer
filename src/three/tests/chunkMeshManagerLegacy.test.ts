@@ -2,20 +2,15 @@ import { test, expect, vi } from 'vitest'
 import * as THREE from 'three'
 
 vi.mock('../entity/EntityMesh', () => ({
-  getMesh: vi.fn(),
+  getMesh: vi.fn()
 }))
 
 import { ChunkMeshManager } from '../chunkMeshManager'
 import type { WorldRendererThree } from '../worldRendererThree'
 import type { MesherGeometryOutput } from '../../mesher-shared/shared'
 
-function makeQuadArrays () {
-  const positions = new Float32Array([
-    -1, -1, -1,
-    -1, 1, -1,
-    -1, 1, 1,
-    -1, -1, 1,
-  ])
+function makeQuadArrays() {
+  const positions = new Float32Array([-1, -1, -1, -1, 1, -1, -1, 1, 1, -1, -1, 1])
   const colors = new Float32Array(12).fill(1)
   const skyLights = new Float32Array(4).fill(1)
   const blockLights = new Float32Array(4).fill(0)
@@ -24,7 +19,7 @@ function makeQuadArrays () {
   return { positions, colors, skyLights, blockLights, uvs, indices }
 }
 
-function makeBlendOnlyGeometry (): MesherGeometryOutput {
+function makeBlendOnlyGeometry(): MesherGeometryOutput {
   const blend = makeQuadArrays()
   return {
     sectionYNumber: 0,
@@ -60,12 +55,12 @@ function makeBlendOnlyGeometry (): MesherGeometryOutput {
       skyLights: blend.skyLights,
       blockLights: blend.blockLights,
       uvs: blend.uvs,
-      indices: blend.indices,
-    },
+      indices: blend.indices
+    }
   }
 }
 
-function makeMixedGeometry (): MesherGeometryOutput {
+function makeMixedGeometry(): MesherGeometryOutput {
   const opaque = makeQuadArrays()
   const blend = makeQuadArrays()
   return {
@@ -102,12 +97,12 @@ function makeMixedGeometry (): MesherGeometryOutput {
       skyLights: blend.skyLights,
       blockLights: blend.blockLights,
       uvs: blend.uvs,
-      indices: blend.indices,
-    },
+      indices: blend.indices
+    }
   }
 }
 
-function makeInvalidBlendGeometry (): MesherGeometryOutput {
+function makeInvalidBlendGeometry(): MesherGeometryOutput {
   const geo = makeBlendOnlyGeometry()
   const blend = geo.blend!
   return {
@@ -115,8 +110,8 @@ function makeInvalidBlendGeometry (): MesherGeometryOutput {
     blend: {
       ...blend,
       positions: new Float32Array([0, 0, 0, 1, 0, 0, 2, 0, 0]),
-      indices: new Uint32Array([0, 1, 2, 0, 2, 1, 3]),
-    },
+      indices: new Uint32Array([0, 1, 2, 0, 2, 1, 3])
+    }
   }
 }
 
@@ -124,13 +119,13 @@ type ManagerOptions = {
   revealDefer?: boolean
 }
 
-function createManager (opts: ManagerOptions = {}): ChunkMeshManager {
+function createManager(opts: ManagerOptions = {}): ChunkMeshManager {
   const scene = new THREE.Scene()
   const material = new THREE.MeshBasicMaterial()
   const revealModule = opts.revealDefer
     ? {
-      shouldDeferSectionGeometry: () => true,
-    }
+        shouldDeferSectionGeometry: () => true
+      }
     : undefined
   const worldRenderer = {
     shaderCubeBlocksEnabled: () => false,
@@ -138,10 +133,10 @@ function createManager (opts: ManagerOptions = {}): ChunkMeshManager {
     sceneOrigin: {
       track: () => {},
       removeAndUntrack: () => {},
-      removeAndUntrackAll: () => {},
+      removeAndUntrackAll: () => {}
     },
     blockEntities: {},
-    worldRendererConfig: {},
+    worldRendererConfig: {}
   } as unknown as WorldRendererThree
   return new ChunkMeshManager(worldRenderer, scene, material, 256, 1)
 }

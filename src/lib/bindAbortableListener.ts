@@ -17,9 +17,13 @@ export function bindAbortableListener<E extends keyof WorldViewEvents>(
     emitter.off(event, handler as (...args: any[]) => void)
     return
   }
-  signal.addEventListener('abort', () => {
-    emitter.off(event, handler as (...args: any[]) => void)
-  }, { once: true })
+  signal.addEventListener(
+    'abort',
+    () => {
+      emitter.off(event, handler as (...args: any[]) => void)
+    },
+    { once: true }
+  )
 }
 
 /** Same pattern for plain EventEmitters (e.g. resourcesManager). */
@@ -34,7 +38,11 @@ export function bindAbortableEmitterListener(
     emitter.off(event, handler)
     return
   }
-  signal.addEventListener('abort', () => {
-    emitter.off(event, handler)
-  }, { once: true })
+  signal.addEventListener(
+    'abort',
+    () => {
+      emitter.off(event, handler)
+    },
+    { once: true }
+  )
 }

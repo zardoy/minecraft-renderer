@@ -52,7 +52,7 @@ export class SciFiWorldRevealModule implements RendererModuleController {
     transparent: true,
     opacity: 1,
     blending: THREE.AdditiveBlending,
-    depthWrite: false,
+    depthWrite: false
   })
 
   private readonly wireframeGlowMaterial = new THREE.LineBasicMaterial({
@@ -60,7 +60,7 @@ export class SciFiWorldRevealModule implements RendererModuleController {
     transparent: true,
     opacity: 0.55,
     blending: THREE.AdditiveBlending,
-    depthWrite: false,
+    depthWrite: false
   })
 
   constructor(private readonly worldRenderer: WorldRendererThree) {
@@ -118,12 +118,7 @@ export class SciFiWorldRevealModule implements RendererModuleController {
 
     this.tryStartGlobalWave(now)
 
-    if (
-      !this.globalWaveStarted &&
-      this.firstQueuedMs !== null &&
-      this.sections.size > 0 &&
-      now - this.firstQueuedMs >= GLOBAL_START_FALLBACK_MS
-    ) {
+    if (!this.globalWaveStarted && this.firstQueuedMs !== null && this.sections.size > 0 && now - this.firstQueuedMs >= GLOBAL_START_FALLBACK_MS) {
       this.startGlobalWave(now)
     }
 
@@ -208,7 +203,7 @@ export class SciFiWorldRevealModule implements RendererModuleController {
       wireframeGroup: null,
       mesh,
       savedMaterial: null,
-      pulseOffset: Math.random() * Math.PI * 2,
+      pulseOffset: Math.random() * Math.PI * 2
     })
 
     mesh.visible = false
@@ -342,7 +337,7 @@ export class SciFiWorldRevealModule implements RendererModuleController {
       mat.color.setRGB((13 / 255) * intensity, (234 / 255) * intensity, (238 / 255) * intensity)
     }
     if (glow?.material) {
-      (glow.material as THREE.LineBasicMaterial).opacity = basePulse * 0.4
+      ;(glow.material as THREE.LineBasicMaterial).opacity = basePulse * 0.4
     }
   }
 
@@ -356,7 +351,7 @@ export class SciFiWorldRevealModule implements RendererModuleController {
     }
     const mesh = section.mesh
     if (mesh && section.savedMaterial && !Array.isArray(mesh.material)) {
-      (mesh.material as THREE.Material).opacity = eased
+      ;(mesh.material as THREE.Material).opacity = eased
     }
     this.setShaderMeshesVisible(section.key, eased > 0.001)
   }
@@ -429,7 +424,7 @@ export class SciFiWorldRevealModule implements RendererModuleController {
   private unhideAllSectionMeshes(): void {
     for (const obj of Object.values(this.worldRenderer.chunkMeshManager.sectionObjects)) {
       if (!obj) continue
-      obj.traverse((child) => {
+      obj.traverse(child => {
         if (child instanceof THREE.Mesh && (child.name === 'mesh' || child.name === 'shaderMesh')) {
           child.visible = true
         }
@@ -440,7 +435,7 @@ export class SciFiWorldRevealModule implements RendererModuleController {
   private disposeWireframeGroup(group: THREE.Group): void {
     this.worldRenderer.sceneOrigin.removeAndUntrackAll(group)
     this.worldRenderer.realScene.remove(group)
-    group.traverse((child) => {
+    group.traverse(child => {
       const line = child as THREE.LineSegments
       line.geometry?.dispose()
       const mat = line.material
@@ -468,27 +463,18 @@ export class SciFiWorldRevealModule implements RendererModuleController {
     return wireframeGeom
   }
 
-  private addEdge(
-    positions: Float32Array,
-    i0: number,
-    i1: number,
-    linePositions: number[],
-    edgeSet: Set<string>,
-  ): void {
+  private addEdge(positions: Float32Array, i0: number, i1: number, linePositions: number[], edgeSet: Set<string>): void {
     const minI = Math.min(i0, i1)
     const maxI = Math.max(i0, i1)
     const edgeKey = `${minI}-${maxI}`
     if (edgeSet.has(edgeKey)) return
     edgeSet.add(edgeKey)
-    linePositions.push(
-      positions[i0 * 3]!, positions[i0 * 3 + 1]!, positions[i0 * 3 + 2]!,
-      positions[i1 * 3]!, positions[i1 * 3 + 1]!, positions[i1 * 3 + 2]!,
-    )
+    linePositions.push(positions[i0 * 3]!, positions[i0 * 3 + 1]!, positions[i0 * 3 + 2]!, positions[i1 * 3]!, positions[i1 * 3 + 1]!, positions[i1 * 3 + 2]!)
   }
 }
 
 export const sciFiWorldRevealManifest: RendererModuleManifest = {
   id: 'futuristicReveal',
   controller: SciFiWorldRevealModule,
-  enabledDefault: true,
+  enabledDefault: true
 }

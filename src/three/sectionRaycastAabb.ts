@@ -24,12 +24,12 @@ export type ShaderSectionRaycastEntry = {
  * Tight world-space AABB covering occupied shader-cube blocks in a section.
  * `sectionCenter*` is geometryData.sx/sy/sz (section base + 8).
  */
-export function computeShaderSectionRaycastAabb (
+export function computeShaderSectionRaycastAabb(
   words: Uint32Array,
   faceCount: number,
   sectionCenterX: number,
   sectionCenterY: number,
-  sectionCenterZ: number,
+  sectionCenterZ: number
 ): ShaderSectionRaycastBox | undefined {
   if (faceCount <= 0) return undefined
 
@@ -76,11 +76,11 @@ export function computeShaderSectionRaycastAabb (
     maxZ,
     cx: (minX + maxX) * 0.5,
     cy: (minY + maxY) * 0.5,
-    cz: (minZ + maxZ) * 0.5,
+    cz: (minZ + maxZ) * 0.5
   }
 }
 
-export function isPointInsideAabb (
+export function isPointInsideAabb(
   ox: number,
   oy: number,
   oz: number,
@@ -89,14 +89,14 @@ export function isPointInsideAabb (
   minZ: number,
   maxX: number,
   maxY: number,
-  maxZ: number,
+  maxZ: number
 ): boolean {
   return ox >= minX && ox <= maxX && oy >= minY && oy <= maxY && oz >= minZ && oz <= maxZ
 }
 
 /** True if a `far`-bounded ray from (ox,oy,oz) dir (dx,dy,dz) crosses or starts inside
  *  the cube-section AABB centered at (cx,cy,cz) with the given half-extent. */
-export function sectionAabbIntersectsRay (
+export function sectionAabbIntersectsRay(
   cx: number,
   cy: number,
   cz: number,
@@ -107,7 +107,7 @@ export function sectionAabbIntersectsRay (
   dy: number,
   dz: number,
   far: number,
-  halfExtent: number,
+  halfExtent: number
 ): boolean {
   const minX = cx - halfExtent
   const minY = cy - halfExtent
@@ -120,7 +120,7 @@ export function sectionAabbIntersectsRay (
 }
 
 /** Ray–AABB entry distance, or undefined. Ignores hits when origin is inside the box. */
-export function raycastAabb (
+export function raycastAabb(
   ox: number,
   oy: number,
   oz: number,
@@ -133,7 +133,7 @@ export function raycastAabb (
   maxX: number,
   maxY: number,
   maxZ: number,
-  maxDist: number,
+  maxDist: number
 ): number | undefined {
   if (isPointInsideAabb(ox, oy, oz, minX, minY, minZ, maxX, maxY, maxZ)) {
     return undefined
@@ -148,7 +148,11 @@ export function raycastAabb (
     const inv = 1 / dx
     let t1 = (minX - ox) * inv
     let t2 = (maxX - ox) * inv
-    if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp }
+    if (t1 > t2) {
+      const tmp = t1
+      t1 = t2
+      t2 = tmp
+    }
     tmin = Math.max(tmin, t1)
     tmax = Math.min(tmax, t2)
     if (tmin > tmax) return undefined
@@ -160,7 +164,11 @@ export function raycastAabb (
     const inv = 1 / dy
     let t1 = (minY - oy) * inv
     let t2 = (maxY - oy) * inv
-    if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp }
+    if (t1 > t2) {
+      const tmp = t1
+      t1 = t2
+      t2 = tmp
+    }
     tmin = Math.max(tmin, t1)
     tmax = Math.min(tmax, t2)
     if (tmin > tmax) return undefined
@@ -172,7 +180,11 @@ export function raycastAabb (
     const inv = 1 / dz
     let t1 = (minZ - oz) * inv
     let t2 = (maxZ - oz) * inv
-    if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp }
+    if (t1 > t2) {
+      const tmp = t1
+      t1 = t2
+      t2 = tmp
+    }
     tmin = Math.max(tmin, t1)
     tmax = Math.min(tmax, t2)
     if (tmin > tmax) return undefined
@@ -182,7 +194,7 @@ export function raycastAabb (
 }
 
 /** Ray origin inside AABB: distance to exit face along the ray. */
-export function raycastAabbFromInside (
+export function raycastAabbFromInside(
   ox: number,
   oy: number,
   oz: number,
@@ -195,7 +207,7 @@ export function raycastAabbFromInside (
   maxX: number,
   maxY: number,
   maxZ: number,
-  maxDist: number,
+  maxDist: number
 ): number | undefined {
   let tExit = maxDist
 
@@ -218,7 +230,7 @@ export function raycastAabbFromInside (
 }
 
 /** Per-block raycast; `word0Stride` 1 = GlobalBlockBuffer SoA, 4 = deferred AoS. */
-export function raycastShaderBlocksAabb (
+export function raycastShaderBlocksAabb(
   w0Source: Uint32Array,
   start: number,
   faceCount: number,
@@ -234,7 +246,7 @@ export function raycastShaderBlocksAabb (
   dz: number,
   maxDist: number,
   visitGen: Uint16Array,
-  visitStamp: number,
+  visitStamp: number
 ): number | undefined {
   const baseX = sectionCenterX - 8
   const baseY = sectionCenterY - 8
@@ -275,7 +287,7 @@ export function raycastShaderBlocksAabb (
 }
 
 /** 16³ section box centered at (cx, cy, cz) — tests / legacy helper. */
-export function raycastSectionAabb (
+export function raycastSectionAabb(
   ox: number,
   oy: number,
   oz: number,
@@ -285,7 +297,7 @@ export function raycastSectionAabb (
   cx: number,
   cy: number,
   cz: number,
-  maxDist: number,
+  maxDist: number
 ): number | undefined {
   return raycastAabb(ox, oy, oz, dx, dy, dz, cx - 8, cy - 8, cz - 8, cx + 8, cy + 8, cz + 8, maxDist)
 }

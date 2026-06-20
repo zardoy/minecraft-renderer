@@ -20,18 +20,12 @@ type MultiDrawInstancedExt = {
     instanceCountsOffset: number,
     baseInstances: Int32Array,
     baseInstancesOffset: number,
-    drawCount: number,
+    drawCount: number
   ) => void
 }
 
 type DrawInstancedBaseExt = {
-  drawArraysInstancedBaseInstanceWEBGL: (
-    mode: number,
-    first: number,
-    count: number,
-    instanceCount: number,
-    baseInstance: number,
-  ) => void
+  drawArraysInstancedBaseInstanceWEBGL: (mode: number, first: number, count: number, instanceCount: number, baseInstance: number) => void
 }
 
 export type CubeMultiDrawScratch = {
@@ -41,16 +35,16 @@ export type CubeMultiDrawScratch = {
   baseInstances: Int32Array
 }
 
-export function createCubeMultiDrawScratch (): CubeMultiDrawScratch {
+export function createCubeMultiDrawScratch(): CubeMultiDrawScratch {
   return {
     firsts: new Int32Array(MAX_CUBE_SPANS),
     counts: new Int32Array(MAX_CUBE_SPANS),
     instanceCounts: new Int32Array(MAX_CUBE_SPANS),
-    baseInstances: new Int32Array(MAX_CUBE_SPANS),
+    baseInstances: new Int32Array(MAX_CUBE_SPANS)
   }
 }
 
-export function detectMultiDrawCaps (gl: WebGL2RenderingContext): MultiDrawCaps {
+export function detectMultiDrawCaps(gl: WebGL2RenderingContext): MultiDrawCaps {
   const tierA = gl.getExtension('WEBGL_multi_draw_instanced_base_vertex_base_instance')
   if (tierA) {
     return { tier: 'A', ext: tierA as MultiDrawInstancedExt }
@@ -64,7 +58,7 @@ export function detectMultiDrawCaps (gl: WebGL2RenderingContext): MultiDrawCaps 
 
 let tierLogged = false
 
-export function logMultiDrawTierOnce (tier: MultiDrawTier, debug: boolean): void {
+export function logMultiDrawTierOnce(tier: MultiDrawTier, debug: boolean): void {
   if (tierLogged || !debug) return
   tierLogged = true
   console.info('[globalBlockBuffer] cube multi_draw tier', tier)
@@ -73,12 +67,12 @@ export function logMultiDrawTierOnce (tier: MultiDrawTier, debug: boolean): void
 /**
  * Issue instanced cube draws for visible spans. Tier C delegates to buffer-owned VAO path.
  */
-export function drawCubeSpans (
+export function drawCubeSpans(
   gl: WebGL2RenderingContext,
   caps: MultiDrawCaps,
   spans: readonly CubeDrawSpan[],
   scratch: CubeMultiDrawScratch,
-  tierCDraw?: (gl: WebGL2RenderingContext, spans: readonly CubeDrawSpan[]) => void,
+  tierCDraw?: (gl: WebGL2RenderingContext, spans: readonly CubeDrawSpan[]) => void
 ): void {
   const drawCount = spans.length
   if (drawCount === 0) return
@@ -94,14 +88,7 @@ export function drawCubeSpans (
       scratch.instanceCounts[i] = span.count
       scratch.baseInstances[i] = span.start
     }
-    ext.multiDrawArraysInstancedBaseInstanceWEBGL(
-      mode,
-      scratch.firsts, 0,
-      scratch.counts, 0,
-      scratch.instanceCounts, 0,
-      scratch.baseInstances, 0,
-      drawCount,
-    )
+    ext.multiDrawArraysInstancedBaseInstanceWEBGL(mode, scratch.firsts, 0, scratch.counts, 0, scratch.instanceCounts, 0, scratch.baseInstances, 0, drawCount)
     return
   }
 

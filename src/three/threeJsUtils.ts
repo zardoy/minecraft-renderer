@@ -69,17 +69,17 @@ export const loadThreeJsTextureFromBitmap = (image: ImageBitmap) => {
 }
 
 /** Worker-safe sync handle; image loads via fetch + OffscreenCanvas (not TextureLoader). */
-export function loadNearestFilterTexture (imageUrl: string): THREE.Texture {
+export function loadNearestFilterTexture(imageUrl: string): THREE.Texture {
   const { texture, promise } = loadThreeJsTextureFromUrlSync(imageUrl)
   texture.magFilter = THREE.NearestFilter
   texture.minFilter = THREE.NearestFilter
-  void promise.catch((err) => {
+  void promise.catch(err => {
     console.error('[texture] failed to load', imageUrl, err)
   })
   return texture
 }
 
-export async function loadTexture (texture: string, cb: (texture: THREE.Texture) => void, onLoad?: () => void): Promise<void> {
+export async function loadTexture(texture: string, cb: (texture: THREE.Texture) => void, onLoad?: () => void): Promise<void> {
   const cached = textureCache[texture]
   if (!cached) {
     const { promise, resolve } = Promise.withResolvers<THREE.Texture>()

@@ -6,7 +6,7 @@ export default class extends BasePlaygroundScene {
   viewDistance = 5
   continuousRender = true
 
-  override initGui (): void {
+  override initGui(): void {
     this.params = {
       testActive: false,
       testUpdatesPerSecond: 10,
@@ -25,7 +25,7 @@ export default class extends BasePlaygroundScene {
 
   lastUpdatedOffset = 0
   lastUpdatedId = 2
-  updateBlock () {
+  updateBlock() {
     const x = this.lastUpdatedOffset % 16
     const z = Math.floor(this.lastUpdatedOffset / 16)
     const y = 90
@@ -35,7 +35,7 @@ export default class extends BasePlaygroundScene {
     if (this.lastUpdatedId > 500) this.lastUpdatedId = 1
   }
 
-  testNeighborUpdates () {
+  testNeighborUpdates() {
     viewer.world.setBlockStateId(new Vec3(15, 95, 15), 1)
     viewer.world.setBlockStateId(new Vec3(0, 95, 15), 1)
     viewer.world.setBlockStateId(new Vec3(15, 95, 0), 1)
@@ -53,7 +53,7 @@ export default class extends BasePlaygroundScene {
     }, 3000)
   }
 
-  setupTimer () {
+  setupTimer() {
     // this.stopRender = true
 
     let lastTime = 0
@@ -121,7 +121,7 @@ export default class extends BasePlaygroundScene {
     // }, 1)
   }
 
-  setupWorld () {
+  setupWorld() {
     this.worldConfig.showChunkBorders = true
 
     const maxSquareRadius = this.viewDistance * 16

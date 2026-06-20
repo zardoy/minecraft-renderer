@@ -12,10 +12,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write  # for add-pr-comment
+      pull-requests: write # for add-pr-comment
     env:
       DEP_NAME: minecraft-renderer
-      CLIENT_PR: 460  # minecraft-web-client PR with minecraft-renderer dep
+      CLIENT_PR: 460 # minecraft-web-client PR with minecraft-renderer dep
     steps:
       - name: Parse CLIENT_REF from comment
         id: client_ref

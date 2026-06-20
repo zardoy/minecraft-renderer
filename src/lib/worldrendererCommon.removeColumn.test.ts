@@ -13,13 +13,13 @@ vi.mock('./ui/newStats', () => ({
   updateStatText: vi.fn(),
   removeAllStats: vi.fn(),
   updatePanesVisibility: vi.fn(),
-  MC_RENDERER_DEBUG_OVERLAY_CLASS: 'mc-renderer-debug-overlay',
+  MC_RENDERER_DEBUG_OVERLAY_CLASS: 'mc-renderer-debug-overlay'
 }))
 
 vi.mock('./utils/skins', () => ({
   setSkinsConfig: vi.fn(),
   steveTexture: {},
-  stevePngUrl: '',
+  stevePngUrl: ''
 }))
 
 function ensurePromiseWithResolvers() {
@@ -57,10 +57,10 @@ function createRenderer() {
       allChunksLoaded: false,
       mesherWork: false,
       instabilityFactors: defaultPerformanceInstabilityFactors(),
-      intersectMedia: null,
+      intersectMedia: null
     },
     renderer: '',
-    preventEscapeMenu: false,
+    preventEscapeMenu: false
   })
 
   const displayOptions = {
@@ -77,13 +77,13 @@ function createRenderer() {
         chunksLoaded: new Set<string>(),
         chunksLoadedCount: 0,
         chunksTotalNumber: 0,
-        chunksFullInfo: '',
+        chunksFullInfo: ''
       },
       renderer: {
-        timeline: { live: [], frozen: [], lastSecond: [] },
-      },
+        timeline: { live: [], frozen: [], lastSecond: [] }
+      }
     },
-    resourcesManager: {} as DisplayWorldOptions['resourcesManager'],
+    resourcesManager: {} as DisplayWorldOptions['resourcesManager']
   }
 
   const initOptions: GraphicsInitOptions = {
@@ -92,8 +92,8 @@ function createRenderer() {
     callbacks: {
       displayCriticalError: vi.fn(),
       setRendererSpecificSettings: vi.fn(),
-      fireCustomEvent: vi.fn(),
-    },
+      fireCustomEvent: vi.fn()
+    }
   }
 
   const renderer = new TestWorldRenderer(displayOptions.resourcesManager, displayOptions as DisplayWorldOptions, initOptions)
@@ -158,9 +158,7 @@ describe('WorldRendererCommon.removeColumn sectionsWaiting reconciliation', () =
     }).not.toThrow()
 
     expect(renderer.sectionsWaiting.has(sectionKey)).toBe(false)
-    expect(debugSpy).toHaveBeenCalledWith(
-      expect.stringContaining('sectionFinished for non-outstanding section'),
-    )
+    expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining('sectionFinished for non-outstanding section'))
 
     debugSpy.mockRestore()
   })

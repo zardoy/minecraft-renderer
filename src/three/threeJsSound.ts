@@ -14,7 +14,7 @@ export class ThreeJsSound implements SoundSystem {
       this.stopAll()
     })
 
-    worldRenderer.onReactiveConfigUpdated('volume', (volume) => {
+    worldRenderer.onReactiveConfigUpdated('volume', volume => {
       this.changeVolume(volume)
     })
   }
@@ -25,7 +25,7 @@ export class ThreeJsSound implements SoundSystem {
     this.worldRenderer.camera.add(this.audioListener)
   }
 
-  playSound(position: { x: number, y: number, z: number }, path: string, volume = 1, pitch = 1, timeout = 500) {
+  playSound(position: { x: number; y: number; z: number }, path: string, volume = 1, pitch = 1, timeout = 500) {
     this.initAudioListener()
 
     const sound = new THREE.PositionalAudio(this.audioListener!)
@@ -34,7 +34,7 @@ export class ThreeJsSound implements SoundSystem {
 
     const audioLoader = new THREE.AudioLoader()
     const start = Date.now()
-    void audioLoader.loadAsync(path).then((buffer) => {
+    void audioLoader.loadAsync(path).then(buffer => {
       if (Date.now() - start > timeout) {
         console.warn('Ignored playing sound', path, 'due to timeout:', timeout, 'ms <', Date.now() - start, 'ms')
         return

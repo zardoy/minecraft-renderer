@@ -12,7 +12,7 @@ export const defaultPerformanceInstabilityFactors = (): PerformanceInstabilityFa
   constantLongRenderTime: false,
   tooManyEntities: false,
   tooManyTextures: false,
-  unknownReason: false,
+  unknownReason: false
 })
 
 export interface FramePerformanceSample {

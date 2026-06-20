@@ -12,7 +12,7 @@ import {
   packWord2Empty,
   packWord3,
   SHADER_CUBES_FORMAT_VERSION,
-  SHADER_CUBES_WORDS_PER_FACE,
+  SHADER_CUBES_WORDS_PER_FACE
 } from '../bridge/shaderCubeBridge'
 import { GlobalBlockBuffer } from '../../three/globalBlockBuffer'
 import { buildVisibleCubeSpans } from '../../three/cubeDrawSpans'
@@ -42,20 +42,22 @@ test('packWord2: AO diagonal flip sets bit 12', () => {
     visible_faces: 1 << 0, // up only
     ao_data: [[0, 1, 2, 3]], // 0+3 >= 1+2 → flip
     light_data: [[1, 1, 1, 1]],
-    light_combined: [[255, 255, 255, 255]],
+    light_combined: [[255, 255, 255, 255]]
   }
   const { textureIndexMapping, tintPalette } = requireShaderCubeResources()
   const model = {
-    elements: [{
-      faces: {
-        up: { texture: { u: 0, v: 0, su: 16, sv: 16 } },
-        down: { texture: { u: 0, v: 0, su: 16, sv: 16 } },
-        east: { texture: { u: 0, v: 0, su: 16, sv: 16 } },
-        west: { texture: { u: 0, v: 0, su: 16, sv: 16 } },
-        south: { texture: { u: 0, v: 0, su: 16, sv: 16 } },
-        north: { texture: { u: 0, v: 0, su: 16, sv: 16 } },
-      },
-    }],
+    elements: [
+      {
+        faces: {
+          up: { texture: { u: 0, v: 0, su: 16, sv: 16 } },
+          down: { texture: { u: 0, v: 0, su: 16, sv: 16 } },
+          east: { texture: { u: 0, v: 0, su: 16, sv: 16 } },
+          west: { texture: { u: 0, v: 0, su: 16, sv: 16 } },
+          south: { texture: { u: 0, v: 0, su: 16, sv: 16 } },
+          north: { texture: { u: 0, v: 0, su: 16, sv: 16 } }
+        }
+      }
+    ]
   }
   const ok = tryBuildShaderCubeInstances(
     block,
@@ -65,9 +67,9 @@ test('packWord2: AO diagonal flip sets bit 12', () => {
       sectionOrigin: { x: 0, y: 0, z: 0 },
       sectionHeight: 16,
       tintPalette,
-      textureIndexMapping,
+      textureIndexMapping
     },
-    words,
+    words
   )
   expect(ok).toBe(true)
   expect(words.length).toBe(SHADER_CUBES_WORDS_PER_FACE)
@@ -81,20 +83,22 @@ test('packWord0: section-local lx/ly/lz and face id', () => {
     visible_faces: 1 << 2, // east
     ao_data: [[3, 3, 3, 3]],
     light_data: [[0.5, 0.5, 0.5, 0.5]],
-    light_combined: [[128, 128, 128, 128]],
+    light_combined: [[128, 128, 128, 128]]
   }
   const { textureIndexMapping, tintPalette } = requireShaderCubeResources()
   const model = {
-    elements: [{
-      faces: {
-        up: { texture: { u: 16, v: 0, su: 16, sv: 16 } },
-        down: { texture: { u: 16, v: 0, su: 16, sv: 16 } },
-        east: { texture: { u: 16, v: 0, su: 16, sv: 16 } },
-        west: { texture: { u: 16, v: 0, su: 16, sv: 16 } },
-        south: { texture: { u: 16, v: 0, su: 16, sv: 16 } },
-        north: { texture: { u: 16, v: 0, su: 16, sv: 16 } },
-      },
-    }],
+    elements: [
+      {
+        faces: {
+          up: { texture: { u: 16, v: 0, su: 16, sv: 16 } },
+          down: { texture: { u: 16, v: 0, su: 16, sv: 16 } },
+          east: { texture: { u: 16, v: 0, su: 16, sv: 16 } },
+          west: { texture: { u: 16, v: 0, su: 16, sv: 16 } },
+          south: { texture: { u: 16, v: 0, su: 16, sv: 16 } },
+          north: { texture: { u: 16, v: 0, su: 16, sv: 16 } }
+        }
+      }
+    ]
   }
   tryBuildShaderCubeInstances(
     block,
@@ -104,9 +108,9 @@ test('packWord0: section-local lx/ly/lz and face id', () => {
       sectionOrigin: { x: 0, y: 16, z: 0 },
       sectionHeight: 16,
       tintPalette,
-      textureIndexMapping,
+      textureIndexMapping
     },
-    words,
+    words
   )
   const w0 = words[0]!
   expect(w0 & 0xf).toBe(10) // lx
@@ -118,35 +122,24 @@ test('packWord0: section-local lx/ly/lz and face id', () => {
 test('isShaderCubeBlock: rejects model rotation and sectionHeight !== 16', () => {
   const { textureIndexMapping } = requireShaderCubeResources()
   const baseModel = {
-    elements: [{
-      faces: {
-        up: { texture: { u: 0, v: 0, su: 16, sv: 16 } },
-        down: { texture: { u: 0, v: 0, su: 16, sv: 16 } },
-        east: { texture: { u: 0, v: 0, su: 16, sv: 16 } },
-        west: { texture: { u: 0, v: 0, su: 16, sv: 16 } },
-        south: { texture: { u: 0, v: 0, su: 16, sv: 16 } },
-        north: { texture: { u: 0, v: 0, su: 16, sv: 16 } },
-      },
-    }],
+    elements: [
+      {
+        faces: {
+          up: { texture: { u: 0, v: 0, su: 16, sv: 16 } },
+          down: { texture: { u: 0, v: 0, su: 16, sv: 16 } },
+          east: { texture: { u: 0, v: 0, su: 16, sv: 16 } },
+          west: { texture: { u: 0, v: 0, su: 16, sv: 16 } },
+          south: { texture: { u: 0, v: 0, su: 16, sv: 16 } },
+          north: { texture: { u: 0, v: 0, su: 16, sv: 16 } }
+        }
+      }
+    ]
   }
-  expect(isShaderCubeBlock(
-    { blockName: 'stone', blockProps: {}, isCube: true, model: baseModel },
-    baseModel,
-    16,
-    textureIndexMapping,
-  )).toBe(true)
-  expect(isShaderCubeBlock(
-    { blockName: 'stone', blockProps: {}, isCube: true, model: baseModel },
-    baseModel,
-    24,
-    textureIndexMapping,
-  )).toBe(false)
-  expect(isShaderCubeBlock(
-    { blockName: 'stone', blockProps: {}, isCube: true, model: { ...baseModel, y: 90 } },
-    { ...baseModel, y: 90 },
-    16,
-    textureIndexMapping,
-  )).toBe(false)
+  expect(isShaderCubeBlock({ blockName: 'stone', blockProps: {}, isCube: true, model: baseModel }, baseModel, 16, textureIndexMapping)).toBe(true)
+  expect(isShaderCubeBlock({ blockName: 'stone', blockProps: {}, isCube: true, model: baseModel }, baseModel, 24, textureIndexMapping)).toBe(false)
+  expect(
+    isShaderCubeBlock({ blockName: 'stone', blockProps: {}, isCube: true, model: { ...baseModel, y: 90 } }, { ...baseModel, y: 90 }, 16, textureIndexMapping)
+  ).toBe(false)
 })
 
 test('renderWasmOutputToGeometry: stone emits shaderCubes and skips legacy vertices when enabled', () => {
@@ -156,16 +149,11 @@ test('renderWasmOutputToGeometry: stone emits shaderCubes and skips legacy verti
     visible_faces: (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 5),
     ao_data: Array.from({ length: 6 }, () => [3, 3, 3, 3]),
     light_data: Array.from({ length: 6 }, () => [1, 1, 1, 1]),
-    light_combined: Array.from({ length: 6 }, () => [255, 255, 255, 255]),
+    light_combined: Array.from({ length: 6 }, () => [255, 255, 255, 255])
   }
-  const out = renderWasmOutputToGeometry(
-    { blocks: [block], block_count: 1, block_iterations: 0 },
-    VERSION,
-    '0,0,0',
-    { x: 8, y: 8, z: 8 },
-    undefined,
-    { shaderCubes: true },
-  )
+  const out = renderWasmOutputToGeometry({ blocks: [block], block_count: 1, block_iterations: 0 }, VERSION, '0,0,0', { x: 8, y: 8, z: 8 }, undefined, {
+    shaderCubes: true
+  })
   expect(out.shaderCubes?.count).toBe(6)
   expect(out.shaderCubes?.formatVersion).toBe(SHADER_CUBES_FORMAT_VERSION)
   expect(out.shaderCubes?.words.length).toBe(6 * SHADER_CUBES_WORDS_PER_FACE)
@@ -183,16 +171,11 @@ test('renderWasmOutputToGeometry: shaderCubes false keeps legacy path for stone'
     block_state_id: STONE,
     visible_faces: 1 << 0,
     ao_data: [[3, 3, 3, 3]],
-    light_data: [[1, 1, 1, 1]],
+    light_data: [[1, 1, 1, 1]]
   }
-  const out = renderWasmOutputToGeometry(
-    { blocks: [block], block_count: 1, block_iterations: 0 },
-    VERSION,
-    '0,0,0',
-    { x: 8, y: 8, z: 8 },
-    undefined,
-    { shaderCubes: false },
-  )
+  const out = renderWasmOutputToGeometry({ blocks: [block], block_count: 1, block_iterations: 0 }, VERSION, '0,0,0', { x: 8, y: 8, z: 8 }, undefined, {
+    shaderCubes: false
+  })
   expect(out.shaderCubes).toBeUndefined()
   expect(out.geometry.positions.length).toBeGreaterThan(0)
 })
@@ -211,7 +194,7 @@ const SIX_FACE_TEXTURES = {
   east: { texture: { u: 0, v: 0, su: 16, sv: 16 } },
   west: { texture: { u: 0, v: 0, su: 16, sv: 16 } },
   south: { texture: { u: 0, v: 0, su: 16, sv: 16 } },
-  north: { texture: { u: 0, v: 0, su: 16, sv: 16 } },
+  north: { texture: { u: 0, v: 0, su: 16, sv: 16 } }
 }
 
 function aoCorner0FromWord0(w0: number): number {
@@ -225,7 +208,7 @@ test('south face: AO corners remapped to shader order (elemFaces [0,3,1,2] → s
     visible_faces: 1 << 4, // south
     ao_data: [[0, 3, 1, 2]],
     light_data: [[1, 1, 1, 1]],
-    light_combined: [[10, 20, 30, 40]],
+    light_combined: [[10, 20, 30, 40]]
   }
   const { textureIndexMapping, tintPalette } = requireShaderCubeResources()
   const model = { elements: [{ faces: SIX_FACE_TEXTURES }] }
@@ -234,7 +217,7 @@ test('south face: AO corners remapped to shader order (elemFaces [0,3,1,2] → s
     { blockName: 'stone', blockProps: {}, isCube: true, model },
     model,
     { sectionOrigin: { x: 0, y: 0, z: 0 }, sectionHeight: 16, tintPalette, textureIndexMapping },
-    words,
+    words
   )
   // Shader vi=0 must get elemFaces ao[2]=1, not ao[0]=0
   expect(aoCorner0FromWord0(words[0]!)).toBe(1)
@@ -251,7 +234,7 @@ test('south face: diagonal flip uses remapped AO (differs from raw elemFaces for
     visible_faces: 1 << 4,
     ao_data: [ao],
     light_data: [[1, 1, 1, 1]],
-    light_combined: [[255, 255, 255, 255]],
+    light_combined: [[255, 255, 255, 255]]
   }
   const { textureIndexMapping, tintPalette } = requireShaderCubeResources()
   const model = { elements: [{ faces: SIX_FACE_TEXTURES }] }
@@ -259,25 +242,13 @@ test('south face: diagonal flip uses remapped AO (differs from raw elemFaces for
     sectionOrigin: { x: 0, y: 0, z: 0 },
     sectionHeight: 16,
     tintPalette,
-    textureIndexMapping,
+    textureIndexMapping
   }
-  tryBuildShaderCubeInstances(
-    block,
-    { blockName: 'stone', blockProps: {}, isCube: true, model },
-    model,
-    opts,
-    wordsFlip,
-  )
+  tryBuildShaderCubeInstances(block, { blockName: 'stone', blockProps: {}, isCube: true, model }, model, opts, wordsFlip)
   expect(wordsFlip[2]! & (1 << WORD2.DIAGONAL_FLAG_SHIFT)).not.toBe(0)
 
   // elemFaces [3,0,0,3] → remapped [0,3,3,0]: 0+0 < 3+3 → no diagonal flip
-  tryBuildShaderCubeInstances(
-    { ...block, ao_data: [[3, 0, 0, 3]] },
-    { blockName: 'stone', blockProps: {}, isCube: true, model },
-    model,
-    opts,
-    wordsNoFlip,
-  )
+  tryBuildShaderCubeInstances({ ...block, ao_data: [[3, 0, 0, 3]] }, { blockName: 'stone', blockProps: {}, isCube: true, model }, model, opts, wordsNoFlip)
   expect(wordsNoFlip[2]! & (1 << WORD2.DIAGONAL_FLAG_SHIFT)).toBe(0)
 })
 
@@ -288,7 +259,7 @@ test('doAO false: full bright AO/light and no diagonal flip', () => {
     visible_faces: 1 << 0,
     ao_data: [[0, 0, 0, 0]],
     light_data: [[0, 0, 0, 0]],
-    light_combined: [[0, 0, 0, 0]],
+    light_combined: [[0, 0, 0, 0]]
   }
   const { textureIndexMapping, tintPalette } = requireShaderCubeResources()
   const model = { elements: [{ faces: SIX_FACE_TEXTURES }] }
@@ -301,9 +272,9 @@ test('doAO false: full bright AO/light and no diagonal flip', () => {
       sectionHeight: 16,
       tintPalette,
       textureIndexMapping,
-      doAO: false,
+      doAO: false
     },
-    words,
+    words
   )
   expect(aoCorner0FromWord0(words[0]!)).toBe(3)
   for (let i = 0; i < 4; i++) {
@@ -312,7 +283,7 @@ test('doAO false: full bright AO/light and no diagonal flip', () => {
   expect(words[2]! & (1 << WORD2.DIAGONAL_FLAG_SHIFT)).toBe(0)
 })
 
-const SECTION_ORIGIN_ROUND_TRIP_CASES: Array<{ x: number, y: number, z: number }> = [
+const SECTION_ORIGIN_ROUND_TRIP_CASES: Array<{ x: number; y: number; z: number }> = [
   { x: 0, y: 16, z: 32 },
   { x: 0, y: 0, z: 0 },
   { x: 524288, y: 0, z: 524288 },
@@ -320,33 +291,30 @@ const SECTION_ORIGIN_ROUND_TRIP_CASES: Array<{ x: number, y: number, z: number }
   { x: 33000000, y: 0, z: 33000000 },
   { x: -524288, y: 0, z: -524288 },
   { x: -1000000, y: 0, z: -1000000 },
-  { x: 1000000, y: 0, z: -1000000 },
+  { x: 1000000, y: 0, z: -1000000 }
 ]
 
-test.each(SECTION_ORIGIN_ROUND_TRIP_CASES)(
-  'section base coords round-trip in word2/word3 at origin (%#)',
-  (sectionOrigin) => {
-    const words: number[] = []
-    const block = {
-      position: [10, 17, 4] as [number, number, number],
-      visible_faces: 1 << 2,
-      ao_data: [[3, 3, 3, 3]],
-      light_data: [[1, 1, 1, 1]],
-      light_combined: [[255, 255, 255, 255]],
-    }
-    const { textureIndexMapping, tintPalette } = requireShaderCubeResources()
-    const model = { elements: [{ faces: SIX_FACE_TEXTURES }] }
-    tryBuildShaderCubeInstances(
-      block,
-      { blockName: 'stone', blockProps: {}, isCube: true, model },
-      model,
-      { sectionOrigin, sectionHeight: 16, tintPalette, textureIndexMapping },
-      words,
-    )
-    const base = decodeSectionBaseFromWords(words[2]!, words[3]!)
-    expect(base).toEqual(sectionOrigin)
-  },
-)
+test.each(SECTION_ORIGIN_ROUND_TRIP_CASES)('section base coords round-trip in word2/word3 at origin (%#)', sectionOrigin => {
+  const words: number[] = []
+  const block = {
+    position: [10, 17, 4] as [number, number, number],
+    visible_faces: 1 << 2,
+    ao_data: [[3, 3, 3, 3]],
+    light_data: [[1, 1, 1, 1]],
+    light_combined: [[255, 255, 255, 255]]
+  }
+  const { textureIndexMapping, tintPalette } = requireShaderCubeResources()
+  const model = { elements: [{ faces: SIX_FACE_TEXTURES }] }
+  tryBuildShaderCubeInstances(
+    block,
+    { blockName: 'stone', blockProps: {}, isCube: true, model },
+    model,
+    { sectionOrigin, sectionHeight: 16, tintPalette, textureIndexMapping },
+    words
+  )
+  const base = decodeSectionBaseFromWords(words[2]!, words[3]!)
+  expect(base).toEqual(sectionOrigin)
+})
 
 test('packWord2Empty: bit 18 set regardless of high X/Z bits in word2', () => {
   const empty = packWord2Empty()
@@ -364,7 +332,7 @@ test('section index relative decode past 2^20: exact integer subtract', () => {
     visible_faces: 1 << 2,
     ao_data: [[3, 3, 3, 3]],
     light_data: [[1, 1, 1, 1]],
-    light_combined: [[255, 255, 255, 255]],
+    light_combined: [[255, 255, 255, 255]]
   }
   const { textureIndexMapping, tintPalette } = requireShaderCubeResources()
   const model = { elements: [{ faces: SIX_FACE_TEXTURES }] }
@@ -376,9 +344,9 @@ test('section index relative decode past 2^20: exact integer subtract', () => {
       sectionOrigin: { x: sectionBlockX, y: 0, z: 0 },
       sectionHeight: 16,
       tintPalette,
-      textureIndexMapping,
+      textureIndexMapping
     },
-    words,
+    words
   )
   const base = decodeSectionBaseFromWords(words[2]!, words[3]!)
   const sX = base.x / 16
@@ -392,10 +360,7 @@ test('GlobalBlockBuffer: free-list reuses slot with EMPTY sentinel', () => {
   const mat = createCubeBlockMaterial()
   const buffer = new GlobalBlockBuffer(mat, scene)
 
-  const words = new Uint32Array([
-    1, 2, 0, packWord3(0, 0),
-    3, 4, 0, packWord3(0, 0),
-  ])
+  const words = new Uint32Array([1, 2, 0, packWord3(0, 0), 3, 4, 0, packWord3(0, 0)])
   buffer.addSection('a', words, 2)
   expect(buffer.mesh.geometry.instanceCount).toBe(2)
 
@@ -413,24 +378,24 @@ test('GlobalBlockBuffer: free-list reuses slot with EMPTY sentinel', () => {
 })
 
 type BufferInternals = {
-  pendingRanges: Array<{ start: number, end: number }>
-  pendingMove: { key: string, oldStart: number, newStart: number, count: number } | null
+  pendingRanges: Array<{ start: number; end: number }>
+  pendingMove: { key: string; oldStart: number; newStart: number; count: number } | null
 }
 
 /** True if some queued (not-yet-uploaded) dirty range covers [start, end] — i.e. it WILL hit the GPU. */
-function rangeQueuedForUpload (buffer: GlobalBlockBuffer, start: number, end: number): boolean {
+function rangeQueuedForUpload(buffer: GlobalBlockBuffer, start: number, end: number): boolean {
   return getBufferInternals(buffer).pendingRanges.some(r => r.start <= end && r.end >= start)
 }
 
-function getBufferInternals (buffer: GlobalBlockBuffer): BufferInternals {
+function getBufferInternals(buffer: GlobalBlockBuffer): BufferInternals {
   return buffer as unknown as BufferInternals
 }
 
-function drainAllUploads (buffer: GlobalBlockBuffer): void {
+function drainAllUploads(buffer: GlobalBlockBuffer): void {
   while (getBufferInternals(buffer).pendingRanges.length) buffer.uploadDirtyRange()
 }
 
-function makeSectionWords (faceW0: number[]): Uint32Array {
+function makeSectionWords(faceW0: number[]): Uint32Array {
   const words = new Uint32Array(faceW0.length * 4)
   for (let i = 0; i < faceW0.length; i++) {
     words[i * 4] = faceW0[i]!
@@ -441,7 +406,7 @@ function makeSectionWords (faceW0: number[]): Uint32Array {
   return words
 }
 
-function readSectionFaceWords (buffer: GlobalBlockBuffer, key: string): number[] {
+function readSectionFaceWords(buffer: GlobalBlockBuffer, key: string): number[] {
   const slot = buffer.getSectionSlot(key)
   if (!slot) throw new Error(`missing section ${key}`)
   const geo = buffer.mesh.geometry
@@ -457,12 +422,12 @@ function readSectionFaceWords (buffer: GlobalBlockBuffer, key: string): number[]
   return out
 }
 
-function finishCurrentMove (buffer: GlobalBlockBuffer): void {
+function finishCurrentMove(buffer: GlobalBlockBuffer): void {
   drainAllUploads(buffer)
   buffer.compactStep()
 }
 
-function isEmptyFace (buffer: GlobalBlockBuffer, index: number): boolean {
+function isEmptyFace(buffer: GlobalBlockBuffer, index: number): boolean {
   const w2 = (buffer.mesh.geometry.getAttribute('a_w2') as THREE.InstancedBufferAttribute).array as Uint32Array
   return (w2[index]! & (1 << WORD2.EMPTY_SHIFT)) !== 0
 }
@@ -718,10 +683,7 @@ test('GlobalBlockBuffer: pendingMove draw start uses oldStart for visible spans'
   expect(buffer.getSectionDrawStart('c')).toBe(move!.oldStart)
   expect(buffer.getSectionDrawStart('c')).not.toBe(slotStart)
 
-  const spans = buildVisibleCubeSpans(
-    [{ start: buffer.getSectionDrawStart('c')!, count: 1 }],
-    buffer.getHighWatermark(),
-  )
+  const spans = buildVisibleCubeSpans([{ start: buffer.getSectionDrawStart('c')!, count: 1 }], buffer.getHighWatermark())
   expect(spans[0]?.start).toBe(move!.oldStart)
 
   buffer.dispose()

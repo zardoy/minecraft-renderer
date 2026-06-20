@@ -6,7 +6,7 @@ import {
   LONG_RENDER_TIME_MS,
   LOW_FPS_THRESHOLD,
   RENDER_TIME_HISTORY_SIZE,
-  SLOW_ENTITIES_RENDER_MS,
+  SLOW_ENTITIES_RENDER_MS
 } from './constants'
 import type { FramePerformanceSample, PerformanceInstabilityFactors } from './types'
 
@@ -39,22 +39,13 @@ export class PerformanceMonitor {
 
     const historyLen = this.renderTimeHistory.length
     const longFrames = this.renderTimeHistory.filter(t => t >= LONG_RENDER_TIME_MS).length
-    const constantLongRenderTime =
-      historyLen >= CONSTANT_LONG_RENDER_MIN_SAMPLES &&
-      longFrames / historyLen >= CONSTANT_LONG_RENDER_FRACTION
+    const constantLongRenderTime = historyLen >= CONSTANT_LONG_RENDER_MIN_SAMPLES && longFrames / historyLen >= CONSTANT_LONG_RENDER_FRACTION
 
     const tooManyTextures = sample.loadedTextureCount >= HIGH_TEXTURE_COUNT
 
-    const tooManyEntities =
-      lowFps &&
-      sample.entitiesMs >= SLOW_ENTITIES_RENDER_MS &&
-      sceneWithoutEntitiesMs <= FAST_SCENE_WITHOUT_ENTITIES_MS
+    const tooManyEntities = lowFps && sample.entitiesMs >= SLOW_ENTITIES_RENDER_MS && sceneWithoutEntitiesMs <= FAST_SCENE_WITHOUT_ENTITIES_MS
 
-    const hasKnownCause =
-      longRenderTime ||
-      constantLongRenderTime ||
-      tooManyEntities ||
-      tooManyTextures
+    const hasKnownCause = longRenderTime || constantLongRenderTime || tooManyEntities || tooManyTextures
 
     const unknownReason = lowFps && !hasKnownCause
 

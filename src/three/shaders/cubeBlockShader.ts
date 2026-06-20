@@ -1,9 +1,5 @@
 import * as THREE from 'three'
-import {
-  APPLY_LIGHTMAP_GLSL,
-  DEFAULT_LIGHTMAP_PARAMS,
-  type BlockLightmapParams,
-} from '../../lib/blockEntityLighting'
+import { APPLY_LIGHTMAP_GLSL, DEFAULT_LIGHTMAP_PARAMS, type BlockLightmapParams } from '../../lib/blockEntityLighting'
 
 export type { BlockLightmapParams }
 
@@ -303,68 +299,65 @@ void main() {
 `
 
 export function createCubeBlockMaterial(): THREE.ShaderMaterial {
-    return new THREE.ShaderMaterial({
-        vertexShader,
-        fragmentShader,
-        // Merge UniformsLib.fog (fogColor/fogNear/fogFar/fogDensity) so Three.js's
-        // WebGLMaterials.refreshFogUniforms can keep them in sync with scene.fog each
-        // frame — only happens for materials with \`fog: true\` set below.
-        uniforms: THREE.UniformsUtils.merge([
-            THREE.UniformsLib.fog,
-            {
-                u_atlas: { value: null },
-                u_tintPalette: { value: null },
-                u_debugMode: { value: 0 },
-                u_skyLevel: { value: 1.0 },
-                u_lightCurve: { value: DEFAULT_LIGHTMAP_PARAMS.curve },
-                u_minBrightness: { value: DEFAULT_LIGHTMAP_PARAMS.minBrightness },
-                u_lightGamma: { value: DEFAULT_LIGHTMAP_PARAMS.gamma },
-                u_sectionOriginRel: { value: new THREE.Vector3(0, 0, 0) },
-                u_originDelta: { value: new THREE.Vector3() },
-                u_cameraOriginFrac: { value: new THREE.Vector3() },
-            },
-        ]),
-        // Opaque full cubes — WASM mesher already culls interior faces between
-        // solid neighbors, so no z-fighting between own faces. Keep NoBlending so
-        // the alpha=1 path writes pure pixels and depth.
-        transparent: false,
-        depthWrite: true,
-        depthTest: true,
-        blending: THREE.NoBlending,
-        glslVersion: THREE.GLSL3,
-        // Required for Three.js to inject \`#define USE_FOG\` (and refresh fog uniforms).
-        fog: true,
-    })
+  return new THREE.ShaderMaterial({
+    vertexShader,
+    fragmentShader,
+    // Merge UniformsLib.fog (fogColor/fogNear/fogFar/fogDensity) so Three.js's
+    // WebGLMaterials.refreshFogUniforms can keep them in sync with scene.fog each
+    // frame — only happens for materials with \`fog: true\` set below.
+    uniforms: THREE.UniformsUtils.merge([
+      THREE.UniformsLib.fog,
+      {
+        u_atlas: { value: null },
+        u_tintPalette: { value: null },
+        u_debugMode: { value: 0 },
+        u_skyLevel: { value: 1.0 },
+        u_lightCurve: { value: DEFAULT_LIGHTMAP_PARAMS.curve },
+        u_minBrightness: { value: DEFAULT_LIGHTMAP_PARAMS.minBrightness },
+        u_lightGamma: { value: DEFAULT_LIGHTMAP_PARAMS.gamma },
+        u_sectionOriginRel: { value: new THREE.Vector3(0, 0, 0) },
+        u_originDelta: { value: new THREE.Vector3() },
+        u_cameraOriginFrac: { value: new THREE.Vector3() }
+      }
+    ]),
+    // Opaque full cubes — WASM mesher already culls interior faces between
+    // solid neighbors, so no z-fighting between own faces. Keep NoBlending so
+    // the alpha=1 path writes pure pixels and depth.
+    transparent: false,
+    depthWrite: true,
+    depthTest: true,
+    blending: THREE.NoBlending,
+    glslVersion: THREE.GLSL3,
+    // Required for Three.js to inject \`#define USE_FOG\` (and refresh fog uniforms).
+    fog: true
+  })
 }
 
 // Three geometry constants: 6 vertices per face (2 triangles, un-indexed)
-export function setCubeSkyLevel (material: THREE.ShaderMaterial, value: number): void {
-    const u = material.uniforms.u_skyLevel
-    if (u) u.value = value
+export function setCubeSkyLevel(material: THREE.ShaderMaterial, value: number): void {
+  const u = material.uniforms.u_skyLevel
+  if (u) u.value = value
 }
 
-export function setCubeLightmapParams (
-    material: THREE.ShaderMaterial,
-    params: BlockLightmapParams,
-): void {
-    if (params.curve !== undefined) {
-        const u = material.uniforms.u_lightCurve
-        if (u) u.value = params.curve
-    }
-    if (params.minBrightness !== undefined) {
-        const u = material.uniforms.u_minBrightness
-        if (u) u.value = params.minBrightness
-    }
-    if (params.gamma !== undefined) {
-        const u = material.uniforms.u_lightGamma
-        if (u) u.value = params.gamma
-    }
+export function setCubeLightmapParams(material: THREE.ShaderMaterial, params: BlockLightmapParams): void {
+  if (params.curve !== undefined) {
+    const u = material.uniforms.u_lightCurve
+    if (u) u.value = params.curve
+  }
+  if (params.minBrightness !== undefined) {
+    const u = material.uniforms.u_minBrightness
+    if (u) u.value = params.minBrightness
+  }
+  if (params.gamma !== undefined) {
+    const u = material.uniforms.u_lightGamma
+    if (u) u.value = params.gamma
+  }
 }
 
 export const VERTICES_PER_FACE = 6
 
 /** Section index units for render origin R (R is always a multiple of 16). */
-export function computeSectionOriginRel (renderOrigin: { x: number, y: number, z: number }): {
+export function computeSectionOriginRel(renderOrigin: { x: number; y: number; z: number }): {
   x: number
   y: number
   z: number
@@ -372,51 +365,51 @@ export function computeSectionOriginRel (renderOrigin: { x: number, y: number, z
   return {
     x: Math.round(renderOrigin.x / 16),
     y: Math.round(renderOrigin.y / 16),
-    z: Math.round(renderOrigin.z / 16),
+    z: Math.round(renderOrigin.z / 16)
   }
 }
 
 // Word layout constants (for encoding/decoding instances)
 export const WORD0 = {
-    LX_BITS: 4,
-    LY_BITS: 4,
-    LZ_BITS: 4,
-    FACE_BITS: 3,
-    TINT_BITS: 8,
-    AO_BITS_PER_CORNER: 2,
-    NUM_CORNERS: 4,
-    // Bit offsets
-    LX_SHIFT: 0,
-    LY_SHIFT: 4,
-    LZ_SHIFT: 8,
-    FACE_SHIFT: 12,
-    TINT_SHIFT: 15,
-    AO_SHIFT: 23,
-    TRANSPARENT_SHIFT: 31,
+  LX_BITS: 4,
+  LY_BITS: 4,
+  LZ_BITS: 4,
+  FACE_BITS: 3,
+  TINT_BITS: 8,
+  AO_BITS_PER_CORNER: 2,
+  NUM_CORNERS: 4,
+  // Bit offsets
+  LX_SHIFT: 0,
+  LY_SHIFT: 4,
+  LZ_SHIFT: 8,
+  FACE_SHIFT: 12,
+  TINT_SHIFT: 15,
+  AO_SHIFT: 23,
+  TRANSPARENT_SHIFT: 31
 } as const
 
 export const WORD1 = {
-    LIGHT_BITS_PER_CORNER: 8,
-    NUM_CORNERS: 4,
+  LIGHT_BITS_PER_CORNER: 8,
+  NUM_CORNERS: 4
 } as const
 
 export const WORD2 = {
-    TEX_INDEX_BITS: 12,
-    DIAGONAL_FLAG_SHIFT: 12,
-    SECTION_Y_SHIFT: 13,
-    SECTION_Y_BITS: 5,
-    EMPTY_SHIFT: 18,
-    SECTION_X_HI_SHIFT: 19,
-    SECTION_Z_HI_SHIFT: 25,
-    SECTION_HI_BITS: 6,
-    SPARE_BITS: 1,
+  TEX_INDEX_BITS: 12,
+  DIAGONAL_FLAG_SHIFT: 12,
+  SECTION_Y_SHIFT: 13,
+  SECTION_Y_BITS: 5,
+  EMPTY_SHIFT: 18,
+  SECTION_X_HI_SHIFT: 19,
+  SECTION_Z_HI_SHIFT: 25,
+  SECTION_HI_BITS: 6,
+  SPARE_BITS: 1
 } as const
 
 /** Section base X/Z: low 16 bits in a_w3, high 6 in a_w2 (22-bit biased section index). */
 export const WORD3 = {
-    SECTION_BITS: 22,
-    SECTION_MASK: (1 << 22) - 1,
-    LO_BITS: 16,
-    HI_BITS: 6,
-    SECTION_BIAS: 2097152,
+  SECTION_BITS: 22,
+  SECTION_MASK: (1 << 22) - 1,
+  LO_BITS: 16,
+  HI_BITS: 6,
+  SECTION_BIAS: 2097152
 } as const

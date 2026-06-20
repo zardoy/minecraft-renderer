@@ -4,11 +4,11 @@ import type { WorldRendererThree } from './worldRendererThree'
 export const getFirstPersonItemSpecificProps = (worldRenderer: WorldRendererThree): ItemSpecificContextProperties => ({
   'minecraft:display_context': 'firstperson',
   'minecraft:use_duration': worldRenderer.playerStateReactive.itemUsageTicks,
-  'minecraft:using_item': !!worldRenderer.playerStateReactive.itemUsageTicks,
+  'minecraft:using_item': !!worldRenderer.playerStateReactive.itemUsageTicks
 })
 
 const getFirstPersonItemIdentityProps = (): ItemSpecificContextProperties => ({
-  'minecraft:display_context': 'firstperson',
+  'minecraft:display_context': 'firstperson'
 })
 
 export const getHandItemRenderKey = (worldRenderer: WorldRendererThree, handItem?: HandItemBlock) => {
@@ -20,10 +20,13 @@ export const getHandItemRenderKey = (worldRenderer: WorldRendererThree, handItem
     return `${handItem.type}:${itemIdentifier}`
   }
 
-  const renderData = worldRenderer.getItemRenderData({
-    ...handItem.fullItem,
-    itemId: handItem.id,
-  }, getFirstPersonItemIdentityProps())
+  const renderData = worldRenderer.getItemRenderData(
+    {
+      ...handItem.fullItem,
+      itemId: handItem.id
+    },
+    getFirstPersonItemIdentityProps()
+  )
 
   return `${handItem.type}:${itemIdentifier}:${renderData.modelName}`
 }

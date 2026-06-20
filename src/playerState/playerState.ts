@@ -2,57 +2,62 @@ import { proxy } from 'valtio'
 import type { GameMode, HandItemBlock, BlocksShapes, BlockShape, MovementState, CameraPerspective, Team, ItemSpecificContextProperties } from './types'
 
 // edit src/mineflayer/playerState.ts for implementation of player state from mineflayer
-export const getInitialPlayerState = () => proxy({
-  playerSkin: undefined as string | undefined,
-  inWater: false,
-  waterBreathing: false,
-  backgroundColor: [0, 0, 0] as [number, number, number],
-  ambientLight: 0,
-  directionalLight: 0,
-  eyeHeight: 0,
-  gameMode: undefined as GameMode | undefined,
-  lookingAtBlock: undefined as {
-    x: number
-    y: number
-    z: number
-    face?: number
-    shapes: BlocksShapes
-  } | undefined,
-  diggingBlock: undefined as {
-    x: number
-    y: number
-    z: number
-    stage: number
-    face?: number
-    mergedShape: BlockShape | undefined
-  } | undefined,
-  movementState: 'NOT_MOVING' as MovementState,
-  onGround: true,
-  sneaking: false,
-  flying: false,
-  sprinting: false,
-  walkDist: 0,
-  prevWalkDist: 0,
-  bob: 0,
-  prevBob: 0,
-  itemUsageTicks: 0,
-  username: '',
-  onlineMode: false,
-  /** Dimension ambient lighting preset (e.g. nether) — from login/respawn dimension data when available */
-  cardinalLight: 'default' as string,
-  lightingDisabled: false,
-  shouldHideHand: false,
-  heldItemMain: undefined as HandItemBlock | undefined,
-  heldItemOff: undefined as HandItemBlock | undefined,
-  perspective: 'first_person' as CameraPerspective,
-  onFire: false,
-  /** Gameplay FOV scale (sprint, bow, zoom, etc.); base FOV comes from renderer options. */
-  fovMultiplier: 1,
+export const getInitialPlayerState = () =>
+  proxy({
+    playerSkin: undefined as string | undefined,
+    inWater: false,
+    waterBreathing: false,
+    backgroundColor: [0, 0, 0] as [number, number, number],
+    ambientLight: 0,
+    directionalLight: 0,
+    eyeHeight: 0,
+    gameMode: undefined as GameMode | undefined,
+    lookingAtBlock: undefined as
+      | {
+          x: number
+          y: number
+          z: number
+          face?: number
+          shapes: BlocksShapes
+        }
+      | undefined,
+    diggingBlock: undefined as
+      | {
+          x: number
+          y: number
+          z: number
+          stage: number
+          face?: number
+          mergedShape: BlockShape | undefined
+        }
+      | undefined,
+    movementState: 'NOT_MOVING' as MovementState,
+    onGround: true,
+    sneaking: false,
+    flying: false,
+    sprinting: false,
+    walkDist: 0,
+    prevWalkDist: 0,
+    bob: 0,
+    prevBob: 0,
+    itemUsageTicks: 0,
+    username: '',
+    onlineMode: false,
+    /** Dimension ambient lighting preset (e.g. nether) — from login/respawn dimension data when available */
+    cardinalLight: 'default' as string,
+    lightingDisabled: false,
+    shouldHideHand: false,
+    heldItemMain: undefined as HandItemBlock | undefined,
+    heldItemOff: undefined as HandItemBlock | undefined,
+    perspective: 'first_person' as CameraPerspective,
+    onFire: false,
+    /** Gameplay FOV scale (sprint, bow, zoom, etc.); base FOV comes from renderer options. */
+    fovMultiplier: 1,
 
-  cameraSpectatingEntity: undefined as number | undefined,
+    cameraSpectatingEntity: undefined as number | undefined,
 
-  team: undefined as Team | undefined,
-})
+    team: undefined as Team | undefined
+  })
 
 export const getPlayerStateUtils = (reactive: PlayerStateReactive) => ({
   isSpectator() {
@@ -79,7 +84,7 @@ export type PlayerStateRenderer = PlayerStateReactive
 export const getItemSelector = (playerState: PlayerStateRenderer, specificProperties: ItemSpecificContextProperties, item?: import('prismarine-item').Item) => {
   return {
     ...specificProperties,
-    'minecraft:date': new Date(),
+    'minecraft:date': new Date()
     // "minecraft:context_dimension": bot.entityp,
     // 'minecraft:time': bot.time.timeOfDay / 24_000,
   }

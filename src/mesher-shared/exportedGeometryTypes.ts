@@ -2,7 +2,7 @@
 
 export interface ExportedSection {
   key: string
-  position: { x: number, y: number, z: number }
+  position: { x: number; y: number; z: number }
   geometry: {
     positions: number[]
     normals: number[]
@@ -32,8 +32,8 @@ export interface ExportedWorldGeometry {
   version: string
   exportedAt: string
   camera: {
-    position: { x: number, y: number, z: number }
-    rotation: { pitch: number, yaw: number }
+    position: { x: number; y: number; z: number }
+    rotation: { pitch: number; yaw: number }
   }
   sections: ExportedSection[]
   textureAtlasDataUrl?: string

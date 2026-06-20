@@ -58,7 +58,7 @@ interface JsonModel {
 
 export type CustomModelMetadata = {
   scale?: number
-  offset?: { x?: number, y?: number, z?: number }
+  offset?: { x?: number; y?: number; z?: number }
   texture?: string
   textures?: Record<string, string>
   animation?: string
@@ -80,7 +80,7 @@ interface EntityOverrides {
   customModel?: EntityCustomModel
 }
 
-function normalizeCustomModelParts (custom: EntityCustomModel): CustomModelPart[] {
+function normalizeCustomModelParts(custom: EntityCustomModel): CustomModelPart[] {
   if ('parts' in custom && Array.isArray(custom.parts)) return custom.parts
   return [custom as CustomModelPart]
 }
@@ -183,9 +183,9 @@ function addCube(
 ): void {
   const cubeRotation = new THREE.Euler(0, 0, 0)
   if (cube.rotation) {
-    cubeRotation.x = -cube.rotation[0] * Math.PI / 180
-    cubeRotation.y = -cube.rotation[1] * Math.PI / 180
-    cubeRotation.z = -cube.rotation[2] * Math.PI / 180
+    cubeRotation.x = (-cube.rotation[0] * Math.PI) / 180
+    cubeRotation.y = (-cube.rotation[1] * Math.PI) / 180
+    cubeRotation.z = (-cube.rotation[2] * Math.PI) / 180
   }
   for (const { dir, corners, u0, v0, u1, v1 } of Object.values(elemFaces)) {
     const ndx = Math.floor(attr.positions.length / 3)
@@ -294,18 +294,18 @@ export function getMesh(
       bone.position.z = jsonBone.pivot[2]
     }
     if (jsonBone.bind_pose_rotation) {
-      bone.rotation.x = -jsonBone.bind_pose_rotation[0] * Math.PI / 180
-      bone.rotation.y = -jsonBone.bind_pose_rotation[1] * Math.PI / 180
-      bone.rotation.z = -jsonBone.bind_pose_rotation[2] * Math.PI / 180
+      bone.rotation.x = (-jsonBone.bind_pose_rotation[0] * Math.PI) / 180
+      bone.rotation.y = (-jsonBone.bind_pose_rotation[1] * Math.PI) / 180
+      bone.rotation.z = (-jsonBone.bind_pose_rotation[2] * Math.PI) / 180
     } else if (jsonBone.rotation) {
-      bone.rotation.x = -jsonBone.rotation[0] * Math.PI / 180
-      bone.rotation.y = -jsonBone.rotation[1] * Math.PI / 180
-      bone.rotation.z = -jsonBone.rotation[2] * Math.PI / 180
+      bone.rotation.x = (-jsonBone.rotation[0] * Math.PI) / 180
+      bone.rotation.y = (-jsonBone.rotation[1] * Math.PI) / 180
+      bone.rotation.z = (-jsonBone.rotation[2] * Math.PI) / 180
     }
     if (overrides.rotation?.[jsonBone.name]) {
-      bone.rotation.x -= (overrides.rotation[jsonBone.name].x ?? 0) * Math.PI / 180
-      bone.rotation.y -= (overrides.rotation[jsonBone.name].y ?? 0) * Math.PI / 180
-      bone.rotation.z -= (overrides.rotation[jsonBone.name].z ?? 0) * Math.PI / 180
+      bone.rotation.x -= ((overrides.rotation[jsonBone.name].x ?? 0) * Math.PI) / 180
+      bone.rotation.y -= ((overrides.rotation[jsonBone.name].y ?? 0) * Math.PI) / 180
+      bone.rotation.z -= ((overrides.rotation[jsonBone.name].z ?? 0) * Math.PI) / 180
     }
     bone.name = `bone_${jsonBone.name}`
     bones[jsonBone.name] = bone
@@ -355,31 +355,35 @@ export function getMesh(
     loadedTexture.needsUpdate = true
     material.map = loadedTexture
   } else {
-    void loadTexture(texture, loadedTexture => {
-      if (material.map) {
-        // texture is already loaded
-        return
+    void loadTexture(
+      texture,
+      loadedTexture => {
+        if (material.map) {
+          // texture is already loaded
+          return
+        }
+        loadedTexture.magFilter = THREE.NearestFilter
+        loadedTexture.minFilter = THREE.NearestFilter
+        loadedTexture.flipY = false
+        loadedTexture.wrapS = THREE.RepeatWrapping
+        loadedTexture.wrapT = THREE.RepeatWrapping
+        material.map = loadedTexture
+      },
+      () => {
+        // This callback runs after the texture is fully loaded
+        const map = material.map as THREE.Texture<HTMLImageElement | ImageBitmap> | null
+        if (!map) return
+        const actualWidth = map.image.width
+        if (actualWidth && textureWidth !== actualWidth) {
+          map.repeat.x = textureWidth / actualWidth
+        }
+        const actualHeight = map.image.height
+        if (actualHeight && textureHeight !== actualHeight) {
+          map.repeat.y = textureHeight / actualHeight
+        }
+        material.needsUpdate = true
       }
-      loadedTexture.magFilter = THREE.NearestFilter
-      loadedTexture.minFilter = THREE.NearestFilter
-      loadedTexture.flipY = false
-      loadedTexture.wrapS = THREE.RepeatWrapping
-      loadedTexture.wrapT = THREE.RepeatWrapping
-      material.map = loadedTexture
-    }, () => {
-      // This callback runs after the texture is fully loaded
-      const map = material.map as THREE.Texture<HTMLImageElement | ImageBitmap> | null
-      if (!map) return
-      const actualWidth = map.image.width
-      if (actualWidth && textureWidth !== actualWidth) {
-        map.repeat.x = textureWidth / actualWidth
-      }
-      const actualHeight = map.image.height
-      if (actualHeight && textureHeight !== actualHeight) {
-        map.repeat.y = textureHeight / actualHeight
-      }
-      material.needsUpdate = true
-    })
+    )
   }
 
   return mesh
@@ -417,14 +421,16 @@ const temporaryMappings: EntityMapping[] = [
   { pattern: /_raft$/, target: 'boat' },
   { pattern: /_horse$/, target: 'horse' },
   { pattern: /_zombie$/, target: 'zombie' },
-  { pattern: /_arrow$/, target: 'zombie' },
+  { pattern: /_arrow$/, target: 'zombie' }
 ]
 
 function getEntityMapping(type: string): string | undefined {
   for (const mapping of temporaryMappings) {
     if (typeof mapping.pattern === 'string') {
       if (mapping.pattern === type) return mapping.target
-    } else if (mapping.pattern.test(type)) { return mapping.target }
+    } else if (mapping.pattern.test(type)) {
+      return mapping.target
+    }
   }
   return undefined
 }
@@ -448,9 +454,9 @@ const offsetEntity: Record<string, Vec3> = {
 
 interface EntityGeometry {
   geometry: Array<{
-    name: string;
-    [key: string]: any;
-  }>;
+    name: string
+    [key: string]: any
+  }>
 }
 
 export type EntityModelType = 'obj' | 'bedrock' | 'gltf'
@@ -468,13 +474,7 @@ export class EntityMesh {
   animations?: THREE.AnimationClip[]
   private animationControllers: Array<ReturnType<typeof createAnimatedObject>> = []
 
-  constructor(
-    version: string,
-    type: string,
-    worldRenderer?: WorldRendererThree,
-    overrides: EntityOverrides = {},
-    debugFlags: EntityDebugFlags = {}
-  ) {
+  constructor(version: string, type: string, worldRenderer?: WorldRendererThree, overrides: EntityOverrides = {}, debugFlags: EntityDebugFlags = {}) {
     const originalType = type
     const mappedValue = getEntityMapping(type)
     if (mappedValue) {
@@ -495,43 +495,46 @@ export class EntityMesh {
         switch (modelType) {
           case 'gltf': {
             const loader = new GLTFLoader()
-            void loader.parseAsync(modelPath, '').then(gltf => {
-              partRoot.add(gltf.scene)
-              if (metadata?.scale) {
-                const s = metadata.scale
-                partRoot.scale.set(s, s, s)
-              }
-              if (metadata?.offset) {
-                const { x = 0, y = 0, z = 0 } = metadata.offset
-                partRoot.position.set(x, y, z)
-              }
-              if (metadata?.texture) {
-                const texture = loadNearestFilterTexture(metadata.texture)
-                partRoot.traverse((child) => {
-                  if (child instanceof THREE.Mesh) {
-                    child.material = new THREE.MeshBasicMaterial({
-                      map: texture,
-                      transparent: true,
-                      alphaTest: 0.1
-                    })
-                  }
-                })
-              }
-              if (gltf.animations?.length) {
-                this.animations = [...(this.animations ?? []), ...gltf.animations]
-                const controller = createAnimatedObject(partRoot, gltf.animations)
-                this.animationControllers.push(controller)
-                const animationName = metadata?.animation
-                const loop = metadata?.animationLoop ?? true
-                if (animationName) {
-                  controller.playAnimation(animationName, loop)
-                } else {
-                  controller.playAnimation(gltf.animations[0].name, loop)
+            void loader
+              .parseAsync(modelPath, '')
+              .then(gltf => {
+                partRoot.add(gltf.scene)
+                if (metadata?.scale) {
+                  const s = metadata.scale
+                  partRoot.scale.set(s, s, s)
                 }
-              }
-            }).catch(err => {
-              console.error('Failed to load GLTF model:', err)
-            })
+                if (metadata?.offset) {
+                  const { x = 0, y = 0, z = 0 } = metadata.offset
+                  partRoot.position.set(x, y, z)
+                }
+                if (metadata?.texture) {
+                  const texture = loadNearestFilterTexture(metadata.texture)
+                  partRoot.traverse(child => {
+                    if (child instanceof THREE.Mesh) {
+                      child.material = new THREE.MeshBasicMaterial({
+                        map: texture,
+                        transparent: true,
+                        alphaTest: 0.1
+                      })
+                    }
+                  })
+                }
+                if (gltf.animations?.length) {
+                  this.animations = [...(this.animations ?? []), ...gltf.animations]
+                  const controller = createAnimatedObject(partRoot, gltf.animations)
+                  this.animationControllers.push(controller)
+                  const animationName = metadata?.animation
+                  const loop = metadata?.animationLoop ?? true
+                  if (animationName) {
+                    controller.playAnimation(animationName, loop)
+                  } else {
+                    controller.playAnimation(gltf.animations[0].name, loop)
+                  }
+                }
+              })
+              .catch(err => {
+                console.error('Failed to load GLTF model:', err)
+              })
             break
           }
           case 'obj': {
@@ -552,7 +555,7 @@ export class EntityMesh {
                 transparent: true,
                 alphaTest: 0.1
               })
-              obj.traverse((child) => {
+              obj.traverse(child => {
                 if (child instanceof THREE.Mesh) {
                   child.material = material
                 }
@@ -573,12 +576,13 @@ export class EntityMesh {
             for (const [name, jsonModel] of Object.entries(modelData.geometry)) {
               const texture = metadata?.textures?.[name] ?? modelData.textures?.[name]
               if (!texture) continue
-              const mesh = getMesh(worldRenderer,
-                texture.endsWith('.png') || texture.startsWith('data:image/') || texture.startsWith('block:')
-                  ? texture : texture + '.png',
+              const mesh = getMesh(
+                worldRenderer,
+                texture.endsWith('.png') || texture.startsWith('data:image/') || texture.startsWith('block:') ? texture : texture + '.png',
                 jsonModel as JsonModel,
                 overrides,
-                debugFlags)
+                debugFlags
+              )
               mesh.name = `geometry_${name}`
               partRoot.add(mesh)
             }
@@ -594,15 +598,15 @@ export class EntityMesh {
     if (externalModels[type]) {
       const objLoader = new OBJLoader()
       const texturePathMap = {
-        'zombie_horse': `textures/${version}/entity/horse/horse_zombie.png`,
-        'husk': huskPng,
-        'skeleton_horse': `textures/${version}/entity/horse/horse_skeleton.png`,
-        'donkey': `textures/${version}/entity/horse/donkey.png`,
-        'mule': `textures/${version}/entity/horse/mule.png`,
-        'ocelot': ocelotPng,
-        'arrow': arrowTexture,
-        'spectral_arrow': spectralArrowTexture,
-        'tipped_arrow': tippedArrowTexture
+        zombie_horse: `textures/${version}/entity/horse/horse_zombie.png`,
+        husk: huskPng,
+        skeleton_horse: `textures/${version}/entity/horse/horse_skeleton.png`,
+        donkey: `textures/${version}/entity/horse/donkey.png`,
+        mule: `textures/${version}/entity/horse/mule.png`,
+        ocelot: ocelotPng,
+        arrow: arrowTexture,
+        spectral_arrow: spectralArrowTexture,
+        tipped_arrow: tippedArrowTexture
       }
       const tempTextureMap = texturePathMap[originalType] || texturePathMap[type]
       if (tempTextureMap) {
@@ -624,15 +628,16 @@ export class EntityMesh {
       if (scale) obj.scale.set(scale, scale, scale)
       const offset = offsetEntity[originalType]
       if (offset) obj.position.set(offset.x, offset.y, offset.z)
-      obj.traverse((child) => {
+      obj.traverse(child => {
         if (child instanceof THREE.Mesh) {
           child.material = material
           // todo
           if (child.name === 'Head layer') child.visible = false
-          if (child.name === 'Head' && overrides.rotation?.head) { // todo
-            child.rotation.x -= (overrides.rotation.head.x ?? 0) * Math.PI / 180
-            child.rotation.y -= (overrides.rotation.head.y ?? 0) * Math.PI / 180
-            child.rotation.z -= (overrides.rotation.head.z ?? 0) * Math.PI / 180
+          if (child.name === 'Head' && overrides.rotation?.head) {
+            // todo
+            child.rotation.x -= ((overrides.rotation.head.x ?? 0) * Math.PI) / 180
+            child.rotation.y -= ((overrides.rotation.head.y ?? 0) * Math.PI) / 180
+            child.rotation.z -= ((overrides.rotation.head.z ?? 0) * Math.PI) / 180
           }
         }
       })
@@ -660,12 +665,13 @@ export class EntityMesh {
       const texture = overrides.textures?.[name] ?? e.textures[name]
       if (!texture) continue
       // console.log(JSON.stringify(jsonModel, null, 2))
-      const mesh = getMesh(worldRenderer,
-        texture.endsWith('.png') || texture.startsWith('data:image/') || texture.startsWith('block:')
-          ? texture : texture + '.png',
+      const mesh = getMesh(
+        worldRenderer,
+        texture.endsWith('.png') || texture.startsWith('data:image/') || texture.startsWith('block:') ? texture : texture + '.png',
         jsonModel,
         overrides,
-        debugFlags)
+        debugFlags
+      )
       mesh.name = `geometry_${name}`
       this.mesh.add(mesh)
     }

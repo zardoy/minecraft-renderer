@@ -34,7 +34,7 @@ export interface PlaygroundSceneConfig {
 }
 
 const appGraphicBackends = [
-  createGraphicsBackendSingleThread,
+  createGraphicsBackendSingleThread
   // createGraphicsBackendOffThread
 ]
 
@@ -43,7 +43,7 @@ const includedVersions = globalThis.includedVersions
 export class BasePlaygroundScene {
   appViewer = new AppViewer({
     config: {
-      statsVisible: 2,
+      statsVisible: 2
     }
   })
 
@@ -67,13 +67,18 @@ export class BasePlaygroundScene {
   // GUI
   gui = new GUI()
   params = {} as Record<string, any>
-  paramOptions = {} as Partial<Record<keyof typeof this.params, {
-    hide?: boolean
-    options?: string[]
-    min?: number
-    max?: number
-    reloadOnChange?: boolean
-  }>>
+  paramOptions = {} as Partial<
+    Record<
+      keyof typeof this.params,
+      {
+        hide?: boolean
+        options?: string[]
+        min?: number
+        max?: number
+        reloadOnChange?: boolean
+      }
+    >
+  >
   onParamUpdate = {} as Record<string, () => void>
   alwaysIgnoreQs = [] as string[]
   skipUpdateQs = false
@@ -140,7 +145,7 @@ export class BasePlaygroundScene {
     })
   }
 
-  onParamsUpdate(paramName: string, object: any) { }
+  onParamsUpdate(paramName: string, object: any) {}
 
   updateQs(paramName: string, valueSet: any) {
     if (this.skipUpdateQs) return
@@ -200,16 +205,15 @@ export class BasePlaygroundScene {
   }
 
   // Overridable methods
-  setupWorld() { }
-  sceneReset() { }
+  setupWorld() {}
+  sceneReset() {}
 
   // eslint-disable-next-line max-params
   addWorldBlock(xOffset: number, yOffset: number, zOffset: number, blockName: BlockNames, properties?: Record<string, any>) {
     if (xOffset > 16 || yOffset > 16 || zOffset > 16) throw new Error('Offset too big')
-    const block =
-      properties ?
-        this.Block.fromProperties(this.mcData.blocksByName[blockName].id, properties ?? {}, 0) :
-        this.Block.fromStateId(this.mcData.blocksByName[blockName].defaultState, 0)
+    const block = properties
+      ? this.Block.fromProperties(this.mcData.blocksByName[blockName].id, properties ?? {}, 0)
+      : this.Block.fromStateId(this.mcData.blocksByName[blockName].defaultState, 0)
     this.world.setBlock(this.targetPos.offset(xOffset, yOffset, zOffset), block)
   }
 
@@ -290,12 +294,7 @@ export class BasePlaygroundScene {
 
     // Create our own camera for OrbitControls - this is separate from the internal worldRenderer camera
     // We sync our camera state to the backend via updateCamera()
-    this.camera = new THREE.PerspectiveCamera(
-      this.appViewer.inWorldRenderingConfig.fov || 75,
-      window.innerWidth / window.innerHeight,
-      0.1,
-      1000
-    )
+    this.camera = new THREE.PerspectiveCamera(this.appViewer.inWorldRenderingConfig.fov || 75, window.innerWidth / window.innerHeight, 0.1, 1000)
 
     // Setup world (adds blocks, etc.)
     this.setupWorld()
@@ -310,9 +309,7 @@ export class BasePlaygroundScene {
     if (this.enableCameraControls) {
       const canvas = document.querySelector('#viewer-canvas')
       if (canvas) {
-        const controls = this.enableCameraOrbitControl
-          ? new OrbitControls(this.camera, canvas as HTMLElement)
-          : undefined
+        const controls = this.enableCameraOrbitControl ? new OrbitControls(this.camera, canvas as HTMLElement) : undefined
         this.controls = controls
 
         this.resetCamera()
@@ -334,7 +331,7 @@ export class BasePlaygroundScene {
             this.camera.position.y.toFixed(2),
             this.camera.position.z.toFixed(2),
             this.camera.rotation.x.toFixed(2),
-            this.camera.rotation.y.toFixed(2),
+            this.camera.rotation.y.toFixed(2)
           ].join(',')
         }, 200)
 
@@ -482,9 +479,7 @@ export class BasePlaygroundScene {
     this.currentFps = fps
 
     const isSeriousDelay = this.maxFrameDelay > 150
-    const delayText = isSeriousDelay
-      ? `<span style="color: #ff4444;">${this.maxFrameDelay.toFixed(0)}ms</span>`
-      : `${this.maxFrameDelay.toFixed(0)}ms`
+    const delayText = isSeriousDelay ? `<span style="color: #ff4444;">${this.maxFrameDelay.toFixed(0)}ms</span>` : `${this.maxFrameDelay.toFixed(0)}ms`
 
     // Update the DOM element directly - single line format
     this.debugFpsElement.innerHTML = `FPS: ${fps} | Max Delay: ${delayText}`
@@ -501,16 +496,18 @@ export class BasePlaygroundScene {
   }
 
   addKeyboardShortcuts() {
-    document.addEventListener('keydown', (e) => {
+    document.addEventListener('keydown', e => {
       if (!e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
         if (e.code === 'KeyR') {
           this.controls?.reset()
           this.resetCamera()
         }
-        if (e.code === 'KeyE') { // refresh block (main)
+        if (e.code === 'KeyE') {
+          // refresh block (main)
           this.worldView!.setBlockStateId(this.targetPos, this.world.getBlockStateId(this.targetPos))
         }
-        if (e.code === 'KeyF') { // reload all chunks
+        if (e.code === 'KeyF') {
+          // reload all chunks
           this.sceneReset()
           this.worldView!.unloadAllChunks()
           void this.worldView!.init(this.targetPos)

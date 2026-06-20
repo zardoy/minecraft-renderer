@@ -6,7 +6,7 @@ export class CameraBobbingModule implements RendererModuleController {
   private lastBobWalkDist = 0
   private lastBobTickTime = 0
 
-  constructor(private readonly worldRenderer: WorldRendererThree) { }
+  constructor(private readonly worldRenderer: WorldRendererThree) {}
 
   enable(): void {
     this.enabled = true
@@ -28,10 +28,7 @@ export class CameraBobbingModule implements RendererModuleController {
     // Spectator (gm3) flies through blocks and does not "walk" — view bobbing
     // there only makes the camera feel jittery/unstable. Keep it gated even
     // when the user has `viewBobbing` enabled in settings.
-    const shouldBobCamera =
-      config.viewBobbing
-      && perspective === 'first_person'
-      && !this.worldRenderer.playerStateUtils.isSpectator()
+    const shouldBobCamera = config.viewBobbing && perspective === 'first_person' && !this.worldRenderer.playerStateUtils.isSpectator()
 
     if (shouldBobCamera) {
       if (this.worldRenderer.playerStateReactive.walkDist !== this.lastBobWalkDist) {
@@ -61,5 +58,5 @@ export const cameraBobbingManifest: RendererModuleManifest = {
   id: 'cameraBobbing',
   controller: CameraBobbingModule,
   enabledDefault: true,
-  cannotBeDisabled: true,
+  cannotBeDisabled: true
 }

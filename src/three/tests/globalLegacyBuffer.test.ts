@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { GlobalLegacyBuffer, MAX_OPAQUE_SPANS } from '../globalLegacyBuffer'
 import { createGlobalLegacyBlockMaterial } from '../shaders/legacyBlockShader'
 
-function makeQuadGeometry (): {
+function makeQuadGeometry(): {
   positions: Float32Array
   colors: Float32Array
   skyLights: Float32Array
@@ -12,39 +12,24 @@ function makeQuadGeometry (): {
   indices: Uint32Array
 } {
   return {
-    positions: new Float32Array([
-      -1, 0, -1,
-      1, 0, -1,
-      1, 0, 1,
-      -1, 0, 1,
-    ]),
-    colors: new Float32Array([
-      1, 1, 1,
-      1, 1, 1,
-      1, 1, 1,
-      1, 1, 1,
-    ]),
+    positions: new Float32Array([-1, 0, -1, 1, 0, -1, 1, 0, 1, -1, 0, 1]),
+    colors: new Float32Array([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]),
     skyLights: new Float32Array([1, 1, 1, 1]),
     blockLights: new Float32Array([0, 0, 0, 0]),
-    uvs: new Float32Array([
-      0, 0,
-      1, 0,
-      1, 1,
-      0, 1,
-    ]),
-    indices: new Uint32Array([0, 1, 2, 0, 2, 3]),
+    uvs: new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]),
+    indices: new Uint32Array([0, 1, 2, 0, 2, 3])
   }
 }
 
 type BufferInternals = {
-  pendingRanges: Array<{ start: number, end: number }>
+  pendingRanges: Array<{ start: number; end: number }>
 }
 
-function getInternals (buffer: GlobalLegacyBuffer): BufferInternals {
+function getInternals(buffer: GlobalLegacyBuffer): BufferInternals {
   return buffer as unknown as BufferInternals
 }
 
-function drainUploads (buffer: GlobalLegacyBuffer): void {
+function drainUploads(buffer: GlobalLegacyBuffer): void {
   while (getInternals(buffer).pendingRanges.length) buffer.uploadDirtyRange()
 }
 
@@ -190,7 +175,13 @@ test('GlobalLegacyBuffer: updateDrawSpans opaque merges nearby spans', () => {
 
   buffer.addSection('a', geo, 0, 0, 0)
   buffer.addSection('b', geo, 16, 0, 0)
-  buffer.updateDrawSpans([{ key: 'a', distSq: 1 }, { key: 'b', distSq: 4 }], 'opaque')
+  buffer.updateDrawSpans(
+    [
+      { key: 'a', distSq: 1 },
+      { key: 'b', distSq: 4 }
+    ],
+    'opaque'
+  )
 
   const groups = buffer.mesh.geometry.groups
   expect(groups.length).toBe(1)
@@ -209,7 +200,14 @@ test('GlobalLegacyBuffer: updateDrawSpans opaque full draw when most quads visib
   buffer.addSection('a', geo, 0, 0, 0)
   buffer.addSection('b', geo, 16, 0, 0)
   buffer.addSection('c', geo, 32, 0, 0)
-  buffer.updateDrawSpans([{ key: 'a', distSq: 1 }, { key: 'b', distSq: 2 }, { key: 'c', distSq: 3 }], 'opaque')
+  buffer.updateDrawSpans(
+    [
+      { key: 'a', distSq: 1 },
+      { key: 'b', distSq: 2 },
+      { key: 'c', distSq: 3 }
+    ],
+    'opaque'
+  )
 
   const groups = buffer.mesh.geometry.groups
   expect(groups.length).toBe(1)
@@ -228,10 +226,13 @@ test('GlobalLegacyBuffer: updateDrawSpans sortedBlend orders back-to-front', () 
 
   buffer.addSection('near', geo, 0, 0, 0)
   buffer.addSection('far', geo, 16, 0, 0)
-  buffer.updateDrawSpans([
-    { key: 'near', distSq: 1 },
-    { key: 'far', distSq: 100 },
-  ], 'sortedBlend')
+  buffer.updateDrawSpans(
+    [
+      { key: 'near', distSq: 1 },
+      { key: 'far', distSq: 100 }
+    ],
+    'sortedBlend'
+  )
 
   const groups = buffer.mesh.geometry.groups
   expect(groups.length).toBe(2)
@@ -282,7 +283,7 @@ test('GlobalLegacyBuffer: updateDrawSpans opaque caps at MAX_OPAQUE_SPANS with f
   const padQuads = 257
   const buffer = new GlobalLegacyBuffer(mat, scene, {
     initialCapacityQuads: visibleSectionCount * (padQuads + 1) + padQuads,
-    growthIncrementQuads: 1024,
+    growthIncrementQuads: 1024
   })
   const geo = makeQuadGeometry()
   const padGeo = {
@@ -292,13 +293,13 @@ test('GlobalLegacyBuffer: updateDrawSpans opaque caps at MAX_OPAQUE_SPANS with f
     skyLights: new Float32Array(padQuads * 4).fill(1),
     blockLights: new Float32Array(padQuads * 4).fill(0),
     uvs: new Float32Array(padQuads * 4 * 2),
-    indices: new Uint32Array(padQuads * 6),
+    indices: new Uint32Array(padQuads * 6)
   }
   for (let q = 0; q < padQuads; q++) {
     const vb = q * 4
     padGeo.indices.set([vb, vb + 1, vb + 2, vb, vb + 2, vb + 3], q * 6)
   }
-  const visible: Array<{ key: string, distSq: number }> = []
+  const visible: Array<{ key: string; distSq: number }> = []
 
   for (let i = 0; i < visibleSectionCount; i++) {
     const key = `s${i}`
@@ -350,7 +351,7 @@ test('GlobalLegacyBuffer: addSection rejects non-quad geometry', () => {
     skyLights: new Float32Array(3).fill(1),
     blockLights: new Float32Array(3).fill(0),
     uvs: new Float32Array(6),
-    indices: new Uint32Array([0, 1, 2]),
+    indices: new Uint32Array([0, 1, 2])
   }
   expect(buffer.addSection('bad', bad, 0, 0, 0)).toBe(false)
 

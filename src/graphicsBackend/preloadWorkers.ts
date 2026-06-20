@@ -55,7 +55,7 @@ export async function preloadMesherWorkerScript(opts?: {
       res = await fetch(scriptUrl, {
         credentials: 'same-origin',
         cache: 'force-cache',
-        signal: ctrl.signal,
+        signal: ctrl.signal
       })
     } finally {
       clearTimeout(t)
@@ -63,40 +63,37 @@ export async function preloadMesherWorkerScript(opts?: {
   } catch (e: unknown) {
     const err = e as { name?: string; message?: string }
     if (err?.name === 'AbortError') {
-      throw new MesherWorkerPreloadError(
-        `Mesher script fetch timed out after ${fetchTimeoutMs}ms (${scriptUrl}).`,
-        { phase: 'fetch', code: 'timeout' }
-      )
+      throw new MesherWorkerPreloadError(`Mesher script fetch timed out after ${fetchTimeoutMs}ms (${scriptUrl}).`, { phase: 'fetch', code: 'timeout' })
     }
-    throw new MesherWorkerPreloadError(
-      `Mesher script fetch failed (network): ${err?.message ?? e}. URL: ${scriptUrl}`,
-      { phase: 'fetch', code: 'network', detail: String(err?.message ?? e) }
-    )
+    throw new MesherWorkerPreloadError(`Mesher script fetch failed (network): ${err?.message ?? e}. URL: ${scriptUrl}`, {
+      phase: 'fetch',
+      code: 'network',
+      detail: String(err?.message ?? e)
+    })
   }
 
   if (!res.ok) {
-    throw new MesherWorkerPreloadError(
-      `Mesher script HTTP ${res.status} ${res.statusText}: ${scriptUrl}`,
-      { phase: 'fetch', code: 'bad-status', status: res.status }
-    )
+    throw new MesherWorkerPreloadError(`Mesher script HTTP ${res.status} ${res.statusText}: ${scriptUrl}`, {
+      phase: 'fetch',
+      code: 'bad-status',
+      status: res.status
+    })
   }
 
   const contentType = res.headers.get('content-type') ?? ''
   const buf = await res.arrayBuffer()
   if (buf.byteLength === 0) {
-    throw new MesherWorkerPreloadError(
-      `Mesher script response was empty: ${scriptUrl}`,
-      { phase: 'fetch', code: 'invalid-body', hint: 'empty' }
-    )
+    throw new MesherWorkerPreloadError(`Mesher script response was empty: ${scriptUrl}`, { phase: 'fetch', code: 'invalid-body', hint: 'empty' })
   }
 
   const headSize = Math.min(1024, buf.byteLength)
   const head = new TextDecoder().decode(buf.slice(0, headSize)).trimStart()
   if (head.startsWith('<!DOCTYPE') || head.startsWith('<html') || head.startsWith('<HTML')) {
-    throw new MesherWorkerPreloadError(
-      `Mesher URL returned HTML (wrong path, redirect, or SPA fallback), not JavaScript: ${scriptUrl}`,
-      { phase: 'fetch', code: 'invalid-body', hint: 'html' }
-    )
+    throw new MesherWorkerPreloadError(`Mesher URL returned HTML (wrong path, redirect, or SPA fallback), not JavaScript: ${scriptUrl}`, {
+      phase: 'fetch',
+      code: 'invalid-body',
+      hint: 'html'
+    })
   }
 
   if (contentType.length > 0 && !/javascript|ecmascript/i.test(contentType)) {
@@ -108,10 +105,11 @@ export async function preloadMesherWorkerScript(opts?: {
     worker = new Worker(scriptUrl)
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e)
-    throw new MesherWorkerPreloadError(
-      `Could not construct Worker for mesher (${scriptUrl}): ${msg}`,
-      { phase: 'worker', code: 'construct-failed', message: msg }
-    )
+    throw new MesherWorkerPreloadError(`Could not construct Worker for mesher (${scriptUrl}): ${msg}`, {
+      phase: 'worker',
+      code: 'construct-failed',
+      message: msg
+    })
   }
 
   await new Promise<void>((resolve, reject) => {
@@ -120,10 +118,12 @@ export async function preloadMesherWorkerScript(opts?: {
       if (settled) return
       settled = true
       cleanup()
-      reject(new MesherWorkerPreloadError(
-        `Mesher worker did not reply with mc-web-pong within ${pingTimeoutMs}ms (wrong script, SW stale cache, worker blocked, or COEP/CORP). URL: ${scriptUrl}`,
-        { phase: 'ping', code: 'timeout' }
-      ))
+      reject(
+        new MesherWorkerPreloadError(
+          `Mesher worker did not reply with mc-web-pong within ${pingTimeoutMs}ms (wrong script, SW stale cache, worker blocked, or COEP/CORP). URL: ${scriptUrl}`,
+          { phase: 'ping', code: 'timeout' }
+        )
+      )
     }, pingTimeoutMs)
 
     const cleanup = () => {
@@ -156,17 +156,22 @@ export async function preloadMesherWorkerScript(opts?: {
     }
 
     function onError(ev: ErrorEvent) {
-      fail(new MesherWorkerPreloadError(
-        `Mesher worker script failed to load or threw during startup: ${ev.message || 'unknown'} @ ${scriptUrl}`,
-        { phase: 'worker', code: 'script-error', message: ev.message }
-      ))
+      fail(
+        new MesherWorkerPreloadError(`Mesher worker script failed to load or threw during startup: ${ev.message || 'unknown'} @ ${scriptUrl}`, {
+          phase: 'worker',
+          code: 'script-error',
+          message: ev.message
+        })
+      )
     }
 
     function onMessageError() {
-      fail(new MesherWorkerPreloadError(
-        `Mesher worker message channel error (structured clone / deserialization). URL: ${scriptUrl}`,
-        { phase: 'ping', code: 'messageerror' }
-      ))
+      fail(
+        new MesherWorkerPreloadError(`Mesher worker message channel error (structured clone / deserialization). URL: ${scriptUrl}`, {
+          phase: 'ping',
+          code: 'messageerror'
+        })
+      )
     }
 
     worker!.addEventListener('message', onMessage)
@@ -177,10 +182,7 @@ export async function preloadMesherWorkerScript(opts?: {
       worker!.postMessage({ type: 'mc-web-ping', t: performance.now(), workerIndex: 0 })
     } catch (e: unknown) {
       const detail = e instanceof Error ? e.message : String(e)
-      fail(new MesherWorkerPreloadError(
-        `Failed to post mc-web-ping to mesher worker: ${detail}`,
-        { phase: 'ping', code: 'post-failed', detail }
-      ))
+      fail(new MesherWorkerPreloadError(`Failed to post mc-web-ping to mesher worker: ${detail}`, { phase: 'ping', code: 'post-failed', detail }))
     }
   })
 }

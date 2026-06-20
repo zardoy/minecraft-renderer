@@ -11,7 +11,7 @@ export type BlockLightmapParams = {
 export const DEFAULT_LIGHTMAP_PARAMS: Required<BlockLightmapParams> = {
   curve: 0,
   minBrightness: 0.12,
-  gamma: 1,
+  gamma: 1
 }
 
 /** GLSL body for applyLightmap — requires u_lightCurve, u_minBrightness, u_lightGamma uniforms. */
@@ -24,7 +24,7 @@ float applyLightmap(float L) {
 }
 `
 
-export function applyLightmap (L: number, params: BlockLightmapParams = DEFAULT_LIGHTMAP_PARAMS): number {
+export function applyLightmap(L: number, params: BlockLightmapParams = DEFAULT_LIGHTMAP_PARAMS): number {
   const curve = params.curve ?? DEFAULT_LIGHTMAP_PARAMS.curve
   const minBrightness = params.minBrightness ?? DEFAULT_LIGHTMAP_PARAMS.minBrightness
   const gamma = params.gamma ?? DEFAULT_LIGHTMAP_PARAMS.gamma
@@ -36,16 +36,16 @@ export function applyLightmap (L: number, params: BlockLightmapParams = DEFAULT_
 }
 
 /** Same cap as block shaders: max(block, min(sky, skyLevel)). */
-export function combinedBlockLight (block: number, sky: number, skyLevel: number): number {
+export function combinedBlockLight(block: number, sky: number, skyLevel: number): number {
   return Math.max(block, Math.min(sky, skyLevel))
 }
 
 /** 0..1 brightness for MeshBasicMaterial.color.setScalar on block-entity overlays. */
-export function blockEntityBrightness (
+export function blockEntityBrightness(
   blockNorm: number,
   skyNorm: number,
   skyLevel: number,
-  lightmapParams: BlockLightmapParams = DEFAULT_LIGHTMAP_PARAMS,
+  lightmapParams: BlockLightmapParams = DEFAULT_LIGHTMAP_PARAMS
 ): number {
   const L = combinedBlockLight(blockNorm, skyNorm, skyLevel)
   return applyLightmap(L, lightmapParams)

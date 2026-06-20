@@ -27,7 +27,7 @@ const FACE_NAME_TO_INDEX: Record<string, number> = {
   east: 2,
   west: 3,
   south: 4,
-  north: 5,
+  north: 5
 }
 
 /**
@@ -41,17 +41,13 @@ export const AO_LIGHT_REMAP: readonly (readonly number[])[] = [
   [0, 1, 2, 3], // EAST
   [0, 1, 2, 3], // WEST
   [2, 3, 0, 1], // SOUTH
-  [2, 3, 0, 1], // NORTH
+  [2, 3, 0, 1] // NORTH
 ] as const
 
 /** Reorder per-corner AO or light values for shader-space corners. */
-export function remapCornersForShaderFace(
-  faceIdx: number,
-  values: number[],
-  fallback: number,
-): number[] {
+export function remapCornersForShaderFace(faceIdx: number, values: number[], fallback: number): number[] {
   const map = AO_LIGHT_REMAP[faceIdx] ?? AO_LIGHT_REMAP[0]
-  return map.map((i) => values[i] ?? fallback)
+  return map.map(i => values[i] ?? fallback)
 }
 
 export interface ShaderCubeBlockInput {
@@ -76,8 +72,8 @@ export interface ShaderCubeModelInput {
     y?: number
     z?: number
     elements?: Array<{
-      rotation?: { axis: string, angle: number, origin: number[] }
-      faces?: Record<string, { texture?: TextureEntry & { rotation?: number }, tintindex?: number }>
+      rotation?: { axis: string; angle: number; origin: number[] }
+      faces?: Record<string, { texture?: TextureEntry & { rotation?: number }; tintindex?: number }>
     }>
   }
 }
@@ -87,11 +83,7 @@ let textureIndexMapping: TextureIndexMapping | null = null
 let tintsMissingWarned = false
 
 /** Convert mc-assets texture scales (normalized or negative) to pixel tile size for index lookup. */
-function normalizeTextureEntryForTileIndex(
-  tex: { u?: number, v?: number, su?: number, sv?: number },
-  atlasWidth: number,
-  tileSize: number,
-): TextureEntry {
+function normalizeTextureEntryForTileIndex(tex: { u?: number; v?: number; su?: number; sv?: number }, atlasWidth: number, tileSize: number): TextureEntry {
   let u = tex.u ?? 0
   let v = tex.v ?? 0
   let su = tex.su ?? tileSize
@@ -108,20 +100,13 @@ function normalizeTextureEntryForTileIndex(
 type FaceTextureRef = TextureEntry & { tileIndex?: number }
 
 /** Prefer atlas `tileIndex` from block model (legacy path uses the same). */
-export function resolveFaceTileIndex(
-  tex: FaceTextureRef,
-  texMapping: TextureIndexMapping,
-): number {
+export function resolveFaceTileIndex(tex: FaceTextureRef, texMapping: TextureIndexMapping): number {
   const fromAtlas = tex.tileIndex
   // tile 0 is a special/atlas-padding slot; use pixel fallback for block faces
   if (typeof fromAtlas === 'number' && fromAtlas > 0 && fromAtlas < 4096) {
     return fromAtlas
   }
-  const entry = normalizeTextureEntryForTileIndex(
-    tex,
-    texMapping.getTilesPerRow() * 16,
-    16,
-  )
+  const entry = normalizeTextureEntryForTileIndex(tex, texMapping.getTilesPerRow() * 16, 16)
   return texMapping.tileIndexFromTextureEntry(entry)
 }
 
@@ -157,7 +142,7 @@ export function getShaderCubeResources(): {
       height: latest.height,
       tileSize: latest.tileSize ?? 16,
       suSv: latest.suSv ?? 16,
-      textures: latest.textures ?? {},
+      textures: latest.textures ?? {}
     })
   }
   return { tintPalette, textureIndexMapping }
@@ -180,7 +165,7 @@ export function isShaderCubeBlock(
   cached: ShaderCubeModelInput & { isCube: boolean },
   model: ShaderCubeModelInput['model'],
   sectionHeight: number,
-  texMapping: TextureIndexMapping,
+  texMapping: TextureIndexMapping
 ): boolean {
   if (sectionHeight !== 16) return false
   if (!cached.isCube) return false
@@ -213,14 +198,7 @@ export function isShaderCubeBlock(
   return true
 }
 
-function packWord0(
-  lx: number,
-  ly: number,
-  lz: number,
-  faceId: number,
-  tintIndex: number,
-  ao: number[],
-): number {
+function packWord0(lx: number, ly: number, lz: number, faceId: number, tintIndex: number, ao: number[]): number {
   let w = 0
   w |= (lx & 0xf) << WORD0.LX_SHIFT
   w |= (ly & 0xf) << WORD0.LY_SHIFT
@@ -245,13 +223,7 @@ function biasedSectionIndex(sectionBaseCoord: number): number {
   return (Math.floor(sectionBaseCoord / 16) + WORD3.SECTION_BIAS) & WORD3.SECTION_MASK
 }
 
-export function packWord2(
-  texIndex: number,
-  aoDiagonalFlip: boolean,
-  sectionBaseX: number,
-  sectionBaseY: number,
-  sectionBaseZ: number,
-): number {
+export function packWord2(texIndex: number, aoDiagonalFlip: boolean, sectionBaseX: number, sectionBaseY: number, sectionBaseZ: number): number {
   let w = texIndex & ((1 << WORD2.TEX_INDEX_BITS) - 1)
   if (aoDiagonalFlip) {
     w |= 1 << WORD2.DIAGONAL_FLAG_SHIFT
@@ -272,7 +244,7 @@ export function packWord3(sectionBaseX: number, sectionBaseZ: number): number {
 }
 
 /** Decode section base block coords from packed words (round-trip helper for tests). */
-export function decodeSectionBaseFromWords(word2: number, word3: number): { x: number, y: number, z: number } {
+export function decodeSectionBaseFromWords(word2: number, word3: number): { x: number; y: number; z: number } {
   const sX = ((word3 & 0xffff) | (((word2 >>> WORD2.SECTION_X_HI_SHIFT) & 0x3f) << 16)) - WORD3.SECTION_BIAS
   const sZ = (((word3 >>> 16) & 0xffff) | (((word2 >>> WORD2.SECTION_Z_HI_SHIFT) & 0x3f) << 16)) - WORD3.SECTION_BIAS
   const sY = ((word2 >>> WORD2.SECTION_Y_SHIFT) & ((1 << WORD2.SECTION_Y_BITS) - 1)) - 4
@@ -289,16 +261,13 @@ export function unpackTexIndexFromWord2(word2: number): number {
   return word2 & ((1 << WORD2.TEX_INDEX_BITS) - 1)
 }
 
-function packCornerLightByte (skyNorm: number, blockNorm: number): number {
+function packCornerLightByte(skyNorm: number, blockNorm: number): number {
   const sky4 = Math.min(15, Math.round(Math.max(0, skyNorm) * 15))
   const block4 = Math.min(15, Math.round(Math.max(0, blockNorm) * 15))
   return ((sky4 << 4) | block4) & 0xff
 }
 
-function lightCombinedForFace(
-  block: ShaderCubeBlockInput,
-  faceDataIndex: number,
-): number[] {
+function lightCombinedForFace(block: ShaderCubeBlockInput, faceDataIndex: number): number[] {
   const packed = block.light_combined?.[faceDataIndex]
   if (packed && packed.length === 4) {
     return packed
@@ -309,7 +278,7 @@ function lightCombinedForFace(
     return sky.map((s, i) => packCornerLightByte(s ?? 1, blockL[i] ?? 0))
   }
   const floats = block.light_data?.[faceDataIndex] ?? [1, 1, 1, 1]
-  return floats.map((f) => packCornerLightByte(f, 0))
+  return floats.map(f => packCornerLightByte(f, 0))
 }
 
 function buildWasmFaceToDataIndex(visibleFaces: number): Record<number, number> {
@@ -325,7 +294,7 @@ function buildWasmFaceToDataIndex(visibleFaces: number): Record<number, number> 
 }
 
 export type BuildShaderCubeInstancesOpts = {
-  sectionOrigin: { x: number, y: number, z: number }
+  sectionOrigin: { x: number; y: number; z: number }
   sectionHeight: number
   biome?: string
   tintPalette: TintPalette
@@ -346,16 +315,9 @@ export function tryBuildShaderCubeInstances(
   cached: ShaderCubeModelInput & { isCube: boolean },
   model: ShaderCubeModelInput['model'],
   opts: BuildShaderCubeInstancesOpts,
-  words: number[],
+  words: number[]
 ): boolean {
-  const {
-    sectionOrigin,
-    sectionHeight,
-    biome,
-    tintPalette,
-    textureIndexMapping,
-    doAO = true,
-  } = opts
+  const { sectionOrigin, sectionHeight, biome, tintPalette, textureIndexMapping, doAO = true } = opts
 
   if (!isShaderCubeBlock(cached, model, sectionHeight, textureIndexMapping)) {
     return false
@@ -403,20 +365,14 @@ export function tryBuildShaderCubeInstances(
       aoDiagonalFlip = false
     }
 
-    const tintIndex = tintPalette.getTintIndex(
-      eFace.tintindex,
-      cached.blockName,
-      cached.blockProps,
-      biome ?? 'plains',
-    )
+    const tintIndex = tintPalette.getTintIndex(eFace.tintindex, cached.blockName, cached.blockProps, biome ?? 'plains')
 
     words.push(
       packWord0(lx, ly, lz, faceIdx, tintIndex, ao),
       packWord1(lightCombined),
       packWord2(texIndex, aoDiagonalFlip, sectionOrigin.x, sectionOrigin.y, sectionOrigin.z),
-      packWord3(sectionOrigin.x, sectionOrigin.z),
+      packWord3(sectionOrigin.x, sectionOrigin.z)
     )
-
   }
 
   return true
@@ -428,7 +384,7 @@ export function buildShaderCubesFromWords(wordQuads: number[]): ShaderCubesOutpu
   return {
     words: new Uint32Array(wordQuads),
     count: faceCount,
-    formatVersion: SHADER_CUBES_FORMAT_VERSION,
+    formatVersion: SHADER_CUBES_FORMAT_VERSION
   }
 }
 

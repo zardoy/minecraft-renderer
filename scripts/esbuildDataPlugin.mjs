@@ -22,7 +22,7 @@ export function createEsbuildDataPlugin({ inlineTints = false } = {}) {
     setup(build) {
       build.onResolve({ filter: /^esbuild-data$/ }, () => ({
         path: 'esbuild-data',
-        namespace: 'esbuild-data',
+        namespace: 'esbuild-data'
       }))
 
       build.onLoad({ filter: /.*/, namespace: 'esbuild-data' }, () => {
@@ -30,15 +30,15 @@ export function createEsbuildDataPlugin({ inlineTints = false } = {}) {
           const tints = loadTintsJson()
           return {
             contents: `module.exports = { tints: ${JSON.stringify(tints)} }`,
-            loader: 'js',
+            loader: 'js'
           }
         }
         return {
           contents: 'module.exports = { tints: require("minecraft-data/minecraft-data/data/pc/1.16.2/tints.json") }',
           loader: 'js',
-          resolveDir: pkgRoot,
+          resolveDir: pkgRoot
         }
       })
-    },
+    }
   }
 }

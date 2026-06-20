@@ -8,13 +8,7 @@ import { handleGetHeightmap, EMPTY_COLUMN_HEIGHTMAP_SENTINEL } from '../../meshe
 import { collectBlockEntityMetadata, type SignMeta, type HeadMeta, type BannerMeta } from '../../mesher-shared/blockEntityMetadata'
 import { SectionRequestTracker } from './mesherWasmRequestTracker'
 import { sectionYsForLightColumnDirty } from './mesherWasmLightDirty'
-import {
-  CONVERSION_CACHE_LIMIT,
-  clearConversionCache,
-  getOrConvertColumn,
-  invalidateConversion,
-  setConversionCacheLimit,
-} from './mesherWasmConversionCache'
+import { CONVERSION_CACHE_LIMIT, clearConversionCache, getOrConvertColumn, invalidateConversion, setConversionCacheLimit } from './mesherWasmConversionCache'
 
 let wasm: typeof import('../runtime-build/wasm_mesher.js') | null = null
 let wasmInitialized = false
@@ -27,13 +21,13 @@ let wasmReady = false // true ONLY after wasm.default() instantiates the module;
 // (under trees, cliff edges) look brighter than vanilla, and after the
 // renderer interpolates with neighbour chunks that DO have real light,
 // the seams look like "local night".
-const pendingUpdateLightV17: Array<{ rawPacket: Uint8Array, numSections: number }> = []
+const pendingUpdateLightV17: Array<{ rawPacket: Uint8Array; numSections: number }> = []
 // Separate v16 pending queue so 1.16 update_light packets that arrive
 // before WASM is initialised land in the v16 light cache (not v17) on
 // drain — the mesh hot path looks them up per protocol family.
 const pendingUpdateLightV16: Array<{ rawPacket: Uint8Array }> = []
 
-function processUpdateLightV17 (rawPacket: Uint8Array, numSections: number): void {
+function processUpdateLightV17(rawPacket: Uint8Array, numSections: number): void {
   if (!wasmReady) {
     pendingUpdateLightV17.push({ rawPacket, numSections })
     return
@@ -45,7 +39,7 @@ function processUpdateLightV17 (rawPacket: Uint8Array, numSections: number): voi
     const skyLight = parsed.skyLight as Uint8Array
     updateLightV17Cache.set(rawCacheKey(x, z), {
       skyLight,
-      blockLight: parsed.blockLight as Uint8Array,
+      blockLight: parsed.blockLight as Uint8Array
     })
     invalidateConversion(x, z)
     dirtyColumnSectionsForLightUpdate(x, z)
@@ -59,7 +53,7 @@ function processUpdateLightV17 (rawPacket: Uint8Array, numSections: number): voi
 // families fully isolated — the mesh tick picks v16 vs v17 by which raw
 // chunk cache has the entry, and crossing the streams could mismatch a
 // stale 1.17 column with 1.16 light or vice versa during version switches.
-function processUpdateLightV16 (rawPacket: Uint8Array): void {
+function processUpdateLightV16(rawPacket: Uint8Array): void {
   if (!wasmReady) {
     pendingUpdateLightV16.push({ rawPacket })
     return
@@ -70,7 +64,7 @@ function processUpdateLightV16 (rawPacket: Uint8Array): void {
     const z = (parsed.z as number) * 16
     updateLightV16Cache.set(rawCacheKey(x, z), {
       skyLight: parsed.skyLight as Uint8Array,
-      blockLight: parsed.blockLight as Uint8Array,
+      blockLight: parsed.blockLight as Uint8Array
     })
     invalidateConversion(x, z)
     dirtyColumnSectionsForLightUpdate(x, z)
@@ -84,7 +78,7 @@ async function initWasm() {
   try {
     wasmInitialized = true
     wasm = await import('../runtime-build/wasm_mesher.js')
-    await wasm.default('/wasm_mesher_bg.wasm') as any
+    ;(await wasm.default('/wasm_mesher_bg.wasm')) as any
     wasmReady = true // instance is now usable; drained packets below will pass the guard
 
     if (pendingUpdateLightV17.length > 0) {
@@ -99,23 +93,22 @@ async function initWasm() {
       for (const item of queue) processUpdateLightV16(item.rawPacket)
     }
   } catch (err) {
-    console.error(
-      '[WASM Mesher] Failed to initialize WASM mesher — block lighting may stay at full brightness:',
-      err,
-    )
+    console.error('[WASM Mesher] Failed to initialize WASM mesher — block lighting may stay at full brightness:', err)
     wasmInitialized = true // Don't try to initialize again
     // Don't throw - allow worker to continue without WASM (will fail on first use)
   }
 }
 
-globalThis.structuredClone ??= (value) => JSON.parse(JSON.stringify(value))
+globalThis.structuredClone ??= value => JSON.parse(JSON.stringify(value))
 
 if (globalThis.module && module.require) {
   // If we are in a node environment, we need to fake some env variables
   const r = module.require
   const { parentPort } = r('worker_threads')
   global.self = parentPort
-  global.postMessage = (value, transferList) => { parentPort.postMessage(value, transferList) }
+  global.postMessage = (value, transferList) => {
+    parentPort.postMessage(value, transferList)
+  }
   global.performance = r('perf_hooks').performance
 }
 
@@ -153,7 +146,10 @@ const postMessage = (data: any, transferList: any[] = []) => {
 
 function drainQueue(from: number, to: number) {
   const messages = queuedMessages.slice(from, to)
-  global.postMessage(messages.map(m => m.data), messages.flatMap(m => m.transferList) as unknown as string)
+  global.postMessage(
+    messages.map(m => m.data),
+    messages.flatMap(m => m.transferList) as unknown as string
+  )
   queuedMessages = queuedMessages.slice(to)
 }
 
@@ -164,7 +160,7 @@ function drainQueue(from: number, to: number) {
 // contract violation (`WorldRendererCommon` would throw on the main thread)
 // and we surface it via `console.warn` so it shows up in dev/CI without
 // killing the worker.
-const emitSectionFinished = (payload: { type: 'sectionFinished', key: string } & Record<string, any>) => {
+const emitSectionFinished = (payload: { type: 'sectionFinished'; key: string } & Record<string, any>) => {
   const consumed = requestTracker.consumeOne(payload.key)
   if (!consumed) {
     console.warn(`[WASM Mesher] sectionFinished for non-requested key ${payload.key} (column-mode contract violation)`)
@@ -204,7 +200,7 @@ function setSectionDirty(pos: Vec3, value = true) {
 }
 
 /** Re-mesh every section in a column after `update_light` updates the light cache. */
-function dirtyColumnSectionsForLightUpdate (x: number, z: number) {
+function dirtyColumnSectionsForLightUpdate(x: number, z: number) {
   const worldMinY = config?.worldMinY ?? 0
   const worldMaxY = config?.worldMaxY ?? 256
   for (const y of sectionYsForLightColumnDirty(worldMinY, worldMaxY, SECTION_HEIGHT)) {
@@ -274,10 +270,7 @@ const updateLightV16Cache = new Map<string, UpdateLightV17Entry>()
 
 // Mirrors `convertChunkToWasm`'s output (same layout: x + z*16 + y*256,
 // y outer) so it can be dropped straight into `generate_geometry`.
-const convertRawMapChunkToWasm = (
-  raw: RawMapChunkEntry,
-  version: string
-): ChunkConversionResult | null => {
+const convertRawMapChunkToWasm = (raw: RawMapChunkEntry, version: string): ChunkConversionResult | null => {
   if (!wasm || !(wasm as any).parseMapChunkV18Plus) return null
   // 1.18 introduced the new chunk format; on earlier protocols the packet
   // shape differs and our parser would throw. Fall back to the JS path.
@@ -288,13 +281,7 @@ const convertRawMapChunkToWasm = (
   const MAX_BITS_PER_BIOME = 3
   let parsed: any
   try {
-    parsed = (wasm as any).parseMapChunkV18Plus(
-      raw.rawPacket,
-      raw.numSections,
-      MAX_BITS_PER_BLOCK,
-      MAX_BITS_PER_BIOME,
-      raw.protocol
-    )
+    parsed = (wasm as any).parseMapChunkV18Plus(raw.rawPacket, raw.numSections, MAX_BITS_PER_BLOCK, MAX_BITS_PER_BIOME, raw.protocol)
   } catch (err) {
     console.warn('[WASM Mesher] parseMapChunkV18Plus failed, falling back:', err)
     return null
@@ -315,7 +302,7 @@ const convertRawMapChunkToWasm = (
     noAoBlocks: meta.noAoBlocks,
     cullIdenticalBlocks: meta.cullIdenticalBlocks,
     occludingBlocks: meta.occludingBlocks,
-    blockCount,
+    blockCount
   }
 }
 
@@ -323,11 +310,7 @@ const convertRawMapChunkToWasm = (
 // (expanded from the 4×4×4 cell layout). Light comes from the paired
 // `update_light` cache when available; otherwise we fall back to full
 // daylight (sky=15) and no block light so geometry stays visible.
-const convertParsedV17ToWasm = (
-  entry: ParsedV17Entry,
-  lightEntry: UpdateLightV17Entry | undefined,
-  version: string
-): ChunkConversionResult | null => {
+const convertParsedV17ToWasm = (entry: ParsedV17Entry, lightEntry: UpdateLightV17Entry | undefined, version: string): ChunkConversionResult | null => {
   if (!wasm || !(wasm as any).parseChunkSectionsV16V17) return null
   // Empty `Int32Array` signals "no biomes captured" — WASM falls back to
   // `default_biome` for every block. Plains (id 1) matches the JS path.
@@ -335,14 +318,7 @@ const convertParsedV17ToWasm = (
   const DEFAULT_BIOME = 1
   let parsed: any
   try {
-    parsed = (wasm as any).parseChunkSectionsV16V17(
-      entry.chunkData,
-      entry.bitMapLoHi,
-      entry.numSections,
-      entry.maxBitsPerBlock,
-      biomesCells,
-      DEFAULT_BIOME,
-    )
+    parsed = (wasm as any).parseChunkSectionsV16V17(entry.chunkData, entry.bitMapLoHi, entry.numSections, entry.maxBitsPerBlock, biomesCells, DEFAULT_BIOME)
   } catch (err) {
     console.warn('[WASM Mesher] parseChunkSectionsV16V17 failed, falling back:', err)
     return null
@@ -375,7 +351,7 @@ const convertParsedV17ToWasm = (
     noAoBlocks: meta.noAoBlocks,
     cullIdenticalBlocks: meta.cullIdenticalBlocks,
     occludingBlocks: meta.occludingBlocks,
-    blockCount,
+    blockCount
   }
 }
 
@@ -385,11 +361,7 @@ const convertParsedV17ToWasm = (
 // defaults — anything else means a non-vanilla server we don't support
 // on the fast path, in which case we return null and fall back to the
 // JS column-walk via `convertChunkToWasm`.
-const convertParsedV16ToWasm = (
-  entry: ParsedV16Entry,
-  lightEntry: UpdateLightV17Entry | undefined,
-  version: string
-): ChunkConversionResult | null => {
+const convertParsedV16ToWasm = (entry: ParsedV16Entry, lightEntry: UpdateLightV17Entry | undefined, version: string): ChunkConversionResult | null => {
   if (!wasm || !(wasm as any).parseChunkSectionsV16V17) return null
   const NUM_SECTIONS = 16
   const MAX_BITS_PER_BLOCK = 15
@@ -401,14 +373,7 @@ const convertParsedV16ToWasm = (
   const biomesCells = entry.biomes ?? new Int32Array(0)
   let parsed: any
   try {
-    parsed = (wasm as any).parseChunkSectionsV16V17(
-      entry.chunkData,
-      bitMapLoHi,
-      NUM_SECTIONS,
-      MAX_BITS_PER_BLOCK,
-      biomesCells,
-      DEFAULT_BIOME,
-    )
+    parsed = (wasm as any).parseChunkSectionsV16V17(entry.chunkData, bitMapLoHi, NUM_SECTIONS, MAX_BITS_PER_BLOCK, biomesCells, DEFAULT_BIOME)
   } catch (err) {
     console.warn('[WASM Mesher] parseChunkSectionsV16V17 (v16) failed, falling back:', err)
     return null
@@ -441,7 +406,7 @@ const convertParsedV16ToWasm = (
     noAoBlocks: meta.noAoBlocks,
     cullIdenticalBlocks: meta.cullIdenticalBlocks,
     occludingBlocks: meta.occludingBlocks,
-    blockCount,
+    blockCount
   }
 }
 
@@ -472,8 +437,12 @@ const meshColumnFromRawV18Plus = (
       MAX_BITS_PER_BLOCK,
       MAX_BITS_PER_BIOME,
       raw.protocol,
-      x, worldMinY, z, columnHeight,
-      worldMinY, worldMaxY,
+      x,
+      worldMinY,
+      z,
+      columnHeight,
+      worldMinY,
+      worldMaxY,
       worldMinY,
       meta.invisibleBlocks,
       meta.transparentBlocks,
@@ -518,8 +487,12 @@ const meshColumnFromParsedV16V17 = (
       defaultBiome,
       skyLight ?? new Uint8Array(0),
       blockLight ?? new Uint8Array(0),
-      x, worldMinY, z, columnHeight,
-      worldMinY, worldMaxY,
+      x,
+      worldMinY,
+      z,
+      columnHeight,
+      worldMinY,
+      worldMaxY,
       worldMinY,
       meta.invisibleBlocks,
       meta.transparentBlocks,
@@ -542,7 +515,7 @@ const meshColumnFromParsedV16V17 = (
 // ---------------------------------------------------------------------------
 
 const meshMultiColumnsFromRawV18Plus = (
-  chunksToUse: Array<{ x: number, z: number, chunk: any }>,
+  chunksToUse: Array<{ x: number; z: number; chunk: any }>,
   x: number,
   z: number,
   worldMinY: number,
@@ -579,8 +552,12 @@ const meshMultiColumnsFromRawV18Plus = (
       protocol,
       chunkXs,
       chunkZs,
-      x, worldMinY, z, columnHeight,
-      worldMinY, worldMaxY,
+      x,
+      worldMinY,
+      z,
+      columnHeight,
+      worldMinY,
+      worldMaxY,
       worldMinY,
       meta.invisibleBlocks,
       meta.transparentBlocks,
@@ -598,7 +575,7 @@ const meshMultiColumnsFromRawV18Plus = (
 }
 
 const meshMultiColumnsFromParsedV16V17 = (
-  chunksToUse: Array<{ x: number, z: number, chunk: any }>,
+  chunksToUse: Array<{ x: number; z: number; chunk: any }>,
   x: number,
   z: number,
   worldMinY: number,
@@ -679,8 +656,12 @@ const meshMultiColumnsFromParsedV16V17 = (
       blockLightList,
       chunkXs,
       chunkZs,
-      x, worldMinY, z, columnHeight,
-      worldMinY, worldMaxY,
+      x,
+      worldMinY,
+      z,
+      columnHeight,
+      worldMinY,
+      worldMaxY,
       worldMinY,
       meta.invisibleBlocks,
       meta.transparentBlocks,
@@ -767,10 +748,7 @@ const handleMessage = async (data: any) => {
       }
       if (!hasAnySection) {
         const emptyHeightmap = new Int16Array(256).fill(EMPTY_COLUMN_HEIGHTMAP_SENTINEL)
-        postMessage(
-          { type: 'heightmap', key: `${data.x >> 4},${data.z >> 4}`, heightmap: emptyHeightmap },
-          [emptyHeightmap.buffer]
-        )
+        postMessage({ type: 'heightmap', key: `${data.x >> 4},${data.z >> 4}`, heightmap: emptyHeightmap }, [emptyHeightmap.buffer])
       }
       break
     }
@@ -827,7 +805,7 @@ const handleMessage = async (data: any) => {
       rawMapChunkCache.set(rawCacheKey(data.x, data.z), {
         rawPacket: data.rawPacket as Uint8Array,
         protocol: data.protocol as number,
-        numSections: data.numSections as number,
+        numSections: data.numSections as number
       })
       invalidateConversion(data.x, data.z)
       break
@@ -840,7 +818,7 @@ const handleMessage = async (data: any) => {
         maxBitsPerBlock: data.maxBitsPerBlock as number,
         chunkData: data.chunkData as Uint8Array,
         bitMapLoHi: data.bitMapLoHi as Uint32Array,
-        biomes: data.biomes as Int32Array | undefined,
+        biomes: data.biomes as Int32Array | undefined
       })
       invalidateConversion(data.x, data.z)
       break
@@ -864,7 +842,7 @@ const handleMessage = async (data: any) => {
         protocol: data.protocol as number,
         chunkData: data.chunkData as Uint8Array,
         bitMap: data.bitMap as number,
-        biomes: data.biomes as Int32Array,
+        biomes: data.biomes as Int32Array
       })
       invalidateConversion(data.x, data.z)
       break
@@ -897,7 +875,7 @@ const handleMessage = async (data: any) => {
         type: 'mc-web-pong',
         workerIndex: replyWorkerIndex,
         t: data.t,
-        recvAt: typeof performance !== 'undefined' ? performance.now() : undefined,
+        recvAt: typeof performance !== 'undefined' ? performance.now() : undefined
       })
       break
     }
@@ -907,7 +885,7 @@ const handleMessage = async (data: any) => {
         type: 'mc-web-pong',
         workerIndex: replyWorkerIndex,
         t: data.t,
-        recvAt: typeof performance !== 'undefined' ? performance.now() : undefined,
+        recvAt: typeof performance !== 'undefined' ? performance.now() : undefined
       })
       break
     }
@@ -917,7 +895,7 @@ const handleMessage = async (data: any) => {
         type: 'mc-web-pong',
         workerIndex: replyWorkerIndex,
         t: data.t,
-        recvAt: typeof performance !== 'undefined' ? performance.now() : undefined,
+        recvAt: typeof performance !== 'undefined' ? performance.now() : undefined
       })
       break
     }
@@ -957,11 +935,10 @@ self.onmessage = ({ data }) => {
 // Section height is always 16 in column mode (the only WASM path).
 const getSectionHeight = () => SECTION_HEIGHT
 
-
 // 3x3 X/Z neighbor set for column meshing. Y-agnostic because full-column
 // meshing converts the entire world Y range in one go.
 function collectChunksForColumn(x: number, z: number) {
-  const result = [] as Array<{ x: number, z: number, chunk: any }>
+  const result = [] as Array<{ x: number; z: number; chunk: any }>
   const target = world.getColumn(x, z)
   if (target) result.push({ x, z, chunk: target })
   const offsets = [-16, 0, 16]
@@ -1004,7 +981,7 @@ function makeEmptyColumnGeometry(sx: number, sy: number, sz: number, sectionHeig
     signs: {},
     banners: {},
     hadErrors,
-    blocksCount: 0,
+    blocksCount: 0
   }
 }
 
@@ -1022,7 +999,7 @@ function processColumnTick() {
   // coords — the same units used by section keys). This guarantees a
   // single WASM call per column per tick even when multiple section keys
   // of the same column are dirty.
-  const groups = new Map<string, { x: number, z: number, sections: Array<{ key: string, x: number, y: number, z: number, count: number }> }>()
+  const groups = new Map<string, { x: number; z: number; sections: Array<{ key: string; x: number; y: number; z: number; count: number }> }>()
   for (const [key, count] of dirtySections) {
     const [sx, sy, sz] = key.split(',').map(v => parseInt(v, 10))
     const colKey = `${sx},${sz}`
@@ -1039,7 +1016,7 @@ function processColumnTick() {
     const { x, z, sections } = group
     const targetChunk = world.getColumn(x, z)
 
-    let exportedMap: Map<string, { exported: import('../../three/worldGeometryExport').ExportedSection, blocksCount: number }> | null = null
+    let exportedMap: Map<string, { exported: import('../../three/worldGeometryExport').ExportedSection; blocksCount: number }> | null = null
     let processTime = 0
     let prePhase = 0
     let wasmPhase = 0
@@ -1092,20 +1069,38 @@ function processColumnTick() {
           } else if (v17Entry) {
             const v17Light = updateLightV17Cache.get(rawCacheKey(x, z))
             wasmResult = meshColumnFromParsedV16V17(
-              v17Entry.chunkData, v17Entry.bitMapLoHi, v17Entry.numSections, v17Entry.maxBitsPerBlock,
-              v17Entry.biomes, 1,
-              v17Light?.skyLight ?? null, v17Light?.blockLight ?? null,
-              x, z, worldMinY, worldMaxY, meta
+              v17Entry.chunkData,
+              v17Entry.bitMapLoHi,
+              v17Entry.numSections,
+              v17Entry.maxBitsPerBlock,
+              v17Entry.biomes,
+              1,
+              v17Light?.skyLight ?? null,
+              v17Light?.blockLight ?? null,
+              x,
+              z,
+              worldMinY,
+              worldMaxY,
+              meta
             )
             if (wasmResult) columnMeshPath = 'v17_fused'
           } else if (v16Entry) {
             const v16Light = updateLightV16Cache.get(rawCacheKey(x, z))
             const bitMapLoHi = new Uint32Array([v16Entry.bitMap >>> 0, 0])
             wasmResult = meshColumnFromParsedV16V17(
-              v16Entry.chunkData, bitMapLoHi, 16, 15,
-              v16Entry.biomes, 1,
-              v16Light?.skyLight ?? null, v16Light?.blockLight ?? null,
-              x, z, worldMinY, worldMaxY, meta
+              v16Entry.chunkData,
+              bitMapLoHi,
+              16,
+              15,
+              v16Entry.biomes,
+              1,
+              v16Light?.skyLight ?? null,
+              v16Light?.blockLight ?? null,
+              x,
+              z,
+              worldMinY,
+              worldMaxY,
+              meta
             )
             if (wasmResult) columnMeshPath = 'v16_fused'
           }
@@ -1125,8 +1120,9 @@ function processColumnTick() {
         // or any helper returns null.
         // ------------------------------------------------------------------
         if (!wasmResult && chunkCount > 1) {
-          wasmResult = meshMultiColumnsFromRawV18Plus(chunksToUse, x, z, worldMinY, worldMaxY, meta)
-                    ?? meshMultiColumnsFromParsedV16V17(chunksToUse, x, z, worldMinY, worldMaxY, meta)
+          wasmResult =
+            meshMultiColumnsFromRawV18Plus(chunksToUse, x, z, worldMinY, worldMaxY, meta) ??
+            meshMultiColumnsFromParsedV16V17(chunksToUse, x, z, worldMinY, worldMaxY, meta)
           if (wasmResult) {
             columnMeshPath = 'multi_fused'
             usedFusedPath = true
@@ -1167,7 +1163,12 @@ function processColumnTick() {
               // JS-fallback (column walk) — still cached, since this is the
               // expensive path the conversion cache was built for.
               const cached = getOrConvertColumn(
-                cx, cz, chunk, version, worldMinY, worldMaxY,
+                cx,
+                cz,
+                chunk,
+                version,
+                worldMinY,
+                worldMaxY,
                 () => convertChunkToWasm(chunk, version, cx, cz, worldMinY, worldMaxY),
                 chunk
               )
@@ -1187,23 +1188,28 @@ function processColumnTick() {
             return conv
           })
 
-          const {
-            invisibleBlocks,
-            transparentBlocks,
-            noAoBlocks,
-            cullIdenticalBlocks,
-            occludingBlocks,
-          } = conversions[0]
+          const { invisibleBlocks, transparentBlocks, noAoBlocks, cullIdenticalBlocks, occludingBlocks } = conversions[0]
 
           if (chunkCount === 1 || !(wasm as any).generate_geometry_multi) {
             const { blockStates, blockLight, skyLight, biomesArray } = conversions[0]
             t1 = performance.now()
             wasmResult = wasm.generate_geometry(
-              x, worldMinY, z, columnHeight,
-              worldMinY, worldMaxY,
+              x,
               worldMinY,
-              blockStates, blockLight, skyLight, biomesArray,
-              invisibleBlocks, transparentBlocks, noAoBlocks, cullIdenticalBlocks, occludingBlocks,
+              z,
+              columnHeight,
+              worldMinY,
+              worldMaxY,
+              worldMinY,
+              blockStates,
+              blockLight,
+              skyLight,
+              biomesArray,
+              invisibleBlocks,
+              transparentBlocks,
+              noAoBlocks,
+              cullIdenticalBlocks,
+              occludingBlocks,
               config?.enableLighting !== false,
               config?.smoothLighting !== false,
               config?.skyLight ?? 15
@@ -1232,12 +1238,24 @@ function processColumnTick() {
 
             t1 = performance.now()
             wasmResult = (wasm as any).generate_geometry_multi(
-              x, worldMinY, z, columnHeight,
-              worldMinY, worldMaxY,
+              x,
               worldMinY,
-              xs, zs,
-              blockStatesAll, blockLightAll, skyLightAll, biomesAll,
-              invisibleBlocks, transparentBlocks, noAoBlocks, cullIdenticalBlocks, occludingBlocks,
+              z,
+              columnHeight,
+              worldMinY,
+              worldMaxY,
+              worldMinY,
+              xs,
+              zs,
+              blockStatesAll,
+              blockLightAll,
+              skyLightAll,
+              biomesAll,
+              invisibleBlocks,
+              transparentBlocks,
+              noAoBlocks,
+              cullIdenticalBlocks,
+              occludingBlocks,
               config?.enableLighting !== false,
               config?.smoothLighting !== false,
               config?.skyLight ?? 15
@@ -1255,16 +1273,12 @@ function processColumnTick() {
         // intentionally skipped (the request tracker would warn if we
         // emitted sectionFinished for them).
         const requestedSectionKeys = sections.map(s => ({ x: s.x, y: s.y, z: s.z }))
-        exportedMap = splitColumnWasmOutputToSections(
-          wasmResult,
-          requestedSectionKeys,
-          {
-            version,
-            world,
-            sectionHeight,
-            shaderCubes: config?.shaderCubeBlocks === true,
-          },
-        )
+        exportedMap = splitColumnWasmOutputToSections(wasmResult, requestedSectionKeys, {
+          version,
+          world,
+          sectionHeight,
+          shaderCubes: config?.shaderCubeBlocks === true
+        })
 
         // Push heightmap from the WASM column output. With column meshing as
         // the only WASM path, the main thread does not request heightmaps
@@ -1312,7 +1326,7 @@ function processColumnTick() {
     // finalized — otherwise the totals attached to the first event
     // would miss the typed-array allocation, block-entity walk, and
     // postMessage cost of every section in this column.
-    const finished: Array<{ key: string, count: number }> = []
+    const finished: Array<{ key: string; count: number }> = []
     for (const s of sections) {
       const { key, x: sx, y: sy, z: sz, count } = s
 
@@ -1345,9 +1359,7 @@ function processColumnTick() {
         const hasLegacyMesh = hasOpaqueMesh || hasBlendMesh
         const hasShaderCubes = (exported?.shaderCubes?.count ?? 0) > 0
         if (exported && (hasLegacyMesh || hasShaderCubes)) {
-          const maxIndex = exported.geometry.indices.length > 0
-            ? Math.max(...exported.geometry.indices)
-            : 0
+          const maxIndex = exported.geometry.indices.length > 0 ? Math.max(...exported.geometry.indices) : 0
           const using32Array = maxIndex > 65535
           geometry = {
             sectionYNumber: (sy - (config?.worldMinY || 0)) >> 4,
@@ -1367,9 +1379,7 @@ function processColumnTick() {
             skyLights: new Float32Array(exported.geometry.skyLights),
             blockLights: new Float32Array(exported.geometry.blockLights),
             uvs: new Float32Array(exported.geometry.uvs),
-            indices: using32Array
-              ? new Uint32Array(exported.geometry.indices)
-              : new Uint16Array(exported.geometry.indices),
+            indices: using32Array ? new Uint32Array(exported.geometry.indices) : new Uint16Array(exported.geometry.indices),
             indicesCount: exported.geometry.indices.length,
             using32Array,
             tiles: {},
@@ -1382,13 +1392,13 @@ function processColumnTick() {
             // `B:` debug overlay stat) and matches the per-section path's
             // semantics: number of blocks that contributed faces to this
             // section's geometry.
-            blocksCount: sectionBlocksCount,
+            blocksCount: sectionBlocksCount
           }
           if (exported.shaderCubes) {
             geometry.shaderCubes = {
               words: new Uint32Array(exported.shaderCubes.words),
               count: exported.shaderCubes.count,
-              formatVersion: 3,
+              formatVersion: 3
             }
           }
           if (exported.blendGeometry && hasBlendMesh) {
@@ -1400,9 +1410,7 @@ function processColumnTick() {
               skyLights: new Float32Array(exported.blendGeometry.skyLights),
               blockLights: new Float32Array(exported.blendGeometry.blockLights),
               uvs: new Float32Array(exported.blendGeometry.uvs),
-              indices: blendMax > 65535
-                ? new Uint32Array(exported.blendGeometry.indices)
-                : new Uint16Array(exported.blendGeometry.indices),
+              indices: blendMax > 65535 ? new Uint32Array(exported.blendGeometry.indices) : new Uint16Array(exported.blendGeometry.indices)
             }
           }
           transferable = [
@@ -1422,14 +1430,15 @@ function processColumnTick() {
             geometry.blend?.uvs?.buffer,
             //@ts-ignore
             geometry.blend?.indices?.buffer,
-            geometry.shaderCubes?.words?.buffer,
+            geometry.shaderCubes?.words?.buffer
           ].filter(Boolean)
 
           if (exported.geometry.indices.length > 0 && config.computeWireframeEdges) {
             try {
-              const wireframeF32 = geometry.indices instanceof Uint32Array
-                ? wasm!.computeWireframeEdges(geometry.positions as Float32Array, geometry.indices)
-                : wasm!.computeWireframeEdgesU16(geometry.positions as Float32Array, geometry.indices as Uint16Array)
+              const wireframeF32 =
+                geometry.indices instanceof Uint32Array
+                  ? wasm!.computeWireframeEdges(geometry.positions as Float32Array, geometry.indices)
+                  : wasm!.computeWireframeEdgesU16(geometry.positions as Float32Array, geometry.indices as Uint16Array)
               if (wireframeF32.length > 0) {
                 geometry.wireframePositions = wireframeF32
                 transferable.push(wireframeF32.buffer)
@@ -1487,7 +1496,7 @@ function processColumnTick() {
           preTypedArrayBuild: !attributed ? preTypedArrayBuild : 0,
           preOther: !attributed ? preOther : 0,
           preCacheHits: !attributed ? preCacheHits : 0,
-          preCacheMisses: !attributed ? preCacheMisses : 0,
+          preCacheMisses: !attributed ? preCacheMisses : 0
         })
         attributed = true
       }

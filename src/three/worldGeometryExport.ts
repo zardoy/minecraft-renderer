@@ -16,8 +16,8 @@ const GEOMETRY_EXPORT_GROUP_NAME = 'geometry-export-root'
  */
 export function exportWorldGeometry(
   worldRenderer: WorldRendererThree,
-  cameraPosition: { x: number, y: number, z: number },
-  cameraRotation: { pitch: number, yaw: number },
+  cameraPosition: { x: number; y: number; z: number },
+  cameraRotation: { pitch: number; yaw: number },
   includeTexture = false
 ): ExportedWorldGeometry {
   const sections: ExportedSection[] = []
@@ -58,12 +58,8 @@ export function exportWorldGeometry(
         const vertOffset = positions.length / 3
         const vertCount = positionAttr.count
         const rawColors = Array.from(colorAttr.array as Float32Array)
-        const rawSky = skyAttr
-          ? Array.from(skyAttr.array as Float32Array)
-          : new Array(vertCount).fill(1)
-        const rawBlock = blockAttr
-          ? Array.from(blockAttr.array as Float32Array)
-          : new Array(vertCount).fill(0)
+        const rawSky = skyAttr ? Array.from(skyAttr.array as Float32Array) : new Array(vertCount).fill(1)
+        const rawBlock = blockAttr ? Array.from(blockAttr.array as Float32Array) : new Array(vertCount).fill(0)
         positions.push(...Array.from(positionAttr.array))
         if (normalAttr) normals.push(...Array.from(normalAttr.array))
         colors.push(...bakeLegacyVertexColors(rawColors, rawSky, rawBlock, skyLevel))
@@ -83,7 +79,7 @@ export function exportWorldGeometry(
       position: {
         x: sectionObject.worldX ?? 0,
         y: sectionObject.worldY ?? 0,
-        z: sectionObject.worldZ ?? 0,
+        z: sectionObject.worldZ ?? 0
       },
       geometry: {
         positions,
@@ -92,8 +88,8 @@ export function exportWorldGeometry(
         skyLights,
         blockLights,
         uvs,
-        indices,
-      },
+        indices
+      }
     })
   }
 
@@ -129,8 +125,8 @@ export function exportWorldGeometry(
  */
 export function downloadWorldGeometry(
   worldRenderer: WorldRendererThree,
-  cameraPosition: { x: number, y: number, z: number },
-  cameraRotation: { pitch: number, yaw: number },
+  cameraPosition: { x: number; y: number; z: number },
+  cameraRotation: { pitch: number; yaw: number },
   filename = 'world-geometry.json',
   includeTexture = false
 ) {
@@ -163,8 +159,7 @@ export async function loadWorldGeometryFromUrl(url: string): Promise<ExportedWor
  * Returns an array of mesh groups that can be added to a scene
  */
 function shaderMaterialForExport(legacyMaterial: THREE.Material, skyLevel: number): THREE.ShaderMaterial | null {
-  const atlas = (legacyMaterial as THREE.MeshBasicMaterial).map
-    ?? (legacyMaterial as THREE.MeshLambertMaterial).map
+  const atlas = (legacyMaterial as THREE.MeshBasicMaterial).map ?? (legacyMaterial as THREE.MeshLambertMaterial).map
   if (!atlas) return null
   const shaderMat = createCubeBlockMaterial()
   shaderMat.uniforms.u_atlas.value = atlas
@@ -181,7 +176,7 @@ export function createMeshesFromExport(
   exportData: ExportedWorldGeometry,
   material: THREE.Material,
   shaderMaterial?: THREE.ShaderMaterial | null,
-  skyLevel = 1,
+  skyLevel = 1
 ): THREE.Group[] {
   const groups: THREE.Group[] = []
   const resolvedShaderMat = shaderMaterial ?? shaderMaterialForExport(material, skyLevel)
@@ -199,12 +194,7 @@ export function createMeshesFromExport(
       }
       if (section.geometry.colors.length) {
         const baked = section.geometry.skyLights?.length
-          ? bakeLegacyVertexColors(
-            section.geometry.colors,
-            section.geometry.skyLights,
-            section.geometry.blockLights,
-            skyLevel,
-          )
+          ? bakeLegacyVertexColors(section.geometry.colors, section.geometry.skyLights, section.geometry.blockLights, skyLevel)
           : section.geometry.colors
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(baked, 3))
       }
@@ -274,15 +264,8 @@ const disposeGeometryExportGroup = (group: THREE.Object3D) => {
  * Apply exported geometry to an existing WorldRenderer instance.
  * Replaces any previously imported geometry export group.
  */
-export async function applyWorldGeometryExport(
-  worldRenderer: WorldRendererThree,
-  exportData: ExportedWorldGeometry
-): Promise<number> {
-  const {
-    scene,
-    renderUpdateEmitter,
-    material: rendererMaterial
-  } = worldRenderer
+export async function applyWorldGeometryExport(worldRenderer: WorldRendererThree, exportData: ExportedWorldGeometry): Promise<number> {
+  const { scene, renderUpdateEmitter, material: rendererMaterial } = worldRenderer
   const existingGroup = scene.getObjectByName(GEOMETRY_EXPORT_GROUP_NAME)
   if (existingGroup) {
     scene.remove(existingGroup)
@@ -305,9 +288,7 @@ export async function applyWorldGeometryExport(
   }
 
   const skyLevel = calculateSkyLightSimple(worldRenderer.timeOfTheDay) / 15
-  const shaderMat = exportData.sections.some(s => (s.shaderCubes?.count ?? 0) > 0)
-    ? shaderMaterialForExport(material, skyLevel)
-    : null
+  const shaderMat = exportData.sections.some(s => (s.shaderCubes?.count ?? 0) > 0) ? shaderMaterialForExport(material, skyLevel) : null
   const groups = createMeshesFromExport(exportData, material, shaderMat, skyLevel)
   const container = new THREE.Group()
   container.name = GEOMETRY_EXPORT_GROUP_NAME
