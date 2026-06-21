@@ -10,6 +10,9 @@ const FLOATS_PER_LIGHT_VERT = 1
 const DEFAULT_INITIAL_CAPACITY_QUADS = 128_000
 const DEFAULT_GROWTH_INCREMENT_QUADS = 128_000
 const MAX_UPLOAD_QUADS_PER_FRAME = 5_000
+const FRAGMENTATION_THRESHOLD = 0.25
+
+type PendingMove = { key: string, oldStart: number, newStart: number, count: number }
 
 /** CPU bytes per allocated quad slot (all legacy vertex/index attrs). */
 export const LEGACY_BYTES_PER_QUAD =
@@ -67,6 +70,7 @@ export class GlobalLegacyBuffer {
   private readonly _spanScratch: Array<{ start: number, count: number }> = []
   private renderOrigin: RenderOrigin = { x: 0, y: 0, z: 0 }
   private layoutVersion = 0
+  private pendingMove: PendingMove | null = null
 
   constructor (
     material: THREE.ShaderMaterial,
@@ -171,14 +175,14 @@ export class GlobalLegacyBuffer {
     this.uvs.set(geo.uvs, dstUvBase)
 
     const originOff = dstFloatBase
-    const rx = this.renderOrigin.x
-    const ry = this.renderOrigin.y
-    const rz = this.renderOrigin.z
+    const ox = sx - this.renderOrigin.x
+    const oy = sy - this.renderOrigin.y
+    const oz = sz - this.renderOrigin.z
     for (let v = 0; v < vertCount; v++) {
       const o = originOff + v * FLOATS_PER_VERT
-      this.aOrigin[o] = sx - rx
-      this.aOrigin[o + 1] = sy - ry
-      this.aOrigin[o + 2] = sz - rz
+      this.aOrigin[o] = ox
+      this.aOrigin[o + 1] = oy
+      this.aOrigin[o + 2] = oz
     }
 
     const dstIndexBase = slot.start * INDICES_PER_QUAD
@@ -196,6 +200,48 @@ export class GlobalLegacyBuffer {
 
   getLayoutVersion (): number {
     return this.layoutVersion
+  }
+
+  getSectionDrawStart (sectionKey: string): number | undefined {
+    const slot = this.sectionSlots.get(sectionKey)
+    if (!slot) return undefined
+    if (this.pendingMove?.key === sectionKey) return this.pendingMove.oldStart
+    return slot.start
+  }
+
+  getPendingMove (): PendingMove | null {
+    return this.pendingMove
+  }
+
+  /** One interior-hole move per frame when fragmentation exceeds threshold; deferred shrink. */
+  compactStep (): void {
+    if (this.pendingMove) {
+      const { newStart, count } = this.pendingMove
+      if (this.rangeFullyUploaded(newStart, newStart + count - 1)) {
+        this.finalizePendingMove()
+      }
+      return
+    }
+
+    if (this.highWatermark === 0) return
+    const interiorFree = this.interiorFreeQuads()
+    if (interiorFree / this.highWatermark <= FRAGMENTATION_THRESHOLD) return
+
+    const section = this.findMovableSection(MAX_UPLOAD_QUADS_PER_FRAME)
+    if (!section) return
+
+    const hole = this.findLowestInteriorHole(section.start, section.count)
+    if (!hole) return
+
+    const reserved = this.reserveFreeSlotAt(hole.index, section.count)
+    const oldStart = section.start
+    const newStart = reserved.start
+
+    this.copySectionRange(oldStart, newStart, section.count)
+    this.sectionSlots.set(section.key, { start: newStart, count: section.count })
+    this.markDirty(newStart, newStart + section.count - 1)
+    this.pendingMove = { key: section.key, oldStart, newStart, count: section.count }
+    this.layoutVersion++
   }
 
   updateDrawSpans (visible: VisibleSectionSpan[], mode: 'opaque' | 'sortedBlend'): void {
@@ -332,6 +378,18 @@ export class GlobalLegacyBuffer {
   removeSection (sectionKey: string): void {
     const slot = this.sectionSlots.get(sectionKey)
     if (!slot) return
+
+    if (this.pendingMove?.key === sectionKey) {
+      const { oldStart, count } = this.pendingMove
+      const oldIndexBase = oldStart * INDICES_PER_QUAD
+      const oldIndexLen = count * INDICES_PER_QUAD
+      for (let i = 0; i < oldIndexLen; i++) {
+        this.indices[oldIndexBase + i] = 0
+      }
+      this.markDirty(oldStart, oldStart + count - 1)
+      this.insertFreeSlot({ start: oldStart, count })
+      this.pendingMove = null
+    }
 
     const dstIndexBase = slot.start * INDICES_PER_QUAD
     const indexLen = slot.count * INDICES_PER_QUAD
@@ -511,6 +569,7 @@ export class GlobalLegacyBuffer {
     this.freeList.length = 0
     this.highWatermark = 0
     this.pendingRanges.length = 0
+    this.pendingMove = null
     this.syncDefaultDrawGroups()
   }
 
@@ -591,7 +650,125 @@ export class GlobalLegacyBuffer {
     }
   }
 
+  private interiorFreeQuads (): number {
+    let total = 0
+    for (const slot of this.freeList) {
+      if (slot.start < this.highWatermark) total += slot.count
+    }
+    return total
+  }
+
+  private findMovableSection (maxCount: number): { key: string, start: number, count: number } | undefined {
+    const sections: Array<{ key: string, start: number, count: number }> = []
+    for (const [key, slot] of this.sectionSlots) {
+      sections.push({ key, start: slot.start, count: slot.count })
+    }
+    if (sections.length === 0) return undefined
+
+    sections.sort((a, b) => {
+      if (b.start !== a.start) return b.start - a.start
+      return (b.start + b.count) - (a.start + a.count)
+    })
+
+    const tailmost = sections[0]!
+    if (tailmost.count <= maxCount && this.findLowestInteriorHole(tailmost.start, tailmost.count)) {
+      return tailmost
+    }
+
+    const candidates = sections
+      .filter(s => s.count <= maxCount)
+      .sort((a, b) => b.count - a.count)
+
+    for (const s of candidates) {
+      if (this.findLowestInteriorHole(s.start, s.count)) return s
+    }
+    return undefined
+  }
+
+  private findLowestInteriorHole (
+    sectionStart: number,
+    count: number,
+  ): { start: number, count: number, index: number } | undefined {
+    for (let i = 0; i < this.freeList.length; i++) {
+      const slot = this.freeList[i]!
+      if (slot.start < sectionStart && slot.count >= count) {
+        return { start: slot.start, count: slot.count, index: i }
+      }
+    }
+    return undefined
+  }
+
+  private reserveFreeSlotAt (index: number, count: number): { start: number, count: number } {
+    const slot = this.freeList[index]!
+    this.freeList.splice(index, 1)
+    if (slot.count === count) return { start: slot.start, count }
+    const used = { start: slot.start, count }
+    this.insertFreeSlot({ start: slot.start + count, count: slot.count - count })
+    return used
+  }
+
+  private copySectionRange (oldStart: number, newStart: number, quadCount: number): void {
+    const oldVertBase = oldStart * VERTS_PER_QUAD
+    const newVertBase = newStart * VERTS_PER_QUAD
+    const vertCount = quadCount * VERTS_PER_QUAD
+    const vertDelta = newVertBase - oldVertBase
+
+    const oldFloatBase = oldVertBase * FLOATS_PER_VERT
+    const newFloatBase = newVertBase * FLOATS_PER_VERT
+    const floatLen = vertCount * FLOATS_PER_VERT
+    this.positions.copyWithin(newFloatBase, oldFloatBase, oldFloatBase + floatLen)
+    this.colors.copyWithin(newFloatBase, oldFloatBase, oldFloatBase + floatLen)
+    this.aOrigin.copyWithin(newFloatBase, oldFloatBase, oldFloatBase + floatLen)
+
+    const oldLightBase = oldVertBase * FLOATS_PER_LIGHT_VERT
+    const newLightBase = newVertBase * FLOATS_PER_LIGHT_VERT
+    const lightLen = vertCount * FLOATS_PER_LIGHT_VERT
+    this.skyLights.copyWithin(newLightBase, oldLightBase, oldLightBase + lightLen)
+    this.blockLights.copyWithin(newLightBase, oldLightBase, oldLightBase + lightLen)
+
+    const oldUvBase = oldVertBase * FLOATS_PER_UV_VERT
+    const newUvBase = newVertBase * FLOATS_PER_UV_VERT
+    const uvLen = vertCount * FLOATS_PER_UV_VERT
+    this.uvs.copyWithin(newUvBase, oldUvBase, oldUvBase + uvLen)
+
+    const oldIndexBase = oldStart * INDICES_PER_QUAD
+    const newIndexBase = newStart * INDICES_PER_QUAD
+    const indexLen = quadCount * INDICES_PER_QUAD
+    for (let i = 0; i < indexLen; i++) {
+      this.indices[newIndexBase + i] = this.indices[oldIndexBase + i]! + vertDelta
+    }
+  }
+
+  private rangeFullyUploaded (start: number, end: number): boolean {
+    for (const r of this.pendingRanges) {
+      if (r.start <= end && r.end >= start) return false
+    }
+    return true
+  }
+
+  private finalizePendingMove (): void {
+    const move = this.pendingMove
+    if (!move) return
+
+    const { oldStart, count } = move
+    const oldIndexBase = oldStart * INDICES_PER_QUAD
+    const oldIndexLen = count * INDICES_PER_QUAD
+    for (let i = 0; i < oldIndexLen; i++) {
+      this.indices[oldIndexBase + i] = 0
+    }
+    this.insertFreeSlot({ start: oldStart, count })
+    this.shrinkHighWatermark()
+    if (oldStart < this.highWatermark) {
+      this.markDirty(oldStart, oldStart + count - 1)
+    }
+    this.syncDefaultDrawGroups()
+    this.pendingMove = null
+    this.layoutVersion++
+  }
+
   private growCapacity (minQuads: number): void {
+    if (this.pendingMove) this.finalizePendingMove()
+
     let newCap = this.capacityQuads
     while (newCap < minQuads) newCap += this.growthIncrementQuads
 

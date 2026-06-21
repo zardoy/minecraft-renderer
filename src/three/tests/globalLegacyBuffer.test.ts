@@ -38,6 +38,8 @@ function makeQuadGeometry (): {
 
 type BufferInternals = {
   pendingRanges: Array<{ start: number, end: number }>
+  pendingMove: { key: string, oldStart: number, newStart: number, count: number } | null
+  growCapacity: (minQuads: number) => void
 }
 
 function getInternals (buffer: GlobalLegacyBuffer): BufferInternals {
@@ -46,6 +48,20 @@ function getInternals (buffer: GlobalLegacyBuffer): BufferInternals {
 
 function drainUploads (buffer: GlobalLegacyBuffer): void {
   while (getInternals(buffer).pendingRanges.length) buffer.uploadDirtyRange()
+}
+
+function finishCurrentMove (buffer: GlobalLegacyBuffer): void {
+  drainUploads(buffer)
+  buffer.compactStep()
+}
+
+function readSectionIndices (buffer: GlobalLegacyBuffer, key: string): number[] {
+  const slot = buffer.getSectionSlot(key)
+  if (!slot) throw new Error(`missing section ${key}`)
+  const indexAttr = buffer.mesh.geometry.index!.array as Uint32Array
+  const base = slot.start * 6
+  const len = slot.count * 6
+  return Array.from(indexAttr.slice(base, base + len))
 }
 
 test('GlobalLegacyBuffer: slot reuse and a_origin fill', () => {
@@ -357,3 +373,91 @@ test('GlobalLegacyBuffer: addSection rejects non-quad geometry', () => {
   buffer.dispose()
   mat.dispose()
 })
+
+test('GlobalLegacyBuffer: compaction lowers watermark after interior-hole churn', () => {
+  const scene = new THREE.Scene()
+  const mat = createGlobalLegacyBlockMaterial()
+  const buffer = new GlobalLegacyBuffer(mat, scene)
+  const geo = makeQuadGeometry()
+
+  buffer.addSection('a', geo, 0, 0, 0)
+  buffer.addSection('b', geo, 16, 0, 0)
+  buffer.addSection('c', geo, 32, 0, 0)
+  expect(buffer.getHighWatermark()).toBe(3)
+
+  buffer.removeSection('b')
+  drainUploads(buffer)
+  expect(buffer.getHighWatermark()).toBe(3)
+
+  buffer.compactStep()
+  finishCurrentMove(buffer)
+
+  expect(buffer.getHighWatermark()).toBe(2)
+  expect(buffer.getSectionSlot('c')).toEqual({ start: 1, count: 1 })
+  const slotC = buffer.getSectionSlot('c')!
+  const indices = readSectionIndices(buffer, 'c')
+  expect(indices[0]).toBe(slotC.start * 4)
+
+  buffer.dispose()
+  mat.dispose()
+})
+
+test('GlobalLegacyBuffer: grow during in-flight move preserves section data', () => {
+  const scene = new THREE.Scene()
+  const mat = createGlobalLegacyBlockMaterial()
+  const buffer = new GlobalLegacyBuffer(mat, scene, { initialCapacityQuads: 4, growthIncrementQuads: 8 })
+  const geo = makeQuadGeometry()
+
+  buffer.addSection('a', geo, 0, 0, 0)
+  buffer.addSection('b', geo, 16, 0, 0)
+  buffer.addSection('c', geo, 32, 0, 0)
+  buffer.removeSection('b')
+  drainUploads(buffer)
+
+  buffer.compactStep()
+  expect(buffer.getPendingMove()).not.toBeNull()
+  expect(buffer.hasSection('c')).toBe(true)
+
+  getInternals(buffer).growCapacity(16)
+
+  expect(buffer.getPendingMove()).toBeNull()
+  expect(buffer.hasSection('c')).toBe(true)
+  const slotC = buffer.getSectionSlot('c')!
+  const indices = readSectionIndices(buffer, 'c')
+  expect(indices[0]).toBe(slotC.start * 4)
+  expect(buffer.getCapacityQuads()).toBeGreaterThanOrEqual(16)
+
+  buffer.dispose()
+  mat.dispose()
+})
+
+test('GlobalLegacyBuffer: finalize move bumps layoutVersion and relocates section', () => {
+  const scene = new THREE.Scene()
+  const mat = createGlobalLegacyBlockMaterial()
+  const buffer = new GlobalLegacyBuffer(mat, scene)
+  const geo = makeQuadGeometry()
+
+  buffer.addSection('a', geo, 0, 0, 0)
+  buffer.addSection('b', geo, 16, 0, 0)
+  buffer.addSection('c', geo, 32, 0, 0)
+  buffer.removeSection('b')
+  drainUploads(buffer)
+
+  buffer.compactStep()
+  expect(buffer.getPendingMove()).not.toBeNull()
+  const versionAfterMove = buffer.getLayoutVersion()
+
+  drainUploads(buffer)
+  buffer.compactStep()
+  expect(buffer.getPendingMove()).toBeNull()
+  expect(buffer.getLayoutVersion()).toBe(versionAfterMove + 1)
+  expect(buffer.getSectionSlot('c')).toEqual({ start: 1, count: 1 })
+
+  const slotC = buffer.getSectionSlot('c')!
+  const indices = readSectionIndices(buffer, 'c')
+  expect(indices[0]).toBe(slotC.start * 4)
+
+  buffer.dispose()
+  mat.dispose()
+})
+

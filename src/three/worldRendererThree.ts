@@ -1323,12 +1323,18 @@ export class WorldRendererThree extends WorldRendererCommon {
       globalBuffer.suppressThreeDraw()
     }
     const globalLegacyBuffer = this.chunkMeshManager.globalLegacyBuffer
-    if (globalLegacyBuffer?.hasPendingUploads()) {
-      globalLegacyBuffer.uploadDirtyRange()
+    if (globalLegacyBuffer) {
+      globalLegacyBuffer.compactStep()
+      if (globalLegacyBuffer.hasPendingUploads()) {
+        globalLegacyBuffer.uploadDirtyRange()
+      }
     }
     const globalLegacyBlendBuffer = this.chunkMeshManager.globalLegacyBlendBuffer
-    if (globalLegacyBlendBuffer?.hasPendingUploads()) {
-      globalLegacyBlendBuffer.uploadDirtyRange()
+    if (globalLegacyBlendBuffer) {
+      globalLegacyBlendBuffer.compactStep()
+      if (globalLegacyBlendBuffer.hasPendingUploads()) {
+        globalLegacyBlendBuffer.uploadDirtyRange()
+      }
     }
     this.chunkMeshManager.setLegacyCameraOrigin(camX, camY, camZ)
     this.chunkMeshManager.updateCullDirtyFromCamera(cam, camX, camY, camZ)

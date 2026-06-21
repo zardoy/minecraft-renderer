@@ -6,6 +6,7 @@ vi.mock('../entity/EntityMesh', () => ({
 }))
 
 import { ChunkMeshManager } from '../chunkMeshManager'
+import type { GlobalLegacyBuffer } from '../globalLegacyBuffer'
 import type { WorldRendererThree } from '../worldRendererThree'
 import type { MesherGeometryOutput } from '../../mesher-shared/shared'
 
@@ -62,6 +63,38 @@ function makeBlendOnlyGeometry (): MesherGeometryOutput {
       uvs: blend.uvs,
       indices: blend.indices,
     },
+  }
+}
+
+function makeOpaqueOnlyGeometry (sx = 8, sy = 8, sz = 8): MesherGeometryOutput {
+  const opaque = makeQuadArrays()
+  return {
+    sectionYNumber: 0,
+    chunkKey: '0,0',
+    sectionStartY: 0,
+    sectionEndY: 16,
+    sectionStartX: 0,
+    sectionEndX: 16,
+    sectionStartZ: 0,
+    sectionEndZ: 16,
+    sx,
+    sy,
+    sz,
+    positions: opaque.positions,
+    normals: new Float32Array(12),
+    colors: opaque.colors,
+    skyLights: opaque.skyLights,
+    blockLights: opaque.blockLights,
+    uvs: opaque.uvs,
+    indices: opaque.indices,
+    indicesCount: 6,
+    using32Array: true,
+    tiles: {},
+    heads: {},
+    signs: {},
+    banners: {},
+    hadErrors: false,
+    blocksCount: 1,
   }
 }
 
@@ -223,5 +256,37 @@ test('updateSectionCullAndSort: layoutVersion change forces span rebuild', () =>
   expect(updateDrawSpansSpy).toHaveBeenCalledTimes(2)
 
   manager.cleanupSection(key)
+  manager.dispose()
+})
+
+function drainLegacyUploads (buffer: GlobalLegacyBuffer): void {
+  while (buffer.hasPendingUploads()) buffer.uploadDirtyRange()
+}
+
+test('updateSectionCullAndSort: defrag finalize forces span rebuild with static camera', () => {
+  const manager = createManager()
+  const keys = ['0,0,0', '1,0,0', '2,0,0'] as const
+
+  for (let i = 0; i < keys.length; i++) {
+    manager.updateSection(keys[i]!, makeOpaqueOnlyGeometry(8, 8, 8 + i * 8))
+  }
+
+  const opaqueBuf = manager.globalLegacyBuffer!
+  const updateDrawSpansSpy = vi.spyOn(opaqueBuf, 'updateDrawSpans')
+  const camera = makeCamera(8, 8, 20)
+
+  manager.updateSectionCullAndSort(camera, 8, 8, 20)
+  expect(updateDrawSpansSpy).toHaveBeenCalledTimes(1)
+
+  opaqueBuf.removeSection('1,0,0')
+  drainLegacyUploads(opaqueBuf)
+  opaqueBuf.compactStep()
+  drainLegacyUploads(opaqueBuf)
+  opaqueBuf.compactStep()
+
+  manager.updateSectionCullAndSort(camera, 8, 8, 20)
+  expect(updateDrawSpansSpy).toHaveBeenCalledTimes(2)
+
+  for (const key of keys) manager.cleanupSection(key)
   manager.dispose()
 })
