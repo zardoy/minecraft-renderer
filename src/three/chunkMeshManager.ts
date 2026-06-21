@@ -3,7 +3,7 @@ import * as nbt from 'prismarine-nbt'
 import { Vec3 } from 'vec3'
 import { MesherGeometryOutput } from '../mesher-shared/shared'
 import { getShaderCubeResources, SHADER_CUBES_WORDS_PER_FACE } from '../wasm-mesher/bridge/shaderCubeBridge'
-import { createCubeBlockMaterial, computeSectionOriginRel, setCubeSkyLevel, setCubeLightmapParams, type BlockLightmapParams } from './shaders/cubeBlockShader'
+import { createCubeBlockMaterial, computeSectionOriginRel, setCubeSkyLevel, setCubeShadingTheme, setCubeLightmapParams, type BlockLightmapParams } from './shaders/cubeBlockShader'
 import { computeCameraRelativeUniforms, createGlobalLegacyBlendMaterial, createGlobalLegacyBlockMaterial, createLegacyBlockMaterial, setLegacyCameraOrigin, setLegacySkyLevel, setLegacyLightmapParams, type RenderOrigin } from './shaders/legacyBlockShader'
 import { LEGACY_SECTION_HALF_EXTENT, sectionIntersectsFrustum, setupLegacySectionMatrix, updateLegacySectionCullState } from './legacySectionCull'
 import { createShaderCubeMesh, disposeShaderCubeMesh } from './shaderCubeMesh'
@@ -263,6 +263,11 @@ export class ChunkMeshManager {
     if (this.globalLegacyShaderMaterial) setLegacySkyLevel(this.globalLegacyShaderMaterial, value)
     if (this.globalLegacyBlendShaderMaterial) setLegacySkyLevel(this.globalLegacyBlendShaderMaterial, value)
     this.blockEntityLightRegistry.setSkyLevel(value)
+  }
+
+  setShadingTheme (theme: 'vanilla' | 'high-contrast', cardinalLight: string): void {
+    const cube = this.cubeShaderMaterial ?? (this.isShaderCubesGpuEnabled() ? this.getCubeShaderMaterial() : null)
+    if (cube) setCubeShadingTheme(cube, theme, cardinalLight)
   }
 
   /** Vanilla-like lightmap curve params (live tuning via window.setBlockLightmap). */
@@ -530,6 +535,8 @@ export class ChunkMeshManager {
     if (!this.cubeShaderMaterial) {
       this.cubeShaderMaterial = createCubeBlockMaterial()
       this.syncCubeShaderUniforms()
+      const cfg = this.worldRenderer.worldRendererConfig
+      setCubeShadingTheme(this.cubeShaderMaterial, cfg.shadingTheme, cfg.cardinalLight)
     }
     return this.cubeShaderMaterial
   }

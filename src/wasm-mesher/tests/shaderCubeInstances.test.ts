@@ -16,7 +16,7 @@ import {
 } from '../bridge/shaderCubeBridge'
 import { GlobalBlockBuffer } from '../../three/globalBlockBuffer'
 import { buildVisibleCubeSpans } from '../../three/cubeDrawSpans'
-import { createCubeBlockMaterial, computeSectionOriginRel } from '../../three/shaders/cubeBlockShader'
+import { createCubeBlockMaterial, computeSectionOriginRel, setCubeShadingTheme } from '../../three/shaders/cubeBlockShader'
 import * as THREE from 'three'
 import { renderWasmOutputToGeometry } from '../bridge/render-from-wasm'
 
@@ -33,6 +33,17 @@ const STONE_ATLAS_TILE_INDEX = 552
 
 beforeEach(() => {
   resetShaderCubeResources()
+})
+
+test('setCubeShadingTheme: maps theme and cardinalLight to shader uniforms', () => {
+  const mat = createCubeBlockMaterial()
+  setCubeShadingTheme(mat, 'vanilla', 'default')
+  expect(mat.uniforms.u_shadingTheme.value).toBe(0)
+  expect(mat.uniforms.u_cardinalLight.value).toBe(0)
+  setCubeShadingTheme(mat, 'high-contrast', 'nether')
+  expect(mat.uniforms.u_shadingTheme.value).toBe(1)
+  expect(mat.uniforms.u_cardinalLight.value).toBe(1)
+  mat.dispose()
 })
 
 test('packWord2: AO diagonal flip sets bit 12', () => {

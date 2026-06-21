@@ -548,6 +548,12 @@ export class WorldRendererThree extends WorldRendererCommon {
       this.chunkMeshManager.syncCubeShaderUniforms()
       this.chunkMeshManager.syncLegacyShaderUniforms()
     })
+    const pushShading = () => {
+      const cfg = this.worldRendererConfig
+      this.chunkMeshManager.setShadingTheme(cfg.shadingTheme, cfg.cardinalLight)
+    }
+    this.onReactiveConfigUpdated('shadingTheme', pushShading)
+    this.onReactiveConfigUpdated('cardinalLight', pushShading)
     this.onReactiveConfigUpdated('futuristicReveal', () => {
       this.updateModulesFromConfig()
     })
