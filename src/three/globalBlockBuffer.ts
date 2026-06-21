@@ -68,6 +68,7 @@ export class GlobalBlockBuffer {
   private tierCAttrs: TierCAttrState | null = null
   private tierCGl: WebGL2RenderingContext | null = null
   private debugOverlay = false
+  private layoutVersion = 0
 
   constructor (
     material: THREE.ShaderMaterial,
@@ -224,6 +225,11 @@ export class GlobalBlockBuffer {
     this.sectionSlots.set(sectionKey, slot)
     this.markDirty(slot.start, slot.start + faceCount - 1)
     this.mesh.geometry.instanceCount = this.highWatermark
+    this.layoutVersion++
+  }
+
+  getLayoutVersion (): number {
+    return this.layoutVersion
   }
 
   hasSection (sectionKey: string): boolean {
@@ -287,6 +293,7 @@ export class GlobalBlockBuffer {
     this.insertFreeSlot(slot)
     this.shrinkHighWatermark()
     this.mesh.geometry.instanceCount = this.highWatermark
+    this.layoutVersion++
   }
 
   /** One interior-hole move per frame when fragmentation exceeds threshold; deferred shrink. */
@@ -317,6 +324,7 @@ export class GlobalBlockBuffer {
     this.sectionSlots.set(section.key, { start: newStart, count: section.count })
     this.markDirty(newStart, newStart + section.count - 1)
     this.pendingMove = { key: section.key, oldStart, newStart, count: section.count }
+    this.layoutVersion++
   }
 
   uploadDirtyRange (): void {

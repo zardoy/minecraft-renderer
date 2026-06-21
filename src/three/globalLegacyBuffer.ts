@@ -66,6 +66,7 @@ export class GlobalLegacyBuffer {
   private pendingRanges: Array<{ start: number, end: number }> = []
   private readonly _spanScratch: Array<{ start: number, count: number }> = []
   private renderOrigin: RenderOrigin = { x: 0, y: 0, z: 0 }
+  private layoutVersion = 0
 
   constructor (
     material: THREE.ShaderMaterial,
@@ -189,7 +190,12 @@ export class GlobalLegacyBuffer {
     this.sectionSlots.set(sectionKey, slot)
     this.markDirty(slot.start, slot.start + quadCount - 1)
     this.syncDefaultDrawGroups()
+    this.layoutVersion++
     return true
+  }
+
+  getLayoutVersion (): number {
+    return this.layoutVersion
   }
 
   updateDrawSpans (visible: VisibleSectionSpan[], mode: 'opaque' | 'sortedBlend'): void {
@@ -338,6 +344,7 @@ export class GlobalLegacyBuffer {
     this.insertFreeSlot(slot)
     this.shrinkHighWatermark()
     this.syncDefaultDrawGroups()
+    this.layoutVersion++
   }
 
   hasPendingUploads (): boolean {

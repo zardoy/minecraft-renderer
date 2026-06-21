@@ -139,6 +139,9 @@ export class ChunkMeshManager {
   private readonly _legacyCullBoxMin = new THREE.Vector3()
   private readonly _legacyCullBoxMax = new THREE.Vector3()
   private readonly _visibleSectionSpans: Array<{ key: string, distSq: number }> = []
+  /** Sections with geometry in global legacy opaque and/or blend buffers — cull/raycast scan only these. */
+  private readonly legacyCullSections = new Map<string, { worldX: number, worldY: number, worldZ: number }>()
+  private _lastCullFingerprint = ''
   /** Drives per-frame cull + span rebuild; cleared after updateSectionCullAndSort. */
   cullDirty = true
   private readonly _lastCullCamPos = new THREE.Vector3()
@@ -378,70 +381,23 @@ export class ChunkMeshManager {
     return this.activeSections.has(sectionKey)
   }
 
-  /**
-   * Shared section visibility + span groups for global legacy and cube buffers.
-   */
-  updateSectionCullAndSort (camera: THREE.Camera, cameraWorldX: number, cameraWorldY: number, cameraWorldZ: number): void {
-    this._legacyCullProjScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
-    this._legacyCullFrustum.setFromProjectionMatrix(this._legacyCullProjScreen)
+  private registerLegacyCullSection (sectionKey: string, worldX: number, worldY: number, worldZ: number): void {
+    this.legacyCullSections.set(sectionKey, { worldX, worldY, worldZ })
+  }
 
-    const visible = this._visibleSectionSpans
-    visible.length = 0
-
-    for (const [sectionKey, sectionObject] of Object.entries(this.sectionObjects)) {
-      if (sectionObject.worldX === undefined || !sectionObject.visible) continue
-      const { visible: inFrustum, distSq } = sectionIntersectsFrustum(
-        sectionObject.worldX,
-        sectionObject.worldY ?? 0,
-        sectionObject.worldZ ?? 0,
-        cameraWorldX,
-        cameraWorldY,
-        cameraWorldZ,
-        this._legacyCullFrustum,
-        this._legacyCullBox,
-        this._legacyCullBoxMin,
-        this._legacyCullBoxMax,
-      )
-      if (inFrustum) {
-        visible.push({ key: sectionKey, distSq })
-      }
+  private maybeUnregisterLegacyCullSection (sectionKey: string): void {
+    const inOpaque = this.globalLegacyBuffer?.hasSection(sectionKey) ?? false
+    const inBlend = this.globalLegacyBlendBuffer?.hasSection(sectionKey) ?? false
+    if (!inOpaque && !inBlend) {
+      this.legacyCullSections.delete(sectionKey)
     }
+  }
 
-    this.globalLegacyBuffer?.updateDrawSpans(visible, 'opaque')
-    this.globalLegacyBlendBuffer?.updateDrawSpans(visible, 'sortedBlend')
-
-    const gb = this.globalBlockBuffer
-    if (gb) {
-      const visibleSlots: Array<{ start: number, count: number }> = []
-      gb.forEachSectionSlot((key, slot) => {
-        const entry = this.shaderSectionRaycastBoxes.get(key)
-        if (!entry) {
-          return
-        }
-        const { visible: inFrustum } = sectionIntersectsFrustum(
-          entry.sectionCenterX,
-          entry.sectionCenterY,
-          entry.sectionCenterZ,
-          cameraWorldX,
-          cameraWorldY,
-          cameraWorldZ,
-          this._legacyCullFrustum,
-          this._legacyCullBox,
-          this._legacyCullBoxMin,
-          this._legacyCullBoxMax,
-        )
-        if (!inFrustum) {
-          return
-        }
-        const drawStart = gb.getSectionDrawStart(key)
-        if (drawStart !== undefined) {
-          visibleSlots.push({ start: drawStart, count: slot.count })
-        }
-      })
-      const spans = buildVisibleCubeSpans(visibleSlots, gb.getHighWatermark())
-      gb.setVisibleSpans(spans)
-    }
-
+  private updatePooledLegacyCullState (
+    cameraWorldX: number,
+    cameraWorldY: number,
+    cameraWorldZ: number,
+  ): void {
     for (const poolEntry of this.activeSections.values()) {
       const sectionKey = poolEntry.sectionKey
       if (!sectionKey) continue
@@ -462,6 +418,108 @@ export class ChunkMeshManager {
         this._legacyCullBoxMax,
       )
     }
+  }
+
+  /**
+   * Shared section visibility + span groups for global legacy and cube buffers.
+   */
+  updateSectionCullAndSort (camera: THREE.Camera, cameraWorldX: number, cameraWorldY: number, cameraWorldZ: number): void {
+    this._legacyCullProjScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+    this._legacyCullFrustum.setFromProjectionMatrix(this._legacyCullProjScreen)
+
+    const visible = this._visibleSectionSpans
+    visible.length = 0
+
+    for (const [sectionKey] of this.legacyCullSections) {
+      const sectionObject = this.sectionObjects[sectionKey]
+      if (!sectionObject?.visible || sectionObject.worldX === undefined) continue
+      const { visible: inFrustum, distSq } = sectionIntersectsFrustum(
+        sectionObject.worldX,
+        sectionObject.worldY ?? 0,
+        sectionObject.worldZ ?? 0,
+        cameraWorldX,
+        cameraWorldY,
+        cameraWorldZ,
+        this._legacyCullFrustum,
+        this._legacyCullBox,
+        this._legacyCullBoxMin,
+        this._legacyCullBoxMax,
+      )
+      if (inFrustum) {
+        visible.push({ key: sectionKey, distSq })
+      }
+    }
+
+    const opaqueBuf = this.globalLegacyBuffer
+    const blendBuf = this.globalLegacyBlendBuffer
+    const gb = this.globalBlockBuffer
+
+    const opaqueKeys: string[] = []
+    for (const entry of visible) {
+      if (opaqueBuf?.hasSection(entry.key)) opaqueKeys.push(entry.key)
+    }
+    opaqueKeys.sort()
+
+    const blendVisible = visible.filter(v => blendBuf?.hasSection(v.key))
+    blendVisible.sort((a, b) => b.distSq - a.distSq)
+    const blendKeys = blendVisible.map(v => v.key)
+
+    const cubeVisibleKeys: string[] = []
+    const visibleSlots: Array<{ start: number, count: number }> = []
+    if (gb) {
+      gb.forEachSectionSlot((key, slot) => {
+        const entry = this.shaderSectionRaycastBoxes.get(key)
+        if (!entry) {
+          return
+        }
+        const { visible: inFrustum } = sectionIntersectsFrustum(
+          entry.sectionCenterX,
+          entry.sectionCenterY,
+          entry.sectionCenterZ,
+          cameraWorldX,
+          cameraWorldY,
+          cameraWorldZ,
+          this._legacyCullFrustum,
+          this._legacyCullBox,
+          this._legacyCullBoxMin,
+          this._legacyCullBoxMax,
+        )
+        if (!inFrustum) {
+          return
+        }
+        cubeVisibleKeys.push(key)
+        const drawStart = gb.getSectionDrawStart(key)
+        if (drawStart !== undefined) {
+          visibleSlots.push({ start: drawStart, count: slot.count })
+        }
+      })
+    }
+    cubeVisibleKeys.sort()
+
+    const fingerprint = [
+      opaqueKeys.join(','),
+      blendKeys.join(','),
+      cubeVisibleKeys.join(','),
+      opaqueBuf?.getLayoutVersion() ?? 0,
+      blendBuf?.getLayoutVersion() ?? 0,
+      gb?.getLayoutVersion() ?? 0,
+    ].join('|')
+
+    if (fingerprint === this._lastCullFingerprint) {
+      this.updatePooledLegacyCullState(cameraWorldX, cameraWorldY, cameraWorldZ)
+      return
+    }
+    this._lastCullFingerprint = fingerprint
+
+    opaqueBuf?.updateDrawSpans(visible, 'opaque')
+    blendBuf?.updateDrawSpans(visible, 'sortedBlend')
+
+    if (gb) {
+      const spans = buildVisibleCubeSpans(visibleSlots, gb.getHighWatermark())
+      gb.setVisibleSpans(spans)
+    }
+
+    this.updatePooledLegacyCullState(cameraWorldX, cameraWorldY, cameraWorldZ)
   }
 
   markCullDirty (): void {
@@ -601,13 +659,16 @@ export class ChunkMeshManager {
       const wy = section.worldY
       const wz = section.worldZ
       if (wx !== undefined && wy !== undefined && wz !== undefined) {
-        this.getGlobalLegacyBuffer().addSection(
+        const added = this.getGlobalLegacyBuffer().addSection(
           sectionKey,
           { positions, colors, skyLights, blockLights, uvs, indices },
           wx,
           wy,
           wz,
         )
+        if (added) {
+          this.registerLegacyCullSection(sectionKey, wx, wy, wz)
+        }
       }
       delete section.deferredLegacyOpaque
     }
@@ -618,13 +679,16 @@ export class ChunkMeshManager {
       const wy = section.worldY
       const wz = section.worldZ
       if (wx !== undefined && wy !== undefined && wz !== undefined) {
-        this.getGlobalLegacyBlendBuffer().addSection(
+        const added = this.getGlobalLegacyBlendBuffer().addSection(
           sectionKey,
           { positions, colors, skyLights, blockLights, uvs, indices },
           wx,
           wy,
           wz,
         )
+        if (added) {
+          this.registerLegacyCullSection(sectionKey, wx, wy, wz)
+        }
       }
       delete section.deferredLegacyBlend
       section.hasBlendMesh = false
@@ -652,15 +716,13 @@ export class ChunkMeshManager {
     const far = raycaster.far
     const halfExtent = LEGACY_SECTION_HALF_EXTENT + 0.01
     const candidates: string[] = []
-    for (const [key, section] of Object.entries(this.sectionObjects)) {
-      if (section.worldX === undefined) continue
+    for (const [key] of this.legacyCullSections) {
+      const section = this.sectionObjects[key]
+      if (!section || section.worldX === undefined) continue
       const dx = section.worldX - origin.x
       const dy = (section.worldY ?? 0) - origin.y
       const dz = (section.worldZ ?? 0) - origin.z
       if (dx * dx + dy * dy + dz * dz > maxDistSq) continue
-      const inOpaque = this.globalLegacyBuffer?.hasSection(key) ?? false
-      const inBlend = this.globalLegacyBlendBuffer?.hasSection(key) ?? false
-      if (!inOpaque && !inBlend) continue
       if (!sectionAabbIntersectsRay(
         section.worldX,
         section.worldY ?? 0,
@@ -904,7 +966,9 @@ export class ChunkMeshManager {
           geometryData.sy,
           geometryData.sz,
         )
-        if (!added) {
+        if (added) {
+          this.registerLegacyCullSection(sectionKey, geometryData.sx, geometryData.sy, geometryData.sz)
+        } else {
           const poolEntry = this.acquirePooledSectionMesh(sectionKey)
           if (!poolEntry) return null
           legacyMesh = this.uploadLegacyPooledMesh(poolEntry, geometryData, geometryData.sx, geometryData.sy, geometryData.sz)
@@ -952,7 +1016,9 @@ export class ChunkMeshManager {
           geometryData.sy,
           geometryData.sz,
         )
-        if (!added) {
+        if (added) {
+          this.registerLegacyCullSection(sectionKey, geometryData.sx, geometryData.sy, geometryData.sz)
+        } else {
           console.warn(`ChunkMeshManager: blend invariant violation for section ${sectionKey}, using pooled mesh fallback`)
           const poolEntry = this.acquirePooledSectionMesh(sectionKey)
           if (!poolEntry) return null
@@ -1351,6 +1417,7 @@ export class ChunkMeshManager {
       this.globalBlockBuffer?.removeSection(sectionKey)
       this.globalLegacyBuffer?.removeSection(sectionKey)
       this.globalLegacyBlendBuffer?.removeSection(sectionKey)
+      this.maybeUnregisterLegacyCullSection(sectionKey)
       this.unregisterShaderSectionRaycastBox(sectionKey)
       this.markCullDirty()
       delete sectionObject.deferredLegacyOpaque
