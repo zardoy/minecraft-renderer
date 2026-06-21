@@ -1324,17 +1324,21 @@ export class WorldRendererThree extends WorldRendererCommon {
     }
     const globalLegacyBuffer = this.chunkMeshManager.globalLegacyBuffer
     if (globalLegacyBuffer) {
+      globalLegacyBuffer.setDebugOverlay(this.displayOptions.inWorldRenderingConfig.enableDebugOverlay)
       globalLegacyBuffer.compactStep()
       if (globalLegacyBuffer.hasPendingUploads()) {
         globalLegacyBuffer.uploadDirtyRange()
       }
+      globalLegacyBuffer.suppressThreeDraw()
     }
     const globalLegacyBlendBuffer = this.chunkMeshManager.globalLegacyBlendBuffer
     if (globalLegacyBlendBuffer) {
+      globalLegacyBlendBuffer.setDebugOverlay(this.displayOptions.inWorldRenderingConfig.enableDebugOverlay)
       globalLegacyBlendBuffer.compactStep()
       if (globalLegacyBlendBuffer.hasPendingUploads()) {
         globalLegacyBlendBuffer.uploadDirtyRange()
       }
+      globalLegacyBlendBuffer.suppressThreeDraw()
     }
     this.chunkMeshManager.setLegacyCameraOrigin(camX, camY, camZ)
     this.chunkMeshManager.updateCullDirtyFromCamera(cam, camX, camY, camZ)

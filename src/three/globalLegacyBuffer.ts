@@ -1,4 +1,13 @@
 import * as THREE from 'three'
+import {
+  createLegacyMultiDrawScratch,
+  detectLegacyMultiDrawCaps,
+  drawLegacySpans,
+  logLegacyMultiDrawTierOnce,
+  type LegacyDrawSpan,
+  type LegacyMultiDrawCaps,
+  type LegacyMultiDrawScratch,
+} from './legacyMultiDraw'
 import { computeCameraRelativeUniforms, type RenderOrigin } from './shaders/legacyBlockShader'
 
 const VERTS_PER_QUAD = 4
@@ -46,6 +55,8 @@ export type LegacySectionGeometryData = LegacySectionGeometry & {
   sz: number
 }
 
+export type { LegacyDrawSpan } from './legacyMultiDraw'
+
 /**
  * Single GPU mesh for legacy quads (opaque+cutout or transparent blend).
  * Camera-relative via per-vertex a_origin (relative to render origin) + u_originDelta uniforms.
@@ -71,6 +82,10 @@ export class GlobalLegacyBuffer {
   private renderOrigin: RenderOrigin = { x: 0, y: 0, z: 0 }
   private layoutVersion = 0
   private pendingMove: PendingMove | null = null
+  private visibleIndexSpans: LegacyDrawSpan[] = []
+  private readonly _drawScratch: LegacyMultiDrawScratch = createLegacyMultiDrawScratch()
+  private multiDrawCaps: LegacyMultiDrawCaps | null = null
+  private debugOverlay = false
 
   constructor (
     material: THREE.ShaderMaterial,
@@ -118,6 +133,38 @@ export class GlobalLegacyBuffer {
     this.mesh.position.set(0, 0, 0)
     scene.add(this.mesh)
     this.syncDefaultDrawGroups()
+
+    this.mesh.onAfterRender = (renderer, _scene, _camera, _geometry, material) => {
+      if (this.visibleIndexSpans.length === 0) return
+      const gl = renderer.getContext() as WebGL2RenderingContext
+      if (!this.multiDrawCaps) {
+        this.multiDrawCaps = detectLegacyMultiDrawCaps(gl)
+        logLegacyMultiDrawTierOnce(this.multiDrawCaps.tier, this.debugOverlay)
+      }
+      drawLegacySpans(gl, this.multiDrawCaps, this.visibleIndexSpans, this._drawScratch)
+    }
+  }
+
+  setDebugOverlay (enabled: boolean): void {
+    this.debugOverlay = enabled
+  }
+
+  /**
+   * Suppress three's full-buffer indexed draw; onAfterRender issues visible spans only.
+   * setDrawRange(0,0) skips bindingStates.setup — use a minimal non-zero range so
+   * program/VAO/ELEMENT_ARRAY_BUFFER stay bound while three draws ~nothing.
+   * Draws one triangle from index 0 (usually harmless; if quad 0 is culled, one stray tri).
+   */
+  suppressThreeDraw (): void {
+    this.mesh.geometry.setDrawRange(0, 3)
+  }
+
+  setVisibleIndexSpans (spans: LegacyDrawSpan[]): void {
+    this.visibleIndexSpans = spans
+  }
+
+  getVisibleIndexSpans (): readonly LegacyDrawSpan[] {
+    return this.visibleIndexSpans
   }
 
   private syncDefaultDrawGroups (): void {
@@ -245,11 +292,9 @@ export class GlobalLegacyBuffer {
   }
 
   updateDrawSpans (visible: VisibleSectionSpan[], mode: 'opaque' | 'sortedBlend'): void {
-    const geometry = this.mesh.geometry
-    geometry.clearGroups()
+    this.visibleIndexSpans = []
 
     if (this.highWatermark === 0) {
-      geometry.setDrawRange(0, 0)
       return
     }
 
@@ -258,21 +303,30 @@ export class GlobalLegacyBuffer {
     let visibleQuadCount = 0
 
     for (const entry of visible) {
+      const drawStart = this.getSectionDrawStart(entry.key)
       const slot = this.sectionSlots.get(entry.key)
-      if (!slot) continue
-      spans.push({ start: slot.start, count: slot.count })
+      if (drawStart === undefined || !slot) continue
+      spans.push({ start: drawStart, count: slot.count })
       visibleQuadCount += slot.count
     }
 
     if (spans.length === 0) {
-      geometry.setDrawRange(0, 0)
       return
+    }
+
+    const pushIndexSpan = (quadStart: number, quadCount: number): void => {
+      this.visibleIndexSpans.push({
+        indexStart: quadStart * INDICES_PER_QUAD,
+        indexCount: quadCount * INDICES_PER_QUAD,
+      })
     }
 
     if (mode === 'opaque') {
       if (visibleQuadCount >= this.highWatermark * FULL_DRAW_VISIBLE_FRACTION) {
-        geometry.addGroup(0, this.highWatermark * INDICES_PER_QUAD, 0)
-        geometry.setDrawRange(0, this.highWatermark * INDICES_PER_QUAD)
+        this.visibleIndexSpans.push({
+          indexStart: 0,
+          indexCount: this.highWatermark * INDICES_PER_QUAD,
+        })
         return
       }
 
@@ -281,18 +335,17 @@ export class GlobalLegacyBuffer {
       this.capOpaqueSpans(spans)
 
       for (const span of spans) {
-        geometry.addGroup(span.start * INDICES_PER_QUAD, span.count * INDICES_PER_QUAD, 0)
+        pushIndexSpan(span.start, span.count)
       }
     } else {
       visible.sort((a, b) => b.distSq - a.distSq)
       for (const entry of visible) {
+        const drawStart = this.getSectionDrawStart(entry.key)
         const slot = this.sectionSlots.get(entry.key)
-        if (!slot) continue
-        geometry.addGroup(slot.start * INDICES_PER_QUAD, slot.count * INDICES_PER_QUAD, 0)
+        if (drawStart === undefined || !slot) continue
+        pushIndexSpan(drawStart, slot.count)
       }
     }
-
-    geometry.setDrawRange(0, this.highWatermark * INDICES_PER_QUAD)
   }
 
   private mergeOpaqueSpans (spans: Array<{ start: number, count: number }>): void {
@@ -570,6 +623,7 @@ export class GlobalLegacyBuffer {
     this.highWatermark = 0
     this.pendingRanges.length = 0
     this.pendingMove = null
+    this.visibleIndexSpans = []
     this.syncDefaultDrawGroups()
   }
 

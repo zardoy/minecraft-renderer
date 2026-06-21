@@ -208,9 +208,9 @@ test('GlobalLegacyBuffer: updateDrawSpans opaque merges nearby spans', () => {
   buffer.addSection('b', geo, 16, 0, 0)
   buffer.updateDrawSpans([{ key: 'a', distSq: 1 }, { key: 'b', distSq: 4 }], 'opaque')
 
-  const groups = buffer.mesh.geometry.groups
-  expect(groups.length).toBe(1)
-  expect(groups[0]!.count).toBe(12)
+  const spans = buffer.getVisibleIndexSpans()
+  expect(spans.length).toBe(1)
+  expect(spans[0]!.indexCount).toBe(12)
 
   buffer.dispose()
   mat.dispose()
@@ -227,10 +227,10 @@ test('GlobalLegacyBuffer: updateDrawSpans opaque full draw when most quads visib
   buffer.addSection('c', geo, 32, 0, 0)
   buffer.updateDrawSpans([{ key: 'a', distSq: 1 }, { key: 'b', distSq: 2 }, { key: 'c', distSq: 3 }], 'opaque')
 
-  const groups = buffer.mesh.geometry.groups
-  expect(groups.length).toBe(1)
-  expect(groups[0]!.start).toBe(0)
-  expect(groups[0]!.count).toBe(18)
+  const spans = buffer.getVisibleIndexSpans()
+  expect(spans.length).toBe(1)
+  expect(spans[0]!.indexStart).toBe(0)
+  expect(spans[0]!.indexCount).toBe(18)
 
   buffer.dispose()
   mat.dispose()
@@ -249,10 +249,10 @@ test('GlobalLegacyBuffer: updateDrawSpans sortedBlend orders back-to-front', () 
     { key: 'far', distSq: 100 },
   ], 'sortedBlend')
 
-  const groups = buffer.mesh.geometry.groups
-  expect(groups.length).toBe(2)
-  expect(groups[0]!.start).toBe(6)
-  expect(groups[1]!.start).toBe(0)
+  const spans = buffer.getVisibleIndexSpans()
+  expect(spans.length).toBe(2)
+  expect(spans[0]!.indexStart).toBe(6)
+  expect(spans[1]!.indexStart).toBe(0)
 
   buffer.dispose()
   mat.dispose()
@@ -267,14 +267,13 @@ test('GlobalLegacyBuffer: updateDrawSpans skips missing keys', () => {
   buffer.addSection('a', geo, 0, 0, 0)
   buffer.updateDrawSpans([{ key: 'missing', distSq: 1 }], 'opaque')
 
-  expect(buffer.mesh.geometry.groups.length).toBe(0)
-  expect(buffer.mesh.geometry.drawRange.count).toBe(0)
+  expect(buffer.getVisibleIndexSpans().length).toBe(0)
 
   buffer.dispose()
   mat.dispose()
 })
 
-test('GlobalLegacyBuffer: reset clears groups', () => {
+test('GlobalLegacyBuffer: reset clears visible spans', () => {
   const scene = new THREE.Scene()
   const mat = createGlobalLegacyBlockMaterial()
   const buffer = new GlobalLegacyBuffer(mat, scene)
@@ -282,10 +281,10 @@ test('GlobalLegacyBuffer: reset clears groups', () => {
 
   buffer.addSection('a', geo, 0, 0, 0)
   buffer.updateDrawSpans([{ key: 'a', distSq: 1 }], 'opaque')
-  expect(buffer.mesh.geometry.groups.length).toBeGreaterThan(0)
+  expect(buffer.getVisibleIndexSpans().length).toBeGreaterThan(0)
 
   buffer.reset()
-  expect(buffer.mesh.geometry.groups.length).toBe(0)
+  expect(buffer.getVisibleIndexSpans().length).toBe(0)
 
   buffer.dispose()
   mat.dispose()
@@ -333,12 +332,12 @@ test('GlobalLegacyBuffer: updateDrawSpans opaque caps at MAX_OPAQUE_SPANS with f
 
   buffer.updateDrawSpans(visible, 'opaque')
 
-  const groups = buffer.mesh.geometry.groups
-  expect(groups.length).toBe(MAX_OPAQUE_SPANS)
+  const spans = buffer.getVisibleIndexSpans()
+  expect(spans.length).toBe(MAX_OPAQUE_SPANS)
 
   const covered = new Set<number>()
-  for (const group of groups) {
-    for (let idx = group.start; idx < group.start + group.count; idx++) {
+  for (const span of spans) {
+    for (let idx = span.indexStart; idx < span.indexStart + span.indexCount; idx++) {
       covered.add(idx)
     }
   }
@@ -431,7 +430,7 @@ test('GlobalLegacyBuffer: grow during in-flight move preserves section data', ()
   mat.dispose()
 })
 
-test('GlobalLegacyBuffer: finalize move bumps layoutVersion and relocates section', () => {
+test('GlobalLegacyBuffer: finalize move bumps layoutVersion and updates draw spans', () => {
   const scene = new THREE.Scene()
   const mat = createGlobalLegacyBlockMaterial()
   const buffer = new GlobalLegacyBuffer(mat, scene)
@@ -447,17 +446,57 @@ test('GlobalLegacyBuffer: finalize move bumps layoutVersion and relocates sectio
   expect(buffer.getPendingMove()).not.toBeNull()
   const versionAfterMove = buffer.getLayoutVersion()
 
+  const visible = [{ key: 'c', distSq: 1 }]
+  buffer.updateDrawSpans(visible, 'opaque')
+  expect(buffer.getVisibleIndexSpans()[0]!.indexStart).toBe(2 * 6)
+
   drainUploads(buffer)
   buffer.compactStep()
   expect(buffer.getPendingMove()).toBeNull()
   expect(buffer.getLayoutVersion()).toBe(versionAfterMove + 1)
-  expect(buffer.getSectionSlot('c')).toEqual({ start: 1, count: 1 })
 
-  const slotC = buffer.getSectionSlot('c')!
-  const indices = readSectionIndices(buffer, 'c')
-  expect(indices[0]).toBe(slotC.start * 4)
+  buffer.updateDrawSpans(visible, 'opaque')
+  expect(buffer.getVisibleIndexSpans()[0]!.indexStart).toBe(1 * 6)
 
   buffer.dispose()
   mat.dispose()
 })
 
+test('GlobalLegacyBuffer: sortedBlend accepts more than MAX_OPAQUE_SPANS sections', () => {
+  const scene = new THREE.Scene()
+  const mat = createGlobalLegacyBlockMaterial()
+  const sectionCount = MAX_OPAQUE_SPANS + 6
+  const buffer = new GlobalLegacyBuffer(mat, scene, {
+    initialCapacityQuads: sectionCount + 4,
+    growthIncrementQuads: 64,
+  })
+  const geo = makeQuadGeometry()
+  const visible: Array<{ key: string, distSq: number }> = []
+
+  for (let i = 0; i < sectionCount; i++) {
+    const key = `s${i}`
+    buffer.addSection(key, geo, i * 16, 0, 0)
+    visible.push({ key, distSq: sectionCount - i })
+  }
+
+  buffer.updateDrawSpans(visible, 'sortedBlend')
+  expect(buffer.getVisibleIndexSpans().length).toBe(sectionCount)
+
+  buffer.dispose()
+  mat.dispose()
+})
+
+test('GlobalLegacyBuffer: suppressThreeDraw uses minimal non-zero draw range', () => {
+  const scene = new THREE.Scene()
+  const mat = createGlobalLegacyBlockMaterial()
+  const buffer = new GlobalLegacyBuffer(mat, scene)
+  const geo = makeQuadGeometry()
+
+  buffer.addSection('a', geo, 0, 0, 0)
+  buffer.suppressThreeDraw()
+  expect(buffer.mesh.geometry.drawRange.start).toBe(0)
+  expect(buffer.mesh.geometry.drawRange.count).toBe(3)
+
+  buffer.dispose()
+  mat.dispose()
+})
