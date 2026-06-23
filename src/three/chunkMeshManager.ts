@@ -473,6 +473,9 @@ export class ChunkMeshManager {
     const visibleSlots: Array<{ start: number, count: number }> = []
     if (gb) {
       gb.forEachSectionSlot((key, slot) => {
+        const sectionObject = this.sectionObjects[key]
+        // Keep in sync with legacy gate (line 440).
+        if (!sectionObject?.visible) return
         const entry = this.shaderSectionRaycastBoxes.get(key)
         if (!entry) {
           return
@@ -1262,6 +1265,7 @@ export class ChunkMeshManager {
       sectionObject.visible = true
     }
     delete this.waitingChunksToDisplay[chunkKey]
+    this.markCullDirty()
   }
 
   // Re-check every parked entry; each has its own grace window via `ageMs`.
