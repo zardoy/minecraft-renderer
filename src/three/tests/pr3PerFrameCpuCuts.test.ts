@@ -224,9 +224,14 @@ test('updateSectionCullAndSort: same visible set skips span rebuild on camera mo
   manager.updateSectionCullAndSort(camera1, 8, 8, 20)
   expect(updateDrawSpansSpy).toHaveBeenCalledTimes(1)
 
+  while (blendBuffer.hasPendingUploads()) blendBuffer.uploadDirtyRange()
+
+  manager.updateSectionCullAndSort(camera1, 8, 8, 20)
+  expect(updateDrawSpansSpy).toHaveBeenCalledTimes(2)
+
   const camera2 = makeCamera(8, 8, 18)
   manager.updateSectionCullAndSort(camera2, 8, 8, 18)
-  expect(updateDrawSpansSpy).toHaveBeenCalledTimes(1)
+  expect(updateDrawSpansSpy).toHaveBeenCalledTimes(2)
 
   manager.cleanupSection(key)
   manager.dispose()

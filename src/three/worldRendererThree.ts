@@ -1346,6 +1346,9 @@ export class WorldRendererThree extends WorldRendererCommon {
       }
       globalLegacyBlendBuffer.suppressThreeDraw()
     }
+    if (this.chunkMeshManager.hasPendingBufferWork()) {
+      this.chunkMeshManager.markCullDirty()
+    }
     this.chunkMeshManager.setLegacyCameraOrigin(camX, camY, camZ)
     this.chunkMeshManager.updateCullDirtyFromCamera(cam, camX, camY, camZ)
     if (this.chunkMeshManager.cullDirty) {

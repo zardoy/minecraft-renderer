@@ -189,6 +189,8 @@ test('ChunkMeshManager: hidden section excluded from draw spans', () => {
   expect(manager.globalLegacyBlendBuffer?.getVisibleIndexSpans().length).toBe(0)
 
   section.visible = true
+  const blendBuf = manager.globalLegacyBlendBuffer!
+  while (blendBuf.hasPendingUploads()) blendBuf.uploadDirtyRange()
   manager.updateSectionCullAndSort(camera, 8, 8, 20)
   expect(manager.globalLegacyBlendBuffer?.getVisibleIndexSpans().length).toBeGreaterThan(0)
 

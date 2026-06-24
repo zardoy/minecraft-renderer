@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import * as THREE from 'three'
-import { GlobalLegacyBuffer, MAX_OPAQUE_SPANS } from '../globalLegacyBuffer'
+import { GlobalLegacyBuffer, MAX_OPAQUE_SPANS, carveSpansAroundPendingRanges } from '../globalLegacyBuffer'
 import { createGlobalLegacyBlockMaterial } from '../shaders/legacyBlockShader'
 
 function makeQuadGeometry (): {
@@ -206,6 +206,7 @@ test('GlobalLegacyBuffer: updateDrawSpans opaque merges nearby spans', () => {
 
   buffer.addSection('a', geo, 0, 0, 0)
   buffer.addSection('b', geo, 16, 0, 0)
+  drainUploads(buffer)
   buffer.updateDrawSpans([{ key: 'a', distSq: 1 }, { key: 'b', distSq: 4 }], 'opaque')
 
   const spans = buffer.getVisibleIndexSpans()
@@ -225,6 +226,7 @@ test('GlobalLegacyBuffer: updateDrawSpans opaque full draw when most quads visib
   buffer.addSection('a', geo, 0, 0, 0)
   buffer.addSection('b', geo, 16, 0, 0)
   buffer.addSection('c', geo, 32, 0, 0)
+  drainUploads(buffer)
   buffer.updateDrawSpans([{ key: 'a', distSq: 1 }, { key: 'b', distSq: 2 }, { key: 'c', distSq: 3 }], 'opaque')
 
   const spans = buffer.getVisibleIndexSpans()
@@ -244,6 +246,7 @@ test('GlobalLegacyBuffer: updateDrawSpans sortedBlend orders back-to-front', () 
 
   buffer.addSection('near', geo, 0, 0, 0)
   buffer.addSection('far', geo, 16, 0, 0)
+  drainUploads(buffer)
   buffer.updateDrawSpans([
     { key: 'near', distSq: 1 },
     { key: 'far', distSq: 100 },
@@ -265,6 +268,7 @@ test('GlobalLegacyBuffer: updateDrawSpans skips missing keys', () => {
   const geo = makeQuadGeometry()
 
   buffer.addSection('a', geo, 0, 0, 0)
+  drainUploads(buffer)
   buffer.updateDrawSpans([{ key: 'missing', distSq: 1 }], 'opaque')
 
   expect(buffer.getVisibleIndexSpans().length).toBe(0)
@@ -280,6 +284,7 @@ test('GlobalLegacyBuffer: reset clears visible spans', () => {
   const geo = makeQuadGeometry()
 
   buffer.addSection('a', geo, 0, 0, 0)
+  drainUploads(buffer)
   buffer.updateDrawSpans([{ key: 'a', distSq: 1 }], 'opaque')
   expect(buffer.getVisibleIndexSpans().length).toBeGreaterThan(0)
 
@@ -290,7 +295,7 @@ test('GlobalLegacyBuffer: reset clears visible spans', () => {
   mat.dispose()
 })
 
-test('GlobalLegacyBuffer: updateDrawSpans opaque caps at MAX_OPAQUE_SPANS with full coverage', () => {
+test('GlobalLegacyBuffer: updateDrawSpans opaque does not bridge interior gaps', () => {
   const scene = new THREE.Scene()
   const mat = createGlobalLegacyBlockMaterial()
   const visibleSectionCount = MAX_OPAQUE_SPANS + 5
@@ -330,10 +335,11 @@ test('GlobalLegacyBuffer: updateDrawSpans opaque caps at MAX_OPAQUE_SPANS with f
     expect(next.start - (cur.start + cur.count)).toBeGreaterThan(256)
   }
 
+  drainUploads(buffer)
   buffer.updateDrawSpans(visible, 'opaque')
 
   const spans = buffer.getVisibleIndexSpans()
-  expect(spans.length).toBe(MAX_OPAQUE_SPANS)
+  expect(spans.length).toBe(visibleSectionCount)
 
   const covered = new Set<number>()
   for (const span of spans) {
@@ -479,8 +485,203 @@ test('GlobalLegacyBuffer: sortedBlend accepts more than MAX_OPAQUE_SPANS section
     visible.push({ key, distSq: sectionCount - i })
   }
 
+  drainUploads(buffer)
   buffer.updateDrawSpans(visible, 'sortedBlend')
   expect(buffer.getVisibleIndexSpans().length).toBe(sectionCount)
+
+  buffer.dispose()
+  mat.dispose()
+})
+
+test('GlobalLegacyBuffer: new section gated until upload completes', () => {
+  const scene = new THREE.Scene()
+  const mat = createGlobalLegacyBlockMaterial()
+  const buffer = new GlobalLegacyBuffer(mat, scene)
+  const geo = makeQuadGeometry()
+
+  buffer.addSection('a', geo, 0, 0, 0)
+  expect(buffer.getSectionDrawStart('a')).toBeUndefined()
+  buffer.updateDrawSpans([{ key: 'a', distSq: 1 }], 'opaque')
+  expect(buffer.getVisibleIndexSpans().length).toBe(0)
+
+  drainUploads(buffer)
+  expect(buffer.getSectionDrawStart('a')).toBe(0)
+  buffer.updateDrawSpans([{ key: 'a', distSq: 1 }], 'opaque')
+  expect(buffer.getVisibleIndexSpans().length).toBe(1)
+
+  buffer.dispose()
+  mat.dispose()
+})
+
+test('GlobalLegacyBuffer: remesh double-buffers old geometry until upload', () => {
+  const scene = new THREE.Scene()
+  const mat = createGlobalLegacyBlockMaterial()
+  const buffer = new GlobalLegacyBuffer(mat, scene)
+  const geo = makeQuadGeometry()
+
+  buffer.addSection('a', geo, 0, 0, 0)
+  drainUploads(buffer)
+  const oldStart = buffer.getSectionSlot('a')!.start
+
+  buffer.addSection('a', geo, 16, 0, 0)
+  expect(buffer.getSectionDrawStart('a')).toBe(oldStart)
+  expect(buffer.hasPendingReplace()).toBe(true)
+
+  const indexAttr = buffer.mesh.geometry.index!.array as Uint32Array
+  expect(indexAttr[oldStart * 6 + 1]).not.toBe(0)
+
+  buffer.updateDrawSpans([{ key: 'a', distSq: 1 }], 'opaque')
+  expect(buffer.getVisibleIndexSpans()[0]!.indexStart).toBe(oldStart * 6)
+
+  const epochBefore = buffer.getUploadEpoch()
+  drainUploads(buffer)
+  buffer.compactStep()
+  expect(buffer.hasPendingReplace()).toBe(false)
+  expect(buffer.getUploadEpoch()).toBeGreaterThan(epochBefore)
+  finishCurrentMove(buffer)
+  expect(buffer.getSectionDrawStart('a')).toBe(buffer.getSectionSlot('a')!.start)
+
+  buffer.dispose()
+  mat.dispose()
+})
+
+test('GlobalLegacyBuffer: full-draw blocked when uploads pending', () => {
+  const scene = new THREE.Scene()
+  const mat = createGlobalLegacyBlockMaterial()
+  const buffer = new GlobalLegacyBuffer(mat, scene, { initialCapacityQuads: 8, growthIncrementQuads: 8 })
+  const geo = makeQuadGeometry()
+
+  buffer.addSection('a', geo, 0, 0, 0)
+  buffer.addSection('b', geo, 16, 0, 0)
+  buffer.addSection('c', geo, 32, 0, 0)
+  drainUploads(buffer)
+  buffer.addSection('d', geo, 48, 0, 0)
+
+  buffer.updateDrawSpans([
+    { key: 'a', distSq: 1 },
+    { key: 'b', distSq: 2 },
+    { key: 'c', distSq: 3 },
+  ], 'opaque')
+
+  const spans = buffer.getVisibleIndexSpans()
+  expect(spans.length).toBeGreaterThan(0)
+  expect(spans.some(s => s.indexStart === 0 && s.indexCount === buffer.getHighWatermark() * 6)).toBe(false)
+  expect(spans.reduce((sum, s) => sum + s.indexCount, 0)).toBe(18)
+
+  buffer.dispose()
+  mat.dispose()
+})
+
+test('GlobalLegacyBuffer: full-draw allowed when buffer is clean', () => {
+  const scene = new THREE.Scene()
+  const mat = createGlobalLegacyBlockMaterial()
+  const buffer = new GlobalLegacyBuffer(mat, scene, { initialCapacityQuads: 4, growthIncrementQuads: 4 })
+  const geo = makeQuadGeometry()
+
+  buffer.addSection('a', geo, 0, 0, 0)
+  buffer.addSection('b', geo, 16, 0, 0)
+  buffer.addSection('c', geo, 32, 0, 0)
+  drainUploads(buffer)
+
+  buffer.updateDrawSpans([
+    { key: 'a', distSq: 1 },
+    { key: 'b', distSq: 2 },
+    { key: 'c', distSq: 3 },
+  ], 'opaque')
+
+  const spans = buffer.getVisibleIndexSpans()
+  expect(spans.length).toBe(1)
+  expect(spans[0]!.indexStart).toBe(0)
+  expect(spans[0]!.indexCount).toBe(buffer.getHighWatermark() * 6)
+
+  buffer.dispose()
+  mat.dispose()
+})
+
+test('GlobalLegacyBuffer: uploadEpoch increments on partial upload advance', () => {
+  const scene = new THREE.Scene()
+  const mat = createGlobalLegacyBlockMaterial()
+  const buffer = new GlobalLegacyBuffer(mat, scene)
+  const geo = makeQuadGeometry()
+
+  for (let i = 0; i < 6000; i++) {
+    buffer.addSection(`s${i}`, geo, i * 16, 0, 0)
+  }
+  const epoch0 = buffer.getUploadEpoch()
+  buffer.uploadDirtyRange()
+  expect(buffer.getUploadEpoch()).toBe(epoch0 + 1)
+  expect(buffer.hasPendingUploads()).toBe(true)
+  buffer.uploadDirtyRange()
+  expect(buffer.getUploadEpoch()).toBe(epoch0 + 2)
+
+  buffer.dispose()
+  mat.dispose()
+})
+
+test('GlobalLegacyBuffer: carveSpansAroundPendingRanges splits merged span', () => {
+  const carved = carveSpansAroundPendingRanges(
+    [{ start: 0, count: 100 }],
+    [{ start: 40, end: 59 }],
+  )
+  expect(carved).toEqual([
+    { start: 0, count: 40 },
+    { start: 60, count: 40 },
+  ])
+})
+
+test('GlobalLegacyBuffer: uploadEpoch increments when dirty range drains', () => {
+  const scene = new THREE.Scene()
+  const mat = createGlobalLegacyBlockMaterial()
+  const buffer = new GlobalLegacyBuffer(mat, scene)
+  const geo = makeQuadGeometry()
+
+  const epoch0 = buffer.getUploadEpoch()
+  buffer.addSection('a', geo, 0, 0, 0)
+  drainUploads(buffer)
+  expect(buffer.getUploadEpoch()).toBeGreaterThan(epoch0)
+
+  buffer.dispose()
+  mat.dispose()
+})
+
+test('GlobalLegacyBuffer: mergeOpaqueSpans only merges adjacent slots', () => {
+  const scene = new THREE.Scene()
+  const mat = createGlobalLegacyBlockMaterial()
+  const buffer = new GlobalLegacyBuffer(mat, scene, { initialCapacityQuads: 16, growthIncrementQuads: 8 })
+  const geo = makeQuadGeometry()
+
+  buffer.addSection('a', geo, 0, 0, 0)
+  buffer.addSection('b', geo, 16, 0, 0)
+  buffer.addSection('c', geo, 32, 0, 0)
+  drainUploads(buffer)
+
+  buffer.updateDrawSpans([{ key: 'a', distSq: 1 }, { key: 'b', distSq: 2 }, { key: 'c', distSq: 3 }], 'opaque')
+  expect(buffer.getVisibleIndexSpans().length).toBe(1)
+
+  buffer.dispose()
+  mat.dispose()
+})
+
+test('GlobalLegacyBuffer: mergeOpaqueSpans skips gap with pending upload', () => {
+  const scene = new THREE.Scene()
+  const mat = createGlobalLegacyBlockMaterial()
+  const buffer = new GlobalLegacyBuffer(mat, scene, { initialCapacityQuads: 8, growthIncrementQuads: 8 })
+  const geo = makeQuadGeometry()
+
+  buffer.addSection('a', geo, 0, 0, 0)
+  buffer.addSection('b', geo, 16, 0, 0)
+  buffer.addSection('c', geo, 32, 0, 0)
+  drainUploads(buffer)
+  buffer.removeSection('b')
+  drainUploads(buffer)
+
+  buffer.addSection('b', geo, 16, 0, 0)
+  buffer.updateDrawSpans([{ key: 'a', distSq: 1 }, { key: 'c', distSq: 2 }], 'opaque')
+
+  const spans = buffer.getVisibleIndexSpans()
+  expect(spans.length).toBe(2)
+  expect(spans[0]!.indexCount).toBe(6)
+  expect(spans[1]!.indexCount).toBe(6)
 
   buffer.dispose()
   mat.dispose()
