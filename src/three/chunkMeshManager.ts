@@ -142,6 +142,7 @@ export class ChunkMeshManager {
   /** Sections with geometry in global legacy opaque and/or blend buffers — cull/raycast scan only these. */
   private readonly legacyCullSections = new Map<string, { worldX: number, worldY: number, worldZ: number }>()
   private _lastCullFingerprint = ''
+  private lastBufferStateKey = ''
   /** Drives per-frame cull + span rebuild; cleared after updateSectionCullAndSort. */
   cullDirty = true
   private readonly _lastCullCamPos = new THREE.Vector3()
@@ -534,7 +535,27 @@ export class ChunkMeshManager {
       gb.setVisibleSpans(spans)
     }
 
+    this.lastBufferStateKey = this.bufferStateKey()
     this.updatePooledLegacyCullState(cameraWorldX, cameraWorldY, cameraWorldZ)
+  }
+
+  private bufferStateKey (): string {
+    const b = this.globalBlockBuffer
+    const o = this.globalLegacyBuffer
+    const bl = this.globalLegacyBlendBuffer
+    return [
+      o?.getLayoutVersion() ?? 0, o?.getUploadEpoch() ?? 0,
+      bl?.getLayoutVersion() ?? 0, bl?.getUploadEpoch() ?? 0,
+      b?.getLayoutVersion() ?? 0, b?.getUploadEpoch() ?? 0,
+    ].join('|')
+  }
+
+  /** Mark cull dirty when any buffer's layout or upload state changed since the last cull. */
+  markCullDirtyIfBufferStateChanged (): void {
+    const key = this.bufferStateKey()
+    if (key !== this.lastBufferStateKey) {
+      this.markCullDirty()
+    }
   }
 
   markCullDirty (): void {
@@ -1817,6 +1838,7 @@ export class ChunkMeshManager {
     this.activeSections.clear()
     this.chunkBoxMaterial.dispose()
     this.shaderSectionRaycastBoxes.clear()
+    this.lastBufferStateKey = ''
     this.globalBlockBuffer?.dispose()
     this.globalBlockBuffer = null
     this.globalLegacyBuffer?.dispose()

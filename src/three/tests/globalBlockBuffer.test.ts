@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import * as THREE from 'three'
 import { GlobalBlockBuffer } from '../globalBlockBuffer'
+import { buildVisibleCubeSpans } from '../cubeDrawSpans'
 import { createCubeBlockMaterial } from '../shaders/cubeBlockShader'
 import { packWord3 } from '../../wasm-mesher/bridge/shaderCubeBridge'
 
@@ -71,6 +72,51 @@ test('GlobalBlockBuffer: remesh double-buffers old geometry until upload', () =>
   finishCurrentMove(buffer)
   expect(buffer.getSectionDrawStart('a')).toBe(buffer.getSectionSlot('a')!.start)
   expect(w0[buffer.getSectionSlot('a')!.start]).toBe(20)
+
+  buffer.dispose()
+  mat.dispose()
+})
+
+test('GlobalBlockBuffer: remesh before previous upload completes keeps fully-uploaded fallback', () => {
+  const scene = new THREE.Scene()
+  const mat = createCubeBlockMaterial()
+  const buffer = new GlobalBlockBuffer(mat, scene)
+
+  buffer.addSection('a', makeSectionWords([10]), 1)
+  drainUploads(buffer)
+  buffer.compactStep()
+  const slotA = buffer.getSectionSlot('a')!.start
+
+  buffer.addSection('a', makeSectionWords([20]), 1)
+  expect(buffer.hasPendingReplace()).toBe(true)
+  expect(buffer.hasPendingUploads()).toBe(true)
+
+  buffer.addSection('a', makeSectionWords([30]), 1)
+
+  const drawStart = buffer.getSectionDrawStart('a')
+  const drawCount = buffer.getSectionDrawCount('a')!
+  expect(drawStart).toBe(slotA)
+  expect(buffer.isRangeFullyUploaded(drawStart!, drawStart! + drawCount - 1)).toBe(true)
+
+  const spans = buildVisibleCubeSpans(
+    [{ start: drawStart!, count: drawCount }],
+    buffer.getHighWatermark(),
+    false,
+    (start, end) => buffer.isRangeFullyUploaded(start, end),
+    buffer.getPendingDirtyRanges(),
+  )
+  expect(spans.length).toBeGreaterThan(0)
+  expect(spans.some(s => s.start <= drawStart! && s.start + s.count > drawStart!)).toBe(true)
+
+  const w0 = buffer.mesh.geometry.getAttribute('a_w0').array as Uint32Array
+  expect(w0[slotA]).toBe(10)
+
+  drainUploads(buffer)
+  buffer.compactStep()
+  finishCurrentMove(buffer)
+  const slotC = buffer.getSectionSlot('a')!.start
+  expect(buffer.getSectionDrawStart('a')).toBe(slotC)
+  expect(w0[slotC]).toBe(30)
 
   buffer.dispose()
   mat.dispose()

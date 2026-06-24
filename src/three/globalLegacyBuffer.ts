@@ -260,17 +260,20 @@ export class GlobalLegacyBuffer {
     const isRemesh = this.sectionSlots.has(sectionKey)
     let previousSlot: { start: number, count: number } | undefined
     if (isRemesh) {
-      if (this.pendingReplace.has(sectionKey)) {
-        const pr = this.pendingReplace.get(sectionKey)!
-        this.zeroAndFreeSlot(pr.oldStart, pr.oldCount)
+      const currentSlot = this.sectionSlots.get(sectionKey)!
+      const inflightReplace = this.pendingReplace.get(sectionKey)
+      const inflightMove = this.pendingMove?.key === sectionKey ? this.pendingMove : undefined
+      if (inflightReplace) {
+        this.zeroAndFreeSlot(currentSlot.start, currentSlot.count)
+        previousSlot = { start: inflightReplace.oldStart, count: inflightReplace.oldCount }
         this.pendingReplace.delete(sectionKey)
-      }
-      if (this.pendingMove?.key === sectionKey) {
-        const { oldStart, count } = this.pendingMove
-        this.zeroAndFreeSlot(oldStart, count)
+      } else if (inflightMove) {
+        this.zeroAndFreeSlot(currentSlot.start, currentSlot.count)
+        previousSlot = { start: inflightMove.oldStart, count: inflightMove.count }
         this.pendingMove = null
+      } else {
+        previousSlot = currentSlot
       }
-      previousSlot = this.sectionSlots.get(sectionKey)!
     }
 
     if (quadCount > this.capacityQuads) {

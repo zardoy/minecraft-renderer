@@ -268,6 +268,95 @@ function drainLegacyUploads (buffer: GlobalLegacyBuffer): void {
   while (buffer.hasPendingUploads()) buffer.uploadDirtyRange()
 }
 
+function simulateRenderCullGate (
+  manager: ChunkMeshManager,
+  camera: THREE.PerspectiveCamera,
+  x: number,
+  y: number,
+  z: number,
+): void {
+  for (const buf of [manager.globalLegacyBuffer, manager.globalLegacyBlendBuffer, manager.globalBlockBuffer]) {
+    if (!buf) continue
+    buf.compactStep()
+    if (buf.hasPendingUploads()) buf.uploadDirtyRange()
+  }
+  manager.markCullDirtyIfBufferStateChanged()
+  if (manager.cullDirty) {
+    manager.updateSectionCullAndSort(camera, x, y, z)
+    manager.clearCullDirty()
+  }
+}
+
+test('markCullDirtyIfBufferStateChanged: finalize layout bump marks cull dirty', () => {
+  const manager = createManager()
+  const key = '0,0,0'
+  manager.updateSection(key, makeOpaqueOnlyGeometry(8, 8, 8))
+
+  const opaqueBuf = manager.globalLegacyBuffer!
+  drainLegacyUploads(opaqueBuf)
+
+  const camera = makeCamera(8, 8, 20)
+  manager.updateSectionCullAndSort(camera, 8, 8, 20)
+  manager.clearCullDirty()
+
+  opaqueBuf.addSection(
+    key,
+    {
+      positions: makeQuadArrays().positions,
+      colors: makeQuadArrays().colors,
+      skyLights: makeQuadArrays().skyLights,
+      blockLights: makeQuadArrays().blockLights,
+      uvs: makeQuadArrays().uvs,
+      indices: makeQuadArrays().indices,
+    },
+    16, 8, 8,
+  )
+  drainLegacyUploads(opaqueBuf)
+  opaqueBuf.compactStep()
+  expect(opaqueBuf.hasPendingReplace()).toBe(false)
+
+  manager.markCullDirtyIfBufferStateChanged()
+  expect(manager.cullDirty).toBe(true)
+
+  manager.cleanupSection(key)
+  manager.dispose()
+})
+
+test('simulateRenderCullGate: finalize remesh refreshes visible spans without camera move', () => {
+  const manager = createManager()
+  const key = '0,0,0'
+  const camera = makeCamera(8, 8, 20)
+
+  manager.updateSection(key, makeOpaqueOnlyGeometry(8, 8, 8))
+  const opaqueBuf = manager.globalLegacyBuffer!
+  drainLegacyUploads(opaqueBuf)
+  simulateRenderCullGate(manager, camera, 8, 8, 20)
+
+  const slotA = opaqueBuf.getSectionSlot(key)!.start
+  opaqueBuf.updateDrawSpans([{ key, distSq: 1 }], 'opaque')
+  expect(opaqueBuf.getVisibleIndexSpans()[0]!.indexStart).toBe(slotA * 6)
+
+  manager.updateSection(key, makeOpaqueOnlyGeometry(16, 8, 8))
+  for (let i = 0; i < 32 && (
+    manager.hasPendingBufferWork()
+    || opaqueBuf.hasPendingReplace()
+    || opaqueBuf.hasPendingUploads()
+  ); i++) {
+    simulateRenderCullGate(manager, camera, 8, 8, 20)
+  }
+
+  expect(opaqueBuf.hasPendingReplace()).toBe(false)
+  expect(opaqueBuf.hasPendingUploads()).toBe(false)
+
+  const drawStart = opaqueBuf.getSectionDrawStart(key)!
+  const spans = opaqueBuf.getVisibleIndexSpans()
+  expect(spans.length).toBeGreaterThan(0)
+  expect(spans[0]!.indexStart).toBe(drawStart * 6)
+
+  manager.cleanupSection(key)
+  manager.dispose()
+})
+
 test('updateSectionCullAndSort: defrag finalize forces span rebuild with static camera', () => {
   const manager = createManager()
   const keys = ['0,0,0', '1,0,0', '2,0,0'] as const

@@ -545,6 +545,47 @@ test('GlobalLegacyBuffer: remesh double-buffers old geometry until upload', () =
   mat.dispose()
 })
 
+test('GlobalLegacyBuffer: remesh before previous upload completes keeps fully-uploaded fallback', () => {
+  const scene = new THREE.Scene()
+  const mat = createGlobalLegacyBlockMaterial()
+  const buffer = new GlobalLegacyBuffer(mat, scene)
+  const geo = makeQuadGeometry()
+
+  buffer.addSection('a', geo, 0, 0, 0)
+  drainUploads(buffer)
+  buffer.compactStep()
+  const slotA = buffer.getSectionSlot('a')!.start
+
+  buffer.addSection('a', geo, 16, 0, 0)
+  expect(buffer.hasPendingReplace()).toBe(true)
+  expect(buffer.hasPendingUploads()).toBe(true)
+
+  buffer.addSection('a', geo, 32, 0, 0)
+
+  const drawStart = buffer.getSectionDrawStart('a')
+  const drawCount = buffer.getSectionDrawCount('a')!
+  expect(drawStart).toBe(slotA)
+  expect(buffer.isRangeFullyUploaded(drawStart!, drawStart! + drawCount - 1)).toBe(true)
+
+  buffer.updateDrawSpans([{ key: 'a', distSq: 1 }], 'opaque')
+  const spans = buffer.getVisibleIndexSpans()
+  expect(spans.length).toBeGreaterThan(0)
+  expect(spans.some(s => s.indexStart <= slotA * 6 && s.indexStart + s.indexCount > slotA * 6)).toBe(true)
+
+  const indexAttr = buffer.mesh.geometry.index!.array as Uint32Array
+  expect(indexAttr[slotA * 6 + 1]).not.toBe(0)
+
+  drainUploads(buffer)
+  buffer.compactStep()
+  finishCurrentMove(buffer)
+  const slotC = buffer.getSectionSlot('a')!.start
+  expect(buffer.getSectionDrawStart('a')).toBe(slotC)
+  expect(indexAttr[slotC * 6 + 1]).not.toBe(0)
+
+  buffer.dispose()
+  mat.dispose()
+})
+
 test('GlobalLegacyBuffer: full-draw blocked when uploads pending', () => {
   const scene = new THREE.Scene()
   const mat = createGlobalLegacyBlockMaterial()
