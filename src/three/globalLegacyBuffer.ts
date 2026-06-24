@@ -1,4 +1,13 @@
 import * as THREE from 'three'
+import {
+  createLegacyMultiDrawScratch,
+  detectLegacyMultiDrawCaps,
+  drawLegacySpans,
+  logLegacyMultiDrawTierOnce,
+  type LegacyDrawSpan,
+  type LegacyMultiDrawCaps,
+  type LegacyMultiDrawScratch
+} from './legacyMultiDraw'
 import { computeCameraRelativeUniforms, type RenderOrigin } from './shaders/legacyBlockShader'
 
 const VERTS_PER_QUAD = 4
@@ -10,10 +19,77 @@ const FLOATS_PER_LIGHT_VERT = 1
 const DEFAULT_INITIAL_CAPACITY_QUADS = 128_000
 const DEFAULT_GROWTH_INCREMENT_QUADS = 128_000
 const MAX_UPLOAD_QUADS_PER_FRAME = 5_000
+const FRAGMENTATION_THRESHOLD = 0.25
+
+type PendingMove = { key: string; oldStart: number; newStart: number; count: number }
+type PendingReplace = { oldStart: number; oldCount: number }
+
+/** CPU bytes per allocated quad slot (all legacy vertex/index attrs). */
+export const LEGACY_BYTES_PER_QUAD = VERTS_PER_QUAD * (FLOATS_PER_VERT * 3 + FLOATS_PER_LIGHT_VERT * 2 + FLOATS_PER_UV_VERT) * 4 + INDICES_PER_QUAD * 4
 
 export const FULL_DRAW_VISIBLE_FRACTION = 0.75
-export const SPAN_GAP_TOLERANCE_QUADS = 256
+/** Initial multi_draw scratch size; arrays auto-grow — not a draw-call cap. */
 export const MAX_OPAQUE_SPANS = 64
+
+/** Dev assert: every quad in draw spans must lie in a live section's drawable range. */
+export function assertDrawSpansWithinLiveRanges(
+  spans: ReadonlyArray<{ start: number; count: number }>,
+  liveRanges: ReadonlyArray<{ start: number; count: number }>,
+  bufferName: string
+): void {
+  for (const span of spans) {
+    for (let q = span.start; q < span.start + span.count; q++) {
+      let inLive = false
+      for (const live of liveRanges) {
+        if (q >= live.start && q < live.start + live.count) {
+          inLive = true
+          break
+        }
+      }
+      if (!inLive) {
+        console.error('[GlobalLegacyBuffer] draw span covers non-live quad', {
+          buffer: bufferName,
+          quad: q,
+          span,
+          liveRanges
+        })
+      }
+    }
+  }
+}
+
+export type DirtyRange = { start: number; end: number }
+
+/** Split draw spans to exclude quad/face ranges still in pendingRanges (not yet on GPU). */
+export function carveSpansAroundPendingRanges(
+  spans: Array<{ start: number; count: number }>,
+  pendingRanges: ReadonlyArray<DirtyRange>
+): Array<{ start: number; count: number }> {
+  if (pendingRanges.length === 0) return spans
+  const out: Array<{ start: number; count: number }> = []
+  for (const span of spans) {
+    let segments: Array<{ start: number; count: number }> = [span]
+    for (const pr of pendingRanges) {
+      const next: Array<{ start: number; count: number }> = []
+      for (const seg of segments) {
+        const segEnd = seg.start + seg.count - 1
+        if (pr.end < seg.start || pr.start > segEnd) {
+          next.push(seg)
+          continue
+        }
+        if (pr.start > seg.start) {
+          next.push({ start: seg.start, count: pr.start - seg.start })
+        }
+        if (pr.end < segEnd) {
+          next.push({ start: pr.end + 1, count: segEnd - pr.end })
+        }
+      }
+      segments = next
+    }
+    out.push(...segments)
+  }
+  return out.filter(s => s.count > 0)
+}
 
 export type GlobalLegacyBufferOptions = {
   name?: string
@@ -38,6 +114,8 @@ export type LegacySectionGeometryData = LegacySectionGeometry & {
   sz: number
 }
 
+export type { LegacyDrawSpan } from './legacyMultiDraw'
+
 /**
  * Single GPU mesh for legacy quads (opaque+cutout or transparent blend).
  * Camera-relative via per-vertex a_origin (relative to render origin) + u_originDelta uniforms.
@@ -61,6 +139,14 @@ export class GlobalLegacyBuffer {
   private pendingRanges: Array<{ start: number; end: number }> = []
   private readonly _spanScratch: Array<{ start: number; count: number }> = []
   private renderOrigin: RenderOrigin = { x: 0, y: 0, z: 0 }
+  private layoutVersion = 0
+  private pendingMove: PendingMove | null = null
+  private readonly pendingReplace = new Map<string, PendingReplace>()
+  private uploadEpoch = 0
+  private visibleIndexSpans: LegacyDrawSpan[] = []
+  private readonly _drawScratch: LegacyMultiDrawScratch = createLegacyMultiDrawScratch()
+  private multiDrawCaps: LegacyMultiDrawCaps | null = null
+  private debugOverlay = false
 
   constructor(material: THREE.ShaderMaterial, scene: THREE.Object3D, opts?: GlobalLegacyBufferOptions) {
     this.material = material
@@ -104,6 +190,38 @@ export class GlobalLegacyBuffer {
     this.mesh.position.set(0, 0, 0)
     scene.add(this.mesh)
     this.syncDefaultDrawGroups()
+
+    this.mesh.onAfterRender = (renderer, _scene, _camera, _geometry, material) => {
+      if (this.visibleIndexSpans.length === 0) return
+      const gl = renderer.getContext() as WebGL2RenderingContext
+      if (!this.multiDrawCaps) {
+        this.multiDrawCaps = detectLegacyMultiDrawCaps(gl)
+        logLegacyMultiDrawTierOnce(this.multiDrawCaps.tier, this.debugOverlay)
+      }
+      drawLegacySpans(gl, this.multiDrawCaps, this.visibleIndexSpans, this._drawScratch)
+    }
+  }
+
+  setDebugOverlay(enabled: boolean): void {
+    this.debugOverlay = enabled
+  }
+
+  /**
+   * Suppress three's full-buffer indexed draw; onAfterRender issues visible spans only.
+   * setDrawRange(0,0) skips bindingStates.setup — use a minimal non-zero range so
+   * program/VAO/ELEMENT_ARRAY_BUFFER stay bound while three draws ~nothing.
+   * Draws one triangle from index 0 (usually harmless; if quad 0 is culled, one stray tri).
+   */
+  suppressThreeDraw(): void {
+    this.mesh.geometry.setDrawRange(0, 3)
+  }
+
+  setVisibleIndexSpans(spans: LegacyDrawSpan[]): void {
+    this.visibleIndexSpans = spans
+  }
+
+  getVisibleIndexSpans(): readonly LegacyDrawSpan[] {
+    return this.visibleIndexSpans
   }
 
   private syncDefaultDrawGroups(): void {
@@ -127,8 +245,23 @@ export class GlobalLegacyBuffer {
       return false
     }
 
-    if (this.sectionSlots.has(sectionKey)) {
-      this.removeSection(sectionKey)
+    const isRemesh = this.sectionSlots.has(sectionKey)
+    let previousSlot: { start: number; count: number } | undefined
+    if (isRemesh) {
+      const currentSlot = this.sectionSlots.get(sectionKey)!
+      const inflightReplace = this.pendingReplace.get(sectionKey)
+      const inflightMove = this.pendingMove?.key === sectionKey ? this.pendingMove : undefined
+      if (inflightReplace) {
+        this.zeroAndFreeSlot(currentSlot.start, currentSlot.count)
+        previousSlot = { start: inflightReplace.oldStart, count: inflightReplace.oldCount }
+        this.pendingReplace.delete(sectionKey)
+      } else if (inflightMove) {
+        this.zeroAndFreeSlot(currentSlot.start, currentSlot.count)
+        previousSlot = { start: inflightMove.oldStart, count: inflightMove.count }
+        this.pendingMove = null
+      } else {
+        previousSlot = currentSlot
+      }
     }
 
     if (quadCount > this.capacityQuads) {
@@ -155,14 +288,14 @@ export class GlobalLegacyBuffer {
     this.uvs.set(geo.uvs, dstUvBase)
 
     const originOff = dstFloatBase
-    const rx = this.renderOrigin.x
-    const ry = this.renderOrigin.y
-    const rz = this.renderOrigin.z
+    const ox = sx - this.renderOrigin.x
+    const oy = sy - this.renderOrigin.y
+    const oz = sz - this.renderOrigin.z
     for (let v = 0; v < vertCount; v++) {
       const o = originOff + v * FLOATS_PER_VERT
-      this.aOrigin[o] = sx - rx
-      this.aOrigin[o + 1] = sy - ry
-      this.aOrigin[o + 2] = sz - rz
+      this.aOrigin[o] = ox
+      this.aOrigin[o + 1] = oy
+      this.aOrigin[o + 2] = oz
     }
 
     const dstIndexBase = slot.start * INDICES_PER_QUAD
@@ -172,17 +305,106 @@ export class GlobalLegacyBuffer {
     }
 
     this.sectionSlots.set(sectionKey, slot)
+    if (isRemesh && previousSlot) {
+      this.pendingReplace.set(sectionKey, { oldStart: previousSlot.start, oldCount: previousSlot.count })
+    }
     this.markDirty(slot.start, slot.start + quadCount - 1)
     this.syncDefaultDrawGroups()
+    this.layoutVersion++
     return true
   }
 
+  getLayoutVersion(): number {
+    return this.layoutVersion
+  }
+
+  getUploadEpoch(): number {
+    return this.uploadEpoch
+  }
+
+  hasPendingReplace(): boolean {
+    return this.pendingReplace.size > 0
+  }
+
+  canUseFullDrawShortcut(): boolean {
+    return this.pendingRanges.length === 0 && this.interiorFreeQuads() === 0 && this.pendingMove === null && this.pendingReplace.size === 0
+  }
+
+  isRangeFullyUploaded(start: number, end: number): boolean {
+    return this.rangeFullyUploaded(start, end)
+  }
+
+  getPendingDirtyRanges(): ReadonlyArray<DirtyRange> {
+    return this.pendingRanges
+  }
+
+  getSectionDrawStart(sectionKey: string): number | undefined {
+    const slot = this.sectionSlots.get(sectionKey)
+    if (!slot) return undefined
+    if (this.pendingMove?.key === sectionKey) return this.pendingMove.oldStart
+    const replace = this.pendingReplace.get(sectionKey)
+    if (replace) return replace.oldStart
+    if (!this.rangeFullyUploaded(slot.start, slot.start + slot.count - 1)) return undefined
+    return slot.start
+  }
+
+  getSectionDrawCount(sectionKey: string): number | undefined {
+    const slot = this.sectionSlots.get(sectionKey)
+    if (!slot) return undefined
+    if (this.pendingMove?.key === sectionKey) return this.pendingMove.count
+    const replace = this.pendingReplace.get(sectionKey)
+    if (replace) return replace.oldCount
+    if (!this.rangeFullyUploaded(slot.start, slot.start + slot.count - 1)) return undefined
+    return slot.count
+  }
+
+  getPendingMove(): PendingMove | null {
+    return this.pendingMove
+  }
+
+  /** One interior-hole move per frame when fragmentation exceeds threshold; deferred shrink. */
+  compactStep(): void {
+    if (this.pendingMove) {
+      const { newStart, count } = this.pendingMove
+      if (this.rangeFullyUploaded(newStart, newStart + count - 1)) {
+        this.finalizePendingMove()
+      }
+      return
+    }
+
+    for (const key of [...this.pendingReplace.keys()]) {
+      const slot = this.sectionSlots.get(key)
+      if (!slot) continue
+      if (this.rangeFullyUploaded(slot.start, slot.start + slot.count - 1)) {
+        this.finalizePendingReplace(key)
+      }
+    }
+
+    if (this.highWatermark === 0) return
+    const interiorFree = this.interiorFreeQuads()
+    if (interiorFree / this.highWatermark <= FRAGMENTATION_THRESHOLD) return
+
+    const section = this.findMovableSection(MAX_UPLOAD_QUADS_PER_FRAME)
+    if (!section) return
+
+    const hole = this.findLowestInteriorHole(section.start, section.count)
+    if (!hole) return
+
+    const reserved = this.reserveFreeSlotAt(hole.index, section.count)
+    const oldStart = section.start
+    const newStart = reserved.start
+
+    this.copySectionRange(oldStart, newStart, section.count)
+    this.sectionSlots.set(section.key, { start: newStart, count: section.count })
+    this.markDirty(newStart, newStart + section.count - 1)
+    this.pendingMove = { key: section.key, oldStart, newStart, count: section.count }
+    this.layoutVersion++
+  }
+
   updateDrawSpans(visible: VisibleSectionSpan[], mode: 'opaque' | 'sortedBlend'): void {
-    const geometry = this.mesh.geometry
-    geometry.clearGroups()
+    this.visibleIndexSpans = []
 
     if (this.highWatermark === 0) {
-      geometry.setDrawRange(0, 0)
       return
     }
 
@@ -191,74 +413,67 @@ export class GlobalLegacyBuffer {
     let visibleQuadCount = 0
 
     for (const entry of visible) {
+      const drawStart = this.getSectionDrawStart(entry.key)
+      const drawCount = this.getSectionDrawCount(entry.key)
       const slot = this.sectionSlots.get(entry.key)
-      if (!slot) continue
-      spans.push({ start: slot.start, count: slot.count })
-      visibleQuadCount += slot.count
+      if (drawStart === undefined || drawCount === undefined || !slot) continue
+      spans.push({ start: drawStart, count: drawCount })
+      visibleQuadCount += drawCount
     }
 
     if (spans.length === 0) {
-      geometry.setDrawRange(0, 0)
       return
     }
 
+    const pushIndexSpan = (quadStart: number, quadCount: number): void => {
+      this.visibleIndexSpans.push({
+        indexStart: quadStart * INDICES_PER_QUAD,
+        indexCount: quadCount * INDICES_PER_QUAD
+      })
+    }
+
     if (mode === 'opaque') {
-      if (visibleQuadCount >= this.highWatermark * FULL_DRAW_VISIBLE_FRACTION) {
-        geometry.addGroup(0, this.highWatermark * INDICES_PER_QUAD, 0)
-        geometry.setDrawRange(0, this.highWatermark * INDICES_PER_QUAD)
-        return
+      let finalQuads: Array<{ start: number; count: number }>
+      const liveDrawRanges = spans.map(s => ({ ...s }))
+      const usedFullDraw = this.canUseFullDrawShortcut() && visibleQuadCount >= this.highWatermark * FULL_DRAW_VISIBLE_FRACTION
+      if (usedFullDraw) {
+        finalQuads = [{ start: 0, count: this.highWatermark }]
+      } else {
+        spans.sort((a, b) => a.start - b.start)
+        this.mergeOpaqueSpans(spans)
+        finalQuads = spans
       }
-
-      spans.sort((a, b) => a.start - b.start)
-      this.mergeOpaqueSpans(spans)
-      this.capOpaqueSpans(spans)
-
-      for (const span of spans) {
-        geometry.addGroup(span.start * INDICES_PER_QUAD, span.count * INDICES_PER_QUAD, 0)
+      finalQuads = carveSpansAroundPendingRanges(finalQuads, this.pendingRanges)
+      if (!usedFullDraw) {
+        assertDrawSpansWithinLiveRanges(finalQuads, liveDrawRanges, this.mesh.name)
+      }
+      for (const span of finalQuads) {
+        pushIndexSpan(span.start, span.count)
       }
     } else {
       visible.sort((a, b) => b.distSq - a.distSq)
       for (const entry of visible) {
-        const slot = this.sectionSlots.get(entry.key)
-        if (!slot) continue
-        geometry.addGroup(slot.start * INDICES_PER_QUAD, slot.count * INDICES_PER_QUAD, 0)
+        const drawStart = this.getSectionDrawStart(entry.key)
+        const drawCount = this.getSectionDrawCount(entry.key)
+        if (drawStart === undefined || drawCount === undefined) continue
+        pushIndexSpan(drawStart, drawCount)
       }
     }
-
-    geometry.setDrawRange(0, this.highWatermark * INDICES_PER_QUAD)
   }
 
+  /** Merge only physically adjacent section slots (gap === 0). Never bridge interior holes. */
   private mergeOpaqueSpans(spans: Array<{ start: number; count: number }>): void {
     if (spans.length < 2) return
     let i = 0
     while (i < spans.length - 1) {
       const cur = spans[i]!
       const next = spans[i + 1]!
-      const gap = next.start - (cur.start + cur.count)
-      if (gap <= SPAN_GAP_TOLERANCE_QUADS) {
+      if (cur.start + cur.count === next.start) {
         cur.count = next.start + next.count - cur.start
         spans.splice(i + 1, 1)
       } else {
         i++
       }
-    }
-  }
-
-  private capOpaqueSpans(spans: Array<{ start: number; count: number }>): void {
-    while (spans.length > MAX_OPAQUE_SPANS) {
-      let bestIdx = 0
-      let bestGap = Infinity
-      for (let i = 0; i < spans.length - 1; i++) {
-        const gap = spans[i + 1]!.start - (spans[i]!.start + spans[i]!.count)
-        if (gap < bestGap) {
-          bestGap = gap
-          bestIdx = i
-        }
-      }
-      const cur = spans[bestIdx]!
-      const next = spans[bestIdx + 1]!
-      cur.count = next.start + next.count - cur.start
-      spans.splice(bestIdx + 1, 1)
     }
   }
 
@@ -312,6 +527,18 @@ export class GlobalLegacyBuffer {
     const slot = this.sectionSlots.get(sectionKey)
     if (!slot) return
 
+    if (this.pendingReplace.has(sectionKey)) {
+      const pr = this.pendingReplace.get(sectionKey)!
+      this.zeroAndFreeSlot(pr.oldStart, pr.oldCount)
+      this.pendingReplace.delete(sectionKey)
+    }
+
+    if (this.pendingMove?.key === sectionKey) {
+      const { oldStart, count } = this.pendingMove
+      this.zeroAndFreeSlot(oldStart, count)
+      this.pendingMove = null
+    }
+
     const dstIndexBase = slot.start * INDICES_PER_QUAD
     const indexLen = slot.count * INDICES_PER_QUAD
     for (let i = 0; i < indexLen; i++) {
@@ -323,6 +550,7 @@ export class GlobalLegacyBuffer {
     this.insertFreeSlot(slot)
     this.shrinkHighWatermark()
     this.syncDefaultDrawGroups()
+    this.layoutVersion++
   }
 
   hasPendingUploads(): boolean {
@@ -376,8 +604,12 @@ export class GlobalLegacyBuffer {
     indexAttr.addUpdateRange(indexOffset, indexCount)
     indexAttr.needsUpdate = true
 
-    if (quadOffset + quadCount > r.end) this.pendingRanges.shift()
-    else r.start = quadOffset + quadCount
+    if (quadOffset + quadCount > r.end) {
+      this.pendingRanges.shift()
+    } else {
+      r.start = quadOffset + quadCount
+    }
+    this.uploadEpoch++
   }
 
   setRenderOrigin(renderOrigin: RenderOrigin): void {
@@ -451,9 +683,24 @@ export class GlobalLegacyBuffer {
     return out
   }
 
+  getHighWatermark(): number {
+    return this.highWatermark
+  }
+
+  getCapacityQuads(): number {
+    return this.capacityQuads
+  }
+
+  getSectionCount(): number {
+    return this.sectionSlots.size
+  }
+
   getMemoryBytes(): number {
-    const verts = this.capacityQuads * VERTS_PER_QUAD
-    return verts * (FLOATS_PER_VERT * 3 + FLOATS_PER_LIGHT_VERT * 2 + FLOATS_PER_UV_VERT) * 4 + this.capacityQuads * INDICES_PER_QUAD * 4
+    return this.capacityQuads * LEGACY_BYTES_PER_QUAD
+  }
+
+  getUsedMemoryBytes(): number {
+    return this.highWatermark * LEGACY_BYTES_PER_QUAD
   }
 
   reset(): void {
@@ -461,6 +708,10 @@ export class GlobalLegacyBuffer {
     this.freeList.length = 0
     this.highWatermark = 0
     this.pendingRanges.length = 0
+    this.pendingMove = null
+    this.pendingReplace.clear()
+    this.uploadEpoch = 0
+    this.visibleIndexSpans = []
     this.syncDefaultDrawGroups()
   }
 
@@ -541,7 +792,138 @@ export class GlobalLegacyBuffer {
     }
   }
 
+  private interiorFreeQuads(): number {
+    let total = 0
+    for (const slot of this.freeList) {
+      if (slot.start < this.highWatermark) total += slot.count
+    }
+    return total
+  }
+
+  private findMovableSection(maxCount: number): { key: string; start: number; count: number } | undefined {
+    const sections: Array<{ key: string; start: number; count: number }> = []
+    for (const [key, slot] of this.sectionSlots) {
+      sections.push({ key, start: slot.start, count: slot.count })
+    }
+    if (sections.length === 0) return undefined
+
+    sections.sort((a, b) => {
+      if (b.start !== a.start) return b.start - a.start
+      return b.start + b.count - (a.start + a.count)
+    })
+
+    const tailmost = sections[0]!
+    if (tailmost.count <= maxCount && this.findLowestInteriorHole(tailmost.start, tailmost.count)) {
+      return tailmost
+    }
+
+    const candidates = sections.filter(s => s.count <= maxCount).sort((a, b) => b.count - a.count)
+
+    for (const s of candidates) {
+      if (this.findLowestInteriorHole(s.start, s.count)) return s
+    }
+    return undefined
+  }
+
+  private findLowestInteriorHole(sectionStart: number, count: number): { start: number; count: number; index: number } | undefined {
+    for (let i = 0; i < this.freeList.length; i++) {
+      const slot = this.freeList[i]!
+      if (slot.start < sectionStart && slot.count >= count) {
+        return { start: slot.start, count: slot.count, index: i }
+      }
+    }
+    return undefined
+  }
+
+  private reserveFreeSlotAt(index: number, count: number): { start: number; count: number } {
+    const slot = this.freeList[index]!
+    this.freeList.splice(index, 1)
+    if (slot.count === count) return { start: slot.start, count }
+    const used = { start: slot.start, count }
+    this.insertFreeSlot({ start: slot.start + count, count: slot.count - count })
+    return used
+  }
+
+  private copySectionRange(oldStart: number, newStart: number, quadCount: number): void {
+    const oldVertBase = oldStart * VERTS_PER_QUAD
+    const newVertBase = newStart * VERTS_PER_QUAD
+    const vertCount = quadCount * VERTS_PER_QUAD
+    const vertDelta = newVertBase - oldVertBase
+
+    const oldFloatBase = oldVertBase * FLOATS_PER_VERT
+    const newFloatBase = newVertBase * FLOATS_PER_VERT
+    const floatLen = vertCount * FLOATS_PER_VERT
+    this.positions.copyWithin(newFloatBase, oldFloatBase, oldFloatBase + floatLen)
+    this.colors.copyWithin(newFloatBase, oldFloatBase, oldFloatBase + floatLen)
+    this.aOrigin.copyWithin(newFloatBase, oldFloatBase, oldFloatBase + floatLen)
+
+    const oldLightBase = oldVertBase * FLOATS_PER_LIGHT_VERT
+    const newLightBase = newVertBase * FLOATS_PER_LIGHT_VERT
+    const lightLen = vertCount * FLOATS_PER_LIGHT_VERT
+    this.skyLights.copyWithin(newLightBase, oldLightBase, oldLightBase + lightLen)
+    this.blockLights.copyWithin(newLightBase, oldLightBase, oldLightBase + lightLen)
+
+    const oldUvBase = oldVertBase * FLOATS_PER_UV_VERT
+    const newUvBase = newVertBase * FLOATS_PER_UV_VERT
+    const uvLen = vertCount * FLOATS_PER_UV_VERT
+    this.uvs.copyWithin(newUvBase, oldUvBase, oldUvBase + uvLen)
+
+    const oldIndexBase = oldStart * INDICES_PER_QUAD
+    const newIndexBase = newStart * INDICES_PER_QUAD
+    const indexLen = quadCount * INDICES_PER_QUAD
+    for (let i = 0; i < indexLen; i++) {
+      this.indices[newIndexBase + i] = this.indices[oldIndexBase + i]! + vertDelta
+    }
+  }
+
+  private rangeFullyUploaded(start: number, end: number): boolean {
+    for (const r of this.pendingRanges) {
+      if (r.start <= end && r.end >= start) return false
+    }
+    return true
+  }
+
+  private zeroAndFreeSlot(start: number, count: number): void {
+    const oldIndexBase = start * INDICES_PER_QUAD
+    const oldIndexLen = count * INDICES_PER_QUAD
+    for (let i = 0; i < oldIndexLen; i++) {
+      this.indices[oldIndexBase + i] = 0
+    }
+    this.markDirty(start, start + count - 1)
+    this.insertFreeSlot({ start, count })
+  }
+
+  private finalizePendingReplace(key: string): void {
+    const pr = this.pendingReplace.get(key)
+    if (!pr) return
+
+    this.zeroAndFreeSlot(pr.oldStart, pr.oldCount)
+    this.pendingReplace.delete(key)
+    this.shrinkHighWatermark()
+    this.syncDefaultDrawGroups()
+    this.layoutVersion++
+    this.uploadEpoch++
+  }
+
+  private finalizePendingMove(): void {
+    const move = this.pendingMove
+    if (!move) return
+
+    const { oldStart, count } = move
+    this.zeroAndFreeSlot(oldStart, count)
+    this.shrinkHighWatermark()
+    this.syncDefaultDrawGroups()
+    this.pendingMove = null
+    this.layoutVersion++
+    this.uploadEpoch++
+  }
+
   private growCapacity(minQuads: number): void {
+    if (this.pendingMove) this.finalizePendingMove()
+    for (const key of [...this.pendingReplace.keys()]) {
+      this.finalizePendingReplace(key)
+    }
+
     let newCap = this.capacityQuads
     while (newCap < minQuads) newCap += this.growthIncrementQuads
 

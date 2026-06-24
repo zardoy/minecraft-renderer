@@ -7,6 +7,15 @@ import { createCanvas, loadImageFromUrl } from '../utils'
 export const stevePngUrl = stevePng
 export const steveTexture = loadThreeJsTextureFromUrl(stevePngUrl)
 
+const SKIN_TEXTURE_WIDTHS = [64, 128, 256, 512, 1024] as const
+
+/** Minecraft skin sheets: WxW or Wx(W/2) at standard power-of-two widths. */
+export const isLikelySkinImageSize = (width: number, height: number) => {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return false
+  if (!(SKIN_TEXTURE_WIDTHS as readonly number[]).includes(width)) return false
+  return height === width || height === width / 2
+}
+
 const config = {
   apiEnabled: true
 }

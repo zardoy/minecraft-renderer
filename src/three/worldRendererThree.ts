@@ -555,6 +555,12 @@ export class WorldRendererThree extends WorldRendererCommon {
       this.chunkMeshManager.syncCubeShaderUniforms()
       this.chunkMeshManager.syncLegacyShaderUniforms()
     })
+    const pushShading = () => {
+      const cfg = this.worldRendererConfig
+      this.chunkMeshManager.setShadingTheme(cfg.shadingTheme, cfg.cardinalLight)
+    }
+    this.onReactiveConfigUpdated('shadingTheme', pushShading)
+    this.onReactiveConfigUpdated('cardinalLight', pushShading)
     this.onReactiveConfigUpdated('futuristicReveal', () => {
       this.updateModulesFromConfig()
     })
@@ -767,11 +773,20 @@ export class WorldRendererThree extends WorldRendererCommon {
         const formatCompact = (num: number) => new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(num)
         let text = ''
         text += `TE: ${formatFull(this.renderer.info.memory.textures)} `
-        text += `F: ${formatCompact(this.tilesRendered)} `
-        text += `B: ${formatCompact(this.blocksRendered)} `
+        const gb = this.chunkMeshManager.getGlobalBufferStats()
+        if (gb.shaderFaces) {
+          const s = gb.shaderFaces
+          text += `CUBE: ${formatCompact(s.used)}/${formatCompact(s.capacity)}f `
+        }
+        if (gb.legacyOpaque) {
+          const s = gb.legacyOpaque
+          text += `LEG-O: ${formatCompact(s.used)}/${formatCompact(s.capacity)}q `
+        }
+        if (gb.legacyBlend) {
+          const s = gb.legacyBlend
+          text += `LEG-B: ${formatCompact(s.used)}/${formatCompact(s.capacity)}q `
+        }
         text += `MEM: ${this.chunkMeshManager.getEstimatedMemoryUsage().total} `
-        const poolStats = this.chunkMeshManager.getStats()
-        text += `POOL: ${poolStats.activeCount}/${poolStats.poolSize} `
         const pf = formatPerformanceFactorsDebug(this.reactiveState.world.instabilityFactors)
         if (pf) text += `PF: ${pf} `
         // entities can be seen in F3
@@ -1312,13 +1327,24 @@ export class WorldRendererThree extends WorldRendererCommon {
       globalBuffer.suppressThreeDraw()
     }
     const globalLegacyBuffer = this.chunkMeshManager.globalLegacyBuffer
-    if (globalLegacyBuffer?.hasPendingUploads()) {
-      globalLegacyBuffer.uploadDirtyRange()
+    if (globalLegacyBuffer) {
+      globalLegacyBuffer.setDebugOverlay(this.displayOptions.inWorldRenderingConfig.enableDebugOverlay)
+      globalLegacyBuffer.compactStep()
+      if (globalLegacyBuffer.hasPendingUploads()) {
+        globalLegacyBuffer.uploadDirtyRange()
+      }
+      globalLegacyBuffer.suppressThreeDraw()
     }
     const globalLegacyBlendBuffer = this.chunkMeshManager.globalLegacyBlendBuffer
-    if (globalLegacyBlendBuffer?.hasPendingUploads()) {
-      globalLegacyBlendBuffer.uploadDirtyRange()
+    if (globalLegacyBlendBuffer) {
+      globalLegacyBlendBuffer.setDebugOverlay(this.displayOptions.inWorldRenderingConfig.enableDebugOverlay)
+      globalLegacyBlendBuffer.compactStep()
+      if (globalLegacyBlendBuffer.hasPendingUploads()) {
+        globalLegacyBlendBuffer.uploadDirtyRange()
+      }
+      globalLegacyBlendBuffer.suppressThreeDraw()
     }
+    this.chunkMeshManager.markCullDirtyIfBufferStateChanged()
     this.chunkMeshManager.setLegacyCameraOrigin(camX, camY, camZ)
     this.chunkMeshManager.updateCullDirtyFromCamera(cam, camX, camY, camZ)
     if (this.chunkMeshManager.cullDirty) {

@@ -8,6 +8,7 @@ vi.mock('../entity/EntityMesh', () => ({
 import { ChunkMeshManager } from '../chunkMeshManager'
 import type { WorldRendererThree } from '../worldRendererThree'
 import type { MesherGeometryOutput } from '../../mesher-shared/shared'
+import { renderWasmOutputToGeometry } from '../../wasm-mesher/bridge/render-from-wasm'
 
 function makeQuadArrays() {
   const positions = new Float32Array([-1, -1, -1, -1, 1, -1, -1, 1, 1, -1, -1, 1])
@@ -117,6 +118,65 @@ function makeInvalidBlendGeometry(): MesherGeometryOutput {
 
 type ManagerOptions = {
   revealDefer?: boolean
+  shaderCubes?: boolean
+  finishedChunks?: Record<string, boolean>
+}
+
+function makeShaderCubeOnlyGeometry(): MesherGeometryOutput {
+  const block = {
+    position: [0, 0, 0] as [number, number, number],
+    block_state_id: 1,
+    visible_faces: (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 5),
+    ao_data: Array.from({ length: 6 }, () => [3, 3, 3, 3]),
+    light_data: Array.from({ length: 6 }, () => [1, 1, 1, 1]),
+    light_combined: Array.from({ length: 6 }, () => [255, 255, 255, 255])
+  }
+  const out = renderWasmOutputToGeometry({ blocks: [block], block_count: 1, block_iterations: 0 }, '1.16.5', '0,0,0', { x: 8, y: 8, z: 8 }, undefined, {
+    shaderCubes: true
+  })
+  return {
+    sectionYNumber: 0,
+    chunkKey: '0,0',
+    sectionStartY: 0,
+    sectionEndY: 16,
+    sectionStartX: 0,
+    sectionEndX: 16,
+    sectionStartZ: 0,
+    sectionEndZ: 16,
+    sx: 8,
+    sy: 8,
+    sz: 8,
+    positions: new Float32Array(0),
+    normals: new Float32Array(0),
+    colors: new Float32Array(0),
+    skyLights: new Float32Array(0),
+    blockLights: new Float32Array(0),
+    uvs: new Float32Array(0),
+    indices: new Uint32Array(0),
+    indicesCount: 0,
+    using32Array: true,
+    tiles: {},
+    heads: {},
+    signs: {},
+    banners: {},
+    hadErrors: false,
+    blocksCount: 1,
+    shaderCubes: out.shaderCubes
+  }
+}
+
+function makeCullCamera(): THREE.PerspectiveCamera {
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000)
+  camera.position.set(8, 8, 20)
+  camera.lookAt(8, 8, 8)
+  camera.updateMatrixWorld()
+  return camera
+}
+
+function drainCubeUploads(manager: ChunkMeshManager): void {
+  const gb = manager.globalBlockBuffer
+  if (!gb) return
+  while (gb.hasPendingUploads()) gb.uploadDirtyRange()
 }
 
 function createManager(opts: ManagerOptions = {}): ChunkMeshManager {
@@ -128,7 +188,7 @@ function createManager(opts: ManagerOptions = {}): ChunkMeshManager {
       }
     : undefined
   const worldRenderer = {
-    shaderCubeBlocksEnabled: () => false,
+    shaderCubeBlocksEnabled: () => opts.shaderCubes ?? false,
     getModule: (name: string) => (name === 'futuristicReveal' ? revealModule : undefined),
     sceneOrigin: {
       track: () => {},
@@ -136,7 +196,9 @@ function createManager(opts: ManagerOptions = {}): ChunkMeshManager {
       removeAndUntrackAll: () => {}
     },
     blockEntities: {},
-    worldRendererConfig: {}
+    worldRendererConfig: opts.shaderCubes ? { wasmMesher: true } : {},
+    displayOptions: { inWorldRenderingConfig: {} },
+    finishedChunks: opts.finishedChunks ?? (opts.shaderCubes ? { '0,0': true } : {})
   } as unknown as WorldRendererThree
   return new ChunkMeshManager(worldRenderer, scene, material, 256, 1)
 }
@@ -181,11 +243,13 @@ test('ChunkMeshManager: hidden section excluded from draw spans', () => {
   camera.updateMatrixWorld()
 
   manager.updateSectionCullAndSort(camera, 8, 8, 20)
-  expect(manager.globalLegacyBlendBuffer?.mesh.geometry.groups.length).toBe(0)
+  expect(manager.globalLegacyBlendBuffer?.getVisibleIndexSpans().length).toBe(0)
 
   section.visible = true
+  const blendBuf = manager.globalLegacyBlendBuffer!
+  while (blendBuf.hasPendingUploads()) blendBuf.uploadDirtyRange()
   manager.updateSectionCullAndSort(camera, 8, 8, 20)
-  expect(manager.globalLegacyBlendBuffer?.mesh.geometry.groups.length).toBeGreaterThan(0)
+  expect(manager.globalLegacyBlendBuffer?.getVisibleIndexSpans().length).toBeGreaterThan(0)
 
   manager.cleanupSection(key)
   manager.dispose()
@@ -276,5 +340,54 @@ test('ChunkMeshManager: mixed opaque and blend route to separate global buffers'
   expect(manager.globalLegacyBuffer?.hasSection(key)).toBe(false)
   expect(manager.globalLegacyBlendBuffer?.hasSection(key)).toBe(false)
 
+  manager.dispose()
+})
+
+test('ChunkMeshManager: hidden cube section excluded from draw spans', () => {
+  const manager = createManager({ shaderCubes: true })
+  const key = '0,0,0'
+  manager.updateSection(key, makeShaderCubeOnlyGeometry())
+  const section = manager.sectionObjects[key]!
+  expect(manager.globalBlockBuffer?.hasSection(key)).toBe(true)
+  drainCubeUploads(manager)
+
+  const camera = makeCullCamera()
+  manager.updateSectionCullAndSort(camera, 8, 8, 20)
+  expect(manager.globalBlockBuffer?.getVisibleSpans().length).toBeGreaterThan(0)
+
+  section.visible = false
+  manager.updateSectionCullAndSort(camera, 8, 8, 20)
+  expect(manager.globalBlockBuffer?.getVisibleSpans().length).toBe(0)
+
+  section.visible = true
+  manager.updateSectionCullAndSort(camera, 8, 8, 20)
+  expect(manager.globalBlockBuffer?.getVisibleSpans().length).toBeGreaterThan(0)
+
+  manager.cleanupSection(key)
+  manager.dispose()
+})
+
+test('ChunkMeshManager: finishChunkDisplay reveals cube spans and marks cull dirty', () => {
+  const manager = createManager({ shaderCubes: true, finishedChunks: {} })
+  const key = '0,0,0'
+  manager.updateSection(key, makeShaderCubeOnlyGeometry())
+  expect(manager.sectionObjects[key]?.visible).toBe(false)
+  expect(manager.globalBlockBuffer?.hasSection(key)).toBe(true)
+
+  const camera = makeCullCamera()
+  manager.updateSectionCullAndSort(camera, 8, 8, 20)
+  expect(manager.globalBlockBuffer?.getVisibleSpans().length).toBe(0)
+
+  const markCullDirtySpy = vi.spyOn(manager, 'markCullDirty')
+  manager.finishChunkDisplay('0,0')
+  expect(manager.sectionObjects[key]?.visible).toBe(true)
+  expect(markCullDirtySpy).toHaveBeenCalled()
+
+  drainCubeUploads(manager)
+  manager.updateSectionCullAndSort(camera, 8, 8, 20)
+  expect(manager.globalBlockBuffer?.getVisibleSpans().length).toBeGreaterThan(0)
+
+  markCullDirtySpy.mockRestore()
+  manager.cleanupSection(key)
   manager.dispose()
 })

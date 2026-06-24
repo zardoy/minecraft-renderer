@@ -194,6 +194,8 @@ uniform float u_skyLevel;
 uniform float u_lightCurve;
 uniform float u_minBrightness;
 uniform float u_lightGamma;
+uniform float u_shadingTheme;  // 0 = vanilla, 1 = high-contrast
+uniform float u_cardinalLight; // 0 = default, 1 = nether
 
 in float v_blockLight;
 in float v_skyLight;
@@ -243,6 +245,24 @@ void applyFog() {
 
 ${APPLY_LIGHTMAP_GLSL}
 
+const vec3 FACE_NORMAL[6] = vec3[6](
+    vec3(0.0, 1.0, 0.0),  // UP
+    vec3(0.0,-1.0, 0.0),  // DOWN
+    vec3(1.0, 0.0, 0.0),  // EAST
+    vec3(-1.0,0.0, 0.0),  // WEST
+    vec3(0.0, 0.0, 1.0),  // SOUTH
+    vec3(0.0, 0.0,-1.0)   // NORTH
+);
+
+float sideShadingFromFaceId(int faceId, float theme, float cardinal) {
+    vec3 n = FACE_NORMAL[faceId];
+    float hc      = 0.8 + 0.5 * max(0.0, 0.66*n.x + 0.66*n.y + 0.33*n.z);
+    float nether  = 0.5 + abs(0.1*n.x + 0.4*n.y + 0.3*n.z);
+    float vanilla = 0.75 + 0.25*n.y + 0.05*(abs(n.z) - 3.0*abs(n.x));
+    float nonHc   = mix(vanilla, nether, cardinal);
+    return mix(nonHc, hc, theme);
+}
+
 void main() {
     // Atlas sample (pixelated, no filtering)
     ivec2 atlasSize = textureSize(u_atlas, 0);
@@ -289,7 +309,9 @@ void main() {
 
     float L = max(v_blockLight, min(v_skyLight, u_skyLevel));
     float Lm = applyLightmap(L);
-    float brightness = Lm * v_ao;
+    float aoFactor = mix(0.8 * v_ao + 0.2, v_ao, u_shadingTheme);
+    float side     = sideShadingFromFaceId(v_faceId, u_shadingTheme, u_cardinalLight);
+    float brightness = Lm * aoFactor * side;
 
     // Opaque full cubes: always alpha 1 (legacy uses cutout material; avoids seeing blocks behind)
     FragColor = vec4(baseColor.rgb * tint * brightness, 1.0);
@@ -312,6 +334,8 @@ export function createCubeBlockMaterial(): THREE.ShaderMaterial {
         u_tintPalette: { value: null },
         u_debugMode: { value: 0 },
         u_skyLevel: { value: 1.0 },
+        u_shadingTheme: { value: 1.0 },
+        u_cardinalLight: { value: 0.0 },
         u_lightCurve: { value: DEFAULT_LIGHTMAP_PARAMS.curve },
         u_minBrightness: { value: DEFAULT_LIGHTMAP_PARAMS.minBrightness },
         u_lightGamma: { value: DEFAULT_LIGHTMAP_PARAMS.gamma },
@@ -337,6 +361,13 @@ export function createCubeBlockMaterial(): THREE.ShaderMaterial {
 export function setCubeSkyLevel(material: THREE.ShaderMaterial, value: number): void {
   const u = material.uniforms.u_skyLevel
   if (u) u.value = value
+}
+
+export function setCubeShadingTheme(material: THREE.ShaderMaterial, theme: 'vanilla' | 'high-contrast', cardinalLight: string): void {
+  const t = material.uniforms.u_shadingTheme
+  if (t) t.value = theme === 'high-contrast' ? 1.0 : 0.0
+  const c = material.uniforms.u_cardinalLight
+  if (c) c.value = cardinalLight === 'nether' ? 1.0 : 0.0
 }
 
 export function setCubeLightmapParams(material: THREE.ShaderMaterial, params: BlockLightmapParams): void {

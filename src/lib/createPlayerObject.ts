@@ -9,15 +9,40 @@ export type PlayerObjectType = PlayerObject & {
   realUsername: string
 }
 
-/** Starfield + log-depth world: cutout skin mats need alphaTest and depthWrite (not mesh traverse). */
+const LOG_DEPTH_BIAS = -2e-4 // tune visually; negative ≈ polygonOffset “closer”
+
+function patchLogDepthBiasShader(shader: THREE.WebGLProgramParametersWithUniforms): void {
+  shader.uniforms.uLogDepthBias = { value: LOG_DEPTH_BIAS }
+  shader.fragmentShader = shader.fragmentShader.replace(
+    '#include <logdepthbuf_pars_fragment>',
+    `#include <logdepthbuf_pars_fragment>\nuniform float uLogDepthBias;`
+  )
+  shader.fragmentShader = shader.fragmentShader.replace(
+    '#include <logdepthbuf_fragment>',
+    `#if defined( USE_LOGARITHMIC_DEPTH_BUFFER )
+      gl_FragDepth = log2( vFragDepth ) * logDepthBufFC * 0.5 + uLogDepthBias;
+    #endif`
+  )
+}
+
+function applyLogDepthBias(material: THREE.Material): void {
+  if (material.userData.logDepthBiasApplied) return
+  material.userData.logDepthBiasApplied = true
+  material.onBeforeCompile = patchLogDepthBiasShader
+  material.needsUpdate = true
+}
+
+/** Log-depth world: opaque cutout mats (alphaTest + depthWrite, not transparent sort). */
 export function configurePlayerSkinMaterials(playerObject: PlayerObject): void {
   const skin = playerObject.skin as any
   const materials = [skin.layer1Material, skin.layer1MaterialBiased, skin.layer2Material, skin.layer2MaterialBiased]
   for (const mat of materials) {
-    mat.transparent = true
+    mat.transparent = false
     mat.alphaTest = 0.1
     mat.depthWrite = true
   }
+  applyLogDepthBias(skin.layer1MaterialBiased)
+  applyLogDepthBias(skin.layer2MaterialBiased)
 }
 
 export function createPlayerObject(options: { username?: string; uuid?: string; scale?: number }): {

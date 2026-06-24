@@ -34,7 +34,11 @@ const MAX_UPLOAD_FACES_PER_FRAME = 15_000 // face-indexed budget (chunksStorage 
 const FRAGMENTATION_THRESHOLD = 0.25
 const EMPTY_W2 = packWord2Empty()
 
+/** CPU bytes per instanced cube face (a_w0..a_w3). */
+export const SHADER_CUBE_BYTES_PER_FACE = 16
+
 type PendingMove = { key: string; oldStart: number; newStart: number; count: number }
+type PendingReplace = { oldStart: number; oldCount: number }
 
 export type GlobalBlockBufferShaderData = {
   words: Uint32Array
@@ -58,6 +62,8 @@ export class GlobalBlockBuffer {
   private highWatermark = 0
   private pendingRanges: Array<{ start: number; end: number }> = []
   private pendingMove: PendingMove | null = null
+  private readonly pendingReplace = new Map<string, PendingReplace>()
+  private uploadEpoch = 0
   private visibleSpans: CubeDrawSpan[] = []
   private readonly _drawScratch: CubeMultiDrawScratch = createCubeMultiDrawScratch()
   private multiDrawCaps: MultiDrawCaps | null = null
@@ -65,6 +71,7 @@ export class GlobalBlockBuffer {
   private tierCAttrs: TierCAttrState | null = null
   private tierCGl: WebGL2RenderingContext | null = null
   private debugOverlay = false
+  private layoutVersion = 0
 
   constructor(material: THREE.ShaderMaterial, scene: THREE.Object3D) {
     this.capacityFaces = INITIAL_CAPACITY_FACES
@@ -149,11 +156,60 @@ export class GlobalBlockBuffer {
     const slot = this.sectionSlots.get(sectionKey)
     if (!slot) return undefined
     if (this.pendingMove?.key === sectionKey) return this.pendingMove.oldStart
+    const replace = this.pendingReplace.get(sectionKey)
+    if (replace) return replace.oldStart
+    if (!this.rangeFullyUploaded(slot.start, slot.start + slot.count - 1)) return undefined
     return slot.start
+  }
+
+  getSectionDrawCount(sectionKey: string): number | undefined {
+    const slot = this.sectionSlots.get(sectionKey)
+    if (!slot) return undefined
+    if (this.pendingMove?.key === sectionKey) return this.pendingMove.count
+    const replace = this.pendingReplace.get(sectionKey)
+    if (replace) return replace.oldCount
+    if (!this.rangeFullyUploaded(slot.start, slot.start + slot.count - 1)) return undefined
+    return slot.count
+  }
+
+  getUploadEpoch(): number {
+    return this.uploadEpoch
+  }
+
+  hasPendingReplace(): boolean {
+    return this.pendingReplace.size > 0
+  }
+
+  canUseFullDrawShortcut(): boolean {
+    return this.pendingRanges.length === 0 && this.interiorFreeFaces() === 0 && this.pendingMove === null && this.pendingReplace.size === 0
+  }
+
+  isRangeFullyUploaded(start: number, end: number): boolean {
+    return this.rangeFullyUploaded(start, end)
+  }
+
+  getPendingDirtyRanges(): ReadonlyArray<{ start: number; end: number }> {
+    return this.pendingRanges
   }
 
   getHighWatermark(): number {
     return this.highWatermark
+  }
+
+  getCapacityFaces(): number {
+    return this.capacityFaces
+  }
+
+  getSectionCount(): number {
+    return this.sectionSlots.size
+  }
+
+  getMemoryBytes(): number {
+    return this.capacityFaces * SHADER_CUBE_BYTES_PER_FACE
+  }
+
+  getUsedMemoryBytes(): number {
+    return this.highWatermark * SHADER_CUBE_BYTES_PER_FACE
   }
 
   hasPendingUploads(): boolean {
@@ -170,8 +226,23 @@ export class GlobalBlockBuffer {
       return
     }
 
-    if (this.sectionSlots.has(sectionKey)) {
-      this.removeSection(sectionKey)
+    const isRemesh = this.sectionSlots.has(sectionKey)
+    let previousSlot: { start: number; count: number } | undefined
+    if (isRemesh) {
+      const currentSlot = this.sectionSlots.get(sectionKey)!
+      const inflightReplace = this.pendingReplace.get(sectionKey)
+      const inflightMove = this.pendingMove?.key === sectionKey ? this.pendingMove : undefined
+      if (inflightReplace) {
+        this.zeroAndFreeSlot(currentSlot.start, currentSlot.count)
+        previousSlot = { start: inflightReplace.oldStart, count: inflightReplace.oldCount }
+        this.pendingReplace.delete(sectionKey)
+      } else if (inflightMove) {
+        this.zeroAndFreeSlot(currentSlot.start, currentSlot.count)
+        previousSlot = { start: inflightMove.oldStart, count: inflightMove.count }
+        this.pendingMove = null
+      } else {
+        previousSlot = currentSlot
+      }
     }
 
     if (faceCount > this.capacityFaces) {
@@ -198,8 +269,16 @@ export class GlobalBlockBuffer {
     }
 
     this.sectionSlots.set(sectionKey, slot)
+    if (isRemesh && previousSlot) {
+      this.pendingReplace.set(sectionKey, { oldStart: previousSlot.start, oldCount: previousSlot.count })
+    }
     this.markDirty(slot.start, slot.start + faceCount - 1)
     this.mesh.geometry.instanceCount = this.highWatermark
+    this.layoutVersion++
+  }
+
+  getLayoutVersion(): number {
+    return this.layoutVersion
   }
 
   hasSection(sectionKey: string): boolean {
@@ -238,16 +317,15 @@ export class GlobalBlockBuffer {
     const slot = this.sectionSlots.get(sectionKey)
     if (!slot) return
 
+    if (this.pendingReplace.has(sectionKey)) {
+      const pr = this.pendingReplace.get(sectionKey)!
+      this.zeroAndFreeSlot(pr.oldStart, pr.oldCount)
+      this.pendingReplace.delete(sectionKey)
+    }
+
     if (this.pendingMove?.key === sectionKey) {
       const { oldStart, count } = this.pendingMove
-      for (let i = oldStart; i < oldStart + count; i++) {
-        this.w0[i] = 0
-        this.w1[i] = 0
-        this.w2[i] = EMPTY_W2
-        this.w3[i] = 0
-      }
-      this.markDirty(oldStart, oldStart + count - 1)
-      this.insertFreeSlot({ start: oldStart, count })
+      this.zeroAndFreeSlot(oldStart, count)
       this.pendingMove = null
     }
 
@@ -263,6 +341,7 @@ export class GlobalBlockBuffer {
     this.insertFreeSlot(slot)
     this.shrinkHighWatermark()
     this.mesh.geometry.instanceCount = this.highWatermark
+    this.layoutVersion++
   }
 
   /** One interior-hole move per frame when fragmentation exceeds threshold; deferred shrink. */
@@ -273,6 +352,14 @@ export class GlobalBlockBuffer {
         this.finalizePendingMove()
       }
       return
+    }
+
+    for (const key of [...this.pendingReplace.keys()]) {
+      const slot = this.sectionSlots.get(key)
+      if (!slot) continue
+      if (this.rangeFullyUploaded(slot.start, slot.start + slot.count - 1)) {
+        this.finalizePendingReplace(key)
+      }
     }
 
     if (this.highWatermark === 0) return
@@ -293,6 +380,7 @@ export class GlobalBlockBuffer {
     this.sectionSlots.set(section.key, { start: newStart, count: section.count })
     this.markDirty(newStart, newStart + section.count - 1)
     this.pendingMove = { key: section.key, oldStart, newStart, count: section.count }
+    this.layoutVersion++
   }
 
   uploadDirtyRange(): void {
@@ -310,8 +398,12 @@ export class GlobalBlockBuffer {
       attr.needsUpdate = true
     }
 
-    if (offset + count > r.end) this.pendingRanges.shift()
-    else r.start = offset + count
+    if (offset + count > r.end) {
+      this.pendingRanges.shift()
+    } else {
+      r.start = offset + count
+    }
+    this.uploadEpoch++
   }
 
   setCameraOrigin(renderOrigin: RenderOrigin, x: number, y: number, z: number): void {
@@ -337,6 +429,8 @@ export class GlobalBlockBuffer {
     this.highWatermark = 0
     this.pendingRanges.length = 0
     this.pendingMove = null
+    this.pendingReplace.clear()
+    this.uploadEpoch = 0
     this.visibleSpans = []
     this.w0.fill(0)
     this.w1.fill(0)
@@ -562,24 +656,40 @@ export class GlobalBlockBuffer {
     return true
   }
 
-  private finalizePendingMove(): void {
-    const move = this.pendingMove
-    if (!move) return
-
-    const { oldStart, count } = move
-    for (let i = oldStart; i < oldStart + count; i++) {
+  private zeroAndFreeSlot(start: number, count: number): void {
+    for (let i = start; i < start + count; i++) {
       this.w0[i] = 0
       this.w1[i] = 0
       this.w2[i] = EMPTY_W2
       this.w3[i] = 0
     }
-    this.insertFreeSlot({ start: oldStart, count })
+    this.markDirty(start, start + count - 1)
+    this.insertFreeSlot({ start, count })
+  }
+
+  private finalizePendingReplace(key: string): void {
+    const pr = this.pendingReplace.get(key)
+    if (!pr) return
+
+    this.zeroAndFreeSlot(pr.oldStart, pr.oldCount)
+    this.pendingReplace.delete(key)
     this.shrinkHighWatermark()
-    if (oldStart < this.highWatermark) {
-      this.markDirty(oldStart, oldStart + count - 1)
-    }
+    this.mesh.geometry.instanceCount = this.highWatermark
+    this.layoutVersion++
+    this.uploadEpoch++
+  }
+
+  private finalizePendingMove(): void {
+    const move = this.pendingMove
+    if (!move) return
+
+    const { oldStart, count } = move
+    this.zeroAndFreeSlot(oldStart, count)
+    this.shrinkHighWatermark()
     this.mesh.geometry.instanceCount = this.highWatermark
     this.pendingMove = null
+    this.layoutVersion++
+    this.uploadEpoch++
   }
 
   private shrinkHighWatermark(): void {
@@ -596,6 +706,9 @@ export class GlobalBlockBuffer {
   private growCapacity(minFaces: number): void {
     // Moved CPU data at newStart survives nw*.set(); pendingRanges cleared below anyway.
     if (this.pendingMove) this.finalizePendingMove()
+    for (const key of [...this.pendingReplace.keys()]) {
+      this.finalizePendingReplace(key)
+    }
 
     console.warn('[globalBlockBuffer] growing faces', this.capacityFaces, '->', '(need', minFaces, ')')
     let newCap = this.capacityFaces

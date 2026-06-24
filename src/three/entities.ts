@@ -642,6 +642,12 @@ export class Entities {
     }
   }
 
+  /** Local preview override: hand + player model until server skin refresh or reconnect. */
+  async applyTemporaryPlayerSkinOverride(skinUrl: string, entityId: string | number, username?: string, uuid?: string) {
+    this.worldRenderer.playerStateReactive.playerSkin = skinUrl
+    await this.updatePlayerSkin(entityId, username, uuid, skinUrl, undefined)
+  }
+
   private async loadAndApplySkin(entityId: string | number, skinUrl: string, renderEars: boolean) {
     let playerObject = this.getPlayerObject(entityId)
     if (!playerObject) return

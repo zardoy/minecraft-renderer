@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { buildVisibleCubeSpans, MAX_CUBE_SPANS, SPAN_GAP_TOLERANCE_FACES } from '../cubeDrawSpans'
+import { buildVisibleCubeSpans } from '../cubeDrawSpans'
 
 describe('buildVisibleCubeSpans', () => {
   test('contiguous slots merge into one span', () => {
@@ -15,17 +15,16 @@ describe('buildVisibleCubeSpans', () => {
   })
 
   test('scattered slots stay as multiple spans', () => {
-    const gap = SPAN_GAP_TOLERANCE_FACES + 1
     const spans = buildVisibleCubeSpans(
       [
         { start: 0, count: 1 },
-        { start: 1 + gap, count: 1 }
+        { start: 10, count: 1 }
       ],
-      1 + gap + 1
+      11
     )
     expect(spans.length).toBe(2)
     expect(spans[0]).toEqual({ start: 0, count: 1 })
-    expect(spans[1]).toEqual({ start: 1 + gap, count: 1 })
+    expect(spans[1]).toEqual({ start: 10, count: 1 })
   })
 
   test('full draw when most faces visible', () => {
@@ -41,9 +40,35 @@ describe('buildVisibleCubeSpans', () => {
     expect(spans[0]).toEqual({ start: 0, count: 8 })
   })
 
-  test('caps at MAX_CUBE_SPANS with full coverage', () => {
-    const visibleSectionCount = MAX_CUBE_SPANS + 5
-    const padFaces = SPAN_GAP_TOLERANCE_FACES + 1
+  test('full draw blocked when canFullDraw is false', () => {
+    const spans = buildVisibleCubeSpans([{ start: 0, count: 6 }], 8, false)
+    expect(spans).toEqual([{ start: 0, count: 6 }])
+  })
+
+  test('carves pending interior range from full-draw span', () => {
+    const spans = buildVisibleCubeSpans([{ start: 0, count: 6 }], 8, true, undefined, [{ start: 2, end: 3 }])
+    expect(spans).toEqual([
+      { start: 0, count: 2 },
+      { start: 4, count: 4 }
+    ])
+  })
+
+  test('does not merge across interior gap', () => {
+    const spans = buildVisibleCubeSpans(
+      [
+        { start: 0, count: 1 },
+        { start: 2, count: 1 }
+      ],
+      3
+    )
+    expect(spans.length).toBe(2)
+    expect(spans[0]).toEqual({ start: 0, count: 1 })
+    expect(spans[1]).toEqual({ start: 2, count: 1 })
+  })
+
+  test('does not cap span count when many scattered sections', () => {
+    const visibleSectionCount = 69
+    const padFaces = 10
     const visibleSlots: Array<{ start: number; count: number }> = []
     let cursor = 0
 
@@ -57,7 +82,7 @@ describe('buildVisibleCubeSpans', () => {
 
     const highWatermark = cursor
     const spans = buildVisibleCubeSpans(visibleSlots, highWatermark)
-    expect(spans.length).toBe(MAX_CUBE_SPANS)
+    expect(spans.length).toBe(visibleSectionCount)
 
     const covered = new Set<number>()
     for (const span of spans) {
