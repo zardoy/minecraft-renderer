@@ -18,7 +18,7 @@
  */
 export const getCelestialAngle = (timeOfDay: number): number => {
   // Normalize time to 0-1 range
-  let angle = ((timeOfDay % 24_000) / 24_000) - 0.25
+  let angle = (timeOfDay % 24_000) / 24_000 - 0.25
 
   if (angle < 0) angle += 1
   if (angle > 1) angle -= 1
@@ -106,7 +106,7 @@ export const debugSkyLight = () => {
     { ticks: 18_000, label: '12:00 AM (midnight)' },
     { ticks: 19_000, label: '1:00 AM' },
     { ticks: 23_000, label: '5:00 AM (dawn begins)' },
-    { ticks: 23_500, label: '5:30 AM (dawn mid)' },
+    { ticks: 23_500, label: '5:30 AM (dawn mid)' }
   ]
 
   console.log('Sky Light Debug:')
@@ -120,5 +120,5 @@ export const debugSkyLight = () => {
 
 // Export for global access in console
 if (typeof window !== 'undefined') {
-  (window as any).debugSkyLight = debugSkyLight
+  ;(window as any).debugSkyLight = debugSkyLight
 }

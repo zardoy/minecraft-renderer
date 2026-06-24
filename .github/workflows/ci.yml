@@ -3,9 +3,8 @@ on:
   pull_request:
 
 permissions:
-  id-token: write  # Required for OIDC
+  id-token: write # Required for OIDC
   contents: read
-
 
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
@@ -21,5 +20,6 @@ jobs:
         run: npm install -g corepack && corepack enable
       - name: Install Dependencies
         run: pnpm install
+      - run: pnpm format:check
       - run: pnpm typecheck
       - run: pnpm build

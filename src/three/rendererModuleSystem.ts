@@ -16,9 +16,7 @@ export interface RendererModuleController {
 /**
  * Constructor type for module controllers
  */
-export type RendererModuleControllerConstructor = new (
-  worldRenderer: WorldRendererThree
-) => RendererModuleController
+export type RendererModuleControllerConstructor = new (worldRenderer: WorldRendererThree) => RendererModuleController
 
 export interface RendererModuleManifest {
   id: string

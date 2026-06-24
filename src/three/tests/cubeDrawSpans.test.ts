@@ -3,30 +3,39 @@ import { buildVisibleCubeSpans } from '../cubeDrawSpans'
 
 describe('buildVisibleCubeSpans', () => {
   test('contiguous slots merge into one span', () => {
-    const spans = buildVisibleCubeSpans([
-      { start: 0, count: 4 },
-      { start: 4, count: 2 },
-    ], 6)
+    const spans = buildVisibleCubeSpans(
+      [
+        { start: 0, count: 4 },
+        { start: 4, count: 2 }
+      ],
+      6
+    )
     expect(spans.length).toBe(1)
     expect(spans[0]).toEqual({ start: 0, count: 6 })
   })
 
   test('scattered slots stay as multiple spans', () => {
-    const spans = buildVisibleCubeSpans([
-      { start: 0, count: 1 },
-      { start: 10, count: 1 },
-    ], 11)
+    const spans = buildVisibleCubeSpans(
+      [
+        { start: 0, count: 1 },
+        { start: 10, count: 1 }
+      ],
+      11
+    )
     expect(spans.length).toBe(2)
     expect(spans[0]).toEqual({ start: 0, count: 1 })
     expect(spans[1]).toEqual({ start: 10, count: 1 })
   })
 
   test('full draw when most faces visible', () => {
-    const spans = buildVisibleCubeSpans([
-      { start: 0, count: 3 },
-      { start: 3, count: 3 },
-      { start: 6, count: 2 },
-    ], 8)
+    const spans = buildVisibleCubeSpans(
+      [
+        { start: 0, count: 3 },
+        { start: 3, count: 3 },
+        { start: 6, count: 2 }
+      ],
+      8
+    )
     expect(spans.length).toBe(1)
     expect(spans[0]).toEqual({ start: 0, count: 8 })
   })
@@ -37,24 +46,21 @@ describe('buildVisibleCubeSpans', () => {
   })
 
   test('carves pending interior range from full-draw span', () => {
-    const spans = buildVisibleCubeSpans(
-      [{ start: 0, count: 6 }],
-      8,
-      true,
-      undefined,
-      [{ start: 2, end: 3 }],
-    )
+    const spans = buildVisibleCubeSpans([{ start: 0, count: 6 }], 8, true, undefined, [{ start: 2, end: 3 }])
     expect(spans).toEqual([
       { start: 0, count: 2 },
-      { start: 4, count: 4 },
+      { start: 4, count: 4 }
     ])
   })
 
   test('does not merge across interior gap', () => {
-    const spans = buildVisibleCubeSpans([
-      { start: 0, count: 1 },
-      { start: 2, count: 1 },
-    ], 3)
+    const spans = buildVisibleCubeSpans(
+      [
+        { start: 0, count: 1 },
+        { start: 2, count: 1 }
+      ],
+      3
+    )
     expect(spans.length).toBe(2)
     expect(spans[0]).toEqual({ start: 0, count: 1 })
     expect(spans[1]).toEqual({ start: 2, count: 1 })
@@ -63,7 +69,7 @@ describe('buildVisibleCubeSpans', () => {
   test('does not cap span count when many scattered sections', () => {
     const visibleSectionCount = 69
     const padFaces = 10
-    const visibleSlots: Array<{ start: number, count: number }> = []
+    const visibleSlots: Array<{ start: number; count: number }> = []
     let cursor = 0
 
     for (let i = 0; i < visibleSectionCount; i++) {

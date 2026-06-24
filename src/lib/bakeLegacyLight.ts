@@ -1,10 +1,5 @@
 /** Bake tint×AO colors with sky/block channels for static export (no live u_skyLevel uniform). */
-export function bakeLegacyVertexColors (
-  colors: ArrayLike<number>,
-  skyLights: ArrayLike<number>,
-  blockLights: ArrayLike<number>,
-  skyLevel: number,
-): number[] {
+export function bakeLegacyVertexColors(colors: ArrayLike<number>, skyLights: ArrayLike<number>, blockLights: ArrayLike<number>, skyLevel: number): number[] {
   const vertCount = colors.length / 3
   const out: number[] = []
   for (let v = 0; v < vertCount; v++) {

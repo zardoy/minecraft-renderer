@@ -37,23 +37,23 @@ function buildBareHandMatrix(swingProgress: number, equipProgress: number): THRE
   // Step 1: Base position with swing
   mat.multiply(_tempMat.makeTranslation(side * (swingX + 0.64), swingY - 0.6 + equipProgress * -0.6, swingZ - 0.72))
   // Step 2: Base Y rotation 45°
-  mat.multiply(_tempMat.makeRotationY(side * 45 * Math.PI / 180))
+  mat.multiply(_tempMat.makeRotationY((side * 45 * Math.PI) / 180))
   // Step 3: Swing Y rotation
-  mat.multiply(_tempMat.makeRotationY(side * Math.sin(sqrtSwing * Math.PI) * 70 * Math.PI / 180))
+  mat.multiply(_tempMat.makeRotationY((side * Math.sin(sqrtSwing * Math.PI) * 70 * Math.PI) / 180))
   // Step 4: Swing Z rotation
-  mat.multiply(_tempMat.makeRotationZ(side * Math.sin(swingProgress * swingProgress * Math.PI) * -20 * Math.PI / 180))
+  mat.multiply(_tempMat.makeRotationZ((side * Math.sin(swingProgress * swingProgress * Math.PI) * -20 * Math.PI) / 180))
   // Step 5: Second translation
   mat.multiply(_tempMat.makeTranslation(side * -1, 3.6, 3.5))
   // Step 6: Z rotation 120°
-  mat.multiply(_tempMat.makeRotationZ(side * 120 * Math.PI / 180))
+  mat.multiply(_tempMat.makeRotationZ((side * 120 * Math.PI) / 180))
   // Step 7: X rotation 200°
-  mat.multiply(_tempMat.makeRotationX(200 * Math.PI / 180))
+  mat.multiply(_tempMat.makeRotationX((200 * Math.PI) / 180))
   // Step 8: Y rotation -135°
-  mat.multiply(_tempMat.makeRotationY(side * -135 * Math.PI / 180))
+  mat.multiply(_tempMat.makeRotationY((side * -135 * Math.PI) / 180))
   // Step 9: Final X offset
   mat.multiply(_tempMat.makeTranslation(side * 5.6, 0, 0))
   // Step 10: translateToHand - arm part position (-5/16, 2/16, 0)
-  mat.multiply(_tempMat.makeTranslation(side * -5 / 16, 2 / 16, 0))
+  mat.multiply(_tempMat.makeTranslation((side * -5) / 16, 2 / 16, 0))
 
   return mat
 }
@@ -77,10 +77,10 @@ function buildItemArmMatrix(swingProgress: number, equipProgress: number): THREE
   // applyItemArmAttackTransform
   const sinSwingSq = Math.sin(swingProgress * swingProgress * Math.PI)
   const sinSqrtSwing = Math.sin(sqrtSwing * Math.PI)
-  mat.multiply(_tempMat.makeRotationY(side * (45 + sinSwingSq * -20) * Math.PI / 180))
-  mat.multiply(_tempMat.makeRotationZ(side * sinSqrtSwing * -20 * Math.PI / 180))
-  mat.multiply(_tempMat.makeRotationX(sinSqrtSwing * -80 * Math.PI / 180))
-  mat.multiply(_tempMat.makeRotationY(side * -45 * Math.PI / 180))
+  mat.multiply(_tempMat.makeRotationY((side * (45 + sinSwingSq * -20) * Math.PI) / 180))
+  mat.multiply(_tempMat.makeRotationZ((side * sinSqrtSwing * -20 * Math.PI) / 180))
+  mat.multiply(_tempMat.makeRotationX((sinSqrtSwing * -80 * Math.PI) / 180))
+  mat.multiply(_tempMat.makeRotationY((side * -45 * Math.PI) / 180))
 
   return mat
 }
@@ -88,10 +88,12 @@ function buildItemArmMatrix(swingProgress: number, equipProgress: number): THREE
 export default class HoldingBlock implements IHoldingBlock {
   // TODO refactor with the tree builder for better visual understanding
   holdingBlock: THREE.Object3D | undefined = undefined
-  blockSwapAnimation: {
-    switcher: SmoothSwitcher
-    // hidden: boolean
-  } | undefined = undefined
+  blockSwapAnimation:
+    | {
+        switcher: SmoothSwitcher
+        // hidden: boolean
+      }
+    | undefined = undefined
   cameraGroup = new THREE.Mesh()
   armTransformGroup = new THREE.Group()
   camera = new THREE.PerspectiveCamera(70, 1, 0.05, 100)
@@ -119,20 +121,31 @@ export default class HoldingBlock implements IHoldingBlock {
   private disposed = false
   private unsubs: Array<() => void> = []
 
-  constructor(public worldRenderer: WorldRendererThree, public offHand = false) {
+  constructor(
+    public worldRenderer: WorldRendererThree,
+    public offHand = false
+  ) {
     this.initCameraGroup()
     this.swingAnimator = new HandSwingAnimator()
     this.unsubs.push(
-      this.worldRenderer.onReactivePlayerStateUpdated('heldItemMain', () => {
-        if (!this.offHand) {
-          this.updateItem()
-        }
-      }, false),
-      this.worldRenderer.onReactivePlayerStateUpdated('heldItemOff', () => {
-        if (this.offHand) {
-          this.updateItem()
-        }
-      }, false)
+      this.worldRenderer.onReactivePlayerStateUpdated(
+        'heldItemMain',
+        () => {
+          if (!this.offHand) {
+            this.updateItem()
+          }
+        },
+        false
+      ),
+      this.worldRenderer.onReactivePlayerStateUpdated(
+        'heldItemOff',
+        () => {
+          if (this.offHand) {
+            this.updateItem()
+          }
+        },
+        false
+      )
     )
     this.config = worldRenderer.displayOptions.inWorldRenderingConfig
 
@@ -140,33 +153,38 @@ export default class HoldingBlock implements IHoldingBlock {
     // this.offHandDisplay = true
     if (!this.offHand) {
       // load default hand
-      void getMyHand().then((hand) => {
-        if (this.disposed) return
-        this.playerHand = hand
-        // trigger update
-        this.updateItem()
-      }).then(() => {
-        if (this.disposed) return
-        // now watch over the player skin
-        const unsub = watchProperty(
-          async () => {
-            return getMyHand(this.worldRenderer.playerStateReactive.playerSkin, this.worldRenderer.playerStateReactive.onlineMode ? this.worldRenderer.playerStateReactive.username : undefined)
-          },
-          this.worldRenderer.playerStateReactive,
-          'playerSkin',
-          (newHand) => {
-            if (newHand) {
-              this.playerHand = newHand
-              // trigger update
-              this.updateItem()
+      void getMyHand()
+        .then(hand => {
+          if (this.disposed) return
+          this.playerHand = hand
+          // trigger update
+          this.updateItem()
+        })
+        .then(() => {
+          if (this.disposed) return
+          // now watch over the player skin
+          const unsub = watchProperty(
+            async () => {
+              return getMyHand(
+                this.worldRenderer.playerStateReactive.playerSkin,
+                this.worldRenderer.playerStateReactive.onlineMode ? this.worldRenderer.playerStateReactive.username : undefined
+              )
+            },
+            this.worldRenderer.playerStateReactive,
+            'playerSkin',
+            newHand => {
+              if (newHand) {
+                this.playerHand = newHand
+                // trigger update
+                this.updateItem()
+              }
+            },
+            oldHand => {
+              disposeObject(oldHand!, true)
             }
-          },
-          (oldHand) => {
-            disposeObject(oldHand!, true)
-          }
-        )
-        this.unsubs.push(unsub)
-      })
+          )
+          this.unsubs.push(unsub)
+        })
     }
   }
 
@@ -201,7 +219,7 @@ export default class HoldingBlock implements IHoldingBlock {
       void this.setNewItem()
     } else {
       void this.setNewItem({
-        type: 'hand',
+        type: 'hand'
       })
     }
   }
@@ -224,7 +242,8 @@ export default class HoldingBlock implements IHoldingBlock {
   render(originalCamera: THREE.PerspectiveCamera, renderer: THREE.WebGLRenderer, ambientLight: THREE.AmbientLight, directionalLight: THREE.DirectionalLight) {
     if (!this.lastHeldItem) return
     const now = performance.now()
-    if (this.lastUpdate && now - this.lastUpdate > 50) { // one tick
+    if (this.lastUpdate && now - this.lastUpdate > 50) {
+      // one tick
       void this.replaceItemModel(this.lastHeldItem)
     }
 
@@ -322,7 +341,7 @@ export default class HoldingBlock implements IHoldingBlock {
 
     const targetProgress = forceState === 'disappeared' ? 1 : 0
     let cancelled = false
-    return new Promise<boolean>((resolve) => {
+    return new Promise<boolean>(resolve => {
       this.blockSwapAnimation!.switcher.transitionTo(
         { progress: targetProgress },
         forceState,
@@ -422,10 +441,15 @@ export default class HoldingBlock implements IHoldingBlock {
 
     let blockInner: THREE.Object3D | undefined
     if (handItem.type === 'item' || handItem.type === 'block') {
-      const result = this.worldRenderer.entities.getItemMesh({
-        ...handItem.fullItem,
-        itemId: handItem.id,
-      }, getFirstPersonItemSpecificProps(this.worldRenderer), false, this.lastItemModelName)
+      const result = this.worldRenderer.entities.getItemMesh(
+        {
+          ...handItem.fullItem,
+          itemId: handItem.id
+        },
+        getFirstPersonItemSpecificProps(this.worldRenderer),
+        false,
+        this.lastItemModelName
+      )
       if (result) {
         const { mesh: itemMesh, isBlock, modelName } = result
         if (isBlock) {
@@ -494,8 +518,6 @@ export default class HoldingBlock implements IHoldingBlock {
     this.holdingBlock = result.model
     this.currentDisplayType = result.type
     this.armTransformGroup.add(result.model)
-
-
   }
 
   testUnknownBlockSwitch() {
@@ -561,7 +583,6 @@ export default class HoldingBlock implements IHoldingBlock {
     // Idle animation disabled — walking bob is handled by vanilla bobView applied to cameraGroup
     this.idleAnimator = undefined
   }
-
 }
 
 class HandIdleAnimator {
@@ -586,7 +607,10 @@ class HandIdleAnimator {
 
   private readonly debugGui: DebugGui
 
-  constructor(public handMesh: THREE.Object3D, public playerState: PlayerStateRenderer) {
+  constructor(
+    public handMesh: THREE.Object3D,
+    public playerState: PlayerStateRenderer
+  ) {
     this.handMesh = handMesh
     this.globalTime = 0
     this.currentState = 'NOT_MOVING'
@@ -615,12 +639,24 @@ class HandIdleAnimator {
       },
       (property, value) => {
         switch (property) {
-          case 'x': this.handMesh.position.x = value; break
-          case 'y': this.handMesh.position.y = value; break
-          case 'z': this.handMesh.position.z = value; break
-          case 'rotationX': this.handMesh.rotation.x = value; break
-          case 'rotationY': this.handMesh.rotation.y = value; break
-          case 'rotationZ': this.handMesh.rotation.z = value; break
+          case 'x':
+            this.handMesh.position.x = value
+            break
+          case 'y':
+            this.handMesh.position.y = value
+            break
+          case 'z':
+            this.handMesh.position.z = value
+            break
+          case 'rotationX':
+            this.handMesh.rotation.x = value
+            break
+          case 'rotationY':
+            this.handMesh.rotation.y = value
+            break
+          case 'rotationZ':
+            this.handMesh.rotation.z = value
+            break
         }
       },
       {
@@ -646,10 +682,13 @@ class HandIdleAnimator {
     this.idleOffset.rotationZ = this.handMesh.rotation.z - this.defaultPosition.rotationZ
 
     this.idleTween = new tweenJs.Tween(this.idleOffset, this.tween)
-      .to({
-        y: 0.05,
-        rotationZ: 0.05
-      }, 3000)
+      .to(
+        {
+          y: 0.05,
+          rotationZ: 0.05
+        },
+        3000
+      )
       .easing(tweenJs.Easing.Sinusoidal.InOut)
       .yoyo(true)
       .repeat(Infinity)
@@ -747,8 +786,7 @@ class HandIdleAnimator {
     }
 
     // If we're not transitioning between states and in a stable state that should have idle animation
-    if (!this.stateSwitcher.isTransitioning &&
-      (this.currentState === 'NOT_MOVING' || this.currentState === 'SNEAKING')) {
+    if (!this.stateSwitcher.isTransitioning && (this.currentState === 'NOT_MOVING' || this.currentState === 'SNEAKING')) {
       // Start idle animation if not already running
       if (!this.idleTween?.isPlaying()) {
         this.startIdleAnimation()
@@ -762,8 +800,7 @@ class HandIdleAnimator {
     }
 
     // If we're in a movement state and not transitioning, update the movement animation
-    if (!this.stateSwitcher.isTransitioning &&
-      (this.currentState === 'WALKING' || this.currentState === 'SPRINTING')) {
+    if (!this.stateSwitcher.isTransitioning && (this.currentState === 'WALKING' || this.currentState === 'SPRINTING')) {
       const stateTransform = this.getStateTransform(this.currentState, this.globalTime)
       Object.assign(this.handMesh.position, stateTransform)
       Object.assign(this.handMesh.rotation, {
@@ -795,14 +832,14 @@ class HandSwingAnimator {
 
   readonly debugParams = {
     animationTime: 250,
-    animationStage: 0,
+    animationStage: 0
   }
 
   private readonly debugGui: DebugGui
 
   constructor() {
     this.debugGui = new DebugGui('hand_animator', this.debugParams, undefined, {
-      animationStage: { min: 0, max: 1, step: 0.01 },
+      animationStage: { min: 0, max: 1, step: 0.01 }
     })
   }
 

@@ -11,7 +11,7 @@ export type PlayerObjectType = PlayerObject & {
 
 const LOG_DEPTH_BIAS = -2e-4 // tune visually; negative ≈ polygonOffset “closer”
 
-function patchLogDepthBiasShader (shader: THREE.WebGLProgramParametersWithUniforms): void {
+function patchLogDepthBiasShader(shader: THREE.WebGLProgramParametersWithUniforms): void {
   shader.uniforms.uLogDepthBias = { value: LOG_DEPTH_BIAS }
   shader.fragmentShader = shader.fragmentShader.replace(
     '#include <logdepthbuf_pars_fragment>',
@@ -25,7 +25,7 @@ function patchLogDepthBiasShader (shader: THREE.WebGLProgramParametersWithUnifor
   )
 }
 
-function applyLogDepthBias (material: THREE.Material): void {
+function applyLogDepthBias(material: THREE.Material): void {
   if (material.userData.logDepthBiasApplied) return
   material.userData.logDepthBiasApplied = true
   material.onBeforeCompile = patchLogDepthBiasShader
@@ -33,14 +33,9 @@ function applyLogDepthBias (material: THREE.Material): void {
 }
 
 /** Log-depth world: opaque cutout mats (alphaTest + depthWrite, not transparent sort). */
-export function configurePlayerSkinMaterials (playerObject: PlayerObject): void {
+export function configurePlayerSkinMaterials(playerObject: PlayerObject): void {
   const skin = playerObject.skin as any
-  const materials = [
-    skin.layer1Material,
-    skin.layer1MaterialBiased,
-    skin.layer2Material,
-    skin.layer2MaterialBiased,
-  ]
+  const materials = [skin.layer1Material, skin.layer1MaterialBiased, skin.layer2Material, skin.layer2MaterialBiased]
   for (const mat of materials) {
     mat.transparent = false
     mat.alphaTest = 0.1
@@ -50,14 +45,10 @@ export function configurePlayerSkinMaterials (playerObject: PlayerObject): void 
   applyLogDepthBias(skin.layer2MaterialBiased)
 }
 
-export function createPlayerObject (options: {
-  username?: string
-  uuid?: string
-  scale?: number
-}): {
-    playerObject: PlayerObjectType
-    wrapper: THREE.Group
-  } {
+export function createPlayerObject(options: { username?: string; uuid?: string; scale?: number }): {
+  playerObject: PlayerObjectType
+  wrapper: THREE.Group
+} {
   const wrapper = new THREE.Group()
   const playerObject = new PlayerObject() as PlayerObjectType
 
@@ -68,7 +59,7 @@ export function createPlayerObject (options: {
   configurePlayerSkinMaterials(playerObject)
 
   wrapper.add(playerObject as any)
-  const scale = options.scale ?? (1 / 16)
+  const scale = options.scale ?? 1 / 16
   wrapper.scale.set(scale, scale, scale)
   wrapper.rotation.set(0, Math.PI, 0)
 
@@ -81,11 +72,13 @@ export function createPlayerObject (options: {
 }
 
 export const applySkinToPlayerObject = async (playerObject: PlayerObjectType, skinUrl: string) => {
-  return loadSkinImage(skinUrl || stevePngUrl).then(({ canvas }) => {
-    const skinTexture = new THREE.CanvasTexture(canvas)
-    skinTexture.magFilter = THREE.NearestFilter
-    skinTexture.minFilter = THREE.NearestFilter
-    skinTexture.needsUpdate = true
-    playerObject.skin.map = skinTexture as any
-  }).catch(console.error)
+  return loadSkinImage(skinUrl || stevePngUrl)
+    .then(({ canvas }) => {
+      const skinTexture = new THREE.CanvasTexture(canvas)
+      skinTexture.magFilter = THREE.NearestFilter
+      skinTexture.minFilter = THREE.NearestFilter
+      skinTexture.needsUpdate = true
+      playerObject.skin.map = skinTexture as any
+    })
+    .catch(console.error)
 }

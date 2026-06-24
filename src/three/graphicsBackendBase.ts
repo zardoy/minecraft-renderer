@@ -48,7 +48,7 @@ export const getBackendMethods = (worldRenderer: WorldRendererThree): any => {
     setVideoVolume: worldRenderer.media.setVideoVolume.bind(worldRenderer.media),
     setVideoSpeed: worldRenderer.media.setVideoSpeed.bind(worldRenderer.media),
     handleUserClick: worldRenderer.media.handleUserClick.bind(worldRenderer.media),
-    addSectionAnimation(id: string, animation: typeof worldRenderer.sectionsOffsetsAnimations[string]) {
+    addSectionAnimation(id: string, animation: (typeof worldRenderer.sectionsOffsetsAnimations)[string]) {
       worldRenderer.sectionsOffsetsAnimations[id] = animation
     },
     removeSectionAnimation(id: string) {
@@ -104,7 +104,7 @@ export const getBackendMethods = (worldRenderer: WorldRendererThree): any => {
       return {
         loadedSectionsChunks,
         loadedChunks: { ...worldRenderer.loadedChunks },
-        finishedChunks: { ...worldRenderer.finishedChunks },
+        finishedChunks: { ...worldRenderer.finishedChunks }
       }
     }
   }
@@ -156,9 +156,9 @@ export const createGraphicsBackendBase = () => {
     }
 
     documentRenderer = new DocumentRenderer(initOptions, mainData?.canvas)
-      ; (globalThis as any).renderer = documentRenderer.renderer
-      ; (globalThis as any).documentRenderer = documentRenderer
-      ; (globalThis as any).threeJsBackend = backend
+    ;(globalThis as any).renderer = documentRenderer.renderer
+    ;(globalThis as any).documentRenderer = documentRenderer
+    ;(globalThis as any).threeJsBackend = backend
 
     callModsMethod('default', backend)
   }
@@ -170,8 +170,8 @@ export const createGraphicsBackendBase = () => {
       worldRenderer.destroy()
       worldRenderer = null
       frameTimingCollector = null
-        ; (globalThis as any).world = undefined
-        ; (globalThis as any).frameTimingCollector = undefined
+      ;(globalThis as any).world = undefined
+      ;(globalThis as any).frameTimingCollector = undefined
     }
 
     if (menuBackgroundRenderer) {
@@ -183,12 +183,7 @@ export const createGraphicsBackendBase = () => {
       ...initOptions.config.menuBackground,
       ...menuBackgroundStartOptions
     }
-    menuBackgroundRenderer = new MenuBackgroundRenderer(
-      documentRenderer,
-      { ...initOptions },
-      mergedOptions,
-      !!process.env.SINGLE_FILE_BUILD_MODE
-    )
+    menuBackgroundRenderer = new MenuBackgroundRenderer(documentRenderer, { ...initOptions }, mergedOptions, !!process.env.SINGLE_FILE_BUILD_MODE)
     callModsMethod('menuBackgroundCreated', menuBackgroundRenderer)
     await menuBackgroundRenderer.start(mergedOptions)
     callModsMethod('menuBackgroundReady', menuBackgroundRenderer)
@@ -206,25 +201,25 @@ export const createGraphicsBackendBase = () => {
       worldRenderer.destroy()
       worldRenderer = null
       frameTimingCollector = null
-        ; (globalThis as any).world = undefined
-        ; (globalThis as any).frameTimingCollector = undefined
+      ;(globalThis as any).world = undefined
+      ;(globalThis as any).frameTimingCollector = undefined
     }
 
     const displayOptionsRestorers = [ResourcesManager, WorldViewWorker]
-    const displayOptions: DisplayWorldOptions = isWebWorker ? restoreTransferred(displayOptionsArg, displayOptionsRestorers, globalThis as unknown as Worker) : displayOptionsArg
+    const displayOptions: DisplayWorldOptions = isWebWorker
+      ? restoreTransferred(displayOptionsArg, displayOptionsRestorers, globalThis as unknown as Worker)
+      : displayOptionsArg
 
     documentRenderer.nonReactiveState = displayOptions.nonReactiveState
-      // Set resourcesManager globally for world rendering
-      ; (globalThis as any).resourcesManager = displayOptions.resourcesManager
+    // Set resourcesManager globally for world rendering
+    ;(globalThis as any).resourcesManager = displayOptions.resourcesManager
 
     worldRenderer = new WorldRendererThree(documentRenderer.renderer, initOptions, displayOptions)
 
     await worldRenderer.worldReadyPromise
 
-    frameTimingCollector = displayOptions.inWorldRenderingConfig.enableDebugOverlay
-      ? new FrameTimingCollector(displayOptions.nonReactiveState)
-      : null
-      ; (globalThis as any).frameTimingCollector = frameTimingCollector
+    frameTimingCollector = displayOptions.inWorldRenderingConfig.enableDebugOverlay ? new FrameTimingCollector(displayOptions.nonReactiveState) : null
+    ;(globalThis as any).frameTimingCollector = frameTimingCollector
 
     const originalRender = documentRenderer.render
 
@@ -241,8 +236,7 @@ export const createGraphicsBackendBase = () => {
     }
 
     documentRenderer.inWorldRenderingConfig = displayOptions.inWorldRenderingConfig
-
-      ; (globalThis as any).world = worldRenderer
+    ;(globalThis as any).world = worldRenderer
 
     callModsMethod('worldReady', worldRenderer)
   }
@@ -283,7 +277,7 @@ export const createGraphicsBackendBase = () => {
         return {
           'Geo Memory': worldRenderer?.chunkMeshManager.getEstimatedMemoryUsage().total ?? '-'
         }
-      },
+      }
     }),
     updateCamera(pos: Vec3 | null, yaw: number, pitch: number) {
       // Mark camera update event for frame timing visualization

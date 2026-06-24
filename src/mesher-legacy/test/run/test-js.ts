@@ -7,7 +7,7 @@ import fs from 'fs'
 import { join } from 'path'
 
 const chunk = getChunk()
-const { getGeometry } = setup(VERSION, [], { chunkOverride: chunk, noDebugTiles: true, })
+const { getGeometry } = setup(VERSION, [], { chunkOverride: chunk, noDebugTiles: true })
 
 getGeometry()
 console.time('getGeometry')

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('./utils/skins', () => ({
   stevePngUrl: '',
-  loadSkinImage: vi.fn(),
+  loadSkinImage: vi.fn()
 }))
 
 import { PlayerObject } from 'skinview3d'
@@ -15,12 +15,7 @@ describe('configurePlayerSkinMaterials', () => {
 
     configurePlayerSkinMaterials(playerObject)
 
-    const allMaterials = [
-      skin.layer1Material,
-      skin.layer1MaterialBiased,
-      skin.layer2Material,
-      skin.layer2MaterialBiased,
-    ]
+    const allMaterials = [skin.layer1Material, skin.layer1MaterialBiased, skin.layer2Material, skin.layer2MaterialBiased]
     for (const mat of allMaterials) {
       expect(mat.transparent).toBe(false)
       expect(mat.alphaTest).toBe(0.1)

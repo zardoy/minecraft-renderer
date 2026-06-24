@@ -14,13 +14,13 @@ vi.mock('./ui/newStats', () => ({
   updateStatText: vi.fn(),
   removeAllStats: vi.fn(),
   updatePanesVisibility: vi.fn(),
-  MC_RENDERER_DEBUG_OVERLAY_CLASS: 'mc-renderer-debug-overlay',
+  MC_RENDERER_DEBUG_OVERLAY_CLASS: 'mc-renderer-debug-overlay'
 }))
 
 vi.mock('./utils/skins', () => ({
   setSkinsConfig: vi.fn(),
   steveTexture: {},
-  stevePngUrl: '',
+  stevePngUrl: ''
 }))
 
 function ensurePromiseWithResolvers() {
@@ -59,10 +59,10 @@ function createRenderer(workerCount = 2, worldView?: DisplayWorldOptions['worldV
       allChunksLoaded: false,
       mesherWork: false,
       instabilityFactors: defaultPerformanceInstabilityFactors(),
-      intersectMedia: null,
+      intersectMedia: null
     },
     renderer: '',
-    preventEscapeMenu: false,
+    preventEscapeMenu: false
   })
 
   const displayOptions: DisplayWorldOptions = {
@@ -78,19 +78,19 @@ function createRenderer(workerCount = 2, worldView?: DisplayWorldOptions['worldV
       world: {
         chunksLoadedCount: 0,
         chunksTotalNumber: 0,
-        chunksFullInfo: '',
+        chunksFullInfo: ''
       },
       renderer: {
-        timeline: { live: [], frozen: [], lastSecond: [] },
-      },
+        timeline: { live: [], frozen: [], lastSecond: [] }
+      }
     },
     resourcesManager: {
       currentResources: {
         mcData: { version: {} },
         blocksAtlasJson: {},
-        blockstatesModels: {},
-      },
-    } as DisplayWorldOptions['resourcesManager'],
+        blockstatesModels: {}
+      }
+    } as DisplayWorldOptions['resourcesManager']
   }
 
   const initOptions: GraphicsInitOptions = {
@@ -99,15 +99,15 @@ function createRenderer(workerCount = 2, worldView?: DisplayWorldOptions['worldV
     callbacks: {
       displayCriticalError: vi.fn(),
       setRendererSpecificSettings: vi.fn(),
-      fireCustomEvent: vi.fn(),
-    },
+      fireCustomEvent: vi.fn()
+    }
   }
 
   const renderer = new TestWorldRenderer(displayOptions.resourcesManager, displayOptions, initOptions)
   renderer.active = true
   renderer.workers = Array.from({ length: workerCount }, () => ({
     postMessage: vi.fn(),
-    terminate: vi.fn(),
+    terminate: vi.fn()
   }))
   renderer['syncMesherPoolSnapshot']()
   renderer.viewDistance = 8
@@ -120,12 +120,15 @@ describe('WorldRendererCommon.reconfigureMesherWorkers', () => {
   beforeEach(() => {
     ensurePromiseWithResolvers()
     vi.stubGlobal('location', { href: 'http://localhost/' })
-    vi.stubGlobal('Worker', class MockWorker {
-      postMessage = vi.fn()
-      terminate = vi.fn()
-      addEventListener = vi.fn()
-      onmessage: ((event: MessageEvent) => void) | null = null
-    })
+    vi.stubGlobal(
+      'Worker',
+      class MockWorker {
+        postMessage = vi.fn()
+        terminate = vi.fn()
+        addEventListener = vi.fn()
+        onmessage: ((event: MessageEvent) => void) | null = null
+      }
+    )
     vi.spyOn(worldRendererModule, 'meshersSendMcData').mockImplementation(() => {})
   })
 
@@ -136,7 +139,7 @@ describe('WorldRendererCommon.reconfigureMesherWorkers', () => {
 
   test('recreates workers with new count and reloads chunks', async () => {
     const { renderer, reloadLoadedChunks } = createRenderer(3)
-    const terminated = renderer.workers.map((worker) => worker.terminate)
+    const terminated = renderer.workers.map(worker => worker.terminate)
     renderer.worldRendererConfig.mesherWorkers = 1
 
     await renderer.reconfigureMesherWorkers()
@@ -150,7 +153,7 @@ describe('WorldRendererCommon.reconfigureMesherWorkers', () => {
 
   test('recreates workers when mesher pipeline changes', async () => {
     const { renderer, reloadLoadedChunks } = createRenderer(2)
-    const terminated = renderer.workers.map((worker) => worker.terminate)
+    const terminated = renderer.workers.map(worker => worker.terminate)
     renderer.worldRendererConfig.wasmMesher = false
 
     await renderer.reconfigureMesherWorkers()

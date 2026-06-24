@@ -7,7 +7,7 @@ import { WorldRendererThree } from '../../viewer/three/worldrendererThree'
 export default class extends BasePlaygroundScene {
   continuousRender = true
 
-  override initGui (): void {
+  override initGui(): void {
     this.params = {
       starfield: false,
       entity: 'player',
@@ -15,7 +15,7 @@ export default class extends BasePlaygroundScene {
     }
   }
 
-  override renderFinish (): void {
+  override renderFinish(): void {
     if (this.params.starfield) {
       ;(viewer.world as WorldRendererThree).scene.background = new THREE.Color(0x00_00_00)
       ;(viewer.world as WorldRendererThree).starField.enabled = true
@@ -25,11 +25,14 @@ export default class extends BasePlaygroundScene {
     for (let i = 0; i < this.params.count; i++) {
       for (let j = 0; j < this.params.count; j++) {
         for (let k = 0; k < this.params.count; k++) {
-          viewer.entities.update({
-            id: i * 1000 + j * 100 + k,
-            name: this.params.entity,
-            pos: this.targetPos.offset(i, j, k)
-          } as any, {})
+          viewer.entities.update(
+            {
+              id: i * 1000 + j * 100 + k,
+              name: this.params.entity,
+              pos: this.targetPos.offset(i, j, k)
+            } as any,
+            {}
+          )
         }
       }
     }

@@ -84,7 +84,10 @@ export class AppViewer {
   /** Bound by `subscribeRendererOptions` / `bindRendererOptions` — source of truth for renderer-owned settings. */
   private getRendererOptions?: () => RendererStorageOptions
 
-  constructor(options: AppViewerOptions = {}, public resourcesManager: ResourcesManager = new ResourcesManager()) {
+  constructor(
+    options: AppViewerOptions = {},
+    public resourcesManager: ResourcesManager = new ResourcesManager()
+  ) {
     this.config = {
       ...defaultGraphicsBackendConfig,
       ...options.config
@@ -115,7 +118,7 @@ export class AppViewer {
    * Preload mesher worker script (HTTP validate + ephemeral Worker + `mc-web-ping` / `mc-web-pong`).
    * Chooses `/mesherWasm.js` vs `/mesher.js` from `inWorldRenderingConfig.wasmMesher`.
    */
-  preloadWorkers (): Promise<void> {
+  preloadWorkers(): Promise<void> {
     const script = this.inWorldRenderingConfig.wasmMesher ? 'mesherWasm.js' : 'mesher.js'
     return preloadMesherWorkerScript({ script })
   }
@@ -142,7 +145,7 @@ export class AppViewer {
       config: this.config,
       getRendererOptions: this.getRendererOptions,
       callbacks: {
-        displayCriticalError: (error) => {
+        displayCriticalError: error => {
           console.error('[AppViewer] Critical error:', error)
         },
         setRendererSpecificSettings: (key, value) => {
@@ -164,7 +167,7 @@ export class AppViewer {
         this.startMenuBackground(...this.currentState.args)
       } else {
         const { method, args } = this.currentState
-          ; (this.backend as any)[method](...args)
+        ;(this.backend as any)[method](...args)
       }
     }
   }
@@ -289,7 +292,7 @@ export class AppViewer {
     if (this.worldView) {
       // Listen to bot events if worldView supports it
       if (typeof (this.worldView as any).listenToBot === 'function') {
-        (this.worldView as any).listenToBot(bot)
+        ;(this.worldView as any).listenToBot(bot)
       }
     }
   }
@@ -300,7 +303,7 @@ export class AppViewer {
   destroyAll(): void {
     this.disconnectBackend(true)
     if (this.resourcesManager && typeof (this.resourcesManager as any).destroy === 'function') {
-      (this.resourcesManager as any).destroy()
+      ;(this.resourcesManager as any).destroy()
     }
   }
 
@@ -313,7 +316,7 @@ export class AppViewer {
       async waitingForChunks(): Promise<void> {
         if ((backend as any)?.worldState?.allChunksLoaded) return
 
-        return new Promise<void>((resolve) => {
+        return new Promise<void>(resolve => {
           const interval = setInterval(() => {
             if ((backend as any)?.worldState?.allChunksLoaded) {
               clearInterval(interval)

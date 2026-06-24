@@ -9,5 +9,5 @@ export const BUILTIN_MODULES = {
   futuristicReveal: sciFiWorldRevealManifest,
   rain: rainManifest,
   cameraBobbing: cameraBobbingManifest,
-  blockBreakParticles: blockBreakParticlesManifest,
+  blockBreakParticles: blockBreakParticlesManifest
 }

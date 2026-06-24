@@ -1,6 +1,6 @@
 import { augmentWorkerMcData } from '../lib/buildWorkerMcDataIndexes'
 
-globalThis.structuredClone ??= (value) => JSON.parse(JSON.stringify(value))
+globalThis.structuredClone ??= value => JSON.parse(JSON.stringify(value))
 
 const applyWorkerMcData = (raw: Record<string, unknown>) => {
   augmentWorkerMcData(raw)
@@ -22,7 +22,7 @@ self.addEventListener('message', (event: MessageEvent) => {
 
   if (Array.isArray(data)) {
     // eslint-disable-next-line unicorn/no-array-for-each
-    data.forEach((msg) => {
+    data.forEach(msg => {
       if (msg.type === 'mcData') {
         applyWorkerMcData(msg.mcData)
       }

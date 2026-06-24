@@ -17,22 +17,22 @@ const BANNER_HEIGHT = 40
 
 // Map banner block names to base color IDs
 const BANNER_NAME_TO_COLOR: Record<string, number> = {
-  'white_banner': 15,
-  'orange_banner': 14,
-  'magenta_banner': 13,
-  'light_blue_banner': 12,
-  'yellow_banner': 11,
-  'lime_banner': 10,
-  'pink_banner': 9,
-  'gray_banner': 8,
-  'light_gray_banner': 7,
-  'cyan_banner': 6,
-  'purple_banner': 5,
-  'blue_banner': 4,
-  'brown_banner': 3,
-  'green_banner': 2,
-  'red_banner': 1,
-  'black_banner': 0,
+  white_banner: 15,
+  orange_banner: 14,
+  magenta_banner: 13,
+  light_blue_banner: 12,
+  yellow_banner: 11,
+  lime_banner: 10,
+  pink_banner: 9,
+  gray_banner: 8,
+  light_gray_banner: 7,
+  cyan_banner: 6,
+  purple_banner: 5,
+  blue_banner: 4,
+  brown_banner: 3,
+  green_banner: 2,
+  red_banner: 1,
+  black_banner: 0
 }
 
 // Basic Minecraft banner colors (DyeColor enum values)
@@ -52,7 +52,7 @@ const BANNER_COLORS: Record<number, string> = {
   12: '#3ab3da', // light_blue
   13: '#c74ebd', // magenta
   14: '#f9801d', // orange
-  15: '#f9fffe', // white
+  15: '#f9fffe' // white
 }
 
 // Extract base color from banner block name
@@ -63,15 +63,7 @@ function getBannerBaseColor(blockName: string): number {
 }
 
 // Basic pattern rendering (simplified - just solid colors for now)
-const renderPattern = (
-  ctx: OffscreenCanvasRenderingContext2D,
-  pattern: string,
-  color: string,
-  x: number,
-  y: number,
-  width: number,
-  height: number
-) => {
+const renderPattern = (ctx: OffscreenCanvasRenderingContext2D, pattern: string, color: string, x: number, y: number, width: number, height: number) => {
   ctx.fillStyle = color
   // For now, just render basic patterns as solid colors
   // TODO: Implement actual pattern shapes (stripes, crosses, etc.)
@@ -83,19 +75,19 @@ const renderPattern = (
       ctx.fillRect(x, y, width / 3, height)
       break
     case 'rs': // Right stripe
-      ctx.fillRect(x + (width * 2 / 3), y, width / 3, height)
+      ctx.fillRect(x + (width * 2) / 3, y, width / 3, height)
       break
     case 'ts': // Top stripe
       ctx.fillRect(x, y, width, height / 3)
       break
     case 'ms': // Middle stripe
-      ctx.fillRect(x, y + (height / 3), width, height / 3)
+      ctx.fillRect(x, y + height / 3, width, height / 3)
       break
     case 'drs': // Down-right stripe
       ctx.fillRect(x, y, width / 2, height / 2)
       break
     case 'dls': // Down-left stripe
-      ctx.fillRect(x + (width / 2), y, width / 2, height / 2)
+      ctx.fillRect(x + width / 2, y, width / 2, height / 2)
       break
     case 'ss': // Small stripes
       for (let i = 0; i < width; i += 2) {
@@ -103,12 +95,12 @@ const renderPattern = (
       }
       break
     case 'cr': // Cross
-      ctx.fillRect(x, y + (height / 3), width, height / 3)
-      ctx.fillRect(x + (width / 3), y, width / 3, height)
+      ctx.fillRect(x, y + height / 3, width, height / 3)
+      ctx.fillRect(x + width / 3, y, width / 3, height)
       break
     case 'sc': // Straight cross
-      ctx.fillRect(x, y + (height / 2) - 1, width, 2)
-      ctx.fillRect(x + (width / 2) - 1, y, 2, height)
+      ctx.fillRect(x, y + height / 2 - 1, width, 2)
+      ctx.fillRect(x + width / 2 - 1, y, 2, height)
       break
     default:
       // Default: fill entire area
@@ -117,7 +109,7 @@ const renderPattern = (
 }
 
 // Create a cache key from banner content (base color + patterns)
-function createBannerCacheKey(baseColor: number, patterns: Array<{ Color?: number, Pattern?: string }> | undefined): string {
+function createBannerCacheKey(baseColor: number, patterns: Array<{ Color?: number; Pattern?: string }> | undefined): string {
   if (!patterns || patterns.length === 0) {
     return `banner_${baseColor}_empty`
   }
@@ -158,30 +150,17 @@ export const renderBanner = (
       const color = BANNER_COLORS[colorId] || BANNER_COLORS[0]
 
       // Render each pattern on top of previous ones
-      renderPattern(
-        ctx,
-        pattern,
-        color,
-        0,
-        0,
-        BANNER_WIDTH * scale,
-        BANNER_HEIGHT * scale
-      )
+      renderPattern(ctx, pattern, color, 0, 0, BANNER_WIDTH * scale, BANNER_HEIGHT * scale)
     }
   }
 
   return canvas
 }
 
-
 // Banner texture cache with reference counting
-const bannerTextureCache = new Map<string, { texture: THREE.Texture, refCount: number }>()
+const bannerTextureCache = new Map<string, { texture: THREE.Texture; refCount: number }>()
 
-export function getBannerTexture(
-  worldRenderer: WorldRendererThree,
-  blockName: string,
-  blockEntity: any
-): THREE.Texture | undefined {
+export function getBannerTexture(worldRenderer: WorldRendererThree, blockName: string, blockEntity: any): THREE.Texture | undefined {
   // Extract base color from block name
   const baseColor = getBannerBaseColor(blockName)
 
@@ -231,8 +210,8 @@ export function createBannerMesh(
   texture: THREE.Texture,
   blockLightNorm = 0,
   skyLightNorm = 1,
-  skyLevel = 1,
-): THREE.Group & { bannerTexture?: THREE.Texture, bannerMaterial?: THREE.MeshBasicMaterial } {
+  skyLevel = 1
+): THREE.Group & { bannerTexture?: THREE.Texture; bannerMaterial?: THREE.MeshBasicMaterial } {
   const bannerWidth = 13.6 / 16
   const bannerHeight = 28 / 16
   const clothXOffset = 0
@@ -255,10 +234,7 @@ export function createBannerMesh(
 
   const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true })
   tintBannerMaterial(material, blockLightNorm, skyLightNorm, skyLevel)
-  const mesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(bannerWidth, bannerHeight),
-    material,
-  )
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(bannerWidth, bannerHeight), material)
   mesh.renderOrder = 999
 
   const thickness = 0.5 / 16
@@ -273,11 +249,7 @@ export function createBannerMesh(
     bannerTexture?: THREE.Texture
     bannerMaterial?: THREE.MeshBasicMaterial
   }
-  group.rotation.set(
-    0,
-    -THREE.MathUtils.degToRad(rotation * (isWall ? 90 : 45 / 2)),
-    0
-  )
+  group.rotation.set(0, -THREE.MathUtils.degToRad(rotation * (isWall ? 90 : 45 / 2)), 0)
   group.add(mesh)
   group.bannerTexture = texture
   group.bannerMaterial = material

@@ -8,12 +8,12 @@ export class AnimationController {
   private currentCancelCallback: (() => void) | null = null
 
   /** Main method */
-  async startAnimation (createAnimation: () => tweenJs.Group, onCancelled?: () => void): Promise<void> {
+  async startAnimation(createAnimation: () => tweenJs.Group, onCancelled?: () => void): Promise<void> {
     if (this.isAnimating) {
       await this.cancelCurrentAnimation()
     }
 
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
       this.isAnimating = true
       this.cancelRequested = false
       this.currentCancelCallback = onCancelled ?? null
@@ -28,7 +28,7 @@ export class AnimationController {
   }
 
   /** Main method */
-  async cancelCurrentAnimation (): Promise<void> {
+  async cancelCurrentAnimation(): Promise<void> {
     if (!this.isAnimating) return
 
     if (this.currentCancelCallback) {
@@ -37,7 +37,7 @@ export class AnimationController {
       callback()
     }
 
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
       this.cancelRequested = true
       this.completionCallbacks.push(() => {
         resolve()
@@ -45,11 +45,11 @@ export class AnimationController {
     })
   }
 
-  animationCycleFinish () {
+  animationCycleFinish() {
     if (this.cancelRequested) this.forceFinish()
   }
 
-  forceFinish (callComplete = true) {
+  forceFinish(callComplete = true) {
     if (!this.isAnimating) return
 
     if (this.currentAnimation) {
@@ -69,17 +69,17 @@ export class AnimationController {
   }
 
   /** Required method */
-  update () {
+  update() {
     if (this.currentAnimation) {
       this.currentAnimation.update()
     }
   }
 
-  get isActive () {
+  get isActive() {
     return this.isAnimating
   }
 
-  get shouldCancel () {
+  get shouldCancel() {
     return this.cancelRequested
   }
 }

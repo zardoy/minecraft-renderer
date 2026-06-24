@@ -2,14 +2,18 @@ import { test, expect } from 'vitest'
 import { setup } from '../../mesher-legacy/test/mesherTester'
 
 test('renderLiquid blend output satisfies 6/4 quad invariant with both windings', () => {
-  const { getGeometry } = setup('1.16.5', [
-    [[0, 0, 0], 'water'],
-    [[0, -1, 0], 'stone'],
-    [[1, 0, 0], 'stone'],
-    [[-1, 0, 0], 'stone'],
-    [[0, 0, 1], 'stone'],
-    [[0, 0, -1], 'stone'],
-  ], { noDebugTiles: true })
+  const { getGeometry } = setup(
+    '1.16.5',
+    [
+      [[0, 0, 0], 'water'],
+      [[0, -1, 0], 'stone'],
+      [[1, 0, 0], 'stone'],
+      [[-1, 0, 0], 'stone'],
+      [[0, 0, 1], 'stone'],
+      [[0, 0, -1], 'stone']
+    ],
+    { noDebugTiles: true }
+  )
 
   const { attr } = getGeometry()
   const blend = attr.blend

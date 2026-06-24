@@ -23,19 +23,14 @@ export type RendererOptionMeta = {
 
 export type RendererMesherPipeline = 'wasm' | 'legacy-js'
 
-export type RendererShaderCubeDebugMode =
-  | 'off'
-  | 'holes'
-  | 'texIndex'
-  | 'faces'
-  | 'atlasAlpha'
+export type RendererShaderCubeDebugMode = 'off' | 'holes' | 'texIndex' | 'faces' | 'atlasAlpha'
 
 const SHADER_CUBE_DEBUG_MODE_TO_VALUE: Record<RendererShaderCubeDebugMode, number> = {
   off: 0,
   holes: 1,
   texIndex: 2,
   faces: 3,
-  atlasAlpha: 4,
+  atlasAlpha: 4
 }
 
 /** Maps stored option → `inWorldRenderingConfig.shaderCubeDebugMode` (0–4). */
@@ -118,7 +113,7 @@ export function migrateRendererOptions(saved: Record<string, unknown>): void {
     ['menuBackgroundFuturisticCamera', 'menuBackgroundV2Camera'],
     ['menuBackgroundFuturisticBlockGroup', 'menuBackgroundV2BlockGroup'],
     ['menuBackgroundFuturisticCameraSpeed', 'menuBackgroundV2CameraSpeed'],
-    ['menuBackgroundFuturisticBlockSpeed', 'menuBackgroundV2BlockSpeed'],
+    ['menuBackgroundFuturisticBlockSpeed', 'menuBackgroundV2BlockSpeed']
   ]
   for (const [oldKey, newKey] of futuristicToV2) {
     if (saved[oldKey] !== undefined && saved[newKey] === undefined) {
@@ -131,7 +126,10 @@ export function migrateRendererOptions(saved: Record<string, unknown>): void {
 /** Settings UI metadata for {@link RENDERER_DEFAULT_OPTIONS} keys. */
 export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, RendererOptionMeta>> = {
   menuBackgroundMode: {
-    possibleValues: [['classic', 'Classic'], ['v2', 'V2']],
+    possibleValues: [
+      ['classic', 'Classic'],
+      ['v2', 'V2']
+    ],
     requiresRestart: true
   },
   menuBackgroundMinecraftTextures: {
@@ -190,10 +188,14 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
     tooltip: 'Skips signs, banners, heads, maps, etc.'
   },
   rendererMesher: {
-    possibleValues: [['wasm', 'WASM'], ['legacy-js', 'Legacy JS']],
+    possibleValues: [
+      ['wasm', 'WASM'],
+      ['legacy-js', 'Legacy JS']
+    ],
     text: 'Mesher pipeline',
-    tooltip: 'Browser technology for processing world geometry before render. WASM is the fastest; if you see a dead tab icon, reloads, or other errors, switch to Legacy JS.',
-    requiresChunksReload: true,
+    tooltip:
+      'Browser technology for processing world geometry before render. WASM is the fastest; if you see a dead tab icon, reloads, or other errors, switch to Legacy JS.',
+    requiresChunksReload: true
   },
   rendererShaderCubeDebugMode: {
     text: 'Shader cube debug',
@@ -203,8 +205,8 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
       ['holes', 'Hole test (red)'],
       ['texIndex', 'Tile index colors'],
       ['faces', 'Face id colors'],
-      ['atlasAlpha', 'Atlas alpha'],
-    ],
+      ['atlasAlpha', 'Atlas alpha']
+    ]
   },
   showChunkBorders: {
     text: 'Chunk borders'
@@ -290,59 +292,55 @@ export const RENDERER_RENDER_GUI_SECTIONS: ReadonlyArray<{
   title: string
   keys: readonly RendererDefaultOptionKey[]
 }> = [
-    {
-      title: 'World rendering',
-      keys: [
-        'rendererWorldPerformance',
-        'starfieldRendering',
-        'defaultSkybox',
-        'disableBlockEntityTextures',
-        'showChunkBorders',
-        'renderEntities',
-        'smoothLighting',
-        'vanillaLook',
-        'newVersionsLighting',
-        'dayCycleAndLighting',
-        'loadPlayerSkins',
-        'renderEars',
-        'showHand',
-        'viewBobbing',
-        'fov',
-        'keepChunksDistance',
-        'highlightBlockColor',
-        'clipWorldBelowY'
-      ]
-    },
-    {
-      title: 'Frame pacing',
-      keys: ['frameLimit', 'backgroundRendering', 'renderDebug', 'gpuPreference']
-    },
-    {
-      title: 'VR',
-      keys: ['vrSupport', 'vrPageGameRendering']
-    },
-    {
-      title: 'Menu background',
-      keys: [
-        'menuBackgroundMode',
-        'menuBackgroundMinecraftTextures',
-        'menuBackgroundV2Scene',
-        'menuBackgroundV2Camera',
-        'menuBackgroundV2BlockGroup',
-        'menuBackgroundV2CameraSpeed',
-        'menuBackgroundV2BlockSpeed'
-      ]
-    },
-    {
-      title: 'Mesher',
-      keys: ['rendererMesher']
-    },
-    {
-      title: 'Renderer debug',
-      keys: [
-        'rendererFuturisticReveal',
-        'rendererPerfDebugOverlay',
-        'rendererShaderCubeDebugMode',
-      ]
-    }
-  ]
+  {
+    title: 'World rendering',
+    keys: [
+      'rendererWorldPerformance',
+      'starfieldRendering',
+      'defaultSkybox',
+      'disableBlockEntityTextures',
+      'showChunkBorders',
+      'renderEntities',
+      'smoothLighting',
+      'vanillaLook',
+      'newVersionsLighting',
+      'dayCycleAndLighting',
+      'loadPlayerSkins',
+      'renderEars',
+      'showHand',
+      'viewBobbing',
+      'fov',
+      'keepChunksDistance',
+      'highlightBlockColor',
+      'clipWorldBelowY'
+    ]
+  },
+  {
+    title: 'Frame pacing',
+    keys: ['frameLimit', 'backgroundRendering', 'renderDebug', 'gpuPreference']
+  },
+  {
+    title: 'VR',
+    keys: ['vrSupport', 'vrPageGameRendering']
+  },
+  {
+    title: 'Menu background',
+    keys: [
+      'menuBackgroundMode',
+      'menuBackgroundMinecraftTextures',
+      'menuBackgroundV2Scene',
+      'menuBackgroundV2Camera',
+      'menuBackgroundV2BlockGroup',
+      'menuBackgroundV2CameraSpeed',
+      'menuBackgroundV2BlockSpeed'
+    ]
+  },
+  {
+    title: 'Mesher',
+    keys: ['rendererMesher']
+  },
+  {
+    title: 'Renderer debug',
+    keys: ['rendererFuturisticReveal', 'rendererPerfDebugOverlay', 'rendererShaderCubeDebugMode']
+  }
+]

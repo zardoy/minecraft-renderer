@@ -3,14 +3,10 @@ import blocksAtlases from 'mc-assets/dist/blocksAtlases.json'
 import itemsAtlases from 'mc-assets/dist/itemsAtlases.json'
 import blockstatesModels from 'mc-assets/dist/blockStatesModels.json'
 import { AtlasParser } from 'mc-assets/dist/atlasParser'
-import {
-  getItemsDefinitionsStoreForRender,
-  LoadedResourcesTransferrable,
-  ResourcesManager,
-} from './resourcesManager'
+import { getItemsDefinitionsStoreForRender, LoadedResourcesTransferrable, ResourcesManager } from './resourcesManager'
 
 vi.mock('../three/documentRenderer', () => ({
-  isWebWorker: true,
+  isWebWorker: true
 }))
 
 describe('ResourcesManager.rebuildWorkerRenderers', () => {
@@ -23,7 +19,7 @@ describe('ResourcesManager.rebuildWorkerRenderers', () => {
       blockstatesModels,
       blocksAtlasJson: blocksAtlasParser.atlas.latest,
       itemsAtlasJson: itemsAtlasParser.atlas.latest,
-      allReady: true,
+      allReady: true
     })
 
     const manager = new ResourcesManager()
@@ -39,8 +35,8 @@ describe('ResourcesManager.rebuildWorkerRenderers', () => {
     const resources = new LoadedResourcesTransferrable({
       version: '1.21.4',
       blockstatesModels,
-      blocksAtlasJson: (new AtlasParser(blocksAtlases as any, '')).atlas.latest,
-      itemsDefinitionsStore: { data: { latest: {} }, inclusive: false },
+      blocksAtlasJson: new AtlasParser(blocksAtlases as any, '').atlas.latest,
+      itemsDefinitionsStore: { data: { latest: {} }, inclusive: false }
     })
     const store = getItemsDefinitionsStoreForRender(resources)
     expect(typeof store.get).toBe('function')
@@ -50,7 +46,7 @@ describe('ResourcesManager.rebuildWorkerRenderers', () => {
     const resources = new LoadedResourcesTransferrable({
       version: '1.21.4',
       blockstatesModels,
-      blocksAtlasJson: (new AtlasParser(blocksAtlases as any, '')).atlas.latest,
+      blocksAtlasJson: new AtlasParser(blocksAtlases as any, '').atlas.latest
     })
     const manager = new ResourcesManager()
     manager.rebuildWorkerRenderers(resources)

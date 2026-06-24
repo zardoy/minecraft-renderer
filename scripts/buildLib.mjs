@@ -57,7 +57,7 @@ const buildOptions = {
       globals: {
         process: true,
         buffer: true,
-        global: true,
+        global: true
       },
       polyfills: {
         path: true,
@@ -65,10 +65,10 @@ const buildOptions = {
         events: true,
         stream: true,
         buffer: true,
-        crypto: true,
+        crypto: true
       }
-    }),
-  ],
+    })
+  ]
 }
 
 // Build or watch

@@ -17,10 +17,7 @@ const main = async () => {
   console.log('Comparing with snapshot...')
   try {
     const snapshotPath = join(dirname, '..', '..', SNAPSHOT_FILE)
-    compareOrWriteSnapshot(
-      result,
-      snapshotPath
-    )
+    compareOrWriteSnapshot(result, snapshotPath)
     console.log('✅ Snapshot test passed!\n')
   } catch (error) {
     console.error('❌ Snapshot test failed:', error.message)
@@ -65,4 +62,7 @@ const main = async () => {
   }
 }
 
-main().catch((err) => { console.error(err); process.exit(1) })
+main().catch(err => {
+  console.error(err)
+  process.exit(1)
+})

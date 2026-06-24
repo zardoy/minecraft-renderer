@@ -51,8 +51,7 @@ export interface ThreeRendererMainData {
   canvas: OffscreenCanvas
 }
 
-export const isWebWorker = typeof (globalThis as any).WorkerGlobalScope !== 'undefined' &&
-  globalThis instanceof (globalThis as any).WorkerGlobalScope
+export const isWebWorker = typeof (globalThis as any).WorkerGlobalScope !== 'undefined' && globalThis instanceof (globalThis as any).WorkerGlobalScope
 
 // ============================================================================
 // TopRightStats - Performance stats display
@@ -65,13 +64,15 @@ class TopRightStats {
   private total = 0
   private readonly denseMode: boolean
 
-  constructor(private readonly canvas: HTMLCanvasElement, initialStatsVisible = 0) {
+  constructor(
+    private readonly canvas: HTMLCanvasElement,
+    initialStatsVisible = 0
+  ) {
     this.stats = new Stats()
     this.stats2 = new Stats()
     this.statsGl = new StatsGl({ minimal: true })
     this.stats2.showPanel(2)
-    this.denseMode = typeof process !== 'undefined' && process.env?.NODE_ENV === 'production' ||
-      (typeof window !== 'undefined' && window.innerHeight < 500)
+    this.denseMode = (typeof process !== 'undefined' && process.env?.NODE_ENV === 'production') || (typeof window !== 'undefined' && window.innerHeight < 500)
 
     this.initStats()
     this.setVisibility(initialStatsVisible)
@@ -175,10 +176,10 @@ export class DocumentRenderer {
   disconnected = false
 
   // Render hooks
-  preRender = () => { }
-  render = (sizeChanged: boolean) => { }
-  postRender = () => { }
-  sizeChanged = () => { }
+  preRender = () => {}
+  render = (sizeChanged: boolean) => {}
+  postRender = () => {}
+  sizeChanged = () => {}
 
   droppedFpsPercentage = 0
   config: GraphicsBackendConfig
@@ -209,9 +210,7 @@ export class DocumentRenderer {
         powerPreference: gpuPreferenceToWebGLPowerPreference(gpuPreference)
       })
     } catch (err: any) {
-      initOptions.callbacks.displayCriticalError(
-        new Error(`Failed to create WebGL context, not possible to render (restart browser): ${err.message}`)
-      )
+      initOptions.callbacks.displayCriticalError(new Error(`Failed to create WebGL context, not possible to render (restart browser): ${err.message}`))
       throw err
     }
 
@@ -332,13 +331,12 @@ export class DocumentRenderer {
       if (this.config.timeoutRendering) {
         const targetFps = this.config.fpsLimit ? Math.min(this.config.fpsLimit, 60) : 60
         const timeoutMs = 1000 / targetFps
-          ; (this as any).timeoutId = setTimeout(animate, timeoutMs)
+        ;(this as any).timeoutId = setTimeout(animate, timeoutMs)
       } else {
         this.animationFrameId = requestAnimationFrame(animate)
       }
 
-      if (this.paused ||
-        (this.renderer.xr.isPresenting && !this.inWorldRenderingConfig?.vrPageGameRendering)) {
+      if (this.paused || (this.renderer.xr.isPresenting && !this.inWorldRenderingConfig?.vrPageGameRendering)) {
         return
       }
 
@@ -363,8 +361,7 @@ export class DocumentRenderer {
         this.pendingResize = false
       }
 
-      if (this.previousCanvasWidth !== this.currentWidth ||
-        this.previousCanvasHeight !== this.currentHeight) {
+      if (this.previousCanvasWidth !== this.currentWidth || this.previousCanvasHeight !== this.currentHeight) {
         this.previousCanvasWidth = this.currentWidth
         this.previousCanvasHeight = this.currentHeight
         this.sizeUpdated()
@@ -448,7 +445,7 @@ export const addCanvasForWorker = (): {
   const canvas = addCanvasToPage()
   const transferred = canvas.transferControlToOffscreen()
   let removed = false
-  let onSizeChanged = (w: number, h: number) => { }
+  let onSizeChanged = (w: number, h: number) => {}
   let oldSize = { width: 0, height: 0 }
 
   const checkSize = () => {

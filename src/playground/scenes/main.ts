@@ -26,8 +26,8 @@ class MainScene extends BasePlaygroundScene {
       },
       entityRotate: false,
       camera: '',
-      playSound() { },
-      blockIsomorphicRenderBundle() { },
+      playSound() {},
+      blockIsomorphicRenderBundle() {},
       modelVariant: 0
     }
     this.metadataGui = this.gui.add(this.params, 'metadata')
@@ -43,7 +43,7 @@ class MainScene extends BasePlaygroundScene {
         options: this.mcData.entitiesArray.map(b => b.name).sort((a, b) => a.localeCompare(b))
       },
       camera: {
-        hide: true,
+        hide: true
       }
     }
     super.initGui()
@@ -72,7 +72,8 @@ class MainScene extends BasePlaygroundScene {
       if (states) {
         for (const state of states) {
           let defaultValue: string | number | boolean
-          if (state.values) { // int, enum
+          if (state.values) {
+            // int, enum
             defaultValue = state.values[0] as string | number | boolean
           } else {
             switch (state.type) {
@@ -139,9 +140,16 @@ class MainScene extends BasePlaygroundScene {
     this.worldRenderer?.entities.clear()
     if (!this.params.entity) return
     this.worldView!.emit('entity', {
-      id: 'id', name: this.params.entity, pos: this.targetPos.offset(0.5, 1, 0.5), width: 1, height: 1, username: localStorage.testUsername, yaw: Math.PI, pitch: 0
+      id: 'id',
+      name: this.params.entity,
+      pos: this.targetPos.offset(0.5, 1, 0.5),
+      width: 1,
+      height: 1,
+      username: localStorage.testUsername,
+      yaw: Math.PI,
+      pitch: 0
     })
-    const enableSkeletonDebug = (obj) => {
+    const enableSkeletonDebug = obj => {
       if (!obj) return
       const { children, isSkeletonHelper } = obj
       if (!Array.isArray(children)) return
@@ -221,11 +229,7 @@ class MainScene extends BasePlaygroundScene {
     this.worldRenderer.realScene.background = null
 
     const rad = THREE.MathUtils.degToRad(-120)
-    this.worldRenderer.directionalLight.position.set(
-      Math.cos(rad),
-      Math.sin(rad),
-      0.2
-    ).normalize()
+    this.worldRenderer.directionalLight.position.set(Math.cos(rad), Math.sin(rad), 0.2).normalize()
     this.worldRenderer.directionalLight.intensity = 1
 
     const cameraPos = this.targetPos.offset(2, 2, 2)

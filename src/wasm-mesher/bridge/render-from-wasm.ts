@@ -16,11 +16,7 @@ import { SECTION_HEIGHT } from '../../mesher-shared/shared'
 import type { World } from '../../mesher-shared/world'
 import { resolveBlockPropertiesForMeshing } from '../../mesher-shared/blockPropertiesForMeshing'
 import { isSemiTransparentBlockName } from '../../mesher-shared/models'
-import {
-  buildShaderCubesFromWords,
-  getShaderCubeResources,
-  tryBuildShaderCubeInstances,
-} from './shaderCubeBridge'
+import { buildShaderCubesFromWords, getShaderCubeResources, tryBuildShaderCubeInstances } from './shaderCubeBridge'
 import { getSideShading, vertexLightFromAo } from '../../mesher-shared/vertexShading'
 import tintsJson from 'minecraft-data/minecraft-data/data/pc/1.16.2/tints.json'
 
@@ -130,9 +126,7 @@ export interface WasmGeometryOutput {
  * shape into a transferable typed array. Tests exercise this same adapter so
  * future runtime usage and parity assertions cannot drift apart.
  */
-export function extractColumnHeightmap(
-  wasmOutput: { heightmap?: ArrayLike<number> | null } | null | undefined
-): Int16Array | null {
+export function extractColumnHeightmap(wasmOutput: { heightmap?: ArrayLike<number> | null } | null | undefined): Int16Array | null {
   const raw = wasmOutput?.heightmap
   if (!raw || raw.length !== 256) return null
   if (raw instanceof Int16Array) return new Int16Array(raw)
@@ -141,24 +135,14 @@ export function extractColumnHeightmap(
   return out
 }
 
-function computeMesherVertexLight(
-  world: World | undefined,
-  ao: number,
-  cornerLight15: number,
-  faceDir: [number, number, number]
-): number {
+function computeMesherVertexLight(world: World | undefined, ao: number, cornerLight15: number, faceDir: [number, number, number]): number {
   const shadingTheme = world?.config.shadingTheme ?? 'high-contrast'
   const cardinalLight = world?.config.cardinalLight ?? 'default'
   const sideShading = getSideShading(faceDir, shadingTheme, cardinalLight)
   return vertexLightFromAo(ao, cornerLight15, sideShading, shadingTheme)
 }
 
-function vertexTintAoColor (
-  world: World | undefined,
-  tint: [number, number, number],
-  ao: number,
-  faceDir: [number, number, number],
-): [number, number, number] {
+function vertexTintAoColor(world: World | undefined, tint: [number, number, number], ao: number, faceDir: [number, number, number]): [number, number, number] {
   const shadingTheme = world?.config.shadingTheme ?? 'high-contrast'
   const cardinalLight = world?.config.cardinalLight ?? 'default'
   const sideShading = getSideShading(faceDir, shadingTheme, cardinalLight)
@@ -170,17 +154,17 @@ function vertexTintAoColor (
   return [tint[0] * f, tint[1] * f, tint[2] * f]
 }
 
-function sampleChannelLightAt (world: World, pos: Vec3): { block: number, sky: number } {
+function sampleChannelLightAt(world: World, pos: Vec3): { block: number; sky: number } {
   return world.getChannelLightNorm(pos)
 }
 
-function smoothChannelLightAt (
+function smoothChannelLightAt(
   world: World,
   cursor: Vec3,
   faceDir: [number, number, number],
   cornerOffset: [number, number, number],
-  faceIdx: number,
-): { block: number, sky: number } {
+  faceIdx: number
+): { block: number; sky: number } {
   const neighbor = cursor.offset(faceDir[0], faceDir[1], faceDir[2])
   const base = sampleChannelLightAt(world, neighbor)
 
@@ -189,10 +173,20 @@ function smoothChannelLightAt (
   }
 
   const mask1 = [
-    [1, 1, 0], [1, 1, 0], [1, 1, 0], [1, 1, 0], [1, 0, 1], [1, 0, 1],
+    [1, 1, 0],
+    [1, 1, 0],
+    [1, 1, 0],
+    [1, 1, 0],
+    [1, 0, 1],
+    [1, 0, 1]
   ][faceIdx]!
   const mask2 = [
-    [0, 1, 1], [0, 1, 1], [1, 0, 1], [1, 0, 1], [0, 1, 1], [0, 1, 1],
+    [0, 1, 1],
+    [0, 1, 1],
+    [1, 0, 1],
+    [1, 0, 1],
+    [0, 1, 1],
+    [0, 1, 1]
   ][faceIdx]!
   const [cx, cy, cz] = cornerOffset
   const [fx, fy, fz] = faceDir
@@ -213,7 +207,7 @@ function smoothChannelLightAt (
     base,
     sampleChannelLightAt(world, neighbor.offset(s1[0], s1[1], s1[2])),
     sampleChannelLightAt(world, neighbor.offset(s2[0], s2[1], s2[2])),
-    sampleChannelLightAt(world, neighbor.offset(c[0], c[1], c[2])),
+    sampleChannelLightAt(world, neighbor.offset(c[0], c[1], c[2]))
   ]
 
   let blockSum = 0
@@ -234,19 +228,13 @@ function getCachedBlockModel(
   blockProvider: WorldBlockProvider,
   PrismarineBlock: any,
   world?: World,
-  blockPos?: { x: number, y: number, z: number }
+  blockPos?: { x: number; y: number; z: number }
 ): CachedBlockModel | null {
   const usePreflat = !!(world?.preflat && blockPos)
   let blockName: string
   let blockProps: Record<string, unknown>
   if (usePreflat) {
-    const resolved = resolveBlockPropertiesForMeshing(
-      world,
-      new Vec3(blockPos!.x, blockPos!.y, blockPos!.z),
-      blockProvider,
-      blockStateId,
-      PrismarineBlock
-    )
+    const resolved = resolveBlockPropertiesForMeshing(world, new Vec3(blockPos!.x, blockPos!.y, blockPos!.z), blockProvider, blockStateId, PrismarineBlock)
     blockName = resolved.name
     blockProps = resolved.properties
   } else {
@@ -255,11 +243,9 @@ function getCachedBlockModel(
     blockProps = blockObj.getProperties()
   }
 
-  const cacheKey = usePreflat
-    ? `${version}:${blockStateId}:${blockName}:${JSON.stringify(blockProps)}`
-    : `${version}:${blockStateId}`
+  const cacheKey = usePreflat ? `${version}:${blockStateId}:${blockName}:${JSON.stringify(blockProps)}` : `${version}:${blockStateId}`
   if (!(globalThis as any).__wasmBlockModelCache) {
-    (globalThis as any).__wasmBlockModelCache = new Map()
+    ;(globalThis as any).__wasmBlockModelCache = new Map()
   }
   const cache = (globalThis as any).__wasmBlockModelCache
 
@@ -274,59 +260,54 @@ function getCachedBlockModel(
       blockProps = blockObj.getProperties()
     }
 
-    const models = blockProvider.getAllResolvedModels0_1(
-      { name: blockName, properties: blockProps as Record<string, string | number | boolean> },
-      false
-    )
+    const models = blockProvider.getAllResolvedModels0_1({ name: blockName, properties: blockProps as Record<string, string | number | boolean> }, false)
 
     if (!models || models.length === 0) return null
 
     // Precompute matrices for all model variants
-    const modelVariants = models.map((modelVars) => {
-      return modelVars.map((model) => {
-        // Calculate global matrix and shift for model rotation
-        let globalMatrix = null as any
-        let globalShift = null as any
-        for (const axis of ['x', 'y', 'z'] as const) {
-          if (axis in model) {
-            globalMatrix = globalMatrix
-              ? matmulmat3(globalMatrix, buildRotationMatrix(axis, -(model[axis] ?? 0)))
-              : buildRotationMatrix(axis, -(model[axis] ?? 0))
+    const modelVariants = models
+      .map(modelVars => {
+        return modelVars.map(model => {
+          // Calculate global matrix and shift for model rotation
+          let globalMatrix = null as any
+          let globalShift = null as any
+          for (const axis of ['x', 'y', 'z'] as const) {
+            if (axis in model) {
+              globalMatrix = globalMatrix
+                ? matmulmat3(globalMatrix, buildRotationMatrix(axis, -(model[axis] ?? 0)))
+                : buildRotationMatrix(axis, -(model[axis] ?? 0))
+            }
           }
-        }
-        if (globalMatrix) {
-          globalShift = [8, 8, 8]
-          globalShift = vecsub3(globalShift, matmul3(globalMatrix, globalShift))
-        }
+          if (globalMatrix) {
+            globalShift = [8, 8, 8]
+            globalShift = vecsub3(globalShift, matmul3(globalMatrix, globalShift))
+          }
 
-        // Precompute element matrices
-        const elements = (model.elements ?? []).map((element: any) => {
-          let localMatrix = null as any
-          let localShift = null as any
-          if (element.rotation) {
-            localMatrix = buildRotationMatrix(
-              element.rotation.axis,
-              element.rotation.angle
-            )
-            localShift = vecsub3(
-              element.rotation.origin,
-              matmul3(localMatrix, element.rotation.origin)
-            )
-          }
-          return { element, localMatrix, localShift }
+          // Precompute element matrices
+          const elements = (model.elements ?? []).map((element: any) => {
+            let localMatrix = null as any
+            let localShift = null as any
+            if (element.rotation) {
+              localMatrix = buildRotationMatrix(element.rotation.axis, element.rotation.angle)
+              localShift = vecsub3(element.rotation.origin, matmul3(localMatrix, element.rotation.origin))
+            }
+            return { element, localMatrix, localShift }
+          })
+
+          return { model, globalMatrix, globalShift, elements }
         })
-
-        return { model, globalMatrix, globalShift, elements }
       })
-    }).flat()
+      .flat()
 
     const isCube = (() => {
       try {
         if (!models?.length || models.length !== 1) return false
         if (blockObj.transparent) return false
-        return models[0].every((v) => v.elements.every((e) => {
-          return e.from[0] === 0 && e.from[1] === 0 && e.from[2] === 0 && e.to[0] === 16 && e.to[1] === 16 && e.to[2] === 16
-        }))
+        return models[0].every(v =>
+          v.elements.every(e => {
+            return e.from[0] === 0 && e.from[1] === 0 && e.from[2] === 0 && e.to[0] === 16 && e.to[1] === 16 && e.to[2] === 16
+          })
+        )
       } catch {
         return false
       }
@@ -338,7 +319,7 @@ function getCachedBlockModel(
       models,
       modelVariants,
       isCube,
-      boundingBox: blockObj.boundingBox,
+      boundingBox: blockObj.boundingBox
     }
 
     cache.set(cacheKey, cached)
@@ -365,11 +346,7 @@ function getTint(
     if (blockName === 'redstone_wire') {
       initializeTints()
       return tints.redstone[`${blockProps.power}`] || [1, 1, 1]
-    } else if (
-      blockName === 'birch_leaves' ||
-      blockName === 'spruce_leaves' ||
-      blockName === 'lily_pad'
-    ) {
+    } else if (blockName === 'birch_leaves' || blockName === 'spruce_leaves' || blockName === 'lily_pad') {
       initializeTints()
       return tints.constant[blockName] || [1, 1, 1]
     } else if (blockName.includes('leaves') || blockName === 'vine') {
@@ -384,13 +361,7 @@ function getTint(
   return [1, 1, 1]
 }
 
-const ALWAYS_WATERLOGGED = new Set([
-  'seagrass',
-  'tall_seagrass',
-  'kelp',
-  'kelp_plant',
-  'bubble_column'
-])
+const ALWAYS_WATERLOGGED = new Set(['seagrass', 'tall_seagrass', 'kelp', 'kelp_plant', 'bubble_column'])
 
 const isBlockWaterlogged = (block: any) => {
   const props = block?.getProperties?.()
@@ -429,7 +400,7 @@ const renderLiquidToGeometry = (
   skyLights: number[],
   blockLights: number[],
   uvs: number[],
-  indices: number[],
+  indices: number[]
 ) => {
   const heights: number[] = []
   for (let z = -1; z <= 1; z++) {
@@ -516,14 +487,7 @@ const renderLiquidToGeometry = (
       blockLights.push(blockNorm)
     }
 
-    indices.push(
-      baseIndex,
-      baseIndex + 1,
-      baseIndex + 2,
-      baseIndex + 2,
-      baseIndex + 1,
-      baseIndex + 3,
-    )
+    indices.push(baseIndex, baseIndex + 1, baseIndex + 2, baseIndex + 2, baseIndex + 1, baseIndex + 3)
 
     const dupBase = positions.length / 3
     for (let v = 0; v < 4; v++) {
@@ -536,14 +500,7 @@ const renderLiquidToGeometry = (
       skyLights.push(skyLights[src / 3]!)
       blockLights.push(blockLights[src / 3]!)
     }
-    indices.push(
-      dupBase,
-      dupBase + 2,
-      dupBase + 1,
-      dupBase + 1,
-      dupBase + 2,
-      dupBase + 3,
-    )
+    indices.push(dupBase, dupBase + 2, dupBase + 1, dupBase + 1, dupBase + 2, dupBase + 3)
   }
 }
 
@@ -564,9 +521,9 @@ export function renderWasmOutputToGeometry(
   wasmOutput: WasmGeometryOutput,
   version: string,
   sectionKey: string,
-  sectionPosition: { x: number, y: number, z: number },
+  sectionPosition: { x: number; y: number; z: number },
   world?: World,
-  options?: RenderWasmOptions,
+  options?: RenderWasmOptions
 ): ExportedSection {
   const DEBUG = false
   const log = (...args) => {
@@ -610,16 +567,16 @@ export function renderWasmOutputToGeometry(
   const blendIndices: number[] = []
 
   const liquidQueue: Array<{
-    pos: Vec3,
-    type: number,
-    biome: string,
-    water: boolean,
-    isRealWater: boolean,
+    pos: Vec3
+    type: number
+    biome: string
+    water: boolean
+    isRealWater: boolean
   }> = []
 
   const sectionHeight = options?.sectionHeight ?? SECTION_HEIGHT
   const shaderCubesEnabled = options?.shaderCubes !== false
-  const [sectionOx, sectionOy, sectionOz] = sectionKey.split(',').map((v) => parseInt(v, 10))
+  const [sectionOx, sectionOy, sectionOz] = sectionKey.split(',').map(v => parseInt(v, 10))
   const shaderWordBuffer: number[] = []
   const shaderResources = shaderCubesEnabled ? getShaderCubeResources() : null
 
@@ -644,7 +601,7 @@ export function renderWasmOutputToGeometry(
           type: prismBlock.type,
           biome: biome || 'plains',
           water: true,
-          isRealWater: prismBlock.name === 'water' && !waterlogged,
+          isRealWater: prismBlock.name === 'water' && !waterlogged
         })
       }
 
@@ -654,7 +611,7 @@ export function renderWasmOutputToGeometry(
           type: prismBlock.type,
           biome: biome || 'plains',
           water: false,
-          isRealWater: false,
+          isRealWater: false
         })
       }
 
@@ -663,14 +620,7 @@ export function renderWasmOutputToGeometry(
       }
     }
 
-    const cachedModel = getCachedBlockModel(
-      blockStateId,
-      version,
-      blockProvider,
-      PrismarineBlock,
-      world,
-      { x: bx, y: by, z: bz }
-    )
+    const cachedModel = getCachedBlockModel(blockStateId, version, blockProvider, PrismarineBlock, world, { x: bx, y: by, z: bz })
     if (!cachedModel) continue
 
     if (shaderResources) {
@@ -685,7 +635,7 @@ export function renderWasmOutputToGeometry(
             blockName: cachedModel.blockName,
             blockProps: cachedModel.blockProps,
             isCube: cachedModel.isCube,
-            model,
+            model
           },
           model,
           {
@@ -694,9 +644,9 @@ export function renderWasmOutputToGeometry(
             biome,
             tintPalette: shaderResources.tintPalette,
             textureIndexMapping: shaderResources.textureIndexMapping,
-            doAO,
+            doAO
           },
-          shaderWordBuffer,
+          shaderWordBuffer
         )
         if (emitted) continue
       }
@@ -715,12 +665,12 @@ export function renderWasmOutputToGeometry(
     const tgtIdx = routeToBlend ? blendIndices : indices
 
     const faceNameToIndex: Record<string, number> = {
-      'up': 0,
-      'down': 1,
-      'east': 2,
-      'west': 3,
-      'south': 4,
-      'north': 5
+      up: 0,
+      down: 1,
+      east: 2,
+      west: 3,
+      south: 4,
+      north: 5
     }
 
     const dirKeyToIndex: Record<string, number> = {
@@ -769,14 +719,8 @@ export function renderWasmOutputToGeometry(
         let localMatrix = null as any
         let localShift = null as any
         if (element.rotation) {
-          localMatrix = buildRotationMatrix(
-            element.rotation.axis,
-            element.rotation.angle
-          )
-          localShift = vecsub3(
-            element.rotation.origin,
-            matmul3(localMatrix, element.rotation.origin)
-          )
+          localMatrix = buildRotationMatrix(element.rotation.axis, element.rotation.angle)
+          localShift = vecsub3(element.rotation.origin, matmul3(localMatrix, element.rotation.origin))
         }
 
         // eslint-disable-next-line guard-for-in
@@ -785,11 +729,7 @@ export function renderWasmOutputToGeometry(
           const { dir, corners, mask1, mask2 } = elemFaces[faceName]
 
           const transformedDir = matmul3(globalMatrix, dir)
-          const transformedDirI: [number, number, number] = [
-            Math.round(transformedDir[0]),
-            Math.round(transformedDir[1]),
-            Math.round(transformedDir[2]),
-          ]
+          const transformedDirI: [number, number, number] = [Math.round(transformedDir[0]), Math.round(transformedDir[1]), Math.round(transformedDir[2])]
           const dirKey = `${transformedDirI[0]},${transformedDirI[1]},${transformedDirI[2]}`
           // faceIdx may be undefined for diagonal-rotated faces (e.g. signs at 45/135/225/315 deg).
           // Such faces are not representable in the 6-axis WASM visible_faces / ao_data / light_data
@@ -827,8 +767,8 @@ export function renderWasmOutputToGeometry(
           if (faceName === 'down') {
             r += 180
           }
-          const uvcs = Math.cos(r * Math.PI / 180)
-          const uvsn = -Math.sin(r * Math.PI / 180)
+          const uvcs = Math.cos((r * Math.PI) / 180)
+          const uvsn = -Math.sin((r * Math.PI) / 180)
 
           const tint = getTint(matchingEFace, cachedModel.blockName, cachedModel.blockProps, biome, world)
 
@@ -837,21 +777,13 @@ export function renderWasmOutputToGeometry(
           for (let cornerIdx = 0; cornerIdx < 4; cornerIdx++) {
             const pos = corners[cornerIdx]
 
-            let vertex = [
-              (pos[0] ? maxx : minx),
-              (pos[1] ? maxy : miny),
-              (pos[2] ? maxz : minz)
-            ]
+            let vertex = [pos[0] ? maxx : minx, pos[1] ? maxy : miny, pos[2] ? maxz : minz]
 
             vertex = vecadd3(matmul3(localMatrix, vertex), localShift)
             vertex = vecadd3(matmul3(globalMatrix, vertex), globalShift)
             vertex = vertex.map(v => v / 16)
 
-            const worldPos = [
-              vertex[0] + (bx & 15) - 8,
-              vertex[1] + (by & 15) - 8,
-              vertex[2] + (bz & 15) - 8
-            ]
+            const worldPos = [vertex[0] + (bx & 15) - 8, vertex[1] + (by & 15) - 8, vertex[2] + (bz & 15) - 8]
 
             tgtPos.push(...worldPos)
 
@@ -889,20 +821,12 @@ export function renderWasmOutputToGeometry(
               const side2Block = world.shouldMakeAo(side2) ? 1 : 0
               const cornerBlock = world.shouldMakeAo(corner) ? 1 : 0
 
-              ao = (side1Block && side2Block) ? 0 : (3 - (side1Block + side2Block + cornerBlock))
+              ao = side1Block && side2Block ? 0 : 3 - (side1Block + side2Block + cornerBlock)
               computedAoValues[cornerIdx] = ao
 
               const cornerDirL = matmul3(globalMatrix, [dx, dy, dz])
-              const cornerOffsetI: [number, number, number] = [
-                Math.round(cornerDirL[0]), Math.round(cornerDirL[1]), Math.round(cornerDirL[2]),
-              ]
-              const channels = smoothChannelLightAt(
-                world,
-                cursor,
-                faceDir,
-                cornerOffsetI,
-                faceIdx ?? 0,
-              )
+              const cornerOffsetI: [number, number, number] = [Math.round(cornerDirL[0]), Math.round(cornerDirL[1]), Math.round(cornerDirL[2])]
+              const channels = smoothChannelLightAt(world, cursor, faceDir, cornerOffsetI, faceIdx ?? 0)
               skyLightNorm = channels.sky
               blockLightNorm = channels.block
             } else {
@@ -947,7 +871,6 @@ export function renderWasmOutputToGeometry(
         }
       }
     }
-
   }
 
   if (world && liquidQueue.length) {
@@ -971,7 +894,7 @@ export function renderWasmOutputToGeometry(
         blendSkyLights,
         blendBlockLights,
         blendUvs,
-        blendIndices,
+        blendIndices
       )
     }
   }
@@ -988,20 +911,22 @@ export function renderWasmOutputToGeometry(
       skyLights,
       blockLights,
       uvs,
-      indices,
+      indices
     },
-    ...(blendPositions.length > 0 ? {
-      blendGeometry: {
-        positions: blendPositions,
-        normals: blendNormals,
-        colors: blendColors,
-        skyLights: blendSkyLights,
-        blockLights: blendBlockLights,
-        uvs: blendUvs,
-        indices: blendIndices,
-      },
-    } : {}),
-    ...(shaderCubes ? { shaderCubes } : {}),
+    ...(blendPositions.length > 0
+      ? {
+          blendGeometry: {
+            positions: blendPositions,
+            normals: blendNormals,
+            colors: blendColors,
+            skyLights: blendSkyLights,
+            blockLights: blendBlockLights,
+            uvs: blendUvs,
+            indices: blendIndices
+          }
+        }
+      : {}),
+    ...(shaderCubes ? { shaderCubes } : {})
   }
 
   log(`[WASM] Final geometry summary:`)
@@ -1048,9 +973,9 @@ export function renderWasmOutputToGeometry(
  */
 export function splitColumnWasmOutputToSections(
   fullColumnOutput: WasmGeometryOutput,
-  requestedSectionKeys: Array<{ x: number, y: number, z: number }>,
-  ctx: { version: string, world?: World, sectionHeight?: number, shaderCubes?: boolean }
-): Map<string, { exported: ExportedSection, blocksCount: number }> {
+  requestedSectionKeys: Array<{ x: number; y: number; z: number }>,
+  ctx: { version: string; world?: World; sectionHeight?: number; shaderCubes?: boolean }
+): Map<string, { exported: ExportedSection; blocksCount: number }> {
   const { version, world } = ctx
   const sectionHeight = ctx.sectionHeight ?? SECTION_HEIGHT
 
@@ -1069,7 +994,7 @@ export function splitColumnWasmOutputToSections(
     bucket.push(block)
   }
 
-  const out = new Map<string, { exported: ExportedSection, blocksCount: number }>()
+  const out = new Map<string, { exported: ExportedSection; blocksCount: number }>()
   for (const { x, y, z } of requestedSectionKeys) {
     // `y` here is the section's world-Y origin (multiple of sectionHeight),
     // matching the convention used by `mesherWasm.ts` (section keys are
@@ -1081,19 +1006,12 @@ export function splitColumnWasmOutputToSections(
     const sectionView: WasmGeometryOutput = {
       blocks: sectionBlocks,
       block_count: sectionBlocks.length,
-      block_iterations: fullColumnOutput.block_iterations,
+      block_iterations: fullColumnOutput.block_iterations
     }
 
     const sectionKey = `${x},${y},${z}`
     const sectionPosition = { x: x + 8, y: y + 8, z: z + 8 }
-    const exported = renderWasmOutputToGeometry(
-      sectionView,
-      version,
-      sectionKey,
-      sectionPosition,
-      world,
-      { sectionHeight, shaderCubes: ctx.shaderCubes },
-    )
+    const exported = renderWasmOutputToGeometry(sectionView, version, sectionKey, sectionPosition, world, { sectionHeight, shaderCubes: ctx.shaderCubes })
     out.set(sectionKey, { exported, blocksCount: sectionBlocks.length })
   }
 
@@ -1107,13 +1025,13 @@ export function wasmOutputToExportFormat(
   wasmOutput: WasmGeometryOutput,
   version: string,
   sectionKey: string,
-  sectionPosition: { x: number, y: number, z: number },
+  sectionPosition: { x: number; y: number; z: number },
   cameraPosition = { x: 0, y: 0, z: 0 },
   cameraRotation = { pitch: 0, yaw: 0 },
   world?: World
 ): ExportedWorldGeometry {
   const section = renderWasmOutputToGeometry(wasmOutput, version, sectionKey, sectionPosition, world, {
-    shaderCubes: true,
+    shaderCubes: true
   })
 
   return {
@@ -1121,9 +1039,9 @@ export function wasmOutputToExportFormat(
     exportedAt: new Date().toISOString(),
     camera: {
       position: cameraPosition,
-      rotation: cameraRotation,
+      rotation: cameraRotation
     },
-    sections: [section],
+    sections: [section]
   }
 }
 
@@ -1136,16 +1054,14 @@ export function mesherGeometryToExportFormat(
   version: string,
   cameraPosition = { x: 0, y: 0, z: 0 },
   cameraRotation = { pitch: 0, yaw: 0 },
-  skyLevel = 1,
+  skyLevel = 1
 ): ExportedWorldGeometry {
   const positions = Array.from(mesherGeometry.positions) as number[]
   const normals = mesherGeometry.normals ? (Array.from(mesherGeometry.normals) as number[]) : []
   const tintColors = mesherGeometry.colors ? (Array.from(mesherGeometry.colors) as number[]) : []
   const skyLights = mesherGeometry.skyLights ? (Array.from(mesherGeometry.skyLights) as number[]) : []
   const blockLights = mesherGeometry.blockLights ? (Array.from(mesherGeometry.blockLights) as number[]) : []
-  const colors = skyLights.length
-    ? bakeLegacyVertexColors(tintColors, skyLights, blockLights, skyLevel)
-    : tintColors
+  const colors = skyLights.length ? bakeLegacyVertexColors(tintColors, skyLights, blockLights, skyLevel) : tintColors
   const uvs = mesherGeometry.uvs ? (Array.from(mesherGeometry.uvs) as number[]) : []
   const indices = Array.from(mesherGeometry.indices) as number[]
 
@@ -1156,7 +1072,7 @@ export function mesherGeometryToExportFormat(
   const sectionPosition = {
     x: mesherGeometry.sx,
     y: mesherGeometry.sy,
-    z: mesherGeometry.sz,
+    z: mesherGeometry.sz
   }
 
   const section: ExportedSection = {
@@ -1169,24 +1085,26 @@ export function mesherGeometryToExportFormat(
       skyLights,
       blockLights,
       uvs,
-      indices,
+      indices
     },
-    ...(mesherGeometry.blend ? {
-      blendGeometry: {
-        positions: Array.from(mesherGeometry.blend.positions),
-        normals: Array.from(mesherGeometry.blend.normals),
-        colors: bakeLegacyVertexColors(
-          Array.from(mesherGeometry.blend.colors),
-          Array.from(mesherGeometry.blend.skyLights),
-          Array.from(mesherGeometry.blend.blockLights),
-          skyLevel,
-        ),
-        skyLights: Array.from(mesherGeometry.blend.skyLights),
-        blockLights: Array.from(mesherGeometry.blend.blockLights),
-        uvs: Array.from(mesherGeometry.blend.uvs),
-        indices: Array.from(mesherGeometry.blend.indices),
-      },
-    } : {}),
+    ...(mesherGeometry.blend
+      ? {
+          blendGeometry: {
+            positions: Array.from(mesherGeometry.blend.positions),
+            normals: Array.from(mesherGeometry.blend.normals),
+            colors: bakeLegacyVertexColors(
+              Array.from(mesherGeometry.blend.colors),
+              Array.from(mesherGeometry.blend.skyLights),
+              Array.from(mesherGeometry.blend.blockLights),
+              skyLevel
+            ),
+            skyLights: Array.from(mesherGeometry.blend.skyLights),
+            blockLights: Array.from(mesherGeometry.blend.blockLights),
+            uvs: Array.from(mesherGeometry.blend.uvs),
+            indices: Array.from(mesherGeometry.blend.indices)
+          }
+        }
+      : {})
   }
 
   return {
@@ -1194,8 +1112,8 @@ export function mesherGeometryToExportFormat(
     exportedAt: new Date().toISOString(),
     camera: {
       position: cameraPosition,
-      rotation: cameraRotation,
+      rotation: cameraRotation
     },
-    sections: [section],
+    sections: [section]
   }
 }

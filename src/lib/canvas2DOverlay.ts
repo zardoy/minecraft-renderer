@@ -122,22 +122,20 @@ export class Canvas2DOverlay {
   /**
    * Draw text using canvas texture (works in worker with OffscreenCanvas)
    */
-  drawText(text: string, x: number, y: number, options: {
-    fontSize?: number
-    fontFamily?: string
-    color?: string
-    backgroundColor?: string
-    padding?: number
-    opacity?: number
-  } = {}) {
-    const {
-      fontSize = 16,
-      fontFamily = 'Arial',
-      color = '#ffffff',
-      backgroundColor = '#000000',
-      padding = 4,
-      opacity = 1
-    } = options
+  drawText(
+    text: string,
+    x: number,
+    y: number,
+    options: {
+      fontSize?: number
+      fontFamily?: string
+      color?: string
+      backgroundColor?: string
+      padding?: number
+      opacity?: number
+    } = {}
+  ) {
+    const { fontSize = 16, fontFamily = 'Arial', color = '#ffffff', backgroundColor = '#000000', padding = 4, opacity = 1 } = options
 
     // Create a temporary canvas for text rendering
     // OffscreenCanvas works in workers!
@@ -177,11 +175,7 @@ export class Canvas2DOverlay {
     const geometry = new THREE.PlaneGeometry(textCanvas.width, textCanvas.height)
     const mesh = new THREE.Mesh(geometry, material)
 
-    mesh.position.set(
-      x + textCanvas.width / 2,
-      y + textCanvas.height / 2,
-      0
-    )
+    mesh.position.set(x + textCanvas.width / 2, y + textCanvas.height / 2, 0)
 
     this.overlayScene.add(mesh)
     this.overlayObjects.push(mesh)
@@ -251,7 +245,9 @@ export class WebGLDirect2DOverlay {
     this.gl = this.renderer.getContext()
 
     // Create shader program for 2D rendering
-    const vertexShader = this.createShader(this.gl.VERTEX_SHADER, `
+    const vertexShader = this.createShader(
+      this.gl.VERTEX_SHADER,
+      `
       attribute vec2 position;
       attribute vec4 color;
       varying vec4 vColor;
@@ -263,16 +259,20 @@ export class WebGLDirect2DOverlay {
         gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
         vColor = color;
       }
-    `)
+    `
+    )
 
-    const fragmentShader = this.createShader(this.gl.FRAGMENT_SHADER, `
+    const fragmentShader = this.createShader(
+      this.gl.FRAGMENT_SHADER,
+      `
       precision mediump float;
       varying vec4 vColor;
 
       void main() {
         gl_FragColor = vColor;
       }
-    `)
+    `
+    )
 
     this.program = this.createProgram(vertexShader, fragmentShader)
 
@@ -317,23 +317,9 @@ export class WebGLDirect2DOverlay {
     const x2 = x + width
     const y2 = y + height
 
-    const positions = new Float32Array([
-      x1, y1,
-      x2, y1,
-      x1, y2,
-      x1, y2,
-      x2, y1,
-      x2, y2
-    ])
+    const positions = new Float32Array([x1, y1, x2, y1, x1, y2, x1, y2, x2, y1, x2, y2])
 
-    const colors = new Float32Array([
-      r, g, b, a,
-      r, g, b, a,
-      r, g, b, a,
-      r, g, b, a,
-      r, g, b, a,
-      r, g, b, a
-    ])
+    const colors = new Float32Array([r, g, b, a, r, g, b, a, r, g, b, a, r, g, b, a, r, g, b, a, r, g, b, a])
 
     this.gl.useProgram(this.program)
 
@@ -374,8 +360,3 @@ export class WebGLDirect2DOverlay {
     this.gl.deleteProgram(this.program)
   }
 }
-
-
-
-
-

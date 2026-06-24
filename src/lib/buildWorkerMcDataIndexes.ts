@@ -1,6 +1,6 @@
 type McElement = Record<string, unknown>
 
-function coerceDenseArray (value: unknown): McElement[] | undefined {
+function coerceDenseArray(value: unknown): McElement[] | undefined {
   if (Array.isArray(value)) {
     return value as McElement[]
   }
@@ -8,7 +8,10 @@ function coerceDenseArray (value: unknown): McElement[] | undefined {
     return undefined
   }
   const record = value as Record<string, McElement>
-  const keys = Object.keys(record).filter((k) => /^\d+$/.test(k)).map(Number).sort((a, b) => a - b)
+  const keys = Object.keys(record)
+    .filter(k => /^\d+$/.test(k))
+    .map(Number)
+    .sort((a, b) => a - b)
   if (!keys.length || keys[0] !== 0) {
     return undefined
   }
@@ -17,13 +20,10 @@ function coerceDenseArray (value: unknown): McElement[] | undefined {
       return undefined
     }
   }
-  return keys.map((k) => record[String(k)])
+  return keys.map(k => record[String(k)])
 }
 
-function buildIndexFromArray<T extends McElement> (
-  array: T[],
-  field: keyof T
-): Record<string | number, T> {
+function buildIndexFromArray<T extends McElement>(array: T[], field: keyof T): Record<string | number, T> {
   if (!Array.isArray(array)) {
     console.warn('[augmentWorkerMcData] buildIndexFromArray expected array, got', typeof array)
     return {}
@@ -34,11 +34,7 @@ function buildIndexFromArray<T extends McElement> (
   }, {})
 }
 
-function buildIndexFromArrayWithRanges<T extends McElement> (
-  array: T[],
-  minField: keyof T,
-  maxField: keyof T
-): Record<number, T> {
+function buildIndexFromArrayWithRanges<T extends McElement>(array: T[], minField: keyof T, maxField: keyof T): Record<number, T> {
   if (!Array.isArray(array)) {
     console.warn('[augmentWorkerMcData] buildIndexFromArrayWithRanges expected array, got', typeof array)
     return {}
@@ -53,7 +49,7 @@ function buildIndexFromArrayWithRanges<T extends McElement> (
   }, {})
 }
 
-function ensureBlockStateIds (blocks: McElement[]) {
+function ensureBlockStateIds(blocks: McElement[]) {
   if (!blocks.length) return
   if ('minStateId' in blocks[0] && 'defaultState' in blocks[0]) return
   for (const block of blocks) {
@@ -64,11 +60,7 @@ function ensureBlockStateIds (blocks: McElement[]) {
   }
 }
 
-function getSourceArray (
-  mcData: Record<string, unknown>,
-  arrayKey: string,
-  rawKey: string
-): McElement[] | undefined {
+function getSourceArray(mcData: Record<string, unknown>, arrayKey: string, rawKey: string): McElement[] | undefined {
   const fromArrayKey = coerceDenseArray(mcData[arrayKey])
   if (fromArrayKey?.length) {
     return fromArrayKey
@@ -80,7 +72,7 @@ function getSourceArray (
   return undefined
 }
 
-export function augmentWorkerMcData (mcData: Record<string, unknown>) {
+export function augmentWorkerMcData(mcData: Record<string, unknown>) {
   if (mcData.__workerIndexesBuilt) {
     return mcData
   }

@@ -11,19 +11,13 @@ const CULL_BOX_EPSILON = 0.01
  * Set a legacy section mesh world translation once at build time.
  * Position proxy is not used — camera-relative math lives in the shader.
  */
-export function setupLegacySectionMatrix (
-  mesh: THREE.Mesh,
-  sx: number,
-  sy: number,
-  sz: number,
-  renderOrigin: RenderOrigin,
-): void {
+export function setupLegacySectionMatrix(mesh: THREE.Mesh, sx: number, sy: number, sz: number, renderOrigin: RenderOrigin): void {
   mesh.matrix.makeTranslation(sx - renderOrigin.x, sy - renderOrigin.y, sz - renderOrigin.z)
   mesh.matrixWorldNeedsUpdate = true
   mesh.frustumCulled = false
 }
 
-export function sectionIntersectsFrustum (
+export function sectionIntersectsFrustum(
   sectionWorldX: number,
   sectionWorldY: number,
   sectionWorldZ: number,
@@ -33,8 +27,8 @@ export function sectionIntersectsFrustum (
   frustum: THREE.Frustum,
   box: THREE.Box3,
   boxMin: THREE.Vector3,
-  boxMax: THREE.Vector3,
-): { visible: boolean, distSq: number } {
+  boxMax: THREE.Vector3
+): { visible: boolean; distSq: number } {
   const dx = sectionWorldX - cameraWorldX
   const dy = sectionWorldY - cameraWorldY
   const dz = sectionWorldZ - cameraWorldZ
@@ -46,7 +40,7 @@ export function sectionIntersectsFrustum (
 
   return {
     visible: frustum.intersectsBox(box),
-    distSq: dx * dx + dy * dy + dz * dz,
+    distSq: dx * dx + dy * dy + dz * dz
   }
 }
 
@@ -54,7 +48,7 @@ export function sectionIntersectsFrustum (
  * Per-frame frustum cull + back-to-front renderOrder for one legacy section.
  * Used for pooled per-section meshes (reveal defer + invariant fallback).
  */
-export function updateLegacySectionCullState (
+export function updateLegacySectionCullState(
   mesh: THREE.Mesh,
   sectionWorldX: number,
   sectionWorldY: number,
@@ -65,7 +59,7 @@ export function updateLegacySectionCullState (
   frustum: THREE.Frustum,
   box: THREE.Box3,
   boxMin: THREE.Vector3,
-  boxMax: THREE.Vector3,
+  boxMax: THREE.Vector3
 ): void {
   const { visible, distSq } = sectionIntersectsFrustum(
     sectionWorldX,
@@ -77,7 +71,7 @@ export function updateLegacySectionCullState (
     frustum,
     box,
     boxMin,
-    boxMax,
+    boxMax
   )
   mesh.visible = visible
   mesh.renderOrder = -distSq

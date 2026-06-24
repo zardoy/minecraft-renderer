@@ -17,7 +17,7 @@ import { WorldRendererConfig } from './config'
 export type MaybePromise<T> = Promise<T> | T
 
 export interface SoundSystem {
-  playSound: (position: { x: number, y: number, z: number }, path: string, volume?: number, pitch?: number, timeout?: number) => void
+  playSound: (position: { x: number; y: number; z: number }, path: string, volume?: number, pitch?: number, timeout?: number) => void
   destroy: () => void
 }
 
@@ -130,7 +130,7 @@ export interface GraphicsBackend {
   updateCamera(pos: Vec3 | null, yaw: number, pitch: number): void
   soundSystem?: any
   backendMethods?: any
-  getDebugOverlay?(): { entitiesString?: string, left?: Record<string, string>, right?: Record<string, string> }
+  getDebugOverlay?(): { entitiesString?: string; left?: Record<string, string>; right?: Record<string, string> }
   /** Active main-menu background, when `currentDisplay === 'menu'`. */
   getMenuBackground?(): MenuBackgroundRenderer | undefined
 }

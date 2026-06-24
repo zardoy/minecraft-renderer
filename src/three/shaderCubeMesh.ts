@@ -11,10 +11,7 @@ export type ShaderCubeInstanceData = {
  * Build InstancedBufferGeometry for full-cube shader faces.
  * One instance = one visible face; vertex shader uses gl_VertexID (6 verts/face).
  */
-export function buildShaderCubeGeometry(
-  words: Uint32Array,
-  faceCount: number,
-): THREE.InstancedBufferGeometry {
+export function buildShaderCubeGeometry(words: Uint32Array, faceCount: number): THREE.InstancedBufferGeometry {
   const geometry = new THREE.InstancedBufferGeometry()
 
   const positions = new Float32Array(VERTICES_PER_FACE * 3)
@@ -38,14 +35,8 @@ export function buildShaderCubeGeometry(
   geometry.setAttribute('a_w3', new THREE.InstancedBufferAttribute(w3, 1))
 
   geometry.instanceCount = faceCount
-  geometry.boundingBox = new THREE.Box3(
-    new THREE.Vector3(-8, -8, -8),
-    new THREE.Vector3(8, 8, 8),
-  )
-  geometry.boundingSphere = new THREE.Sphere(
-    new THREE.Vector3(0, 0, 0),
-    Math.sqrt(3 * 8 ** 2),
-  )
+  geometry.boundingBox = new THREE.Box3(new THREE.Vector3(-8, -8, -8), new THREE.Vector3(8, 8, 8))
+  geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), Math.sqrt(3 * 8 ** 2))
 
   return geometry
 }
@@ -57,9 +48,7 @@ const _raycastPoint = new THREE.Vector3()
  * CPU raycast uses section AABB (geometry.boundingBox), not GPU-generated faces.
  * Enough for third-person camera collision; block pick uses mineflayer, not mesh raycast.
  */
-export function attachShaderCubeRaycast(
-  mesh: THREE.Mesh<THREE.BufferGeometry, THREE.Material>,
-): void {
+export function attachShaderCubeRaycast(mesh: THREE.Mesh<THREE.BufferGeometry, THREE.Material>): void {
   mesh.raycast = (raycaster, intersects) => {
     const { geometry } = mesh
     if (!geometry.boundingBox) return
@@ -69,14 +58,14 @@ export function attachShaderCubeRaycast(
     intersects.push({
       distance,
       point: _raycastPoint.clone(),
-      object: mesh,
+      object: mesh
     })
   }
 }
 
 export function createShaderCubeMesh(
   data: ShaderCubeInstanceData,
-  material: THREE.ShaderMaterial,
+  material: THREE.ShaderMaterial
 ): THREE.Mesh<THREE.InstancedBufferGeometry, THREE.ShaderMaterial> {
   const geometry = buildShaderCubeGeometry(data.words, data.count)
   const mesh = new THREE.Mesh(geometry, material)

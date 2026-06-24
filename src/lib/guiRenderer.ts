@@ -1,5 +1,18 @@
 // Import placeholders - replace with actual imports for your environment
-import { ItemRenderer, Identifier, ItemStack, NbtString, Structure, StructureRenderer, ItemRendererResources, BlockDefinition, BlockModel, TextureAtlas, Resources, ItemModel } from 'deepslate'
+import {
+  ItemRenderer,
+  Identifier,
+  ItemStack,
+  NbtString,
+  Structure,
+  StructureRenderer,
+  ItemRendererResources,
+  BlockDefinition,
+  BlockModel,
+  TextureAtlas,
+  Resources,
+  ItemModel
+} from 'deepslate'
 import { AssetsParser } from 'mc-assets/dist/assetsParser'
 import { getLoadedImage, versionToNumber } from 'mc-assets/dist/utils'
 import { BlockModel as BlockModelMcAssets, AtlasParser } from 'mc-assets'
@@ -17,24 +30,16 @@ export const getNonFullBlocksModels = (appViewer: AppViewer) => {
   const itemsModelsResolved = {} as Record<string, any>
   const fullBlocksWithNonStandardDisplay = [] as string[]
   const handledItemsWithDefinitions = new Set()
-  const assetsParser = new AssetsParser(version, getLoadedBlockstatesStore(appViewer.resourcesManager.currentResources!.blockstatesModels), getLoadedModelsStore(appViewer.resourcesManager.currentResources!.blockstatesModels))
+  const assetsParser = new AssetsParser(
+    version,
+    getLoadedBlockstatesStore(appViewer.resourcesManager.currentResources!.blockstatesModels),
+    getLoadedModelsStore(appViewer.resourcesManager.currentResources!.blockstatesModels)
+  )
 
   const standardGuiDisplay = {
-    'rotation': [
-      30,
-      225,
-      0
-    ],
-    'translation': [
-      0,
-      0,
-      0
-    ],
-    'scale': [
-      0.625,
-      0.625,
-      0.625
-    ]
+    rotation: [30, 225, 0],
+    translation: [0, 0, 0],
+    scale: [0.625, 0.625, 0.625]
   }
 
   const arrEqual = (a: number[], b: number[]) => a.length === b.length && a.every((x, i) => x === b[i])
@@ -55,8 +60,8 @@ export const getNonFullBlocksModels = (appViewer: AppViewer) => {
       version,
       name,
       properties: {
-        'minecraft:display_context': 'gui',
-      },
+        'minecraft:display_context': 'gui'
+      }
     })
     if (item) {
       const { resolvedModel } = assetsParser.getResolvedModelsByModel((item.special ? name : item.model).replace('minecraft:', '')) ?? {}
@@ -67,9 +72,9 @@ export const getNonFullBlocksModels = (appViewer: AppViewer) => {
         let hasStandardDisplay = true
         if (resolvedModel['display']?.gui) {
           hasStandardDisplay =
-            arrEqual(resolvedModel['display'].gui.rotation, standardGuiDisplay.rotation)
-            && arrEqual(resolvedModel['display'].gui.translation, standardGuiDisplay.translation)
-            && arrEqual(resolvedModel['display'].gui.scale, standardGuiDisplay.scale)
+            arrEqual(resolvedModel['display'].gui.rotation, standardGuiDisplay.rotation) &&
+            arrEqual(resolvedModel['display'].gui.translation, standardGuiDisplay.translation) &&
+            arrEqual(resolvedModel['display'].gui.scale, standardGuiDisplay.scale)
         }
 
         addModelIfNotFullblock(name, resolvedModel)
@@ -129,14 +134,14 @@ const generateItemsGui = async (appViewer: AppViewer, models: Record<string, Blo
   const atlasParser = isItems ? appViewer.resourcesManager.itemsAtlasParser : appViewer.resourcesManager.blocksAtlasParser
   const textureAtlas = new TextureAtlas(
     ctx.getImageData(0, 0, imgBitmap.width, imgBitmap.height),
-    Object.fromEntries(Object.entries(atlasParser.atlas.latest.textures).map(([key, value]) => {
-      return [key, [
-        value.u,
-        value.v,
-        (value.u + (value.su ?? atlasParser.atlas.latest.suSv)),
-        (value.v + (value.sv ?? atlasParser.atlas.latest.suSv)),
-      ]] as [string, [number, number, number, number]]
-    }))
+    Object.fromEntries(
+      Object.entries(atlasParser.atlas.latest.textures).map(([key, value]) => {
+        return [key, [value.u, value.v, value.u + (value.su ?? atlasParser.atlas.latest.suSv), value.v + (value.sv ?? atlasParser.atlas.latest.suSv)]] as [
+          string,
+          [number, number, number, number]
+        ]
+      })
+    )
   )
 
   const PREVIEW_ID = Identifier.parse('preview:preview')
@@ -154,7 +159,9 @@ const generateItemsGui = async (appViewer: AppViewer, models: Record<string, Blo
     },
     getTextureUV(texture) {
       textureWasRequested = true
-      return textureAtlas.getTextureUV(texture.toString().replace('minecraft:', '').replace('block/', '').replace('item/', '').replace('blocks/', '').replace('items/', '') as any)
+      return textureAtlas.getTextureUV(
+        texture.toString().replace('minecraft:', '').replace('block/', '').replace('item/', '').replace('blocks/', '').replace('items/', '') as any
+      )
     },
     getTextureAtlas() {
       return textureAtlas.getTextureAtlas()
@@ -168,15 +175,17 @@ const generateItemsGui = async (appViewer: AppViewer, models: Record<string, Blo
       if (id.equals(PREVIEW_ID)) {
         return ItemModel.fromJson({
           type: isSpecial ? 'minecraft:special' : 'minecraft:model',
-          model: isSpecial ? {
-            type: currentModelName,
-          } : PREVIEW_ID.toString(),
+          model: isSpecial
+            ? {
+                type: currentModelName
+              }
+            : PREVIEW_ID.toString(),
           base: PREVIEW_ID.toString(),
-          tints: modelData?.tints,
+          tints: modelData?.tints
         })
       }
       return null
-    },
+    }
   }
 
   const canvas = document.createElement('canvas')
@@ -196,9 +205,15 @@ const generateItemsGui = async (appViewer: AppViewer, models: Record<string, Blo
   const includeOnly = [] as string[]
 
   const images: Record<string, HTMLImageElement> = {}
-  const item = new ItemStack(PREVIEW_ID, 1, new Map(Object.entries({
-    'minecraft:item_model': new NbtString(PREVIEW_ID.toString()),
-  })))
+  const item = new ItemStack(
+    PREVIEW_ID,
+    1,
+    new Map(
+      Object.entries({
+        'minecraft:item_model': new NbtString(PREVIEW_ID.toString())
+      })
+    )
+  )
   const renderer = new ItemRenderer(gl, item, resources, { display_context: 'gui' })
   const missingTextures = new Set()
   for (const [modelName, model] of Object.entries(models)) {
@@ -247,9 +262,9 @@ const generateAtlas = async (appViewer: AppViewer, images: Record<string, HTMLIm
     tileSize: RENDER_SIZE,
     getLoadedImage(name) {
       return {
-        image: images[name],
+        image: images[name]
       }
-    },
+    }
   })
 
   // const atlasParser = new AtlasParser({ latest: atlas.json }, atlas.canvas.toDataURL())
@@ -260,7 +275,7 @@ const generateAtlas = async (appViewer: AppViewer, images: Record<string, HTMLIm
 
   appViewer.resourcesManager.currentResources!.guiAtlas = {
     json: atlas.json,
-    image: await createImageBitmap(atlas.canvas),
+    image: await createImageBitmap(atlas.canvas)
   }
 
   return atlas

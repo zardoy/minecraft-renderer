@@ -32,7 +32,7 @@ class StarfieldMaterial extends THREE.ShaderMaterial {
 
           #include <tonemapping_fragment>
           #include <${threeVersion >= 154 ? 'colorspace_fragment' : 'encodings_fragment'}>
-        }`,
+        }`
     })
   }
 }
@@ -45,7 +45,7 @@ export class StarfieldModule implements RendererModuleController {
   /** Current star brightness multiplier; lerps toward 0 while raining, 1 otherwise. */
   private fade = 1
 
-  constructor(private readonly worldRenderer: WorldRendererThree) { }
+  constructor(private readonly worldRenderer: WorldRendererThree) {}
 
   enable(): void {
     if (this.enabled) return
@@ -75,7 +75,7 @@ export class StarfieldModule implements RendererModuleController {
     return this.currentTime > nightTime && this.currentTime < morningStart
   }
 
-  render?: (deltaTime: number) => void = (deltaTime) => {
+  render?: (deltaTime: number) => void = deltaTime => {
     if (!this.points) return
     this.points.position.set(0, 0, 0)
 
@@ -123,13 +123,7 @@ export class StarfieldModule implements RendererModuleController {
     const geometry = new THREE.BufferGeometry()
 
     const genStar = (r: number): THREE.Vector3 =>
-      new THREE.Vector3().setFromSpherical(
-        new THREE.Spherical(
-          r,
-          Math.acos(1 - Math.random() * 2),
-          Math.random() * 2 * Math.PI
-        )
-      )
+      new THREE.Vector3().setFromSpherical(new THREE.Spherical(r, Math.acos(1 - Math.random() * 2), Math.random() * 2 * Math.PI))
 
     const positions: number[] = []
     const colors: number[] = []
@@ -174,8 +168,8 @@ export class StarfieldModule implements RendererModuleController {
   private removeStars(): void {
     if (!this.points) return
 
-    this.points.geometry.dispose();
-    (this.points.material as THREE.Material).dispose()
+    this.points.geometry.dispose()
+    ;(this.points.material as THREE.Material).dispose()
     this.worldRenderer.scene.remove(this.points)
     this.points = undefined
   }
@@ -185,5 +179,5 @@ export const starfieldManifest: RendererModuleManifest = {
   id: 'starfield',
   controller: StarfieldModule,
   enabledDefault: true,
-  cannotBeDisabled: true,
+  cannotBeDisabled: true
 }

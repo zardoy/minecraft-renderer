@@ -18,7 +18,7 @@ function ensureTintsLoaded(): void {
 
 function prepareTints(data: any): Record<string, [number, number, number]> {
   const result: Record<string, [number, number, number]> = {}
-  const defaultColor = tintToGl(data.default ?? 0xFFFFFF)
+  const defaultColor = tintToGl(data.default ?? 0xffffff)
   if (data.data) {
     for (const entry of data.data) {
       const color = tintToGl(entry.color)
@@ -35,11 +35,7 @@ function prepareTints(data: any): Record<string, [number, number, number]> {
 }
 
 function tintToGl(tint: number): [number, number, number] {
-  return [
-    ((tint >> 16) & 0xFF) / 255,
-    ((tint >> 8) & 0xFF) / 255,
-    (tint & 0xFF) / 255,
-  ]
+  return [((tint >> 16) & 0xff) / 255, ((tint >> 8) & 0xff) / 255, (tint & 0xff) / 255]
 }
 
 function resolveTintColor(blockName: string, biomeName: string): [number, number, number] {
@@ -62,9 +58,15 @@ function resolveTintColor(blockName: string, biomeName: string): [number, number
 interface BreakParticle {
   mesh: THREE.Mesh
   active: boolean
-  x: number; y: number; z: number
-  prevX: number; prevY: number; prevZ: number
-  xd: number; yd: number; zd: number
+  x: number
+  y: number
+  z: number
+  prevX: number
+  prevY: number
+  prevZ: number
+  xd: number
+  yd: number
+  zd: number
   age: number
   maxAge: number
   onGround: boolean
@@ -231,12 +233,24 @@ export class BlockBreakParticlesModule implements RendererModuleController {
 
     // Override position on the hit face axis to be at face + 0.1 offset outward
     switch (face) {
-      case 0: py = worldY - 0.1; break
-      case 1: py = worldY + 1.0 + 0.1; break
-      case 2: pz = worldZ - 0.1; break
-      case 3: pz = worldZ + 1.0 + 0.1; break
-      case 4: px = worldX - 0.1; break
-      case 5: px = worldX + 1.0 + 0.1; break
+      case 0:
+        py = worldY - 0.1
+        break
+      case 1:
+        py = worldY + 1.0 + 0.1
+        break
+      case 2:
+        pz = worldZ - 0.1
+        break
+      case 3:
+        pz = worldZ + 1.0 + 0.1
+        break
+      case 4:
+        px = worldX - 0.1
+        break
+      case 5:
+        px = worldX + 1.0 + 0.1
+        break
     }
 
     // Small random velocity, heavily damped
@@ -250,12 +264,17 @@ export class BlockBreakParticlesModule implements RendererModuleController {
   }
 
   private createParticle(
-    px: number, py: number, pz: number,
-    xd: number, yd: number, zd: number,
+    px: number,
+    py: number,
+    pz: number,
+    xd: number,
+    yd: number,
+    zd: number,
     maxAge: number,
     texInfo: { u: number; v: number; su: number; sv: number },
     floorMap: number[],
-    blockX: number, blockZ: number,
+    blockX: number,
+    blockZ: number,
     scaleFactor = 1.0,
     tintColor: [number, number, number] = [1, 1, 1]
   ): void {
@@ -281,9 +300,15 @@ export class BlockBreakParticlesModule implements RendererModuleController {
     this.setGeometryUVs(particle.mesh.geometry as THREE.PlaneGeometry, particleU, particleV, particleSU, particleSV)
 
     particle.active = true
-    particle.x = px; particle.y = py; particle.z = pz
-    particle.prevX = px; particle.prevY = py; particle.prevZ = pz
-    particle.xd = xd; particle.yd = yd; particle.zd = zd
+    particle.x = px
+    particle.y = py
+    particle.z = pz
+    particle.prevX = px
+    particle.prevY = py
+    particle.prevZ = pz
+    particle.xd = xd
+    particle.yd = yd
+    particle.zd = zd
     particle.age = 0
     particle.maxAge = maxAge
     particle.onGround = false
@@ -320,15 +345,21 @@ export class BlockBreakParticlesModule implements RendererModuleController {
     const particle: BreakParticle = {
       mesh,
       active: false,
-      x: 0, y: 0, z: 0,
-      prevX: 0, prevY: 0, prevZ: 0,
-      xd: 0, yd: 0, zd: 0,
+      x: 0,
+      y: 0,
+      z: 0,
+      prevX: 0,
+      prevY: 0,
+      prevZ: 0,
+      xd: 0,
+      yd: 0,
+      zd: 0,
       age: 0,
       maxAge: 0,
       onGround: false,
       floorMap: [],
       blockX: 0,
-      blockZ: 0,
+      blockZ: 0
     }
 
     this.particles.push(particle)
@@ -401,7 +432,7 @@ export class BlockBreakParticlesModule implements RendererModuleController {
       u: texInfo.u,
       v: texInfo.v,
       su: texInfo.su ?? atlasJson.suSv,
-      sv: texInfo.sv ?? atlasJson.suSv,
+      sv: texInfo.sv ?? atlasJson.suSv
     }
   }
 
@@ -423,7 +454,7 @@ export class BlockBreakParticlesModule implements RendererModuleController {
       map: atlasTexture,
       vertexColors: true,
       transparent: true,
-      alphaTest: 0.1,
+      alphaTest: 0.1
     })
   }
 }
@@ -433,5 +464,5 @@ export const blockBreakParticlesManifest: RendererModuleManifest = {
   controller: BlockBreakParticlesModule,
   enabledDefault: true,
   cannotBeDisabled: true,
-  requiresHeightmap: false,
+  requiresHeightmap: false
 }

@@ -13,7 +13,7 @@ export interface CameraBobInput {
 
 const DEG_TO_RAD = Math.PI / 180
 
-export function computeCameraBob (input: CameraBobInput): CameraBobResult {
+export function computeCameraBob(input: CameraBobInput): CameraBobResult {
   const { walkDist, prevWalkDist, bob, prevBob, partialTick } = input
 
   // Vanilla uses "backwards interpolation": -(walkDist + delta * partialTick)

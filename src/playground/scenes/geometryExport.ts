@@ -1,10 +1,6 @@
 import * as THREE from 'three'
 import { BasePlaygroundScene } from '../baseScene'
-import {
-  downloadWorldGeometry,
-  loadWorldGeometryFromUrl,
-  type ExportedWorldGeometry
-} from '../../three/worldGeometryExport'
+import { downloadWorldGeometry, loadWorldGeometryFromUrl, type ExportedWorldGeometry } from '../../three/worldGeometryExport'
 
 type GeometryExportBackendMethods = {
   loadGeometryExport?: (exportData: ExportedWorldGeometry) => Promise<number>
@@ -21,7 +17,7 @@ export default class extends BasePlaygroundScene {
   params = {
     exportGeometry: () => this.exportGeometry(),
     exportWithTexture: () => this.exportGeometry(true),
-    showDebugMesh: true,
+    showDebugMesh: true
   }
 
   // Loaded geometry data (when loading from URL)
@@ -37,7 +33,7 @@ export default class extends BasePlaygroundScene {
     super({
       viewDistance: geometryUrl ? 0 : 1,
       continuousRender: false,
-      enableCameraOrbitControl: false,
+      enableCameraOrbitControl: false
     })
 
     this.geometryUrl = geometryUrl
@@ -83,16 +79,8 @@ export default class extends BasePlaygroundScene {
 
       // Apply rotation using lookAt direction
       const { pitch, yaw } = camData.rotation
-      const forward = new THREE.Vector3(
-        -Math.sin(yaw) * Math.cos(pitch),
-        Math.sin(pitch),
-        -Math.cos(yaw) * Math.cos(pitch)
-      )
-      this.camera.lookAt(
-        camData.position.x + forward.x,
-        camData.position.y + forward.y,
-        camData.position.z + forward.z
-      )
+      const forward = new THREE.Vector3(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch))
+      this.camera.lookAt(camData.position.x + forward.x, camData.position.y + forward.y, camData.position.z + forward.z)
       this.controls?.update()
       this.syncCameraToBackend()
 
@@ -116,7 +104,6 @@ export default class extends BasePlaygroundScene {
       this.updateDebugMeshVisibility()
 
       this.requestRender()
-
     } catch (err) {
       console.error('Failed to load geometry:', err)
     }
@@ -134,7 +121,7 @@ export default class extends BasePlaygroundScene {
     if (!container) return
 
     // Traverse all meshes and add BoxHelper for each
-    container.traverse((obj) => {
+    container.traverse(obj => {
       if ((obj as THREE.Mesh).isMesh && obj.name === 'mesh') {
         const mesh = obj as THREE.Mesh
         const helper = new THREE.BoxHelper(mesh, 0xff_ff_00)
@@ -189,5 +176,4 @@ export default class extends BasePlaygroundScene {
     downloadWorldGeometry(worldRenderer, cameraPosition, cameraRotation, filename, includeTexture)
     console.log('Geometry exported to:', filename)
   }
-
 }

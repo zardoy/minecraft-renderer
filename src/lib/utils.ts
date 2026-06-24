@@ -17,7 +17,7 @@ export const loadScript = async function (scriptSrc: string, highPriority = true
       resolve(scriptElement)
     })
 
-    scriptElement.onerror = (error) => {
+    scriptElement.onerror = error => {
       reject(new Error(typeof error === 'string' ? error : (error as any).message))
       scriptElement.remove()
     }

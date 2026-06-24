@@ -7,7 +7,6 @@
 
 import { NonReactiveState } from '../graphicsBackend'
 
-
 export interface FrameTimingEvent {
   type: 'frameStart' | 'frameEnd' | 'cameraUpdate' | 'frameDisplay'
   timestamp: number
@@ -28,12 +27,10 @@ export class FrameTimingCollector {
   private readonly maxEvents = 500 // Limit events to prevent memory issues
   private readonly lastSecondUpdateInterval = 1000 // Update once per second
 
-  constructor(
-    private nonReactiveState: NonReactiveState
-  ) {
+  constructor(private nonReactiveState: NonReactiveState) {
     // Initialize timeline if not exists
     if (!this.nonReactiveState.renderer) {
-      (this.nonReactiveState as any).renderer = { timeline: { live: [], frozen: [], lastSecond: [] } }
+      ;(this.nonReactiveState as any).renderer = { timeline: { live: [], frozen: [], lastSecond: [] } }
     }
     if (!this.nonReactiveState.renderer.timeline) {
       this.nonReactiveState.renderer.timeline = { live: [], frozen: [], lastSecond: [] }

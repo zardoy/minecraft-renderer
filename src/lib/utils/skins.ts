@@ -17,14 +17,14 @@ export const isLikelySkinImageSize = (width: number, height: number) => {
 }
 
 const config = {
-  apiEnabled: true,
+  apiEnabled: true
 }
 
 export const setSkinsConfig = (newConfig: Partial<typeof config>) => {
   Object.assign(config, newConfig)
 }
 
-export async function loadSkinFromUsername (username: string, type: 'skin' | 'cape'): Promise<string | undefined> {
+export async function loadSkinFromUsername(username: string, type: 'skin' | 'cape'): Promise<string | undefined> {
   if (!config.apiEnabled) return
 
   if (type === 'cape') return
@@ -53,7 +53,7 @@ export const parseSkinTexturesValue = (value: string) => {
   return decodedData.textures?.SKIN?.url
 }
 
-export async function loadSkinImage (skinUrl: string): Promise<{ canvas: OffscreenCanvas, image: ImageBitmap }> {
+export async function loadSkinImage(skinUrl: string): Promise<{ canvas: OffscreenCanvas; image: ImageBitmap }> {
   if (!skinUrl.startsWith('data:')) {
     skinUrl = await fetchAndConvertBase64Skin(skinUrl.replace('http://', 'https://'))
   }
@@ -65,7 +65,7 @@ export async function loadSkinImage (skinUrl: string): Promise<{ canvas: Offscre
 }
 
 const fetchAndConvertBase64Skin = async (skinUrl: string) => {
-  const response = await fetch(skinUrl, { })
+  const response = await fetch(skinUrl, {})
   const arrayBuffer = await response.arrayBuffer()
   const base64 = Buffer.from(arrayBuffer).toString('base64')
   return `data:image/png;base64,${base64}`

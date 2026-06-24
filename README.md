@@ -96,12 +96,12 @@ Renderer-owned options live in `RENDERER_DEFAULT_OPTIONS` and `RENDERER_OPTIONS_
    This updates `inWorldRenderingConfig`, `appViewer.config` (FPS/stats), and live menu-background controls when `currentDisplay === 'menu'`.
 6. **App-only** — keep `volume` and bot/world hooks in the client (`applyRendererEnableLighting`, `applyRendererWorldViewOptions`, weather).
 
-| Change | Live update | Reload required |
-|--------|-------------|-----------------|
-| Menu V2 scene / camera / speeds | Yes (`backend.getMenuBackground`) | Mode switch needs restart |
-| `rendererMesher` (`wasm` / `legacy-js`) | Yes — recreates mesher workers | Chunks reload (`requiresChunksReload`) |
-| `rendererWorldPerformance` | Yes — recreates mesher workers | Chunks reload (`requiresChunksReload`) |
-| Volume | App `watchValue` only | No |
+| Change                                  | Live update                       | Reload required                        |
+| --------------------------------------- | --------------------------------- | -------------------------------------- |
+| Menu V2 scene / camera / speeds         | Yes (`backend.getMenuBackground`) | Mode switch needs restart              |
+| `rendererMesher` (`wasm` / `legacy-js`) | Yes — recreates mesher workers    | Chunks reload (`requiresChunksReload`) |
+| `rendererWorldPerformance`              | Yes — recreates mesher workers    | Chunks reload (`requiresChunksReload`) |
+| Volume                                  | App `watchValue` only             | No                                     |
 
 Sync runs on the **main thread** only; `inWorldRenderingConfig` uses existing valtio `__syncToWorker` for off-thread backends. Do not call `subscribeRendererOptions` from mesher workers.
 
@@ -122,11 +122,13 @@ World Provider → WorldView → GraphicsBackend → Mesher Workers → Three.js
 ### 2. Mesher Worker Communication
 
 Workers receive:
+
 - Block data (chunk JSON with block state IDs)
 - Block models and textures atlas
 - Lighting configuration
 
 Workers produce:
+
 - Float32Array of vertex positions (x, y, z per vertex)
 - Float32Array of normals
 - Float32Array of colors (vertex colors for lighting)
@@ -139,13 +141,15 @@ Each block face is a quad with 4 vertices and 6 indices:
 
 ```typescript
 interface MesherGeometryOutput {
-  positions: Float32Array  // [x1,y1,z1, x2,y2,z2, ...]
-  normals: Float32Array    // [nx,ny,nz, ...]
-  colors: Float32Array     // [r,g,b, r,g,b, ...] (0-1 range, lighting)
-  uvs: Float32Array        // [u1,v1, u2,v2, ...] (texture atlas coords)
-  indices: Uint32Array     // [0,1,2, 2,3,0, ...] (triangles)
-  sx, sy, sz: number       // Section position offset
-  blocksCount: number      // Number of non-air blocks
+  positions: Float32Array // [x1,y1,z1, x2,y2,z2, ...]
+  normals: Float32Array // [nx,ny,nz, ...]
+  colors: Float32Array // [r,g,b, r,g,b, ...] (0-1 range, lighting)
+  uvs: Float32Array // [u1,v1, u2,v2, ...] (texture atlas coords)
+  indices: Uint32Array // [0,1,2, 2,3,0, ...] (triangles)
+  sx
+  sy
+  sz: number // Section position offset
+  blocksCount: number // Number of non-air blocks
   signs: Record<string, SignData>
   banners: Record<string, BannerData>
   heads: Record<string, HeadData>
@@ -194,21 +198,21 @@ Smooth lighting uses ambient occlusion based on neighboring blocks:
 ```typescript
 interface WorldRendererConfig {
   // Performance
-  mesherWorkers: number           // Number of worker threads (default: 4)
-  addChunksBatchWaitTime: number  // Batch delay for chunk loading (ms)
+  mesherWorkers: number // Number of worker threads (default: 4)
+  addChunksBatchWaitTime: number // Batch delay for chunk loading (ms)
   _experimentalSmoothChunkLoading: boolean
 
   // Rendering
-  enableLighting: boolean         // Enable block/sky lighting
-  smoothLighting: boolean         // Enable ambient occlusion
-  dayCycle: boolean              // Enable time-based sky changes
-  starfield: boolean             // Enable star field at night
-  fov: number                    // Camera field of view
+  enableLighting: boolean // Enable block/sky lighting
+  smoothLighting: boolean // Enable ambient occlusion
+  dayCycle: boolean // Enable time-based sky changes
+  starfield: boolean // Enable star field at night
+  fov: number // Camera field of view
 
   // Debug
-  showChunkBorders: boolean      // Show chunk boundary helpers
-  enableDebugOverlay: boolean    // Show advanced stats
-  clipWorldBelowY: number | undefined  // Don't render below Y level
+  showChunkBorders: boolean // Show chunk boundary helpers
+  enableDebugOverlay: boolean // Show advanced stats
+  clipWorldBelowY: number | undefined // Don't render below Y level
 }
 ```
 
@@ -223,7 +227,7 @@ The renderer implements several memory optimizations:
 ```typescript
 // Get memory usage
 const { bytes, readable } = worldGeometryHandler.getMemoryUsageReadable()
-console.log(`GPU Memory: ${readable}`)  // e.g., "45.32 MB"
+console.log(`GPU Memory: ${readable}`) // e.g., "45.32 MB"
 ```
 
 ## Performance Tips
@@ -301,7 +305,7 @@ viewer.resourcesManager = {
 await viewer.loadBackend(createGraphicsBackend)
 
 // Start world
-await viewer.startWorld(world, 4)  // 4 chunk render distance
+await viewer.startWorld(world, 4) // 4 chunk render distance
 
 // Initialize world view
 await viewer.worldView!.init(new Vec3(0, 64, 0))

@@ -10,45 +10,45 @@ const PLAYGROUND_VERSION = '1.16.5'
 
 export default defineConfig({
   html: {
-    template: './src/playground/playground.html',
+    template: './src/playground/playground.html'
   },
   output: {
     polyfill: 'usage',
     assetPrefix: './',
     distPath: {
-      root: './dist',
-    },
+      root: './dist'
+    }
   },
   source: {
     entry: {
-      index: './src/playground/playground.ts',
+      index: './src/playground/playground.ts'
     },
     alias: {
       '@': path.resolve(__dirname, './src'),
-      'three$': 'three/src/Three.js',
-      'stats.js$': 'stats.js/src/Stats.js',
+      three$: 'three/src/Three.js',
+      'stats.js$': 'stats.js/src/Stats.js'
     },
     define: {
       'process.platform': '"browser"',
       'process.env.BROWSER': '"true"',
-      'globalThis.includedVersions': JSON.stringify([PLAYGROUND_VERSION]),
-    },
+      'globalThis.includedVersions': JSON.stringify([PLAYGROUND_VERSION])
+    }
   },
   dev: {
     progressBar: true,
     writeToDisk: true,
     watchFiles: [
       {
-        paths: ['dist/mesher.js'],
-      },
+        paths: ['dist/mesher.js']
+      }
     ]
   },
   server: {
     port: 3001,
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Embedder-Policy': 'require-corp',
-    },
+      'Cross-Origin-Embedder-Policy': 'require-corp'
+    }
   },
   plugins: [
     pluginReact(),
@@ -61,29 +61,29 @@ export default defineConfig({
           addRules([
             {
               test: /\.obj$/,
-              type: 'asset/source',
+              type: 'asset/source'
             },
             {
               test: /\.wgsl$/,
-              type: 'asset/source',
-            },
+              type: 'asset/source'
+            }
           ])
 
           // Replace minecraft-data/data.js with a minimal version
-          appendPlugins(new rspack.NormalModuleReplacementPlugin(/data/, (resource) => {
-            const request = resource.request.replaceAll('\\', '/')
-            const absolute = path.join(resource.context, request).replaceAll('\\', '/')
+          appendPlugins(
+            new rspack.NormalModuleReplacementPlugin(/data/, resource => {
+              const request = resource.request.replaceAll('\\', '/')
+              const absolute = path.join(resource.context, request).replaceAll('\\', '/')
 
-            if (absolute.endsWith('/minecraft-data/data.js')) {
-              resource.request = path.join(__dirname, './src/shims/minecraftData.ts')
-            }
-          }))
+              if (absolute.endsWith('/minecraft-data/data.js')) {
+                resource.request = path.join(__dirname, './src/shims/minecraftData.ts')
+              }
+            })
+          )
 
-          config.ignoreWarnings = [
-            /the request of a dependency is an expression/,
-          ]
+          config.ignoreWarnings = [/the request of a dependency is an expression/]
         })
-      },
+      }
     },
     {
       name: 'copy-entity-textures',
@@ -107,7 +107,7 @@ export default defineConfig({
             copyRecursive(entityTexturesPath, destPath)
           }
         })
-      },
-    },
-  ],
+      }
+    }
+  ]
 })

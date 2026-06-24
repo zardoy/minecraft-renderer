@@ -1,7 +1,13 @@
 import { subscribeKey } from 'valtio/utils'
 
 // eslint-disable-next-line max-params
-export function watchProperty<T extends Record<string, any>, K> (asyncGetter: (value: T[keyof T]) => Promise<K>, valtioProxy: T, key: keyof T, readySetter: (res: K) => void, cleanup?: (res: K) => void) {
+export function watchProperty<T extends Record<string, any>, K>(
+  asyncGetter: (value: T[keyof T]) => Promise<K>,
+  valtioProxy: T,
+  key: keyof T,
+  readySetter: (res: K) => void,
+  cleanup?: (res: K) => void
+) {
   let i = 0
   let lastRes: K | undefined
   const request = async () => {

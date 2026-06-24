@@ -36,9 +36,9 @@ import { extractColumnHeightmap, WasmGeometryOutput } from '../bridge/render-fro
 
 const VERSION = '1.16.5'
 
-type BlockSpec = { x: number, y: number, z: number, name: string }
+type BlockSpec = { x: number; y: number; z: number; name: string }
 
-function buildWorld(blocks: BlockSpec[]): { world: World, invisibleStateIds: Set<number> } {
+function buildWorld(blocks: BlockSpec[]): { world: World; invisibleStateIds: Set<number> } {
   const mcData = MinecraftData(VERSION)
   const Chunk = Chunks(VERSION) as any
   const chunk = new Chunk(undefined as any)
@@ -73,12 +73,7 @@ function buildWorld(blocks: BlockSpec[]): { world: World, invisibleStateIds: Set
  * Returns a plain `number[]` matching the on-the-wire shape of Rust's
  * `Vec<i16>` (length 256, indexed `z*16+x`, sentinel `-32768`).
  */
-function simulateRustColumnHeightmap(
-  world: World,
-  invisibleStateIds: Set<number>,
-  worldMinY: number,
-  worldMaxY: number
-): number[] {
+function simulateRustColumnHeightmap(world: World, invisibleStateIds: Set<number>, worldMinY: number, worldMaxY: number): number[] {
   const heightmap = new Array<number>(256).fill(-32768)
   const column = world.getColumn(0, 0)
   if (!column) return heightmap
@@ -104,20 +99,15 @@ function makeWasmOutputWithHeightmap(heightmap: number[]): WasmGeometryOutput {
     blocks: [],
     block_count: 0,
     block_iterations: 0,
-    heightmap,
+    heightmap
   }
 }
 
-function runParity(blocks: BlockSpec[]): { js: Int16Array, rust: Int16Array } {
+function runParity(blocks: BlockSpec[]): { js: Int16Array; rust: Int16Array } {
   const { world, invisibleStateIds } = buildWorld(blocks)
   const js = computeHeightmap(world, 0, 0)
 
-  const rustShaped = simulateRustColumnHeightmap(
-    world,
-    invisibleStateIds,
-    world.config.worldMinY,
-    world.config.worldMaxY
-  )
+  const rustShaped = simulateRustColumnHeightmap(world, invisibleStateIds, world.config.worldMinY, world.config.worldMaxY)
   const wasmOutput = makeWasmOutputWithHeightmap(rustShaped)
   const rust = extractColumnHeightmap(wasmOutput)
   expect(rust).not.toBeNull()
@@ -155,7 +145,7 @@ test('heightmap parity: varied heights, every column populated (Rust == JS)', ()
   blocks.push({ x: 2, y: 80, z: 0, name: 'oak_log' }) // top wins over y=64 below
   blocks.push({ x: 2, y: 64, z: 0, name: 'stone' })
   blocks.push({ x: 5, y: 255, z: 5, name: 'stone' }) // high-Y edge (worldMaxY-1)
-  blocks.push({ x: 6, y: 0, z: 6, name: 'stone' })   // low-Y edge (worldMinY)
+  blocks.push({ x: 6, y: 0, z: 6, name: 'stone' }) // low-Y edge (worldMinY)
   // Invisible block above a real surface must be skipped on both sides.
   blocks.push({ x: 7, y: 10, z: 7, name: 'stone' })
   blocks.push({ x: 7, y: 11, z: 7, name: 'barrier' })
@@ -171,7 +161,7 @@ test('heightmap parity: varied heights, every column populated (Rust == JS)', ()
   expect(js[0 * 16 + 1]).toBe(70)
   expect(js[0 * 16 + 2]).toBe(80)
   expect(js[5 * 16 + 5]).toBe(255)
-  expect(js[6 * 16 + 6]).toBe(5)  // y=0 stone is below the y=5 floor stone
+  expect(js[6 * 16 + 6]).toBe(5) // y=0 stone is below the y=5 floor stone
   expect(js[7 * 16 + 7]).toBe(10) // barrier above must be skipped
   expect(js[8 * 16 + 8]).toBe(12) // cave_air above must be skipped
 })

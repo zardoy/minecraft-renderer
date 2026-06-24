@@ -2,23 +2,23 @@ import * as THREE from 'three'
 import type { SceneOrigin } from './sceneOrigin'
 
 interface ParticleMesh extends THREE.Mesh {
-  velocity: THREE.Vector3;
-  worldPos: THREE.Vector3;
+  velocity: THREE.Vector3
+  worldPos: THREE.Vector3
 }
 
 interface ParticleConfig {
-  fountainHeight: number;
-  resetHeight: number;
-  xVelocityRange: number;
-  zVelocityRange: number;
-  particleCount: number;
-  particleRadiusRange: { min: number; max: number };
-  yVelocityRange: { min: number; max: number };
+  fountainHeight: number
+  resetHeight: number
+  xVelocityRange: number
+  zVelocityRange: number
+  particleCount: number
+  particleRadiusRange: { min: number; max: number }
+  yVelocityRange: { min: number; max: number }
 }
 
 export interface FountainOptions {
-  position?: { x: number, y: number, z: number }
-  particleConfig?: Partial<ParticleConfig>;
+  position?: { x: number; y: number; z: number }
+  particleConfig?: Partial<ParticleConfig>
 }
 
 export class Fountain {
@@ -28,15 +28,17 @@ export class Fountain {
   private readonly sceneOrigin: SceneOrigin | undefined
   container: THREE.Object3D | undefined
 
-  constructor (public sectionId: string, options: FountainOptions = {}, sceneOrigin?: SceneOrigin) {
+  constructor(
+    public sectionId: string,
+    options: FountainOptions = {},
+    sceneOrigin?: SceneOrigin
+  ) {
     this.position = options.position ? new THREE.Vector3(options.position.x, options.position.y, options.position.z) : new THREE.Vector3(0, 0, 0)
     this.config = this.createConfig(options.particleConfig)
     this.sceneOrigin = sceneOrigin
   }
 
-  private createConfig (
-    particleConfigOverride?: Partial<ParticleConfig>
-  ): { particleConfig: ParticleConfig } {
+  private createConfig(particleConfigOverride?: Partial<ParticleConfig>): { particleConfig: ParticleConfig } {
     const particleConfig: ParticleConfig = {
       fountainHeight: 10,
       resetHeight: 0,
@@ -51,27 +53,26 @@ export class Fountain {
     return { particleConfig }
   }
 
-  private toSceneX (worldX: number): number {
+  private toSceneX(worldX: number): number {
     return this.sceneOrigin ? this.sceneOrigin.toSceneX(worldX) : worldX
   }
 
-  private toSceneY (worldY: number): number {
+  private toSceneY(worldY: number): number {
     return this.sceneOrigin ? this.sceneOrigin.toSceneY(worldY) : worldY
   }
 
-  private toSceneZ (worldZ: number): number {
+  private toSceneZ(worldZ: number): number {
     return this.sceneOrigin ? this.sceneOrigin.toSceneZ(worldZ) : worldZ
   }
 
-
-  createParticles (container: THREE.Object3D): void {
+  createParticles(container: THREE.Object3D): void {
     this.container = container
     const colorStart = new THREE.Color(0xff_ff_00)
     const colorEnd = new THREE.Color(0xff_a5_00)
 
     for (let i = 0; i < this.config.particleConfig.particleCount; i++) {
-      const radius = Math.random() *
-        (this.config.particleConfig.particleRadiusRange.max - this.config.particleConfig.particleRadiusRange.min) +
+      const radius =
+        Math.random() * (this.config.particleConfig.particleRadiusRange.max - this.config.particleConfig.particleRadiusRange.min) +
         this.config.particleConfig.particleRadiusRange.min
       const geometry = new THREE.SphereGeometry(radius)
       const material = new THREE.MeshBasicMaterial({
@@ -102,7 +103,7 @@ export class Fountain {
     }
   }
 
-  render (): void {
+  render(): void {
     for (const particle of this.particles) {
       particle.velocity.y -= 0.01 + Math.random() * 0.1
       particle.worldPos.add(particle.velocity)
@@ -120,15 +121,11 @@ export class Fountain {
         )
       }
 
-      particle.position.set(
-        this.toSceneX(particle.worldPos.x),
-        this.toSceneY(particle.worldPos.y),
-        this.toSceneZ(particle.worldPos.z)
-      )
+      particle.position.set(this.toSceneX(particle.worldPos.x), this.toSceneY(particle.worldPos.y), this.toSceneZ(particle.worldPos.z))
     }
   }
 
-  private updateParticleCount (newCount: number): void {
+  private updateParticleCount(newCount: number): void {
     if (newCount !== this.config.particleConfig.particleCount) {
       this.config.particleConfig.particleCount = newCount
       const currentCount = this.particles.length
@@ -141,7 +138,7 @@ export class Fountain {
     }
   }
 
-  private addParticles (count: number): void {
+  private addParticles(count: number): void {
     const geometry = new THREE.SphereGeometry(0.1)
     const material = new THREE.MeshBasicMaterial({ color: 0x00_ff_00 })
 
@@ -149,24 +146,18 @@ export class Fountain {
       const mesh = new THREE.Mesh(geometry, material)
       const particle = mesh as unknown as ParticleMesh
       particle.worldPos = this.position.clone()
-      particle.position.set(
-        this.toSceneX(this.position.x),
-        this.toSceneY(this.position.y),
-        this.toSceneZ(this.position.z)
-      )
+      particle.position.set(this.toSceneX(this.position.x), this.toSceneY(this.position.y), this.toSceneZ(this.position.z))
       particle.velocity = new THREE.Vector3(
-        Math.random() * this.config.particleConfig.xVelocityRange -
-        this.config.particleConfig.xVelocityRange / 2,
+        Math.random() * this.config.particleConfig.xVelocityRange - this.config.particleConfig.xVelocityRange / 2,
         Math.random() * 2,
-        Math.random() * this.config.particleConfig.zVelocityRange -
-        this.config.particleConfig.zVelocityRange / 2
+        Math.random() * this.config.particleConfig.zVelocityRange - this.config.particleConfig.zVelocityRange / 2
       )
       this.particles.push(particle)
       this.container!.add(particle)
     }
   }
 
-  private removeParticles (count: number): void {
+  private removeParticles(count: number): void {
     for (let i = 0; i < count; i++) {
       const particle = this.particles.pop()
       if (particle) {
@@ -175,7 +166,7 @@ export class Fountain {
     }
   }
 
-  public dispose (): void {
+  public dispose(): void {
     for (const particle of this.particles) {
       particle.geometry.dispose()
       if (Array.isArray(particle.material)) {

@@ -20,7 +20,7 @@ export const defaultMesherConfig = {
   disableConversionCache: false,
   computeWireframeEdges: false,
   /** Pack eligible full-cube faces as GPU-instanced shader words during WASM post-processing. */
-  shaderCubeBlocks: false,
+  shaderCubeBlocks: false
 }
 
 export type CustomBlockModels = {
@@ -41,35 +41,35 @@ export type MesherGeometryBucketData = {
 }
 
 export type MesherGeometryOutput = {
-  sectionYNumber: number,
-  chunkKey: string,
-  sectionStartY: number,
-  sectionEndY: number,
-  sectionStartX: number,
-  sectionEndX: number,
-  sectionStartZ: number,
-  sectionEndZ: number,
+  sectionYNumber: number
+  chunkKey: string
+  sectionStartY: number
+  sectionEndY: number
+  sectionStartX: number
+  sectionEndX: number
+  sectionStartZ: number
+  sectionEndZ: number
   // three.js
-  sx: number,
-  sy: number,
-  sz: number,
+  sx: number
+  sy: number
+  sz: number
   // resulting: float32array
-  positions: any,
-  normals: any,
-  colors: any,
-  skyLights: any,
-  blockLights: any,
-  uvs: any,
+  positions: any
+  normals: any
+  colors: any
+  skyLights: any
+  blockLights: any
+  uvs: any
   /** Per-section blend geometry (water, lava, stained glass, ice, etc.). */
-  blend?: MesherGeometryBucketData,
+  blend?: MesherGeometryBucketData
 
-  indices: Uint32Array | Uint16Array | number[],
-  indicesCount: number,
-  using32Array: boolean,
-  tiles: Record<string, BlockType>,
-  heads: Record<string, any>,
-  signs: Record<string, any>,
-  banners: Record<string, any>,
+  indices: Uint32Array | Uint16Array | number[]
+  indicesCount: number
+  using32Array: boolean
+  tiles: Record<string, BlockType>
+  heads: Record<string, any>
+  signs: Record<string, any>
+  banners: Record<string, any>
   // isFull: boolean
   hadErrors: boolean
   blocksCount: number
@@ -84,36 +84,36 @@ export type MesherGeometryOutput = {
 }
 
 export interface MesherMainEvents {
-  geometry: { type: 'geometry'; key: string; geometry: MesherGeometryOutput; workerIndex: number };
+  geometry: { type: 'geometry'; key: string; geometry: MesherGeometryOutput; workerIndex: number }
   sectionFinished: {
-    type: 'sectionFinished';
-    key: string;
-    workerIndex: number;
-    processTime?: number;
-    pre?: number;
-    wasm?: number;
-    post?: number;
+    type: 'sectionFinished'
+    key: string
+    workerIndex: number
+    processTime?: number
+    pre?: number
+    wasm?: number
+    post?: number
     // Pre-stage substages (added for column-mode perf instrumentation).
     // All times in ms. `preNeighborConvert` is a SUM across neighbors;
     // divide by `preNeighborCount` for per-neighbor average.
-    preTargetConvert?: number;
-    preNeighborConvert?: number;
-    preNeighborCount?: number;
-    preTypedArrayBuild?: number;
-    preOther?: number;
+    preTargetConvert?: number
+    preNeighborConvert?: number
+    preNeighborCount?: number
+    preTypedArrayBuild?: number
+    preOther?: number
     // Per-event counts for the column-mode conversion cache.
-    preCacheHits?: number;
-    preCacheMisses?: number;
-  };
-  blockStateModelInfo: { type: 'blockStateModelInfo'; info: Record<string, BlockStateModelInfo> };
-  heightmap: { type: 'heightmap'; key: string; heightmap: Int16Array };
+    preCacheHits?: number
+    preCacheMisses?: number
+  }
+  blockStateModelInfo: { type: 'blockStateModelInfo'; info: Record<string, BlockStateModelInfo> }
+  heightmap: { type: 'heightmap'; key: string; heightmap: Int16Array }
   /** Reply to `{ type: 'mc-web-ping', t?, workerIndex? }` from the main thread (not batched in worker). */
-  mcWebPong: { type: 'mc-web-pong'; workerIndex: number; t?: number; recvAt?: number };
+  mcWebPong: { type: 'mc-web-pong'; workerIndex: number; t?: number; recvAt?: number }
 }
 
 export type MesherMainEvent = MesherMainEvents[keyof MesherMainEvents]
 
-export type HighestBlockInfo = { y: number, stateId: number | undefined, biomeId: number | undefined }
+export type HighestBlockInfo = { y: number; stateId: number | undefined; biomeId: number | undefined }
 
 export type BlockStateModelInfo = {
   cacheKey: string

@@ -34,7 +34,7 @@ export function createMcDataPlugin(bundleMcData, rootDir) {
           if (bundleMcData.includes(fileName)) {
             return {
               path: args.path,
-              namespace: 'mc-data',
+              namespace: 'mc-data'
             }
           }
           if (!allowedBundleFiles.includes(fileName)) {
@@ -43,33 +43,45 @@ export function createMcDataPlugin(bundleMcData, rootDir) {
         }
       })
 
-      build.onResolve({
-        filter: /^zlib$/,
-      }, ({ path }) => {
-        return {
-          path,
-          namespace: 'empty-file',
+      build.onResolve(
+        {
+          filter: /^zlib$/
+        },
+        ({ path }) => {
+          return {
+            path,
+            namespace: 'empty-file'
+          }
         }
-      })
+      )
 
-      build.onLoad({
-        filter: /.*/,
-        namespace: 'empty-file',
-      }, () => {
-        return { contents: 'module.exports = undefined', loader: 'js' }
-      })
-
-      build.onLoad({
-        namespace: 'mc-data',
-        filter: /.*/,
-      }, async ({ path }) => {
-        const fileName = path.split(/[\\\/]/).pop()?.replace('.json', '')
-        return {
-          contents: `module.exports = globalThis.mcData["${fileName}Array"] ?? globalThis.mcData["${fileName}"]`,
-          loader: 'js',
-          resolveDir: process.cwd(),
+      build.onLoad(
+        {
+          filter: /.*/,
+          namespace: 'empty-file'
+        },
+        () => {
+          return { contents: 'module.exports = undefined', loader: 'js' }
         }
-      })
+      )
+
+      build.onLoad(
+        {
+          namespace: 'mc-data',
+          filter: /.*/
+        },
+        async ({ path }) => {
+          const fileName = path
+            .split(/[\\\/]/)
+            .pop()
+            ?.replace('.json', '')
+          return {
+            contents: `module.exports = globalThis.mcData["${fileName}Array"] ?? globalThis.mcData["${fileName}"]`,
+            loader: 'js',
+            resolveDir: process.cwd()
+          }
+        }
+      )
 
       build.onEnd(({ metafile, outputFiles }) => {
         if (!metafile) return
@@ -100,7 +112,7 @@ export function createWorkerBuildOptions({ entryPoint, bundleMcData, watch, esbu
   const buildOptions = {
     bundle: true,
     banner: {
-      js: `globalThis.global = globalThis;process = {env: {}, versions: {} };`,
+      js: `globalThis.global = globalThis;process = {env: {}, versions: {} };`
     },
     platform: 'browser',
     entryPoints: [entryPoint],
@@ -112,19 +124,14 @@ export function createWorkerBuildOptions({ entryPoint, bundleMcData, watch, esbu
     target: watch ? undefined : ['ios14'],
     outdir: path.join(rootDir, './dist'),
     define: {
-      'process.env.BROWSER': '"true"',
+      'process.env.BROWSER': '"true"'
     },
     loader: {
       '.png': 'dataurl',
       '.obj': 'text'
     },
     ...esbuildOptions,
-    plugins: [
-      createMcDataPlugin(BUNDLE_MC_DATA, rootDir),
-      createEsbuildDataPlugin(),
-      polyfillNode(),
-      ...esbuildOptions.plugins ?? [],
-    ],
+    plugins: [createMcDataPlugin(BUNDLE_MC_DATA, rootDir), createEsbuildDataPlugin(), polyfillNode(), ...(esbuildOptions.plugins ?? [])]
   }
   return buildOptions
 }

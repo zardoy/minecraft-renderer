@@ -62,7 +62,7 @@ export async function initVR(worldRenderer: WorldRendererThree, documentRenderer
       display: 'flex',
       justifyContent: 'center',
       zIndex: '8',
-      gap: '8px',
+      gap: '8px'
     })
   }
 
@@ -78,7 +78,7 @@ export async function initVR(worldRenderer: WorldRendererThree, documentRenderer
       background: 'transparent',
       border: '1px solid rgb(255, 255, 255)',
       borderRadius: '4px',
-      opacity: '0.7',
+      opacity: '0.7'
     })
 
     closeButton.addEventListener('click', () => {
@@ -88,7 +88,6 @@ export async function initVR(worldRenderer: WorldRendererThree, documentRenderer
 
     return closeButton
   }
-
 
   async function checkVRSupport() {
     try {
@@ -121,16 +120,16 @@ export async function initVR(worldRenderer: WorldRendererThree, documentRenderer
     }
   }
   let hand1: any = controllerModelFactory.createControllerModel(controller1)
-  controller1.addEventListener('connected', (event) => {
+  controller1.addEventListener('connected', event => {
     hand1.xrInputSource = event.data
-    manageXrInputSource(event.data as { gamepad: Gamepad | undefined, handedness?: string }, 'left')
+    manageXrInputSource(event.data as { gamepad: Gamepad | undefined; handedness?: string }, 'left')
     user.add(controller1)
   })
   controller1.add(hand1)
   let hand2: any = controllerModelFactory.createControllerModel(controller2)
-  controller2.addEventListener('connected', (event) => {
+  controller2.addEventListener('connected', event => {
     hand2.xrInputSource = event.data
-    manageXrInputSource(event.data as { gamepad: Gamepad | undefined, handedness?: string }, 'right')
+    manageXrInputSource(event.data as { gamepad: Gamepad | undefined; handedness?: string }, 'right')
     user.add(controller2)
   })
   controller2.add(hand2)
@@ -183,7 +182,7 @@ export async function initVR(worldRenderer: WorldRendererThree, documentRenderer
 
     if (rotSnapReset) {
       if (Math.abs(hand1.xAxis) > 0.8) {
-        yawOffset -= Math.PI / 4 * Math.sign(hand1.xAxis)
+        yawOffset -= (Math.PI / 4) * Math.sign(hand1.xAxis)
         rotSnapReset = false
       }
     } else if (Math.abs(hand1.xAxis) < 0.1) {
@@ -219,7 +218,7 @@ const xrStandardRightButtonsMap = [
   // need to think of a way to support touchpad input
   [3 /* Thumbstick Press */, 'Right Stick'],
   [4 /* A */, 'A'],
-  [5 /* B */, 'B'],
+  [5 /* B */, 'B']
 ]
 const xrStandardLeftButtonsMap = [
   [0 /* trigger */, 'Left Trigger'],
@@ -227,14 +226,14 @@ const xrStandardLeftButtonsMap = [
   // need to think of a way to support touchpad input
   [3 /* Thumbstick Press */, 'Left Stick'],
   [4 /* A */, 'X'],
-  [5 /* B */, 'Y'],
+  [5 /* B */, 'Y']
 ]
 const remapButtons = (rightButtons: any[], leftButtons: any[]) => {
   // return remapped buttons
   const remapped = [] as string[]
   const remapWithMap = (buttons, map) => {
     for (const [index, standardName] of map) {
-      const standardMappingIndex = standardButtonsMap.findIndex((aliases) => aliases.find(alias => standardName === alias))
+      const standardMappingIndex = standardButtonsMap.findIndex(aliases => aliases.find(alias => standardName === alias))
       remapped[standardMappingIndex] = buttons[index]
     }
   }
@@ -244,12 +243,7 @@ const remapButtons = (rightButtons: any[], leftButtons: any[]) => {
 }
 const remapAxes = (axesRight, axesLeft) => {
   // 0, 1 are reserved for touch
-  return [
-    axesLeft[2],
-    axesLeft[3],
-    axesRight[2],
-    axesRight[3]
-  ]
+  return [axesLeft[2], axesLeft[3], axesRight[2], axesRight[3]]
 }
 
 function typedAssign<T extends Record<string, any>>(target: T, source: Partial<T>) {

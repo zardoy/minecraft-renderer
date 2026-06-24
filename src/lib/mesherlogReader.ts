@@ -5,7 +5,6 @@ import { Vec3 } from 'vec3'
 import { WorldRendererCommon } from './worldrendererCommon'
 const log = ''
 
-
 export class MesherLogReader {
   chunksToReceive: Array<{
     x: number
@@ -24,11 +23,11 @@ export class MesherLogReader {
   } | null
   replayStarted = false
 
-  constructor (private readonly worldRenderer: WorldRendererCommon) {
+  constructor(private readonly worldRenderer: WorldRendererCommon) {
     this.parseMesherLog()
   }
 
-  chunkReceived (x: number, z: number, chunkLength: number) {
+  chunkReceived(x: number, z: number, chunkLength: number) {
     // remove existing chunks with same x and z
     const existingChunkIndex = this.chunksToReceive.findIndex(chunk => chunk.x === x && chunk.z === z)
     if (existingChunkIndex === -1) {
@@ -44,7 +43,7 @@ export class MesherLogReader {
     this.maybeStartReplay()
   }
 
-  async maybeStartReplay () {
+  async maybeStartReplay() {
     if (this.chunksToReceive.length !== 0 || this.replayStarted) return
     const lines = log.split('\n')
     console.log('starting replay')
@@ -98,7 +97,7 @@ export class MesherLogReader {
     }
   }
 
-  workerMessageReceived (type: string, message: any) {
+  workerMessageReceived(type: string, message: any) {
     if (type === 'sectionFinished') {
       const { key } = message
       if (!this.sectionFinishedToReceive) {
@@ -118,7 +117,7 @@ export class MesherLogReader {
     }
   }
 
-  parseMesherLog () {
+  parseMesherLog() {
     const lines = log.split('\n')
     for (const line of lines) {
       if (line.startsWith('-> chunk')) {

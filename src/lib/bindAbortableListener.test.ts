@@ -8,9 +8,14 @@ describe('bindAbortableListener', () => {
     const emitter = new WorldViewWorker()
     const controller = new AbortController()
     let calls = 0
-    bindAbortableListener(emitter, 'renderDistance', () => {
-      calls++
-    }, controller.signal)
+    bindAbortableListener(
+      emitter,
+      'renderDistance',
+      () => {
+        calls++
+      },
+      controller.signal
+    )
 
     emitter.emit('renderDistance', 8)
     expect(calls).toBe(1)
@@ -27,12 +32,22 @@ describe('bindAbortableListener', () => {
     let callsA = 0
     let callsB = 0
 
-    bindAbortableListener(emitter, 'renderDistance', () => {
-      callsA++
-    }, controllerA.signal)
-    bindAbortableListener(emitter, 'renderDistance', () => {
-      callsB++
-    }, controllerB.signal)
+    bindAbortableListener(
+      emitter,
+      'renderDistance',
+      () => {
+        callsA++
+      },
+      controllerA.signal
+    )
+    bindAbortableListener(
+      emitter,
+      'renderDistance',
+      () => {
+        callsB++
+      },
+      controllerB.signal
+    )
 
     emitter.emit('renderDistance', 4)
     expect(callsA).toBe(1)
@@ -50,9 +65,14 @@ describe('bindAbortableEmitterListener', () => {
     const emitter = new EventEmitter()
     const controller = new AbortController()
     let calls = 0
-    bindAbortableEmitterListener(emitter, 'test', () => {
-      calls++
-    }, controller.signal)
+    bindAbortableEmitterListener(
+      emitter,
+      'test',
+      () => {
+        calls++
+      },
+      controller.signal
+    )
 
     emitter.emit('test')
     expect(calls).toBe(1)

@@ -1,11 +1,7 @@
 import { expect, test, vi } from 'vitest'
-import {
-  createLegacyMultiDrawScratch,
-  detectLegacyMultiDrawCaps,
-  drawLegacySpans,
-} from '../legacyMultiDraw'
+import { createLegacyMultiDrawScratch, detectLegacyMultiDrawCaps, drawLegacySpans } from '../legacyMultiDraw'
 
-function makeMockGl (opts?: { multiDraw?: boolean }): WebGL2RenderingContext {
+function makeMockGl(opts?: { multiDraw?: boolean }): WebGL2RenderingContext {
   const multiDrawElementsWEBGL = vi.fn()
   const drawElements = vi.fn()
   return {
@@ -17,7 +13,7 @@ function makeMockGl (opts?: { multiDraw?: boolean }): WebGL2RenderingContext {
       }
       return null
     },
-    drawElements,
+    drawElements
   } as unknown as WebGL2RenderingContext
 }
 
@@ -41,7 +37,7 @@ test('drawLegacySpans: tier A uses multiDrawElementsWEBGL with byte offsets', ()
   const scratch = createLegacyMultiDrawScratch()
   const spans = [
     { indexStart: 12, indexCount: 6 },
-    { indexStart: 30, indexCount: 12 },
+    { indexStart: 30, indexCount: 12 }
   ]
 
   drawLegacySpans(gl, caps, spans, scratch)
@@ -53,13 +49,7 @@ test('drawLegacySpans: tier A uses multiDrawElementsWEBGL with byte offsets', ()
 
   const ext = caps.ext as { multiDrawElementsWEBGL: ReturnType<typeof vi.fn> }
   expect(ext.multiDrawElementsWEBGL).toHaveBeenCalledTimes(1)
-  expect(ext.multiDrawElementsWEBGL).toHaveBeenCalledWith(
-    gl.TRIANGLES,
-    scratch.counts, 0,
-    gl.UNSIGNED_INT,
-    scratch.offsets, 0,
-    2,
-  )
+  expect(ext.multiDrawElementsWEBGL).toHaveBeenCalledWith(gl.TRIANGLES, scratch.counts, 0, gl.UNSIGNED_INT, scratch.offsets, 0, 2)
 })
 
 test('drawLegacySpans: tier B loops drawElements per span', () => {
@@ -70,12 +60,7 @@ test('drawLegacySpans: tier B loops drawElements per span', () => {
 
   drawLegacySpans(gl, caps, spans, scratch)
 
-  expect((gl as unknown as { drawElements: ReturnType<typeof vi.fn> }).drawElements).toHaveBeenCalledWith(
-    gl.TRIANGLES,
-    6,
-    gl.UNSIGNED_INT,
-    16,
-  )
+  expect((gl as unknown as { drawElements: ReturnType<typeof vi.fn> }).drawElements).toHaveBeenCalledWith(gl.TRIANGLES, 6, gl.UNSIGNED_INT, 16)
 })
 
 test('drawLegacySpans: grows scratch past MAX_OPAQUE_SPANS for uncapped blend sets', () => {
@@ -87,7 +72,7 @@ test('drawLegacySpans: grows scratch past MAX_OPAQUE_SPANS for uncapped blend se
   const spanCount = 70
   const spans = Array.from({ length: spanCount }, (_, i) => ({
     indexStart: i * 6,
-    indexCount: 6,
+    indexCount: 6
   }))
 
   drawLegacySpans(gl, caps, spans, scratch)
@@ -98,11 +83,5 @@ test('drawLegacySpans: grows scratch past MAX_OPAQUE_SPANS for uncapped blend se
   expect(scratch.offsets[69]).toBe(69 * 6 * 4)
 
   const ext = caps.ext as { multiDrawElementsWEBGL: ReturnType<typeof vi.fn> }
-  expect(ext.multiDrawElementsWEBGL).toHaveBeenCalledWith(
-    gl.TRIANGLES,
-    scratch.counts, 0,
-    gl.UNSIGNED_INT,
-    scratch.offsets, 0,
-    spanCount,
-  )
+  expect(ext.multiDrawElementsWEBGL).toHaveBeenCalledWith(gl.TRIANGLES, scratch.counts, 0, gl.UNSIGNED_INT, scratch.offsets, 0, spanCount)
 })

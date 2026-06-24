@@ -42,7 +42,7 @@ export class AnimationManager {
 
     // Set up onBeforeRender callback for renderable objects
     // onBeforeRender only works on renderable objects (Mesh, Line, Points, Sprite)
-    this.object.traverse((child) => {
+    this.object.traverse(child => {
       if (child instanceof THREE.Mesh || child instanceof THREE.Line || child instanceof THREE.Points || child instanceof THREE.Sprite) {
         const originalOnBeforeRender = child.onBeforeRender
         child.onBeforeRender = (renderer, scene, camera, geometry, material, group) => {
@@ -131,10 +131,7 @@ export class AnimationManager {
 /**
  * Convenience function to create and manage animations for an object
  */
-export function createAnimatedObject(
-  object: THREE.Object3D,
-  animations: THREE.AnimationClip[]
-) {
+export function createAnimatedObject(object: THREE.Object3D, animations: THREE.AnimationClip[]) {
   const manager = new AnimationManager(object, animations)
   manager.createAnimationState()
 

@@ -1,0 +1,17 @@
+# Lockfile — managed by the package manager, must never be reformatted.
+pnpm-lock.yaml
+
+# Test fixtures, snapshots and reference data — consumed/compared by tests, not code.
+chunk-packet-fixtures/
+test-snapshots/
+**/*.snapshot.json
+
+# Large generated / vendored data blobs (not hand-edited source).
+src/lib/moreBlockDataGenerated.json
+src/lib/preflatMap.json
+src/three/entity/*.json
+
+# WASM build output (binary + generated bindings).
+src/wasm-mesher/runtime-build/
+wasm-mesher/pkg/
+wasm-mesher/target/

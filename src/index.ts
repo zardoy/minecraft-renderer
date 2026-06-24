@@ -36,47 +36,26 @@ export * from './graphicsBackend'
 // ============================================================================
 // World View
 // ============================================================================
-export {
-  WorldView,
-  WorldViewWorker,
-  chunkPos,
-  sectionPos,
-  delayedIterator
-} from './worldView'
+export { WorldView, WorldViewWorker, chunkPos, sectionPos, delayedIterator } from './worldView'
 export type { WorldProvider } from './worldView'
 
 // ============================================================================
 // Player State
 // ============================================================================
-export {
-  getInitialPlayerState,
-  getPlayerStateUtils,
-  getInitialPlayerStateRenderer
-} from './playerState/playerState'
+export { getInitialPlayerState, getPlayerStateUtils, getInitialPlayerStateRenderer } from './playerState/playerState'
 
 // ============================================================================
 // Resource Manager
 // ============================================================================
-export {
-  ResourcesManager,
-  LoadedResourcesTransferrable
-} from './resourcesManager'
+export { ResourcesManager, LoadedResourcesTransferrable } from './resourcesManager'
 
 // ============================================================================
 // Three.js Backend (re-exported for convenience)
 // ============================================================================
-export {
-  createGraphicsBackendSingleThread
-} from './three/graphicsBackendSingleThread'
-export {
-  createGraphicsBackendOffThread
-} from './three/graphicsBackendOffThread'
+export { createGraphicsBackendSingleThread } from './three/graphicsBackendSingleThread'
+export { createGraphicsBackendOffThread } from './three/graphicsBackendOffThread'
 
-export {
-  DocumentRenderer,
-  addCanvasForWorker,
-  isWebWorker
-} from './three/documentRenderer'
+export { DocumentRenderer, addCanvasForWorker, isWebWorker } from './three/documentRenderer'
 export { MC_RENDERER_DEBUG_OVERLAY_CLASS } from './lib/ui/newStats'
 
 // Main-menu background (title screen backdrop)

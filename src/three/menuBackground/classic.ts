@@ -16,7 +16,7 @@ const panoramaFiles = [
   'panorama_4.webp', // top (+y)
   'panorama_5.webp', // bottom (-y)
   'panorama_0.webp', // front (+z)
-  'panorama_2.webp', // back (-z)
+  'panorama_2.webp' // back (-z)
 ]
 
 const FADE_IN_DURATION_MS = 200
@@ -43,12 +43,7 @@ export class ClassicMenuBackground implements MenuBackgroundView {
     directional.castShadow = true
     this.scene.add(directional)
 
-    this.camera = new THREE.PerspectiveCamera(
-      85,
-      documentRenderer.canvas.width / documentRenderer.canvas.height,
-      0.05,
-      1000
-    )
+    this.camera = new THREE.PerspectiveCamera(85, documentRenderer.canvas.width / documentRenderer.canvas.height, 0.05, 1000)
     this.camera.position.set(0, 0, 0)
     this.camera.rotation.set(0, 0, 0)
   }
@@ -129,7 +124,7 @@ export class ClassicMenuBackground implements MenuBackgroundView {
         const v = Math.random() * 0.01
         m.children[0].onBeforeRender = () => {
           m.rotation.y += v
-          m.rotation.z = Math.cos(panoramaBox.rotation.y * 3) * Math.PI / 4 - Math.PI / 2
+          m.rotation.z = (Math.cos(panoramaBox.rotation.y * 3) * Math.PI) / 4 - Math.PI / 2
         }
         group.add(m)
       }
@@ -143,10 +138,7 @@ export class ClassicMenuBackground implements MenuBackgroundView {
   async debugImageInFrontOfCamera() {
     const bitmap = await loadImageFromUrl(menuBackgroundAssetUrl('background', 'panorama_0.webp'))
     const image = loadThreeJsTextureFromBitmap(bitmap)
-    const mesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(1000, 1000),
-      new THREE.MeshBasicMaterial({ map: image })
-    )
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1000, 1000), new THREE.MeshBasicMaterial({ map: image }))
     mesh.position.set(0, 0, -500)
     this.scene.add(mesh)
   }

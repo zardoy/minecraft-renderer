@@ -58,15 +58,10 @@ export function deepEqual(obj1: any, obj2: any): boolean {
  * @param baseDir - Base directory for relative paths (defaults to __dirname, ignored if snapshotPath is absolute)
  * @returns true if snapshot matches or was created, throws error if mismatch
  */
-export function compareOrWriteSnapshot(
-  output: any,
-  snapshotPath: string,
-  baseDir?: string
-): boolean {
+export function compareOrWriteSnapshot(output: any, snapshotPath: string, baseDir?: string): boolean {
   // If path is absolute, use it directly; otherwise join with baseDir or __dirname
-  const fullPath = snapshotPath.startsWith('/') || snapshotPath.includes(':')
-    ? snapshotPath
-    : baseDir ? join(baseDir, snapshotPath) : join(__dirname, snapshotPath)
+  const fullPath =
+    snapshotPath.startsWith('/') || snapshotPath.includes(':') ? snapshotPath : baseDir ? join(baseDir, snapshotPath) : join(__dirname, snapshotPath)
   const serialized = serializeOutput(output)
 
   if (!existsSync(fullPath)) {

@@ -1,42 +1,30 @@
 {
-    "compilerOptions": {
-        "target": "ES2022",
-        "module": "ESNext",
-        "moduleResolution": "Node",
-        "lib": [
-            "ES2024",
-            "DOM",
-            "DOM.Iterable",
-            "WebWorker"
-        ],
-        "strict": true,
-        "skipLibCheck": true,
-        "forceConsistentCasingInFileNames": true,
-        "noEmit": true,
-        // "noEmit": false,
-        // "declaration": true,
-        // "declarationMap": true,
-        // "sourceMap": true,
-        // "outDir": "./dist",
-        // "rootDir": "./src",
-        "resolveJsonModule": true,
-        "allowSyntheticDefaultImports": true,
-        "experimentalDecorators": true,
-        "emitDecoratorMetadata": true,
-        "noImplicitAny": false,
-        "useUnknownInCatchVariables": false,
-        "allowUnreachableCode": true,
-        "jsx": "react-jsx",
-        "allowJs": true,
-        "maxNodeModuleJsDepth": 1
-    },
-    "include": [
-        "src/**/*"
-    ],
-    "exclude": [
-        "node_modules",
-        "dist",
-        "**/*.js",
-        "**/*.cjs"
-    ]
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "lib": ["ES2024", "DOM", "DOM.Iterable", "WebWorker"],
+    "strict": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    // "noEmit": false,
+    // "declaration": true,
+    // "declarationMap": true,
+    // "sourceMap": true,
+    // "outDir": "./dist",
+    // "rootDir": "./src",
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "noImplicitAny": false,
+    "useUnknownInCatchVariables": false,
+    "allowUnreachableCode": true,
+    "jsx": "react-jsx",
+    "allowJs": true,
+    "maxNodeModuleJsDepth": 1
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "**/*.js", "**/*.cjs"]
 }

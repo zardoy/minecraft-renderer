@@ -21,8 +21,12 @@ export class WorldBlocksMenuBackground implements MenuBackgroundView {
   private _scene: THREE.Scene
   private _camera: THREE.PerspectiveCamera
 
-  get scene() { return this._scene }
-  get camera() { return this._camera }
+  get scene() {
+    return this._scene
+  }
+  get camera() {
+    return this._camera
+  }
 
   private worldRenderer?: WorldRendererCommon | WorldRendererThree
   WorldRendererClass = WorldRendererThree
@@ -34,12 +38,7 @@ export class WorldBlocksMenuBackground implements MenuBackgroundView {
   ) {
     this._scene = new THREE.Scene()
     this._scene.background = new THREE.Color(0x32_45_68)
-    this._camera = new THREE.PerspectiveCamera(
-      85,
-      documentRenderer.canvas.width / documentRenderer.canvas.height,
-      0.05,
-      1000
-    )
+    this._camera = new THREE.PerspectiveCamera(85, documentRenderer.canvas.width / documentRenderer.canvas.height, 0.05, 1000)
     this.camera.position.set(0, 0, 0)
     this.camera.rotation.set(0, 0, 0)
   }
@@ -56,7 +55,7 @@ export class WorldBlocksMenuBackground implements MenuBackgroundView {
     const PrismarineBlock = require('prismarine-block')
     const Block = PrismarineBlock(version)
     const mcData = (globalThis as any).mcData
-    const fullBlocks = mcData.blocksArray.filter((block: { name: string, defaultState: number }) => {
+    const fullBlocks = mcData.blocksArray.filter((block: { name: string; defaultState: number }) => {
       if (!block.name.includes('stained_glass')) return false
       const b = Block.fromStateId(block.defaultState, 0)
       if (b.shapes?.length !== 1) return false
@@ -81,19 +80,15 @@ export class WorldBlocksMenuBackground implements MenuBackgroundView {
     const worldView = new WorldView(world, 2, initPos)
     if (this.abortSignal.aborted) return
 
-    this.worldRenderer = new this.WorldRendererClass(
-      this.documentRenderer.renderer,
-      this.options,
-      {
-        version,
-        worldView,
-        inWorldRenderingConfig: defaultWorldRendererConfig,
-        playerStateReactive: getInitialPlayerStateRenderer().reactive,
-        rendererState: getDefaultRendererState().reactive,
-        nonReactiveState: getDefaultRendererState().nonReactive,
-        resourcesManager: fullResourceManager as ResourcesManagerTransferred
-      }
-    )
+    this.worldRenderer = new this.WorldRendererClass(this.documentRenderer.renderer, this.options, {
+      version,
+      worldView,
+      inWorldRenderingConfig: defaultWorldRendererConfig,
+      playerStateReactive: getInitialPlayerStateRenderer().reactive,
+      rendererState: getDefaultRendererState().reactive,
+      nonReactiveState: getDefaultRendererState().nonReactive,
+      resourcesManager: fullResourceManager as ResourcesManagerTransferred
+    })
 
     if (this.worldRenderer instanceof WorldRendererThree) {
       this._scene = this.worldRenderer.realScene
@@ -126,18 +121,25 @@ export class WorldBlocksMenuBackground implements MenuBackgroundView {
     const initY = camera.position.y
     let prevTween: tweenJs.Tween<THREE.Vector3> | undefined
 
-    document.body.addEventListener('pointermove', (e) => {
-      if (e.pointerType !== 'mouse') return
-      const SCALE = 0.2
-      const xRel = e.clientX / window.innerWidth - 0.5
-      const yRel = -(e.clientY / window.innerHeight - 0.5)
-      prevTween?.stop()
-      prevTween = new tweenJs.Tween(camera.position).to({
-        x: initX + xRel * SCALE,
-        y: initY + yRel * SCALE
-      }, 0)
-      prevTween.start()
-      camera.updateProjectionMatrix()
-    }, { signal: this.abortSignal })
+    document.body.addEventListener(
+      'pointermove',
+      e => {
+        if (e.pointerType !== 'mouse') return
+        const SCALE = 0.2
+        const xRel = e.clientX / window.innerWidth - 0.5
+        const yRel = -(e.clientY / window.innerHeight - 0.5)
+        prevTween?.stop()
+        prevTween = new tweenJs.Tween(camera.position).to(
+          {
+            x: initX + xRel * SCALE,
+            y: initY + yRel * SCALE
+          },
+          0
+        )
+        prevTween.start()
+        camera.updateProjectionMatrix()
+      },
+      { signal: this.abortSignal }
+    )
   }
 }

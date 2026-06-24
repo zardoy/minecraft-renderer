@@ -9,10 +9,7 @@ export interface MenuBackgroundView {
   dispose(): void
 }
 
-export function resizeMenuBackgroundCamera(
-  camera: THREE.PerspectiveCamera,
-  canvas: { width: number, height: number }
-) {
+export function resizeMenuBackgroundCamera(camera: THREE.PerspectiveCamera, canvas: { width: number; height: number }) {
   camera.aspect = canvas.width / canvas.height
   camera.updateProjectionMatrix()
 }

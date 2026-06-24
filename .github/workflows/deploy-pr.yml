@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write  # for add-pr-comment
+      pull-requests: write # for add-pr-comment
     env:
       DEP_NAME: minecraft-renderer
     steps:

@@ -6,7 +6,7 @@ describe('WorldView._loadChunks spiral guard', () => {
   it('does not let a superseded spiral reset inLoading or panic state', async () => {
     const world = {
       getColumnAt: () => null,
-      setBlockStateId: vi.fn(),
+      setBlockStateId: vi.fn()
     }
     const view = new WorldView(world, 8, new Vec3(0, 64, 0))
     view.addWaitTime = 0

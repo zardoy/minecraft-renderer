@@ -75,36 +75,31 @@ export class World {
     this.config.version = version
   }
 
-  getChannelLightNorm (pos: Vec3): { block: number, sky: number } {
-    if (!(pos instanceof Vec3)) pos = new Vec3(...pos as [number, number, number])
+  getChannelLightNorm(pos: Vec3): { block: number; sky: number } {
+    if (!(pos instanceof Vec3)) pos = new Vec3(...(pos as [number, number, number]))
     if (!this.config.enableLighting) return { block: 0, sky: 1 }
     const column = this.getColumnByPos(pos)
     if (!column || !hasChunkSection(column, pos)) return { block: 0, sky: 1 }
     const loc = posInChunk(pos)
     return {
       block: Math.min(15, column.getBlockLight(loc) + 2) / 15,
-      sky: Math.min(15, column.getSkyLight(loc) + 2) / 15,
+      sky: Math.min(15, column.getSkyLight(loc) + 2) / 15
     }
   }
 
   getLight(pos: Vec3, isNeighbor = false, skipMoreChecks = false, curBlockName = '') {
     // for easier testing
-    if (!(pos instanceof Vec3)) pos = new Vec3(...pos as [number, number, number])
+    if (!(pos instanceof Vec3)) pos = new Vec3(...(pos as [number, number, number]))
     const { enableLighting, skyLight } = this.config
     if (!enableLighting) return 15
     // const key = `${pos.x},${pos.y},${pos.z}`
     // if (lightsCache.has(key)) return lightsCache.get(key)
     const column = this.getColumnByPos(pos)
     if (!column || !hasChunkSection(column, pos)) return 15
-    let result = Math.min(
-      15,
-      Math.max(
-        column.getBlockLight(posInChunk(pos)),
-        Math.min(skyLight, column.getSkyLight(posInChunk(pos)))
-      ) + 2
-    )
+    let result = Math.min(15, Math.max(column.getBlockLight(posInChunk(pos)), Math.min(skyLight, column.getSkyLight(posInChunk(pos)))) + 2)
     // lightsCache.set(key, result)
-    if (result === 2 && [this.getBlock(pos)?.name ?? '', curBlockName].some(x => /_stairs|slab|glass_pane/.exec(x)) && !skipMoreChecks) { // todo this is obviously wrong
+    if (result === 2 && [this.getBlock(pos)?.name ?? '', curBlockName].some(x => /_stairs|slab|glass_pane/.exec(x)) && !skipMoreChecks) {
+      // todo this is obviously wrong
       const lights = [
         this.getLight(pos.offset(0, 1, 0), undefined, true),
         this.getLight(pos.offset(0, -1, 0), undefined, true),
@@ -155,7 +150,7 @@ export class World {
 
   getBlock(pos: Vec3, blockProvider?: WorldBlockProvider, attr?: { hadErrors?: boolean }): WorldBlock | null {
     // for easier testing
-    if (!(pos instanceof Vec3)) pos = new Vec3(...pos as [number, number, number])
+    if (!(pos instanceof Vec3)) pos = new Vec3(...(pos as [number, number, number]))
     const chunkKey = worldColumnKey(Math.floor(pos.x / 16) * 16, Math.floor(pos.z / 16) * 16)
     const modelOverride = this.customBlockModels.get(chunkKey)?.[getBlockPosKey(pos)]
 
@@ -189,11 +184,16 @@ export class World {
           b.name = namePropsStr.split('[')[0]
           const propsStr = namePropsStr.split('[')?.[1]?.split(']')
           if (propsStr) {
-            const newProperties = Object.fromEntries(propsStr.join('').split(',').map(x => {
-              let [key, val] = x.split('=')
-              if (!isNaN(val)) val = parseInt(val, 10)
-              return [key, val]
-            }))
+            const newProperties = Object.fromEntries(
+              propsStr
+                .join('')
+                .split(',')
+                .map(x => {
+                  let [key, val] = x.split('=')
+                  if (!isNaN(val)) val = parseInt(val, 10)
+                  return [key, val]
+                })
+            )
             b._properties = newProperties
           }
         }
@@ -227,7 +227,7 @@ export class World {
         block.models = blockProvider.getAllResolvedModels0_1(
           {
             name: block.name,
-            properties: props,
+            properties: props
           },
           useFallbackModel,
           issues,

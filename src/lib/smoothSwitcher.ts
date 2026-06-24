@@ -23,12 +23,11 @@ export class SmoothSwitcher {
   public currentStateName = ''
   public transitioningToStateName = ''
 
-  constructor (
+  constructor(
     public getState: StateGetterFn,
     public setState: StateSetterFn,
     speeds?: Partial<Record<string, number>>
   ) {
-
     // Initialize speeds with defaults and overrides
     this.speeds = { ...DEFAULT_SPEEDS }
     if (speeds) {
@@ -42,7 +41,7 @@ export class SmoothSwitcher {
   /**
    * Calculate transition duration based on the largest property change
    */
-  private calculateDuration (newState: Partial<StateProperties>): number {
+  private calculateDuration(newState: Partial<StateProperties>): number {
     let maxDuration = 0
     const currentState = this.getState()
 
@@ -59,7 +58,7 @@ export class SmoothSwitcher {
     return Math.min(Math.max(maxDuration, 200), 2000)
   }
 
-  private getPropertySpeed (property: string): number {
+  private getPropertySpeed(property: string): number {
     // Check for specific property speed
     if (property in this.speeds) {
       return this.speeds[property]
@@ -80,7 +79,7 @@ export class SmoothSwitcher {
    * @param newState Partial state - only need to specify properties that change
    * @param easing Easing function to use
    */
-  startTransition (
+  startTransition(
     newState: Partial<StateProperties>,
     stateName?: string,
     onEnd?: () => void,
@@ -102,7 +101,7 @@ export class SmoothSwitcher {
       new tweenJs.Tween(state, group)
         .to(newState, duration)
         .easing(easing)
-        .onUpdate((obj) => {
+        .onUpdate(obj => {
           for (const key of Object.keys(obj)) {
             this.setState(key, obj[key])
           }
@@ -121,48 +120,42 @@ export class SmoothSwitcher {
   /**
    * Reset to default state
    */
-  reset (): void {
+  reset(): void {
     this.startTransition(this.defaultState)
   }
-
 
   /**
    * Update the animation (should be called in your render/update loop)
    */
-  update (): void {
+  update(): void {
     this.animationController.update()
   }
 
   /**
    * Force finish the current transition
    */
-  forceFinish (): void {
+  forceFinish(): void {
     this.animationController.forceFinish()
   }
 
   /**
    * Start a new transition to the specified state
    */
-  transitionTo (
-    newState: Partial<StateProperties>,
-    stateName?: string,
-    onEnd?: () => void,
-    onCancelled?: () => void
-  ): void {
+  transitionTo(newState: Partial<StateProperties>, stateName?: string, onEnd?: () => void, onCancelled?: () => void): void {
     this.startTransition(newState, stateName, onEnd, tweenJs.Easing.Linear.None, onCancelled)
   }
 
   /**
    * Get the current value of a property
    */
-  getCurrentValue (property: string): number {
+  getCurrentValue(property: string): number {
     return this.getState()[property]
   }
 
   /**
    * Check if currently transitioning
    */
-  get isTransitioning (): boolean {
+  get isTransitioning(): boolean {
     return this.animationController.isActive
   }
 }

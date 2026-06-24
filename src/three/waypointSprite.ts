@@ -20,19 +20,19 @@ export const WAYPOINT_CONFIG = {
   LAYOUT: {
     DOT_Y: 0.3,
     NAME_Y: 0.45,
-    DISTANCE_Y: 0.55,
+    DISTANCE_Y: 0.55
   },
   // Multiplier for canvas internal resolution to keep text crisp
   CANVAS_SCALE: 2,
   ARROW: {
     enabledDefault: false,
     pixelSize: 50,
-    paddingPx: 50,
+    paddingPx: 50
   },
   // Default visual scale factor (can be overridden globally or per-waypoint)
   DEFAULT_VISUAL_SCALE: 1,
   // Default opacity (can be overridden globally or per-waypoint)
-  DEFAULT_OPACITY: 1,
+  DEFAULT_OPACITY: 1
 }
 
 export type WaypointSprite = {
@@ -42,12 +42,7 @@ export type WaypointSprite = {
   enableOffscreenArrow: (enabled: boolean) => void
   setArrowParent: (parent: THREE.Object3D | null) => void
   // Convenience combined updater
-  updateForCamera: (
-    cameraPosition: THREE.Vector3,
-    camera: THREE.PerspectiveCamera,
-    viewportWidthPx: number,
-    viewportHeightPx: number
-  ) => boolean
+  updateForCamera: (cameraPosition: THREE.Vector3, camera: THREE.PerspectiveCamera, viewportWidthPx: number, viewportHeightPx: number) => boolean
   // Utilities
   setColor: (color: number) => void
   setLabel: (label?: string) => void
@@ -57,33 +52,35 @@ export type WaypointSprite = {
   dispose: () => void
 }
 
-export function createWaypointSprite (options: {
-  position: THREE.Vector3 | { x: number, y: number, z: number },
-  color?: number,
-  label?: string,
-  depthTest?: boolean,
+export function createWaypointSprite(options: {
+  position: THREE.Vector3 | { x: number; y: number; z: number }
+  color?: number
+  label?: string
+  depthTest?: boolean
   // Y offset in world units used by updateScaleWorld only (screen-pixel API ignores this)
-  labelYOffset?: number,
-  metadata?: any,
-  visualScale?: number,
-  opacity?: number,
+  labelYOffset?: number
+  metadata?: any
+  visualScale?: number
+  opacity?: number
 }): WaypointSprite {
-  let displayColor = options.color ?? 0xFF_00_00
+  let displayColor = options.color ?? 0xff_00_00
   const depthTest = options.depthTest ?? false
 
   // Get visual scale from options, metadata, server metadata, or default
   // Priority: options.visualScale > metadata.visualScale > window.serverMetadata?.waypointVisualScale > DEFAULT
-  const visualScale = options.visualScale
-    ?? options.metadata?.visualScale
-    ?? (typeof window === 'undefined' ? undefined : (window as any).serverMetadata?.waypointVisualScale)
-    ?? WAYPOINT_CONFIG.DEFAULT_VISUAL_SCALE
+  const visualScale =
+    options.visualScale ??
+    options.metadata?.visualScale ??
+    (typeof window === 'undefined' ? undefined : (window as any).serverMetadata?.waypointVisualScale) ??
+    WAYPOINT_CONFIG.DEFAULT_VISUAL_SCALE
 
   // Get opacity from options, metadata, server metadata, or default
   // Priority: options.opacity > metadata.opacity > window.serverMetadata?.waypointOpacity > DEFAULT
-  const opacity = options.opacity
-    ?? options.metadata?.opacity
-    ?? (typeof window === 'undefined' ? undefined : (window as any).serverMetadata?.waypointOpacity)
-    ?? WAYPOINT_CONFIG.DEFAULT_OPACITY
+  const opacity =
+    options.opacity ??
+    options.metadata?.opacity ??
+    (typeof window === 'undefined' ? undefined : (window as any).serverMetadata?.waypointOpacity) ??
+    WAYPOINT_CONFIG.DEFAULT_OPACITY
 
   const labelCanvas = createCanvas(getLabelCanvasSize(), getLabelCanvasSize())
   drawCombinedOntoCanvas(labelCanvas, displayColor, options.label ?? '', '0m', visualScale)
@@ -97,7 +94,7 @@ export function createWaypointSprite (options: {
     transparent: true,
     opacity: 1,
     depthTest,
-    depthWrite: false,
+    depthWrite: false
   })
   const sprite = new THREE.Sprite(material)
   sprite.position.set(0, 0, 0)
@@ -121,11 +118,11 @@ export function createWaypointSprite (options: {
   const { x, y, z } = options.position
   group.position.set(x, y, z)
 
-  function refreshLabelTexture () {
+  function refreshLabelTexture() {
     labelTexture.needsUpdate = true
   }
 
-  function paintArrowOnCanvas () {
+  function paintArrowOnCanvas() {
     if (!arrowCanvas || !arrowCtx) return
     const size = arrowCanvas.width
     arrowCtx.clearRect(0, 0, size, size)
@@ -143,7 +140,7 @@ export function createWaypointSprite (options: {
     if (arrowTexture) arrowTexture.needsUpdate = true
   }
 
-  function setColor (newColor: number) {
+  function setColor(newColor: number) {
     displayColor = newColor
     lastDistanceText = '0m'
     lastDistanceBucket = 0
@@ -152,13 +149,13 @@ export function createWaypointSprite (options: {
     if (arrowSprite) paintArrowOnCanvas()
   }
 
-  function setLabel (newLabel?: string) {
+  function setLabel(newLabel?: string) {
     currentLabel = newLabel ?? ''
     drawCombinedOntoCanvas(labelCanvas, displayColor, currentLabel, lastDistanceText, visualScale)
     refreshLabelTexture()
   }
 
-  function updateDistanceText (label: string, distanceText: string) {
+  function updateDistanceText(label: string, distanceText: string) {
     if (distanceText === lastDistanceText) {
       return
     }
@@ -168,27 +165,22 @@ export function createWaypointSprite (options: {
     refreshLabelTexture()
   }
 
-  function setVisible (visible: boolean) {
+  function setVisible(visible: boolean) {
     sprite.visible = visible
   }
 
-  function setPosition (nx: number, ny: number, nz: number) {
+  function setPosition(nx: number, ny: number, nz: number) {
     group.position.set(nx, ny, nz)
   }
 
-  function updateScaleScreenPixels (
-    cameraPosition: THREE.Vector3,
-    cameraFov: number,
-    distance: number,
-    viewportHeightPx: number
-  ) {
-    const vFovRad = cameraFov * Math.PI / 180
+  function updateScaleScreenPixels(cameraPosition: THREE.Vector3, cameraFov: number, distance: number, viewportHeightPx: number) {
+    const vFovRad = (cameraFov * Math.PI) / 180
     const worldUnitsPerScreenHeightAtDist = Math.tan(vFovRad / 2) * 2 * distance
-    const scale = worldUnitsPerScreenHeightAtDist * (WAYPOINT_CONFIG.TARGET_SCREEN_PX * visualScale / viewportHeightPx)
+    const scale = worldUnitsPerScreenHeightAtDist * ((WAYPOINT_CONFIG.TARGET_SCREEN_PX * visualScale) / viewportHeightPx)
     sprite.scale.set(scale, scale, 1)
   }
 
-  function ensureArrow () {
+  function ensureArrow() {
     if (arrowSprite) return
     const size = 128
     arrowCanvas = createCanvas(size, size)
@@ -205,22 +197,18 @@ export function createWaypointSprite (options: {
     if (arrowParent) arrowParent.add(arrowSprite)
   }
 
-  function enableOffscreenArrow (enabled: boolean) {
+  function enableOffscreenArrow(enabled: boolean) {
     arrowEnabled = enabled
     if (!enabled && arrowSprite) arrowSprite.visible = false
   }
 
-  function setArrowParent (parent: THREE.Object3D | null) {
+  function setArrowParent(parent: THREE.Object3D | null) {
     if (arrowSprite?.parent) arrowSprite.parent.remove(arrowSprite)
     arrowParent = parent
     if (arrowSprite && parent) parent.add(arrowSprite)
   }
 
-  function updateOffscreenArrow (
-    camera: THREE.PerspectiveCamera,
-    viewportWidthPx: number,
-    viewportHeightPx: number
-  ): boolean {
+  function updateOffscreenArrow(camera: THREE.PerspectiveCamera, viewportWidthPx: number, viewportHeightPx: number): boolean {
     if (!arrowEnabled) return true
     ensureArrow()
     if (!arrowSprite) return true
@@ -245,7 +233,7 @@ export function createWaypointSprite (options: {
     const y = toWp.dot(upCam)
 
     const aspect = viewportWidthPx / viewportHeightPx
-    const vFovRad = camera.fov * Math.PI / 180
+    const vFovRad = (camera.fov * Math.PI) / 180
     const hFovRad = 2 * Math.atan(Math.tan(vFovRad / 2) * aspect)
 
     // Determine if waypoint is inside view frustum using angular checks
@@ -293,8 +281,8 @@ export function createWaypointSprite (options: {
 
     // Apply padding in pixel space by clamping
     const padding = WAYPOINT_CONFIG.ARROW.paddingPx
-    const pxX = ((ndcX + 1) * 0.5) * viewportWidthPx
-    const pxY = ((1 - ndcY) * 0.5) * viewportHeightPx
+    const pxX = (ndcX + 1) * 0.5 * viewportWidthPx
+    const pxY = (1 - ndcY) * 0.5 * viewportHeightPx
     const clampedPxX = Math.min(Math.max(pxX, padding), viewportWidthPx - padding)
     const clampedPxY = Math.min(Math.max(pxY, padding), viewportHeightPx - padding)
     ndcX = (clampedPxX / viewportWidthPx) * 2 - 1
@@ -304,7 +292,8 @@ export function createWaypointSprite (options: {
     const placeDist = Math.max(2, camera.near * 4)
     const halfPlaneHeight = Math.tan(vFovRad / 2) * placeDist
     const halfPlaneWidth = halfPlaneHeight * aspect
-    const pos = camPos.clone()
+    const pos = camPos
+      .clone()
       .add(forward.clone().multiplyScalar(placeDist))
       .add(right.clone().multiplyScalar(ndcX * halfPlaneWidth))
       .add(upCam.clone().multiplyScalar(ndcY * halfPlaneHeight))
@@ -319,21 +308,16 @@ export function createWaypointSprite (options: {
 
     // Constant pixel size for arrow (use fixed placement distance) with visual scale
     const worldUnitsPerScreenHeightAtDist = Math.tan(vFovRad / 2) * 2 * placeDist
-    const sPx = worldUnitsPerScreenHeightAtDist * (WAYPOINT_CONFIG.ARROW.pixelSize * visualScale / viewportHeightPx)
+    const sPx = worldUnitsPerScreenHeightAtDist * ((WAYPOINT_CONFIG.ARROW.pixelSize * visualScale) / viewportHeightPx)
     arrowSprite.scale.set(sPx, sPx, 1)
     return false
   }
 
-  function computeDistance (cameraPosition: THREE.Vector3): number {
+  function computeDistance(cameraPosition: THREE.Vector3): number {
     return cameraPosition.distanceTo(group.position)
   }
 
-  function updateForCamera (
-    cameraPosition: THREE.Vector3,
-    camera: THREE.PerspectiveCamera,
-    viewportWidthPx: number,
-    viewportHeightPx: number
-  ): boolean {
+  function updateForCamera(cameraPosition: THREE.Vector3, camera: THREE.PerspectiveCamera, viewportWidthPx: number, viewportHeightPx: number): boolean {
     const distance = computeDistance(cameraPosition)
     updateScaleScreenPixels(cameraPosition, camera.fov, distance, viewportHeightPx)
 
@@ -348,7 +332,7 @@ export function createWaypointSprite (options: {
     return onScreen
   }
 
-  function dispose () {
+  function dispose() {
     const mat = sprite.material
     mat.map?.dispose()
     mat.dispose()
@@ -377,28 +361,22 @@ export function createWaypointSprite (options: {
     updateDistanceText,
     setVisible,
     setPosition,
-    dispose,
+    dispose
   }
 }
 
 // Internal helpers
-function computeLabelCanvasLineScale (): number {
+function computeLabelCanvasLineScale(): number {
   const dpr = globalThis.devicePixelRatio || 1
   const effectiveDpr = Math.min(dpr, LABEL_CANVAS_MAX_DEVICE_PIXEL_RATIO)
   return WAYPOINT_CONFIG.CANVAS_SCALE * effectiveDpr
 }
 
-function getLabelCanvasSize (): number {
+function getLabelCanvasSize(): number {
   return Math.round(WAYPOINT_CONFIG.CANVAS_SIZE * computeLabelCanvasLineScale())
 }
 
-function drawCombinedOntoCanvas (
-  canvas: OffscreenCanvas,
-  color: number,
-  id: string,
-  distance: string,
-  visualScale: number
-): void {
+function drawCombinedOntoCanvas(canvas: OffscreenCanvas, color: number, id: string, distance: string, visualScale: number): void {
   const size = canvas.width
   const scale = computeLabelCanvasLineScale()
   const ctx = canvas.getContext('2d')!
@@ -442,17 +420,12 @@ function drawCombinedOntoCanvas (
 
 export const WaypointHelpers = {
   // World-scale constant size helper
-  computeWorldScale (distance: number, fixedReference = 10) {
+  computeWorldScale(distance: number, fixedReference = 10) {
     return Math.max(0.0001, distance / fixedReference)
   },
   // Screen-pixel constant size helper
-  computeScreenPixelScale (
-    camera: THREE.PerspectiveCamera,
-    distance: number,
-    pixelSize: number,
-    viewportHeightPx: number
-  ) {
-    const vFovRad = camera.fov * Math.PI / 180
+  computeScreenPixelScale(camera: THREE.PerspectiveCamera, distance: number, pixelSize: number, viewportHeightPx: number) {
+    const vFovRad = (camera.fov * Math.PI) / 180
     const worldUnitsPerScreenHeightAtDist = Math.tan(vFovRad / 2) * 2 * distance
     return worldUnitsPerScreenHeightAtDist * (pixelSize / viewportHeightPx)
   }

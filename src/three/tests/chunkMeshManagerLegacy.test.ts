@@ -2,7 +2,7 @@ import { test, expect, vi } from 'vitest'
 import * as THREE from 'three'
 
 vi.mock('../entity/EntityMesh', () => ({
-  getMesh: vi.fn(),
+  getMesh: vi.fn()
 }))
 
 import { ChunkMeshManager } from '../chunkMeshManager'
@@ -10,13 +10,8 @@ import type { WorldRendererThree } from '../worldRendererThree'
 import type { MesherGeometryOutput } from '../../mesher-shared/shared'
 import { renderWasmOutputToGeometry } from '../../wasm-mesher/bridge/render-from-wasm'
 
-function makeQuadArrays () {
-  const positions = new Float32Array([
-    -1, -1, -1,
-    -1, 1, -1,
-    -1, 1, 1,
-    -1, -1, 1,
-  ])
+function makeQuadArrays() {
+  const positions = new Float32Array([-1, -1, -1, -1, 1, -1, -1, 1, 1, -1, -1, 1])
   const colors = new Float32Array(12).fill(1)
   const skyLights = new Float32Array(4).fill(1)
   const blockLights = new Float32Array(4).fill(0)
@@ -25,7 +20,7 @@ function makeQuadArrays () {
   return { positions, colors, skyLights, blockLights, uvs, indices }
 }
 
-function makeBlendOnlyGeometry (): MesherGeometryOutput {
+function makeBlendOnlyGeometry(): MesherGeometryOutput {
   const blend = makeQuadArrays()
   return {
     sectionYNumber: 0,
@@ -61,12 +56,12 @@ function makeBlendOnlyGeometry (): MesherGeometryOutput {
       skyLights: blend.skyLights,
       blockLights: blend.blockLights,
       uvs: blend.uvs,
-      indices: blend.indices,
-    },
+      indices: blend.indices
+    }
   }
 }
 
-function makeMixedGeometry (): MesherGeometryOutput {
+function makeMixedGeometry(): MesherGeometryOutput {
   const opaque = makeQuadArrays()
   const blend = makeQuadArrays()
   return {
@@ -103,12 +98,12 @@ function makeMixedGeometry (): MesherGeometryOutput {
       skyLights: blend.skyLights,
       blockLights: blend.blockLights,
       uvs: blend.uvs,
-      indices: blend.indices,
-    },
+      indices: blend.indices
+    }
   }
 }
 
-function makeInvalidBlendGeometry (): MesherGeometryOutput {
+function makeInvalidBlendGeometry(): MesherGeometryOutput {
   const geo = makeBlendOnlyGeometry()
   const blend = geo.blend!
   return {
@@ -116,8 +111,8 @@ function makeInvalidBlendGeometry (): MesherGeometryOutput {
     blend: {
       ...blend,
       positions: new Float32Array([0, 0, 0, 1, 0, 0, 2, 0, 0]),
-      indices: new Uint32Array([0, 1, 2, 0, 2, 1, 3]),
-    },
+      indices: new Uint32Array([0, 1, 2, 0, 2, 1, 3])
+    }
   }
 }
 
@@ -127,23 +122,18 @@ type ManagerOptions = {
   finishedChunks?: Record<string, boolean>
 }
 
-function makeShaderCubeOnlyGeometry (): MesherGeometryOutput {
+function makeShaderCubeOnlyGeometry(): MesherGeometryOutput {
   const block = {
     position: [0, 0, 0] as [number, number, number],
     block_state_id: 1,
     visible_faces: (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 5),
     ao_data: Array.from({ length: 6 }, () => [3, 3, 3, 3]),
     light_data: Array.from({ length: 6 }, () => [1, 1, 1, 1]),
-    light_combined: Array.from({ length: 6 }, () => [255, 255, 255, 255]),
+    light_combined: Array.from({ length: 6 }, () => [255, 255, 255, 255])
   }
-  const out = renderWasmOutputToGeometry(
-    { blocks: [block], block_count: 1, block_iterations: 0 },
-    '1.16.5',
-    '0,0,0',
-    { x: 8, y: 8, z: 8 },
-    undefined,
-    { shaderCubes: true },
-  )
+  const out = renderWasmOutputToGeometry({ blocks: [block], block_count: 1, block_iterations: 0 }, '1.16.5', '0,0,0', { x: 8, y: 8, z: 8 }, undefined, {
+    shaderCubes: true
+  })
   return {
     sectionYNumber: 0,
     chunkKey: '0,0',
@@ -171,11 +161,11 @@ function makeShaderCubeOnlyGeometry (): MesherGeometryOutput {
     banners: {},
     hadErrors: false,
     blocksCount: 1,
-    shaderCubes: out.shaderCubes,
+    shaderCubes: out.shaderCubes
   }
 }
 
-function makeCullCamera (): THREE.PerspectiveCamera {
+function makeCullCamera(): THREE.PerspectiveCamera {
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000)
   camera.position.set(8, 8, 20)
   camera.lookAt(8, 8, 8)
@@ -183,19 +173,19 @@ function makeCullCamera (): THREE.PerspectiveCamera {
   return camera
 }
 
-function drainCubeUploads (manager: ChunkMeshManager): void {
+function drainCubeUploads(manager: ChunkMeshManager): void {
   const gb = manager.globalBlockBuffer
   if (!gb) return
   while (gb.hasPendingUploads()) gb.uploadDirtyRange()
 }
 
-function createManager (opts: ManagerOptions = {}): ChunkMeshManager {
+function createManager(opts: ManagerOptions = {}): ChunkMeshManager {
   const scene = new THREE.Scene()
   const material = new THREE.MeshBasicMaterial()
   const revealModule = opts.revealDefer
     ? {
-      shouldDeferSectionGeometry: () => true,
-    }
+        shouldDeferSectionGeometry: () => true
+      }
     : undefined
   const worldRenderer = {
     shaderCubeBlocksEnabled: () => opts.shaderCubes ?? false,
@@ -203,12 +193,12 @@ function createManager (opts: ManagerOptions = {}): ChunkMeshManager {
     sceneOrigin: {
       track: () => {},
       removeAndUntrack: () => {},
-      removeAndUntrackAll: () => {},
+      removeAndUntrackAll: () => {}
     },
     blockEntities: {},
     worldRendererConfig: opts.shaderCubes ? { wasmMesher: true } : {},
     displayOptions: { inWorldRenderingConfig: {} },
-    finishedChunks: opts.finishedChunks ?? (opts.shaderCubes ? { '0,0': true } : {}),
+    finishedChunks: opts.finishedChunks ?? (opts.shaderCubes ? { '0,0': true } : {})
   } as unknown as WorldRendererThree
   return new ChunkMeshManager(worldRenderer, scene, material, 256, 1)
 }

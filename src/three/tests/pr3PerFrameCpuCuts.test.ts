@@ -2,7 +2,7 @@ import { test, expect, vi, afterEach } from 'vitest'
 import * as THREE from 'three'
 
 vi.mock('../entity/EntityMesh', () => ({
-  getMesh: vi.fn(),
+  getMesh: vi.fn()
 }))
 
 import { ChunkMeshManager } from '../chunkMeshManager'
@@ -10,13 +10,8 @@ import type { GlobalLegacyBuffer } from '../globalLegacyBuffer'
 import type { WorldRendererThree } from '../worldRendererThree'
 import type { MesherGeometryOutput } from '../../mesher-shared/shared'
 
-function makeQuadArrays () {
-  const positions = new Float32Array([
-    -1, -1, -1,
-    -1, 1, -1,
-    -1, 1, 1,
-    -1, -1, 1,
-  ])
+function makeQuadArrays() {
+  const positions = new Float32Array([-1, -1, -1, -1, 1, -1, -1, 1, 1, -1, -1, 1])
   const colors = new Float32Array(12).fill(1)
   const skyLights = new Float32Array(4).fill(1)
   const blockLights = new Float32Array(4).fill(0)
@@ -25,7 +20,7 @@ function makeQuadArrays () {
   return { positions, colors, skyLights, blockLights, uvs, indices }
 }
 
-function makeBlendOnlyGeometry (): MesherGeometryOutput {
+function makeBlendOnlyGeometry(): MesherGeometryOutput {
   const blend = makeQuadArrays()
   return {
     sectionYNumber: 0,
@@ -61,12 +56,12 @@ function makeBlendOnlyGeometry (): MesherGeometryOutput {
       skyLights: blend.skyLights,
       blockLights: blend.blockLights,
       uvs: blend.uvs,
-      indices: blend.indices,
-    },
+      indices: blend.indices
+    }
   }
 }
 
-function makeOpaqueOnlyGeometry (sx = 8, sy = 8, sz = 8): MesherGeometryOutput {
+function makeOpaqueOnlyGeometry(sx = 8, sy = 8, sz = 8): MesherGeometryOutput {
   const opaque = makeQuadArrays()
   return {
     sectionYNumber: 0,
@@ -94,11 +89,11 @@ function makeOpaqueOnlyGeometry (sx = 8, sy = 8, sz = 8): MesherGeometryOutput {
     signs: {},
     banners: {},
     hadErrors: false,
-    blocksCount: 1,
+    blocksCount: 1
   }
 }
 
-function makeMixedGeometry (): MesherGeometryOutput {
+function makeMixedGeometry(): MesherGeometryOutput {
   const opaque = makeQuadArrays()
   const blend = makeQuadArrays()
   return {
@@ -135,12 +130,12 @@ function makeMixedGeometry (): MesherGeometryOutput {
       skyLights: blend.skyLights,
       blockLights: blend.blockLights,
       uvs: blend.uvs,
-      indices: blend.indices,
-    },
+      indices: blend.indices
+    }
   }
 }
 
-function createManager (): ChunkMeshManager {
+function createManager(): ChunkMeshManager {
   const scene = new THREE.Scene()
   const material = new THREE.MeshBasicMaterial()
   const worldRenderer = {
@@ -149,25 +144,25 @@ function createManager (): ChunkMeshManager {
     sceneOrigin: {
       track: () => {},
       removeAndUntrack: () => {},
-      removeAndUntrackAll: () => {},
+      removeAndUntrackAll: () => {}
     },
     blockEntities: {},
-    worldRendererConfig: {},
+    worldRendererConfig: {}
   } as unknown as WorldRendererThree
   return new ChunkMeshManager(worldRenderer, scene, material, 256, 1)
 }
 
 type ManagerInternals = {
-  legacyCullSections: Map<string, { worldX: number, worldY: number, worldZ: number }>
+  legacyCullSections: Map<string, { worldX: number; worldY: number; worldZ: number }>
   registerLegacyCullSection: (key: string, wx: number, wy: number, wz: number) => void
   maybeUnregisterLegacyCullSection: (key: string) => void
 }
 
-function getLegacyCullSections (manager: ChunkMeshManager): Map<string, { worldX: number, worldY: number, worldZ: number }> {
+function getLegacyCullSections(manager: ChunkMeshManager): Map<string, { worldX: number; worldY: number; worldZ: number }> {
   return (manager as unknown as ManagerInternals).legacyCullSections
 }
 
-function makeCamera (x: number, y: number, z: number): THREE.PerspectiveCamera {
+function makeCamera(x: number, y: number, z: number): THREE.PerspectiveCamera {
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000)
   camera.position.set(x, y, z)
   camera.lookAt(8, 8, 8)
@@ -250,11 +245,7 @@ test('updateSectionCullAndSort: layoutVersion change forces span rebuild', () =>
   expect(updateDrawSpansSpy).toHaveBeenCalledTimes(1)
 
   blendBuffer.removeSection(key)
-  blendBuffer.addSection(
-    key,
-    makeBlendOnlyGeometry().blend!,
-    8, 8, 8,
-  )
+  blendBuffer.addSection(key, makeBlendOnlyGeometry().blend!, 8, 8, 8)
   ;(manager as unknown as ManagerInternals).registerLegacyCullSection(key, 8, 8, 8)
 
   manager.updateSectionCullAndSort(camera, 8, 8, 20)
@@ -264,17 +255,11 @@ test('updateSectionCullAndSort: layoutVersion change forces span rebuild', () =>
   manager.dispose()
 })
 
-function drainLegacyUploads (buffer: GlobalLegacyBuffer): void {
+function drainLegacyUploads(buffer: GlobalLegacyBuffer): void {
   while (buffer.hasPendingUploads()) buffer.uploadDirtyRange()
 }
 
-function simulateRenderCullGate (
-  manager: ChunkMeshManager,
-  camera: THREE.PerspectiveCamera,
-  x: number,
-  y: number,
-  z: number,
-): void {
+function simulateRenderCullGate(manager: ChunkMeshManager, camera: THREE.PerspectiveCamera, x: number, y: number, z: number): void {
   for (const buf of [manager.globalLegacyBuffer, manager.globalLegacyBlendBuffer, manager.globalBlockBuffer]) {
     if (!buf) continue
     buf.compactStep()
@@ -307,9 +292,11 @@ test('markCullDirtyIfBufferStateChanged: finalize layout bump marks cull dirty',
       skyLights: makeQuadArrays().skyLights,
       blockLights: makeQuadArrays().blockLights,
       uvs: makeQuadArrays().uvs,
-      indices: makeQuadArrays().indices,
+      indices: makeQuadArrays().indices
     },
-    16, 8, 8,
+    16,
+    8,
+    8
   )
   drainLegacyUploads(opaqueBuf)
   opaqueBuf.compactStep()
@@ -337,11 +324,7 @@ test('simulateRenderCullGate: finalize remesh refreshes visible spans without ca
   expect(opaqueBuf.getVisibleIndexSpans()[0]!.indexStart).toBe(slotA * 6)
 
   manager.updateSection(key, makeOpaqueOnlyGeometry(16, 8, 8))
-  for (let i = 0; i < 32 && (
-    manager.hasPendingBufferWork()
-    || opaqueBuf.hasPendingReplace()
-    || opaqueBuf.hasPendingUploads()
-  ); i++) {
+  for (let i = 0; i < 32 && (manager.hasPendingBufferWork() || opaqueBuf.hasPendingReplace() || opaqueBuf.hasPendingUploads()); i++) {
     simulateRenderCullGate(manager, camera, 8, 8, 20)
   }
 

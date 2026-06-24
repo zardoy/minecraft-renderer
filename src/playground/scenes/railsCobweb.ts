@@ -1,7 +1,7 @@
 import { BasePlaygroundScene } from '../baseScene'
 
 export default class RailsCobwebScene extends BasePlaygroundScene {
-  setupWorld () {
+  setupWorld() {
     this.addWorldBlock(0, 0, 0, 'cobweb')
     this.addWorldBlock(0, -1, 0, 'cobweb')
     this.addWorldBlock(1, -1, 0, 'cobweb')

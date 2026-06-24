@@ -1,18 +1,14 @@
 import * as THREE from 'three'
-import {
-  APPLY_LIGHTMAP_GLSL,
-  DEFAULT_LIGHTMAP_PARAMS,
-  type BlockLightmapParams,
-} from '../../lib/blockEntityLighting'
+import { APPLY_LIGHTMAP_GLSL, DEFAULT_LIGHTMAP_PARAMS, type BlockLightmapParams } from '../../lib/blockEntityLighting'
 
-export type RenderOrigin = { x: number, y: number, z: number }
+export type RenderOrigin = { x: number; y: number; z: number }
 
-export function computeCameraRelativeUniforms (
+export function computeCameraRelativeUniforms(
   renderOrigin: RenderOrigin,
   x: number,
   y: number,
-  z: number,
-): { originDelta: RenderOrigin, cameraOriginFrac: RenderOrigin } {
+  z: number
+): { originDelta: RenderOrigin; cameraOriginFrac: RenderOrigin } {
   const ix = Math.floor(x)
   const iy = Math.floor(y)
   const iz = Math.floor(z)
@@ -20,13 +16,13 @@ export function computeCameraRelativeUniforms (
     originDelta: {
       x: renderOrigin.x - ix,
       y: renderOrigin.y - iy,
-      z: renderOrigin.z - iz,
+      z: renderOrigin.z - iz
     },
     cameraOriginFrac: {
       x: x - ix,
       y: y - iy,
-      z: z - iz,
-    },
+      z: z - iz
+    }
   }
 }
 
@@ -192,70 +188,55 @@ const legacyUniforms = {
   u_skyLevel: { value: 1.0 },
   u_lightCurve: { value: DEFAULT_LIGHTMAP_PARAMS.curve },
   u_minBrightness: { value: DEFAULT_LIGHTMAP_PARAMS.minBrightness },
-  u_lightGamma: { value: DEFAULT_LIGHTMAP_PARAMS.gamma },
+  u_lightGamma: { value: DEFAULT_LIGHTMAP_PARAMS.gamma }
 }
 
-export function createLegacyBlockMaterial (): THREE.ShaderMaterial {
+export function createLegacyBlockMaterial(): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     vertexShader,
     fragmentShader,
-    uniforms: THREE.UniformsUtils.merge([
-      THREE.UniformsLib.fog,
-      legacyUniforms,
-    ]),
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, legacyUniforms]),
     transparent: true,
     depthWrite: true,
     depthTest: true,
     vertexColors: true,
     glslVersion: THREE.GLSL3,
-    fog: true,
+    fog: true
   })
 }
 
 /** Global opaque legacy buffer — per-vertex section origin via a_origin. */
-export function createGlobalLegacyBlockMaterial (): THREE.ShaderMaterial {
+export function createGlobalLegacyBlockMaterial(): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     vertexShader: globalVertexShader,
     fragmentShader,
-    uniforms: THREE.UniformsUtils.merge([
-      THREE.UniformsLib.fog,
-      legacyUniforms,
-    ]),
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, legacyUniforms]),
     transparent: false,
     depthWrite: true,
     depthTest: true,
     vertexColors: true,
     glslVersion: THREE.GLSL3,
-    fog: true,
+    fog: true
   })
 }
 
 /** Global transparent blend buffer — same shaders as opaque global, blend material flags. */
-export function createGlobalLegacyBlendMaterial (): THREE.ShaderMaterial {
+export function createGlobalLegacyBlendMaterial(): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     vertexShader: globalVertexShader,
     fragmentShader,
-    uniforms: THREE.UniformsUtils.merge([
-      THREE.UniformsLib.fog,
-      legacyUniforms,
-    ]),
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, legacyUniforms]),
     transparent: true,
     depthWrite: true,
     depthTest: true,
     vertexColors: true,
     glslVersion: THREE.GLSL3,
-    fog: true,
+    fog: true
   })
 }
 
 /** Render-origin + fractional camera split — matches GlobalBlockBuffer.setCameraOrigin. */
-export function setLegacyCameraOrigin (
-  material: THREE.ShaderMaterial,
-  renderOrigin: RenderOrigin,
-  x: number,
-  y: number,
-  z: number,
-): void {
+export function setLegacyCameraOrigin(material: THREE.ShaderMaterial, renderOrigin: RenderOrigin, x: number, y: number, z: number): void {
   const { originDelta, cameraOriginFrac } = computeCameraRelativeUniforms(renderOrigin, x, y, z)
   const u = material.uniforms.u_originDelta
   if (u?.value?.set) {
@@ -267,15 +248,12 @@ export function setLegacyCameraOrigin (
   }
 }
 
-export function setLegacySkyLevel (material: THREE.ShaderMaterial, value: number): void {
+export function setLegacySkyLevel(material: THREE.ShaderMaterial, value: number): void {
   const u = material.uniforms.u_skyLevel
   if (u) u.value = value
 }
 
-export function setLegacyLightmapParams (
-  material: THREE.ShaderMaterial,
-  params: BlockLightmapParams,
-): void {
+export function setLegacyLightmapParams(material: THREE.ShaderMaterial, params: BlockLightmapParams): void {
   if (params.curve !== undefined) {
     const u = material.uniforms.u_lightCurve
     if (u) u.value = params.curve

@@ -31,7 +31,7 @@ export class RainModule implements RendererModuleController {
   constructor(private readonly worldRenderer: WorldRendererThree) {
     this.configUnsubs.push(
       this.worldRenderer.onReactiveConfigUpdated('rainColor', () => this.syncRainAppearance()),
-      this.worldRenderer.onReactiveConfigUpdated('rainOpacity', () => this.syncRainAppearance()),
+      this.worldRenderer.onReactiveConfigUpdated('rainOpacity', () => this.syncRainAppearance())
     )
   }
 
@@ -58,7 +58,7 @@ export class RainModule implements RendererModuleController {
     return this.worldRenderer.worldRendererConfig.isRaining === true
   }
 
-  render?: (deltaTime: number) => void = (deltaTime) => {
+  render?: (deltaTime: number) => void = deltaTime => {
     if (!this.enabled || !this.instancedMesh || !this.material) return
 
     const cameraPos = this.worldRenderer.getCameraPosition()
@@ -102,18 +102,13 @@ export class RainModule implements RendererModuleController {
       const heightY = cachedHeightmap?.[localZ * 16 + localX]
 
       // Respawn when: out of range, hit heightmap surface (heightY + 1 = block top face), or fell too far
-      const shouldRespawn = horizontalDist > RANGE ||
-        (heightY !== undefined && heightY !== -32768 && worldY <= heightY + 1 + particle.despawnOffset) ||
-        relativeY < RESPAWN_BELOW
+      const shouldRespawn =
+        horizontalDist > RANGE || (heightY !== undefined && heightY !== -32768 && worldY <= heightY + 1 + particle.despawnOffset) || relativeY < RESPAWN_BELOW
 
       if (shouldRespawn) {
         this.respawnParticle(position)
         const speed = FALL_SPEED_MIN + Math.random() * (FALL_SPEED_MAX - FALL_SPEED_MIN)
-        particle.velocity.set(
-          (Math.random() - 0.5) * HORIZONTAL_DRIFT,
-          -speed,
-          (Math.random() - 0.5) * HORIZONTAL_DRIFT,
-        )
+        particle.velocity.set((Math.random() - 0.5) * HORIZONTAL_DRIFT, -speed, (Math.random() - 0.5) * HORIZONTAL_DRIFT)
         particle.despawnOffset = Math.random() * 0.5
       }
 
@@ -158,7 +153,7 @@ export class RainModule implements RendererModuleController {
       opacity: Math.max(0, Math.min(1, rainOpacity)),
       // Must write depth so log-depth blocks occlude rain correctly (see cubeBlockShader).
       depthWrite: true,
-      fog: false,
+      fog: false
     })
 
     this.instancedMesh = new THREE.InstancedMesh(this.geometry, this.material, PARTICLE_COUNT)
@@ -176,13 +171,9 @@ export class RainModule implements RendererModuleController {
 
       const speed = FALL_SPEED_MIN + Math.random() * (FALL_SPEED_MAX - FALL_SPEED_MIN)
       this.particles.push({
-        velocity: new THREE.Vector3(
-          (Math.random() - 0.5) * HORIZONTAL_DRIFT,
-          -speed,
-          (Math.random() - 0.5) * HORIZONTAL_DRIFT,
-        ),
+        velocity: new THREE.Vector3((Math.random() - 0.5) * HORIZONTAL_DRIFT, -speed, (Math.random() - 0.5) * HORIZONTAL_DRIFT),
         age: 0,
-        despawnOffset: Math.random() * 0.5,
+        despawnOffset: Math.random() * 0.5
       })
     }
 
@@ -193,11 +184,7 @@ export class RainModule implements RendererModuleController {
   private respawnParticle(position: THREE.Vector3): void {
     const angle = Math.random() * Math.PI * 2
     const distance = Math.random() * RANGE
-    position.set(
-      Math.cos(angle) * distance,
-      HEIGHT,
-      Math.sin(angle) * distance,
-    )
+    position.set(Math.cos(angle) * distance, HEIGHT, Math.sin(angle) * distance)
   }
 }
 
@@ -205,5 +192,5 @@ export const rainManifest: RendererModuleManifest = {
   id: 'rain',
   controller: RainModule,
   enabledDefault: false,
-  requiresHeightmap: true,
+  requiresHeightmap: true
 }

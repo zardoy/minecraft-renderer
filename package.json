@@ -1,144 +1,147 @@
 {
-    "name": "minecraft-renderer",
-    "version": "0.0.0",
-    "description": "The most Modular Minecraft world renderer with Three.js WebGL backend",
-    "type": "module",
-    "main": "./dist/index.js",
-    "module": "./dist/index.js",
-    "types": "./dist/index.d.ts",
-    "files": [
-        "dist",
-        "src",
-        "logo.webp"
+  "name": "minecraft-renderer",
+  "version": "0.0.0",
+  "description": "The most Modular Minecraft world renderer with Three.js WebGL backend",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "src",
+    "logo.webp"
+  ],
+  "scripts": {
+    "build": "pnpm unit-test --run && pnpm build:publish",
+    "build:publish": "run-s build:lib:minify build:mesher build:threeworker",
+    "build:lib": "node scripts/buildLib.mjs",
+    "build:lib:minify": "node scripts/buildLib.mjs --minify",
+    "watch:lib": "node scripts/buildLib.mjs -w",
+    "build:mesher": "node scripts/buildMesherWorker.mjs",
+    "build:wasm": "cd wasm-mesher && ./build.sh web",
+    "test:wasm": "cd wasm-mesher && wasm-pack build --target nodejs --out-dir pkg --dev && node build.mjs && node tests/test-chunk.cjs && node tests/test-section-boundary.cjs",
+    "test:wasm:boundary": "cd wasm-mesher && wasm-pack build --target nodejs --out-dir pkg --dev && node build.mjs && node tests/test-section-boundary.cjs",
+    "watch:mesher": "pnpm build:mesher -w",
+    "build:threeworker": "node scripts/buildThreeWorker.mjs",
+    "watch:threeworker": "pnpm build:threeworker -w",
+    "build:playground": "rsbuild build --config rsbuild.config.ts",
+    "unit-test": "vitest",
+    "dev": "run-p watch:mesher watch:threeworker dev:playground",
+    "dev:playground": "rsbuild dev --config rsbuild.config.ts",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "browserslist": {
+    "production": [
+      "iOS >= 14",
+      "Android >= 13",
+      "Chrome >= 103",
+      "not dead",
+      "not ie <= 11",
+      "not op_mini all",
+      "> 0.5%"
     ],
-    "scripts": {
-        "build": "pnpm unit-test --run && pnpm build:publish",
-        "build:publish": "run-s build:lib:minify build:mesher build:threeworker",
-        "build:lib": "node scripts/buildLib.mjs",
-        "build:lib:minify": "node scripts/buildLib.mjs --minify",
-        "watch:lib": "node scripts/buildLib.mjs -w",
-        "build:mesher": "node scripts/buildMesherWorker.mjs",
-        "build:wasm": "cd wasm-mesher && ./build.sh web",
-        "test:wasm": "cd wasm-mesher && wasm-pack build --target nodejs --out-dir pkg --dev && node build.mjs && node tests/test-chunk.cjs && node tests/test-section-boundary.cjs",
-        "test:wasm:boundary": "cd wasm-mesher && wasm-pack build --target nodejs --out-dir pkg --dev && node build.mjs && node tests/test-section-boundary.cjs",
-        "watch:mesher": "pnpm build:mesher -w",
-        "build:threeworker": "node scripts/buildThreeWorker.mjs",
-        "watch:threeworker": "pnpm build:threeworker -w",
-        "build:playground": "rsbuild build --config rsbuild.config.ts",
-        "unit-test": "vitest",
-        "dev": "run-p watch:mesher watch:threeworker dev:playground",
-        "dev:playground": "rsbuild dev --config rsbuild.config.ts",
-        "typecheck": "tsc --noEmit"
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "keywords": [
+    "minecraft",
+    "renderer",
+    "3d-engine",
+    "threejs",
+    "webgl",
+    "prismarine"
+  ],
+  "release": {
+    "initialVersion": {
+      "version": "0.1.0"
+    }
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@tweenjs/tween.js": "^20.0.3",
+    "@types/events": "^3.0.3",
+    "@xmcl/text-component": "^2.1.3",
+    "deepslate": "^0.24.0",
+    "events": "^3.3.0",
+    "mc-bridge": "^0.1.3",
+    "mineflayer-mouse": "^0.1.24",
+    "prismarine-chat": "^1.10.0",
+    "prismarine-nbt": "^2.5.0",
+    "skinview-utils": "^0.7.1",
+    "skinview3d": "^3.4.1",
+    "stats-gl": "^1.0.5",
+    "stats.js": "^0.17.0",
+    "three": "0.184.0",
+    "three-stdlib": "^2.36.1",
+    "type-fest": "^5.3.0",
+    "typed-emitter": "^2.1.0",
+    "valtio": "^1.11.1",
+    "vec3": "^0.1.10"
+  },
+  "devDependencies": {
+    "@emotion/css": "^11.13.5",
+    "@rsbuild/core": "1.3.5",
+    "@rsbuild/plugin-node-polyfill": "1.3.0",
+    "@rsbuild/plugin-react": "1.2.0",
+    "@types/lodash": "^4.17.21",
+    "@types/react": "^19.2.7",
+    "@types/stats.js": "^0.17.1",
+    "@types/three": "0.184.0",
+    "@zardoy/react-util": "^0.2.7",
+    "@zardoy/tsconfig": "^1.5.1",
+    "contro-max": "*",
+    "esbuild": "^0.19.3",
+    "esbuild-plugin-polyfill-node": "^0.3.0",
+    "fs-extra": "^11.0.0",
+    "lil-gui": "^0.18.2",
+    "lodash": "^4.17.21",
+    "mc-assets": "^0.2.72",
+    "minecraft-data": "3.98.0",
+    "mineflayer": "^4.33.0",
+    "npm-run-all": "^4.1.5",
+    "prettier": "^3.8.4",
+    "prismarine-block": "github:zardoy/prismarine-block#next-era",
+    "prismarine-chunk": "github:zardoy/prismarine-chunk#master",
+    "prismarine-world": "github:zardoy/prismarine-world#next-era",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.14"
+  },
+  "peerDependencies": {
+    "contro-max": "*",
+    "mc-assets": ">=0.2.0",
+    "minecraft-data": ">=3.0.0",
+    "three": ">=0.150.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "prismarine-block": "github:zardoy/prismarine-block#next-era",
+      "prismarine-world": "github:zardoy/prismarine-world#next-era",
+      "@types/three": "0.184.0"
     },
-    "browserslist": {
-        "production": [
-            "iOS >= 14",
-            "Android >= 13",
-            "Chrome >= 103",
-            "not dead",
-            "not ie <= 11",
-            "not op_mini all",
-            "> 0.5%"
-        ],
-        "development": [
-            "last 1 chrome version",
-            "last 1 firefox version",
-            "last 1 safari version"
-        ]
-    },
-    "keywords": [
-        "minecraft",
-        "renderer",
-        "3d-engine",
-        "threejs",
-        "webgl",
-        "prismarine"
+    "ignoredBuiltDependencies": [
+      "core-js"
     ],
-    "release": {
-        "initialVersion": {
-            "version": "0.1.0"
-        }
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "peerDependenciesMeta": {
+    "contro-max": {
+      "optional": true
     },
-    "license": "MIT",
-    "dependencies": {
-        "@tweenjs/tween.js": "^20.0.3",
-        "@types/events": "^3.0.3",
-        "@xmcl/text-component": "^2.1.3",
-        "deepslate": "^0.24.0",
-        "events": "^3.3.0",
-        "mc-bridge": "^0.1.3",
-        "mineflayer-mouse": "^0.1.24",
-        "prismarine-chat": "^1.10.0",
-        "prismarine-nbt": "^2.5.0",
-        "skinview-utils": "^0.7.1",
-        "skinview3d": "^3.4.1",
-        "stats-gl": "^1.0.5",
-        "stats.js": "^0.17.0",
-        "three": "0.184.0",
-        "three-stdlib": "^2.36.1",
-        "type-fest": "^5.3.0",
-        "typed-emitter": "^2.1.0",
-        "valtio": "^1.11.1",
-        "vec3": "^0.1.10"
+    "mc-assets": {
+      "optional": true
     },
-    "devDependencies": {
-        "@emotion/css": "^11.13.5",
-        "@rsbuild/core": "1.3.5",
-        "@rsbuild/plugin-node-polyfill": "1.3.0",
-        "@rsbuild/plugin-react": "1.2.0",
-        "@types/lodash": "^4.17.21",
-        "@types/react": "^19.2.7",
-        "@types/stats.js": "^0.17.1",
-        "@types/three": "0.184.0",
-        "@zardoy/react-util": "^0.2.7",
-        "@zardoy/tsconfig": "^1.5.1",
-        "contro-max": "*",
-        "esbuild": "^0.19.3",
-        "esbuild-plugin-polyfill-node": "^0.3.0",
-        "fs-extra": "^11.0.0",
-        "lil-gui": "^0.18.2",
-        "lodash": "^4.17.21",
-        "mc-assets": "^0.2.72",
-        "minecraft-data": "3.98.0",
-        "mineflayer": "^4.33.0",
-        "npm-run-all": "^4.1.5",
-        "prismarine-block": "github:zardoy/prismarine-block#next-era",
-        "prismarine-chunk": "github:zardoy/prismarine-chunk#master",
-        "prismarine-world": "github:zardoy/prismarine-world#next-era",
-        "react": "^18.2.0",
-        "react-dom": "^18.2.0",
-        "typescript": "^5.9.3",
-        "vitest": "^4.0.14"
-    },
-    "peerDependencies": {
-        "contro-max": "*",
-        "mc-assets": ">=0.2.0",
-        "minecraft-data": ">=3.0.0",
-        "three": ">=0.150.0"
-    },
-    "pnpm": {
-        "overrides": {
-            "prismarine-block": "github:zardoy/prismarine-block#next-era",
-            "prismarine-world": "github:zardoy/prismarine-world#next-era",
-            "@types/three": "0.184.0"
-        },
-        "ignoredBuiltDependencies": [
-            "core-js"
-        ],
-        "onlyBuiltDependencies": [
-            "esbuild"
-        ]
-    },
-    "peerDependenciesMeta": {
-        "contro-max": {
-            "optional": true
-        },
-        "mc-assets": {
-            "optional": true
-        },
-        "minecraft-data": {
-            "optional": true
-        }
-    },
-    "packageManager": "pnpm@10.14.0+sha512.ad27a79641b49c3e481a16a805baa71817a04bbe06a38d17e60e2eaee83f6a146c6a688125f5792e48dd5ba30e7da52a5cda4c3992b9ccf333f9ce223af84748"
+    "minecraft-data": {
+      "optional": true
+    }
+  },
+  "packageManager": "pnpm@10.14.0+sha512.ad27a79641b49c3e481a16a805baa71817a04bbe06a38d17e60e2eaee83f6a146c6a688125f5792e48dd5ba30e7da52a5cda4c3992b9ccf333f9ce223af84748"
 }

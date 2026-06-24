@@ -6,18 +6,18 @@ import { createCubeBlockMaterial } from '../shaders/cubeBlockShader'
 import { packWord3 } from '../../wasm-mesher/bridge/shaderCubeBridge'
 
 type BufferInternals = {
-  pendingRanges: Array<{ start: number, end: number }>
+  pendingRanges: Array<{ start: number; end: number }>
 }
 
-function getInternals (buffer: GlobalBlockBuffer): BufferInternals {
+function getInternals(buffer: GlobalBlockBuffer): BufferInternals {
   return buffer as unknown as BufferInternals
 }
 
-function drainUploads (buffer: GlobalBlockBuffer): void {
+function drainUploads(buffer: GlobalBlockBuffer): void {
   while (getInternals(buffer).pendingRanges.length) buffer.uploadDirtyRange()
 }
 
-function makeSectionWords (faceW0: number[]): Uint32Array {
+function makeSectionWords(faceW0: number[]): Uint32Array {
   const words = new Uint32Array(faceW0.length * 4)
   for (let i = 0; i < faceW0.length; i++) {
     words[i * 4] = faceW0[i]!
@@ -28,7 +28,7 @@ function makeSectionWords (faceW0: number[]): Uint32Array {
   return words
 }
 
-function finishCurrentMove (buffer: GlobalBlockBuffer): void {
+function finishCurrentMove(buffer: GlobalBlockBuffer): void {
   drainUploads(buffer)
   buffer.compactStep()
 }
@@ -103,7 +103,7 @@ test('GlobalBlockBuffer: remesh before previous upload completes keeps fully-upl
     buffer.getHighWatermark(),
     false,
     (start, end) => buffer.isRangeFullyUploaded(start, end),
-    buffer.getPendingDirtyRanges(),
+    buffer.getPendingDirtyRanges()
   )
   expect(spans.length).toBeGreaterThan(0)
   expect(spans.some(s => s.start <= drawStart! && s.start + s.count > drawStart!)).toBe(true)

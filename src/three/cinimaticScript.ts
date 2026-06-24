@@ -11,7 +11,7 @@ export interface CinimaticPoint {
   pitch: number
   duration: number // Time to reach this point from the previous one
   easing?: 'linear' | 'easeIn' | 'easeOut' | 'easeInOut' | 'smoothstep' | 'bounce'
-  lookAt?: { x: number, y: number, z: number } // Optional: override rotation to look at this point
+  lookAt?: { x: number; y: number; z: number } // Optional: override rotation to look at this point
   fov?: number // Optional: change field of view
 }
 
@@ -40,8 +40,8 @@ export class CinimaticScriptRunner {
     private readonly worldRenderer: WorldRendererThree,
     private readonly updateCamera: (pos: Vec3, yaw: number, pitch: number) => void,
     private readonly updateFov: (fov: number) => void,
-    private readonly getInitialState: () => { position: Vec3, yaw: number, pitch: number, fov: number }
-  ) { }
+    private readonly getInitialState: () => { position: Vec3; yaw: number; pitch: number; fov: number }
+  ) {}
 
   startScript(script: CinimaticScript): boolean {
     if (this.isRunning) {
@@ -115,7 +115,7 @@ export class CinimaticScriptRunner {
       { pos: playerPos.offset(-20, 10, -20), lookAt: playerPos, duration: 3000 },
       { pos: playerPos.offset(20, 15, -20), lookAt: playerPos, duration: 3000 },
       { pos: playerPos.offset(20, 20, 20), lookAt: playerPos, duration: 3000 },
-      { pos: playerPos.offset(-20, 25, 20), lookAt: playerPos, duration: 3000 },
+      { pos: playerPos.offset(-20, 25, 20), lookAt: playerPos, duration: 3000 }
     ])
 
     const scripts = [circular, spiral, buildingTour]
@@ -211,7 +211,7 @@ export class CinimaticScriptRunner {
     })
   }
 
-  private wrapRotation(target: { yaw: number, pitch: number }): { yaw: number, pitch: number } {
+  private wrapRotation(target: { yaw: number; pitch: number }): { yaw: number; pitch: number } {
     // Handle yaw wrapping to take shortest path
     let targetYaw = target.yaw
     const yawDiff = targetYaw - this.currentRotation.yaw
@@ -230,13 +230,20 @@ export class CinimaticScriptRunner {
 
   private getEasingFunction(easing: string): (t: number) => number {
     switch (easing) {
-      case 'linear': return tweenJs.Easing.Linear.None
-      case 'easeIn': return tweenJs.Easing.Quadratic.In
-      case 'easeOut': return tweenJs.Easing.Quadratic.Out
-      case 'easeInOut': return tweenJs.Easing.Quadratic.InOut
-      case 'smoothstep': return tweenJs.Easing.Cubic.InOut
-      case 'bounce': return tweenJs.Easing.Bounce.Out
-      default: return tweenJs.Easing.Quadratic.InOut
+      case 'linear':
+        return tweenJs.Easing.Linear.None
+      case 'easeIn':
+        return tweenJs.Easing.Quadratic.In
+      case 'easeOut':
+        return tweenJs.Easing.Quadratic.Out
+      case 'easeInOut':
+        return tweenJs.Easing.Quadratic.InOut
+      case 'smoothstep':
+        return tweenJs.Easing.Cubic.InOut
+      case 'bounce':
+        return tweenJs.Easing.Bounce.Out
+      default:
+        return tweenJs.Easing.Quadratic.InOut
     }
   }
 
@@ -284,7 +291,9 @@ export class CinimaticScriptRunner {
       const y = center.y + height
 
       points.push({
-        x, y, z,
+        x,
+        y,
+        z,
         yaw: angle + Math.PI / 2, // Look tangent to circle
         pitch: -0.2, // Look slightly down
         duration: duration / numPoints,
@@ -314,7 +323,9 @@ export class CinimaticScriptRunner {
       const y = THREE.MathUtils.lerp(start.y, end.y, t)
 
       points.push({
-        x, y, z,
+        x,
+        y,
+        z,
         yaw: angle + Math.PI / 2,
         pitch: -0.3 * t, // Gradually look more down
         duration: duration / numPoints,
@@ -329,7 +340,7 @@ export class CinimaticScriptRunner {
     }
   }
 
-  static createBuildingTour(waypoints: Array<{ pos: Vec3, lookAt?: Vec3, duration?: number }>): CinimaticScript {
+  static createBuildingTour(waypoints: Array<{ pos: Vec3; lookAt?: Vec3; duration?: number }>): CinimaticScript {
     const points: CinimaticPoint[] = waypoints.map((wp, i) => ({
       x: wp.pos.x,
       y: wp.pos.y,

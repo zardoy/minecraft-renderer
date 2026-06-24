@@ -1,25 +1,27 @@
 import type { ChatMessage } from 'prismarine-chat'
 import { createCanvas } from '../lib/utils'
 
-type SignBlockEntity = {
-  Color?: string
-  GlowingText?: 0 | 1
-  Text1?: string
-  Text2?: string
-  Text3?: string
-  Text4?: string
-} | {
-  // todo
-  is_waxed?: 0 | 1
-  front_text: {
-    color: string
-    messages: string[]
-    // todo
-    has_glowing_text?: 0 | 1
-  }
-  // todo
-  // back_text: {}
-}
+type SignBlockEntity =
+  | {
+      Color?: string
+      GlowingText?: 0 | 1
+      Text1?: string
+      Text2?: string
+      Text3?: string
+      Text4?: string
+    }
+  | {
+      // todo
+      is_waxed?: 0 | 1
+      front_text: {
+        color: string
+        messages: string[]
+        // todo
+        has_glowing_text?: 0 | 1
+      }
+      // todo
+      // back_text: {}
+    }
 
 type JsonEncodedType = string | null | Record<string, any>
 
@@ -48,15 +50,17 @@ const LEGACY_COLORS = {
   red: '#FF5555',
   light_purple: '#FF55FF',
   yellow: '#FFFF55',
-  white: '#FFFFFF',
+  white: '#FFFFFF'
 }
 
 export const renderSign = (
   blockEntity: SignBlockEntity,
   isHanging: boolean,
   PrismarineChat: typeof ChatMessage,
-  ctxHook = (ctx) => { },
-  canvasCreator = (width, height): OffscreenCanvas => { return createCanvas(width, height) }
+  ctxHook = ctx => {},
+  canvasCreator = (width, height): OffscreenCanvas => {
+    return createCanvas(width, height)
+  }
 ) => {
   // todo don't use texture rendering, investigate the font rendering when possible
   // or increase factor when needed
@@ -67,14 +71,10 @@ export const renderSign = (
   const heightScalar = heightOffset / 16
   // todo the text should be clipped based on it's render width (needs investigate)
 
-  const texts = 'front_text' in blockEntity ? /* > 1.20 */ blockEntity.front_text.messages : [
-    blockEntity.Text1,
-    blockEntity.Text2,
-    blockEntity.Text3,
-    blockEntity.Text4
-  ]
+  const texts =
+    'front_text' in blockEntity ? /* > 1.20 */ blockEntity.front_text.messages : [blockEntity.Text1, blockEntity.Text2, blockEntity.Text3, blockEntity.Text4]
 
-  if (!texts.some((text) => text !== 'null')) {
+  if (!texts.some(text => text !== 'null')) {
     return undefined
   }
 

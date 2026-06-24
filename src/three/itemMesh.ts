@@ -3,7 +3,7 @@ import * as THREE from 'three'
 /** Canvas used for item texture extraction (main thread or worker). */
 export type ItemTextureCanvas = HTMLCanvasElement | OffscreenCanvas
 
-function createItemTextureCanvas (width: number, height: number): ItemTextureCanvas {
+function createItemTextureCanvas(width: number, height: number): ItemTextureCanvas {
   if (typeof document !== 'undefined') {
     const canvas = document.createElement('canvas')
     canvas.width = width
@@ -28,10 +28,7 @@ export interface Create3DItemMeshResult {
  * Creates a 3D item geometry with front/back faces and connecting edges
  * from a canvas containing the item texture
  */
-export function create3DItemMesh (
-  canvas: ItemTextureCanvas,
-  options: Create3DItemMeshOptions
-): Create3DItemMeshResult {
+export function create3DItemMesh(canvas: ItemTextureCanvas, options: Create3DItemMeshOptions): Create3DItemMeshResult {
   const { depth, pixelSize } = options
 
   // Validate canvas dimensions
@@ -46,7 +43,7 @@ export function create3DItemMesh (
   const w = canvas.width
   const h = canvas.height
   const halfDepth = depth / 2
-  const actualPixelSize = pixelSize ?? (1 / Math.max(w, h))
+  const actualPixelSize = pixelSize ?? 1 / Math.max(w, h)
 
   // Find opaque pixels
   const isOpaque = (x: number, y: number) => {
@@ -255,10 +252,7 @@ export interface ItemMeshResult {
 /**
  * Extracts item texture region to a canvas
  */
-export function extractItemTextureToCanvas (
-  sourceTexture: THREE.Texture<HTMLImageElement | ImageBitmap>,
-  textureInfo: ItemTextureInfo
-): ItemTextureCanvas {
+export function extractItemTextureToCanvas(sourceTexture: THREE.Texture<HTMLImageElement | ImageBitmap>, textureInfo: ItemTextureInfo): ItemTextureCanvas {
   const { u, v, sizeX, sizeY } = textureInfo
 
   // Calculate canvas size - fix the calculation
@@ -291,7 +285,7 @@ export function extractItemTextureToCanvas (
 /**
  * Creates either a 2D or 3D item mesh based on parameters
  */
-export function createItemMesh (
+export function createItemMesh(
   sourceTexture: THREE.Texture,
   textureInfo: ItemTextureInfo,
   options: {
@@ -316,14 +310,14 @@ export function createItemMesh (
     const spriteMat = new THREE.SpriteMaterial({
       map: itemsTexture,
       transparent: true,
-      alphaTest: 0.1,
+      alphaTest: 0.1
     })
     const mesh = new THREE.Sprite(spriteMat)
 
     return {
       mesh,
       itemsTexture,
-      cleanup () {
+      cleanup() {
         itemsTexture.dispose()
       }
     }
@@ -332,10 +326,7 @@ export function createItemMesh (
   if (use3D) {
     // Try to create 3D mesh
     try {
-      const canvas = extractItemTextureToCanvas(
-        sourceTexture as THREE.Texture<HTMLImageElement | ImageBitmap>,
-        textureInfo
-      )
+      const canvas = extractItemTextureToCanvas(sourceTexture as THREE.Texture<HTMLImageElement | ImageBitmap>, textureInfo)
       const { geometry } = create3DItemMesh(canvas, { depth })
 
       // Create texture from canvas for the 3D mesh
@@ -350,7 +341,7 @@ export function createItemMesh (
         map: itemsTexture,
         side: THREE.DoubleSide,
         transparent: true,
-        alphaTest: 0.1,
+        alphaTest: 0.1
       })
 
       const mesh = new THREE.Mesh(geometry, material)
@@ -358,7 +349,7 @@ export function createItemMesh (
       return {
         mesh,
         itemsTexture,
-        cleanup () {
+        cleanup() {
           itemsTexture.dispose()
           geometry.dispose()
           if (material.map) material.map.dispose()
@@ -388,24 +379,27 @@ export function createItemMesh (
   const material = new THREE.MeshStandardMaterial({
     map: itemsTexture,
     transparent: true,
-    alphaTest: 0.1,
+    alphaTest: 0.1
   })
   const materialFlipped = new THREE.MeshStandardMaterial({
     map: itemsTextureFlipped,
     transparent: true,
-    alphaTest: 0.1,
+    alphaTest: 0.1
   })
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 0), [
-    new THREE.MeshBasicMaterial({ color: 0x00_00_00 }), new THREE.MeshBasicMaterial({ color: 0x00_00_00 }),
-    new THREE.MeshBasicMaterial({ color: 0x00_00_00 }), new THREE.MeshBasicMaterial({ color: 0x00_00_00 }),
-    material, materialFlipped,
+    new THREE.MeshBasicMaterial({ color: 0x00_00_00 }),
+    new THREE.MeshBasicMaterial({ color: 0x00_00_00 }),
+    new THREE.MeshBasicMaterial({ color: 0x00_00_00 }),
+    new THREE.MeshBasicMaterial({ color: 0x00_00_00 }),
+    material,
+    materialFlipped
   ])
 
   return {
     mesh,
     itemsTexture,
     itemsTextureFlipped,
-    cleanup () {
+    cleanup() {
       itemsTexture.dispose()
       itemsTextureFlipped.dispose()
       material.dispose()
@@ -417,10 +411,7 @@ export function createItemMesh (
 /**
  * Creates a complete 3D item mesh from a canvas texture
  */
-export function createItemMeshFromCanvas (
-  canvas: HTMLCanvasElement,
-  options: Create3DItemMeshOptions
-): THREE.Mesh {
+export function createItemMeshFromCanvas(canvas: HTMLCanvasElement, options: Create3DItemMeshOptions): THREE.Mesh {
   const { geometry } = create3DItemMesh(canvas, options)
 
   // Base color texture for the item

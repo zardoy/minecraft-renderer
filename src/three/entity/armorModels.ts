@@ -18,19 +18,19 @@ export { default as elytraTexture } from 'mc-assets/dist/other-textures/latest/e
 export { default as armorModel } from './armorModels.json'
 
 export const armorTextures = {
-  'leather_layer_1': leatherLayer1,
-  'leather_layer_1_overlay': leatherLayer1Overlay,
-  'leather_layer_2': leatherLayer2,
-  'leather_layer_2_overlay': leatherLayer2Overlay,
-  'chainmail_layer_1': chainmailLayer1,
-  'chainmail_layer_2': chainmailLayer2,
-  'iron_layer_1': ironLayer1,
-  'iron_layer_2': ironLayer2,
-  'diamond_layer_1': diamondLayer1,
-  'diamond_layer_2': diamondLayer2,
-  'golden_layer_1': goldenLayer1,
-  'golden_layer_2': goldenLayer2,
-  'netherite_layer_1': netheriteLayer1,
-  'netherite_layer_2': netheriteLayer2,
-  'turtle_layer_1': turtleLayer1
+  leather_layer_1: leatherLayer1,
+  leather_layer_1_overlay: leatherLayer1Overlay,
+  leather_layer_2: leatherLayer2,
+  leather_layer_2_overlay: leatherLayer2Overlay,
+  chainmail_layer_1: chainmailLayer1,
+  chainmail_layer_2: chainmailLayer2,
+  iron_layer_1: ironLayer1,
+  iron_layer_2: ironLayer2,
+  diamond_layer_1: diamondLayer1,
+  diamond_layer_2: diamondLayer2,
+  golden_layer_1: goldenLayer1,
+  golden_layer_2: goldenLayer2,
+  netherite_layer_1: netheriteLayer1,
+  netherite_layer_2: netheriteLayer2,
+  turtle_layer_1: turtleLayer1
 }

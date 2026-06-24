@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  applyLightmap,
-  blockEntityBrightness,
-  combinedBlockLight,
-  DEFAULT_LIGHTMAP_PARAMS,
-} from './blockEntityLighting'
+import { applyLightmap, blockEntityBrightness, combinedBlockLight, DEFAULT_LIGHTMAP_PARAMS } from './blockEntityLighting'
 
 describe('blockEntityLighting', () => {
   it('applyLightmap(1) === 1 for default params', () => {

@@ -4,7 +4,7 @@ import {
   raycastAabb,
   raycastShaderBlocksAabb,
   raycastSectionAabb,
-  sectionAabbIntersectsRay,
+  sectionAabbIntersectsRay
 } from '../../three/sectionRaycastAabb'
 import { LEGACY_SECTION_HALF_EXTENT } from '../../three/legacySectionCull'
 import { SHADER_CUBES_WORDS_PER_FACE } from '../bridge/shaderCubeBridge'
@@ -84,9 +84,22 @@ test('raycastShaderBlocksAabb: eye inside solid block uses exit distance', () =>
   const oy = sectionCenterY - 8 + ly + 0.5
   const oz = sectionCenterZ - 8 + lz + 0.5
   const t = raycastShaderBlocksAabb(
-    words, 0, 1, SHADER_CUBES_WORDS_PER_FACE,
-    sectionCenterX, sectionCenterY, sectionCenterZ,
-    ox, oy, oz, 0, 0, 1, 10, visitGen, visitStamp,
+    words,
+    0,
+    1,
+    SHADER_CUBES_WORDS_PER_FACE,
+    sectionCenterX,
+    sectionCenterY,
+    sectionCenterZ,
+    ox,
+    oy,
+    oz,
+    0,
+    0,
+    1,
+    10,
+    visitGen,
+    visitStamp
   )!
   expect(t).toBeGreaterThan(0)
   expect(t).toBeLessThanOrEqual(10)

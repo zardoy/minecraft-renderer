@@ -13,7 +13,7 @@ type BlockMeta = {
 
 const metaCache = new Map<string, BlockMeta>()
 
-const blockToIds = (block: { minStateId: number, maxStateId: number }) => {
+const blockToIds = (block: { minStateId: number; maxStateId: number }) => {
   const ids: number[] = []
   for (let i = block.minStateId; i <= block.maxStateId; i++) {
     ids.push(i)
@@ -168,13 +168,7 @@ export function convertChunkToWasm(
     }
   }
 
-  const {
-    invisibleBlocks,
-    transparentBlocks,
-    noAoBlocks,
-    cullIdenticalBlocks,
-    occludingBlocks
-  } = getBlockMeta(version)
+  const { invisibleBlocks, transparentBlocks, noAoBlocks, cullIdenticalBlocks, occludingBlocks } = getBlockMeta(version)
 
   return {
     blockStates,
@@ -186,6 +180,6 @@ export function convertChunkToWasm(
     noAoBlocks,
     cullIdenticalBlocks,
     occludingBlocks,
-    blockCount,
+    blockCount
   }
 }

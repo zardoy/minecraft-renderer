@@ -8,7 +8,7 @@ export function createWorkerProxy<T extends Record<string, (...args: any[]) => v
     if (handlers[type]) {
       const result = handlers[type](...args)
       if (result instanceof Promise) {
-        void result.then((result) => {
+        void result.then(result => {
           target.postMessage({
             type: 'result',
             msgId,
@@ -32,7 +32,10 @@ export function createWorkerProxy<T extends Record<string, (...args: any[]) => v
  * const workerChannel = useWorkerProxy<typeof importedTypeWorkerProxy>(worker)
  * ```
  */
-export const useWorkerProxy = <T extends { __workerProxy: Record<string, (...args: any[]) => void> }>(worker: Worker | MessagePort, autoTransfer = true): T['__workerProxy'] & {
+export const useWorkerProxy = <T extends { __workerProxy: Record<string, (...args: any[]) => void> }>(
+  worker: Worker | MessagePort,
+  autoTransfer = true
+): T['__workerProxy'] & {
   transfer: (...args: Transferable[]) => T['__workerProxy']
 } => {
   let messageId = 0
@@ -41,31 +44,45 @@ export const useWorkerProxy = <T extends { __workerProxy: Record<string, (...arg
     get(target, prop) {
       if (prop === 'transfer') {
         return (...transferable: Transferable[]) => {
-          return new Proxy({}, {
-            get(target, prop) {
-              return (...args: any[]) => {
-                worker.postMessage({
-                  type: prop,
-                  args,
-                }, transferable)
+          return new Proxy(
+            {},
+            {
+              get(target, prop) {
+                return (...args: any[]) => {
+                  worker.postMessage(
+                    {
+                      type: prop,
+                      args
+                    },
+                    transferable
+                  )
+                }
               }
             }
-          })
+          )
         }
       }
       return (...args: any[]) => {
         const msgId = messageId++
-        const transfer = autoTransfer ? args.filter(arg => {
-          return arg instanceof ArrayBuffer || arg instanceof MessagePort
-            || (typeof ImageBitmap !== 'undefined' && arg instanceof ImageBitmap)
-            || (typeof OffscreenCanvas !== 'undefined' && arg instanceof OffscreenCanvas)
-            || (typeof ImageData !== 'undefined' && arg instanceof ImageData)
-        }) : []
-        worker.postMessage({
-          type: prop,
-          msgId,
-          args,
-        }, transfer)
+        const transfer = autoTransfer
+          ? args.filter(arg => {
+              return (
+                arg instanceof ArrayBuffer ||
+                arg instanceof MessagePort ||
+                (typeof ImageBitmap !== 'undefined' && arg instanceof ImageBitmap) ||
+                (typeof OffscreenCanvas !== 'undefined' && arg instanceof OffscreenCanvas) ||
+                (typeof ImageData !== 'undefined' && arg instanceof ImageData)
+              )
+            })
+          : []
+        worker.postMessage(
+          {
+            type: prop,
+            msgId,
+            args
+          },
+          transfer
+        )
         return {
           // eslint-disable-next-line unicorn/no-thenable
           then(onfulfilled: (value: any) => void) {
@@ -90,9 +107,7 @@ const DEBUG_SYNC = false
 
 type SyncDirection = 'toWorker' | 'fromWorker'
 
-export type WireSyncOp =
-  | { kind: 'set', path: (string | number | symbol)[], value: unknown }
-  | { kind: 'delete', path: (string | number | symbol)[] }
+export type WireSyncOp = { kind: 'set'; path: (string | number | symbol)[]; value: unknown } | { kind: 'delete'; path: (string | number | symbol)[] }
 
 type ValtioOp = readonly unknown[]
 
@@ -210,13 +225,7 @@ const wireOpsFromValtioOps = (ops: ValtioOp[], worker: Worker): WireSyncOp[] => 
   return wire
 }
 
-export const sendWorkerSyncOps = (
-  syncId: string,
-  ops: ValtioOp[],
-  worker: Worker,
-  direction: SyncDirection,
-  debugKey: string
-) => {
+export const sendWorkerSyncOps = (syncId: string, ops: ValtioOp[], worker: Worker, direction: SyncDirection, debugKey: string) => {
   if (ops.length === 0) return
   const wire = wireOpsFromValtioOps(ops, worker)
   if (wire.length === 0) return
@@ -234,12 +243,7 @@ export const sendWorkerSyncOps = (
   }
 }
 
-export const applySyncOps = (
-  target: any,
-  wireOps: WireSyncOp[],
-  worker: Worker,
-  countReceive: 'fromWorker' | false = false
-) => {
+export const applySyncOps = (target: any, wireOps: WireSyncOp[], worker: Worker, countReceive: 'fromWorker' | false = false) => {
   for (const op of wireOps) {
     if (op.kind === 'delete') {
       deleteByPath(target, op.path)
@@ -284,7 +288,7 @@ const setupObjectSync = (obj: any, originalObj: any, worker: Worker, isValtio: b
 
   if (syncToWorker || isValtio) {
     if (isValtio && syncToWorker !== false) {
-      subscribe(originalObj, (ops) => {
+      subscribe(originalObj, ops => {
         sendWorkerSyncOps(syncId, ops as ValtioOp[], worker, 'toWorker', `toWorker:${debugKey}`)
       })
     }
@@ -343,7 +347,14 @@ export const deepPrepareForTransfer = (obj: any, worker: Worker, autoRemoveMetho
       }
 
       // print a warning for Date, RegExp, Map, Set, WeakMap, WeakSet
-      if (obj[key] instanceof Date || obj[key] instanceof RegExp || obj[key] instanceof Map || obj[key] instanceof Set || obj[key] instanceof WeakMap || obj[key] instanceof WeakSet) {
+      if (
+        obj[key] instanceof Date ||
+        obj[key] instanceof RegExp ||
+        obj[key] instanceof Map ||
+        obj[key] instanceof Set ||
+        obj[key] instanceof WeakMap ||
+        obj[key] instanceof WeakSet
+      ) {
         console.warn(`Warning: ${key} is a ${typeof obj[key]}, which is not supported for transfer.`)
       }
 
@@ -393,7 +404,6 @@ export const deepPrepareForTransfer = (obj: any, worker: Worker, autoRemoveMetho
           continue
         }
         setupObjectSync(newObj[key], originalObj[key], worker, false, key)
-
 
         newObj[key] = deepPrepareForTransfer(newObj[key], worker, autoRemoveMethods, false, isValtio)
       }
@@ -450,7 +460,7 @@ const receiveSyncedObject = (obj: any, worker: Worker, debugKey: string) => {
 
   if (obj['__syncFromWorker']) {
     if (obj['__valtio']) {
-      subscribe(obj, (ops) => {
+      subscribe(obj, ops => {
         sendWorkerSyncOps(syncId, ops as ValtioOp[], worker, 'fromWorker', `fromWorker:${debugKey}`)
       })
     }
@@ -473,7 +483,7 @@ const defaultRestorers = [
   }
 ]
 
-export const addDefaultRestorer = (restorer: { restorerName: string, restoreTransferred: (obj: any, worker: Worker) => any }) => {
+export const addDefaultRestorer = (restorer: { restorerName: string; restoreTransferred: (obj: any, worker: Worker) => any }) => {
   defaultRestorers.unshift(restorer)
 }
 

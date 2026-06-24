@@ -31,9 +31,7 @@ export class WaypointsRenderer {
   private lastUpdateTime = 0
   private readonly UPDATE_THROTTLE_MS = 16 // ~60fps max update rate
 
-  constructor(
-    private readonly worldRenderer: WorldRendererThree
-  ) {
+  constructor(private readonly worldRenderer: WorldRendererThree) {
     if (process.env.NODE_ENV !== 'production') {
       // this.addWaypoint('spawn', 0, 0, 0, { })
     }
@@ -59,8 +57,7 @@ export class WaypointsRenderer {
     for (const waypoint of this.waypoints.values()) {
       const waypointPos = new THREE.Vector3(waypoint.x, waypoint.y, waypoint.z)
       const distance = playerPos.distanceTo(waypointPos)
-      const visible = (!waypoint.minDistance || distance >= waypoint.minDistance) &&
-        (waypoint.maxDistance === Infinity || distance <= waypoint.maxDistance)
+      const visible = (!waypoint.minDistance || distance >= waypoint.minDistance) && (waypoint.maxDistance === Infinity || distance <= waypoint.maxDistance)
 
       waypoint.sprite.setVisible(visible)
 
@@ -89,17 +86,11 @@ export class WaypointsRenderer {
 
   // Removed sprite/label texture creation. Use utils/waypointSprite.ts
 
-  addWaypoint(
-    id: string,
-    x: number,
-    y: number,
-    z: number,
-    options: WaypointOptions = {}
-  ) {
+  addWaypoint(id: string, x: number, y: number, z: number, options: WaypointOptions = {}) {
     // Remove existing waypoint if it exists
     this.removeWaypoint(id)
 
-    const color = options.color ?? 0xFF_00_00
+    const color = options.color ?? 0xff_00_00
     const { label, metadata } = options
     const minDistance = options.minDistance ?? 0
     const maxDistance = options.maxDistance ?? Infinity
@@ -107,8 +98,8 @@ export class WaypointsRenderer {
     const sprite = createWaypointSprite({
       position: new THREE.Vector3(x, y, z),
       color,
-      label: (label || id),
-      metadata,
+      label: label || id,
+      metadata
     })
     sprite.enableOffscreenArrow(true)
     sprite.setArrowParent(this.waypointScene)
@@ -116,9 +107,15 @@ export class WaypointsRenderer {
     this.waypointScene.add(sprite.group)
 
     this.waypoints.set(id, {
-      id, x: x + 0.5, y: y + 0.5, z: z + 0.5, minDistance, maxDistance,
-      color, label,
-      sprite,
+      id,
+      x: x + 0.5,
+      y: y + 0.5,
+      z: z + 0.5,
+      minDistance,
+      maxDistance,
+      color,
+      label,
+      sprite
     })
   }
 
@@ -138,11 +135,11 @@ export class WaypointsRenderer {
   }
 
   testWaypoint() {
-    this.addWaypoint('Test Point', 0, 70, 0, { color: 0x00_FF_00, label: 'Test Point' })
-    this.addWaypoint('Spawn', 0, 64, 0, { color: 0xFF_FF_00, label: 'Spawn' })
-    this.addWaypoint('Far Point', 100, 70, 100, { color: 0x00_00_FF, label: 'Far Point' })
-    this.addWaypoint('Far Point 2', 180, 170, 100, { color: 0x00_00_FF, label: 'Far Point 2' })
-    this.addWaypoint('Far Point 3', 1000, 100, 1000, { color: 0x00_00_FF, label: 'Far Point 3' })
+    this.addWaypoint('Test Point', 0, 70, 0, { color: 0x00_ff_00, label: 'Test Point' })
+    this.addWaypoint('Spawn', 0, 64, 0, { color: 0xff_ff_00, label: 'Spawn' })
+    this.addWaypoint('Far Point', 100, 70, 100, { color: 0x00_00_ff, label: 'Far Point' })
+    this.addWaypoint('Far Point 2', 180, 170, 100, { color: 0x00_00_ff, label: 'Far Point 2' })
+    this.addWaypoint('Far Point 3', 1000, 100, 1000, { color: 0x00_00_ff, label: 'Far Point 3' })
   }
 
   getWaypoint(id: string): Waypoint | undefined {

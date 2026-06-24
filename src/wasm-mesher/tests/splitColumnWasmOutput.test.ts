@@ -1,9 +1,5 @@
 import { test, expect } from 'vitest'
-import {
-  splitColumnWasmOutputToSections,
-  renderWasmOutputToGeometry,
-  WasmGeometryOutput,
-} from '../bridge/render-from-wasm'
+import { splitColumnWasmOutputToSections, renderWasmOutputToGeometry, WasmGeometryOutput } from '../bridge/render-from-wasm'
 
 const VERSION = '1.16.5'
 const STONE = 1 // 1.16.5 stone state id
@@ -37,7 +33,7 @@ function makeSeamFixture(): WasmGeometryOutput {
         // info is baked in here at the per-block level.
         visible_faces: FACE_DOWN | SIDE_FACES,
         ao_data: [],
-        light_data: [],
+        light_data: []
       })
       blocks.push({
         position: [x, 16, z],
@@ -46,7 +42,7 @@ function makeSeamFixture(): WasmGeometryOutput {
         // other side).
         visible_faces: FACE_UP | SIDE_FACES,
         ao_data: [],
-        light_data: [],
+        light_data: []
       })
     }
   }
@@ -57,12 +53,12 @@ function makeSeamFixture(): WasmGeometryOutput {
     block_state_id: STONE,
     visible_faces: FACE_UP | FACE_DOWN | SIDE_FACES,
     ao_data: [],
-    light_data: [],
+    light_data: []
   })
   return {
     blocks,
     block_count: blocks.length,
-    block_iterations: 0,
+    block_iterations: 0
   }
 }
 
@@ -70,15 +66,15 @@ test('splitColumnWasmOutputToSections: per-section split is equivalent to manual
   const fullColumn = makeSeamFixture()
 
   const requested = [
-    { x: 0, y: 0, z: 0 },   // contains Y=15 row only
-    { x: 0, y: 16, z: 0 },  // contains Y=16 row only
-    { x: 0, y: 32, z: 0 },  // empty section
-    { x: 0, y: 64, z: 0 },  // contains the isolated block at Y=64
+    { x: 0, y: 0, z: 0 }, // contains Y=15 row only
+    { x: 0, y: 16, z: 0 }, // contains Y=16 row only
+    { x: 0, y: 32, z: 0 }, // empty section
+    { x: 0, y: 64, z: 0 } // contains the isolated block at Y=64
   ]
 
   const split = splitColumnWasmOutputToSections(fullColumn, requested, {
     version: VERSION,
-    shaderCubes: false,
+    shaderCubes: false
   })
 
   expect(split.size).toBe(4)
@@ -97,13 +93,13 @@ test('splitColumnWasmOutputToSections: per-section split is equivalent to manual
       {
         blocks: sectionBlocks,
         block_count: sectionBlocks.length,
-        block_iterations: fullColumn.block_iterations,
+        block_iterations: fullColumn.block_iterations
       },
       VERSION,
       `${r.x},${r.y},${r.z}`,
       { x: r.x + 8, y: r.y + 8, z: r.z + 8 },
       undefined,
-      { shaderCubes: false },
+      { shaderCubes: false }
     )
     const got = split.get(`${r.x},${r.y},${r.z}`)!.exported
     expect(got.key).toBe(reference.key)
@@ -148,7 +144,7 @@ test('splitColumnWasmOutputToSections: empty requested-keys list returns empty m
   const fullColumn = makeSeamFixture()
   const out = splitColumnWasmOutputToSections(fullColumn, [], {
     version: VERSION,
-    shaderCubes: false,
+    shaderCubes: false
   })
   expect(out.size).toBe(0)
 })
@@ -157,11 +153,7 @@ test('splitColumnWasmOutputToSections: blocks outside requested sections are dro
   const fullColumn = makeSeamFixture()
   // Only request the empty Y=32 section. Y=15/16/64 blocks must NOT
   // leak into it.
-  const out = splitColumnWasmOutputToSections(
-    fullColumn,
-    [{ x: 0, y: 32, z: 0 }],
-    { version: VERSION, shaderCubes: false },
-  )
+  const out = splitColumnWasmOutputToSections(fullColumn, [{ x: 0, y: 32, z: 0 }], { version: VERSION, shaderCubes: false })
   const empty = out.get('0,32,0')!
   expect(empty.exported.geometry.positions).toEqual([])
   expect(empty.exported.geometry.indices).toEqual([])

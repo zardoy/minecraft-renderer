@@ -101,17 +101,9 @@ export default class extends BasePlaygroundScene {
       const cameraOffset = new Vec3(5, 5, 5)
       const cameraPos = this.targetPos.offset(cameraOffset.x, cameraOffset.y, cameraOffset.z)
 
-      this.controls.target.set(
-        this.targetPos.x + 0.5,
-        this.targetPos.y + 1,
-        this.targetPos.z + 0.5
-      )
+      this.controls.target.set(this.targetPos.x + 0.5, this.targetPos.y + 1, this.targetPos.z + 0.5)
       this.camera.position.set(cameraPos.x, cameraPos.y, cameraPos.z)
-      this.camera.lookAt(
-        this.targetPos.x + 0.5,
-        this.targetPos.y + 1,
-        this.targetPos.z + 0.5
-      )
+      this.camera.lookAt(this.targetPos.x + 0.5, this.targetPos.y + 1, this.targetPos.z + 0.5)
       this.controls.update()
       this.syncCameraToBackend()
     }

@@ -1,7 +1,6 @@
 import * as THREE from 'three'
 import { loadSkinFromUsername, loadSkinImage, stevePngUrl } from '../lib/utils/skins'
 
-
 export const getMyHand = async (image?: string, userName?: string) => {
   let newMap: THREE.Texture
   if (!image && !userName) {
@@ -25,12 +24,7 @@ export const getMyHand = async (image?: string, userName?: string) => {
   const pixelWidth = slim ? 3 : 4
 
   // Exact replica of vanilla's Cube: addBox(-3, -2, -2, 4, 12, 4) at texOffs(40, 16)
-  const box = createVanillaCubeGeometry(
-    40, 16,
-    slim ? -2 : -3, -2, -2,
-    pixelWidth, 12, 4,
-    64, 64
-  )
+  const box = createVanillaCubeGeometry(40, 16, slim ? -2 : -3, -2, -2, pixelWidth, 12, 4, 64, 64)
 
   const material = new THREE.MeshStandardMaterial()
   material.map = newMap
@@ -48,11 +42,17 @@ export const getMyHand = async (image?: string, userName?: string) => {
  * Vertices, face winding, normals, and UV mapping match the decompiled Java source.
  * Position coordinates are in pixels, divided by 16 for block units.
  */
-function createVanillaCubeGeometry (
-  texU: number, texV: number,
-  originX: number, originY: number, originZ: number,
-  sizeX: number, sizeY: number, sizeZ: number,
-  texWidth: number, texHeight: number,
+function createVanillaCubeGeometry(
+  texU: number,
+  texV: number,
+  originX: number,
+  originY: number,
+  originZ: number,
+  sizeX: number,
+  sizeY: number,
+  sizeZ: number,
+  texWidth: number,
+  texHeight: number,
   mirror = false
 ): THREE.BufferGeometry {
   let minX = originX / 16
@@ -63,7 +63,7 @@ function createVanillaCubeGeometry (
   let maxZ = (originZ + sizeZ) / 16
 
   if (mirror) {
-    [minX, maxX] = [maxX, minX]
+    ;[minX, maxX] = [maxX, minX]
   }
 
   // 8 corner vertices matching vanilla's Cube constructor
@@ -75,7 +75,7 @@ function createVanillaCubeGeometry (
     [minX, minY, maxZ], // 4
     [maxX, minY, maxZ], // 5
     [maxX, maxY, maxZ], // 6
-    [minX, maxY, maxZ], // 7
+    [minX, maxY, maxZ] // 7
   ]
 
   // UV grid (pixel coords)
@@ -91,12 +91,12 @@ function createVanillaCubeGeometry (
 
   // 6 faces: vanilla vertex order + UV rect + normal
   const faces: { vi: number[]; uv: number[]; n: number[] }[] = [
-    { vi: [5, 4, 0, 1], uv: [u1, v0, u2, v1], n: [0, -1, 0] },  // DOWN
-    { vi: [2, 3, 7, 6], uv: [u2, v1, u3, v0], n: [0, 1, 0] },   // UP
-    { vi: [0, 4, 7, 3], uv: [u0, v1, u1, v2], n: [-1, 0, 0] },  // WEST
-    { vi: [1, 0, 3, 2], uv: [u1, v1, u2, v2], n: [0, 0, -1] },  // NORTH
-    { vi: [5, 1, 2, 6], uv: [u2, v1, u4, v2], n: [1, 0, 0] },   // EAST
-    { vi: [4, 5, 6, 7], uv: [u4, v1, u5, v2], n: [0, 0, 1] },   // SOUTH
+    { vi: [5, 4, 0, 1], uv: [u1, v0, u2, v1], n: [0, -1, 0] }, // DOWN
+    { vi: [2, 3, 7, 6], uv: [u2, v1, u3, v0], n: [0, 1, 0] }, // UP
+    { vi: [0, 4, 7, 3], uv: [u0, v1, u1, v2], n: [-1, 0, 0] }, // WEST
+    { vi: [1, 0, 3, 2], uv: [u1, v1, u2, v2], n: [0, 0, -1] }, // NORTH
+    { vi: [5, 1, 2, 6], uv: [u2, v1, u4, v2], n: [1, 0, 0] }, // EAST
+    { vi: [4, 5, 6, 7], uv: [u4, v1, u5, v2], n: [0, 0, 1] } // SOUTH
   ]
 
   const positions: number[] = []
@@ -114,7 +114,7 @@ function createVanillaCubeGeometry (
       [uR / texWidth, 1 - vT / texHeight],
       [uL / texWidth, 1 - vT / texHeight],
       [uL / texWidth, 1 - vB / texHeight],
-      [uR / texWidth, 1 - vB / texHeight],
+      [uR / texWidth, 1 - vB / texHeight]
     ]
 
     const order = mirror ? [3, 2, 1, 0] : [0, 1, 2, 3]

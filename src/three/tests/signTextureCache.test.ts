@@ -3,21 +3,21 @@ import * as THREE from 'three'
 
 const renderSignMock = vi.fn()
 vi.mock('../../sign-renderer', () => ({
-  renderSign: (...args: unknown[]) => renderSignMock(...args),
+  renderSign: (...args: unknown[]) => renderSignMock(...args)
 }))
 
 vi.mock('prismarine-chat', () => ({
-  default: () => () => ({}),
+  default: () => () => ({})
 }))
 
 import { getSignTexture, releaseSignTexture, disposeAllSignTextures } from '../signTextureCache'
 import type { WorldRendererThree } from '../worldRendererThree'
 
-function createWorldRenderer (): WorldRendererThree {
+function createWorldRenderer(): WorldRendererThree {
   return { version: '1.20' } as WorldRendererThree
 }
 
-function stubCanvas () {
+function stubCanvas() {
   return { width: 64, height: 32 } as HTMLCanvasElement
 }
 

@@ -46,7 +46,7 @@ export const setup = (version, initialBlocks: Array<[number[], string]>, options
   reload()
 
   const getLights = () => {
-    return Object.fromEntries(getGeometry().faces.map(({ face, light }) => ([face, (light ?? 0) * 15 - 2])))
+    return Object.fromEntries(getGeometry().faces.map(({ face, light }) => [face, (light ?? 0) * 15 - 2]))
   }
 
   const setLight = (x: number, y: number, z: number, val = 0) => {
@@ -77,5 +77,5 @@ const addPositions = [
   [[0, 1, 0], 'stone'],
   [[0, -1, 0], 'stone'],
   [[0, 0, 1], 'stone'],
-  [[0, 0, -1], 'stone'],
+  [[0, 0, -1], 'stone']
 ]

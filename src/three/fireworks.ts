@@ -61,7 +61,7 @@ export const FIREWORKS_CONFIG = {
   gravity: new THREE.Vector3(0, -0.005, 0),
   friction: 0.998,
   defaultParticleSize: 300,
-  maxActiveFireworks: 5,
+  maxActiveFireworks: 5
 }
 
 // Utility functions
@@ -104,7 +104,13 @@ export const createFireworksTexture = () => {
 }
 
 // Point mesh creation
-const getPointMesh = (num: number, vels: THREE.Vector3[], type: 'seed' | 'trail' | 'default', texture: THREE.Texture, particleSize = FIREWORKS_CONFIG.defaultParticleSize) => {
+const getPointMesh = (
+  num: number,
+  vels: THREE.Vector3[],
+  type: 'seed' | 'trail' | 'default',
+  texture: THREE.Texture,
+  particleSize = FIREWORKS_CONFIG.defaultParticleSize
+) => {
   const bufferGeometry = new THREE.BufferGeometry()
   const vertices: number[] = []
   const velocities: number[] = []
@@ -174,13 +180,13 @@ const getPointMesh = (num: number, vels: THREE.Vector3[], type: 'seed' | 'trail'
   const shaderMaterial = new THREE.RawShaderMaterial({
     uniforms: {
       size: { value: FIREWORKS_CONFIG.textureSize },
-      texture: { value: texture },
+      texture: { value: texture }
     },
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
     vertexShader,
-    fragmentShader,
+    fragmentShader
   })
 
   return new THREE.Points(bufferGeometry, shaderMaterial)
@@ -192,13 +198,13 @@ export class ParticleMesh {
   timerStartFading: number
   mesh: THREE.Points
 
-  constructor (num: number, vels: THREE.Vector3[], type: 'seed' | 'trail' | 'default', texture: THREE.Texture, particleSize?: number) {
+  constructor(num: number, vels: THREE.Vector3[], type: 'seed' | 'trail' | 'default', texture: THREE.Texture, particleSize?: number) {
     this.particleNum = num
     this.timerStartFading = 10
     this.mesh = getPointMesh(num, vels, type, texture, particleSize)
   }
 
-  update (gravity: THREE.Vector3) {
+  update(gravity: THREE.Vector3) {
     if (this.timerStartFading > 0) this.timerStartFading -= 0.3
 
     const position = this.mesh.geometry.attributes.position as THREE.BufferAttribute
@@ -233,18 +239,18 @@ export class ParticleMesh {
     color.needsUpdate = true
   }
 
-  disposeAll () {
+  disposeAll() {
     this.mesh.geometry.dispose()
     ;(this.mesh.material as THREE.Material).dispose()
   }
 }
 
 export class ParticleSeedMesh extends ParticleMesh {
-  constructor (num: number, vels: THREE.Vector3[], texture: THREE.Texture) {
+  constructor(num: number, vels: THREE.Vector3[], texture: THREE.Texture) {
     super(num, vels, 'seed', texture)
   }
 
-  update (gravity: THREE.Vector3) {
+  update(gravity: THREE.Vector3) {
     const position = this.mesh.geometry.attributes.position as THREE.BufferAttribute
     const velocity = this.mesh.geometry.attributes.velocity as THREE.BufferAttribute
     const color = this.mesh.geometry.attributes.color as THREE.BufferAttribute
@@ -283,11 +289,11 @@ export class ParticleSeedMesh extends ParticleMesh {
 }
 
 export class ParticleTailMesh extends ParticleMesh {
-  constructor (num: number, vels: THREE.Vector3[], texture: THREE.Texture) {
+  constructor(num: number, vels: THREE.Vector3[], texture: THREE.Texture) {
     super(num, vels, 'trail', texture)
   }
 
-  update (gravity: THREE.Vector3) {
+  update(gravity: THREE.Vector3) {
     const position = this.mesh.geometry.attributes.position as THREE.BufferAttribute
     const velocity = this.mesh.geometry.attributes.velocity as THREE.BufferAttribute
     const color = this.mesh.geometry.attributes.color as THREE.BufferAttribute
@@ -335,7 +341,7 @@ export class BasicFireworks {
   texture: THREE.Texture
   particleSize: number
 
-  constructor (texture: THREE.Texture, particleSize = FIREWORKS_CONFIG.defaultParticleSize, startPosition?: THREE.Vector3) {
+  constructor(texture: THREE.Texture, particleSize = FIREWORKS_CONFIG.defaultParticleSize, startPosition?: THREE.Vector3) {
     this.meshGroup = new THREE.Group()
     this.isExplode = false
     this.texture = texture
@@ -350,7 +356,7 @@ export class BasicFireworks {
     this.flowerSizeRate = THREE.MathUtils.mapLinear(this.petalsNum, min, max, 0.4, 0.7)
   }
 
-  getSeed (startPosition?: THREE.Vector3): ParticleSeedMesh {
+  getSeed(startPosition?: THREE.Vector3): ParticleSeedMesh {
     const num = 40
     const vels: THREE.Vector3[] = []
 
@@ -375,7 +381,7 @@ export class BasicFireworks {
     return pm
   }
 
-  explode (pos: THREE.Vector3) {
+  explode(pos: THREE.Vector3) {
     this.isExplode = true
     this.flower = this.getFlower(pos)
     this.meshGroup.add(this.flower.mesh)
@@ -383,7 +389,7 @@ export class BasicFireworks {
     this.seed.disposeAll()
   }
 
-  getFlower (pos: THREE.Vector3): ParticleMesh {
+  getFlower(pos: THREE.Vector3): ParticleMesh {
     const num = this.petalsNum
     const vels: THREE.Vector3[] = []
     let radius: number
@@ -424,7 +430,7 @@ export class BasicFireworks {
     return particleMesh
   }
 
-  update (gravity: THREE.Vector3) {
+  update(gravity: THREE.Vector3) {
     if (this.isExplode) {
       this.flower!.update(gravity)
       if (this.life > 0) this.life -= 1
@@ -433,7 +439,7 @@ export class BasicFireworks {
     }
   }
 
-  drawTail () {
+  drawTail() {
     this.seed.update(FIREWORKS_CONFIG.gravity)
 
     const position = this.seed.mesh.geometry.attributes.position as THREE.BufferAttribute
@@ -478,7 +484,7 @@ export class RichFireworks extends BasicFireworks {
   tailMeshGroup: THREE.Group
   tails: ParticleTailMesh[]
 
-  constructor (texture: THREE.Texture, particleSize = FIREWORKS_CONFIG.defaultParticleSize, startPosition?: THREE.Vector3) {
+  constructor(texture: THREE.Texture, particleSize = FIREWORKS_CONFIG.defaultParticleSize, startPosition?: THREE.Vector3) {
     super(texture, particleSize, startPosition)
 
     const max = 150
@@ -489,7 +495,7 @@ export class RichFireworks extends BasicFireworks {
     this.tails = []
   }
 
-  explode (pos: THREE.Vector3) {
+  explode(pos: THREE.Vector3) {
     this.isExplode = true
     this.flower = this.getFlower(pos)
     this.tails = this.getTail()
@@ -497,7 +503,7 @@ export class RichFireworks extends BasicFireworks {
     this.meshGroup.add(this.tailMeshGroup)
   }
 
-  getTail (): ParticleTailMesh[] {
+  getTail(): ParticleTailMesh[] {
     const tails: ParticleTailMesh[] = []
     const num = 20
     const petalColor = this.flower!.mesh.geometry.attributes.color as THREE.BufferAttribute
@@ -536,7 +542,7 @@ export class RichFireworks extends BasicFireworks {
     return tails
   }
 
-  update (gravity: THREE.Vector3) {
+  update(gravity: THREE.Vector3) {
     if (this.isExplode) {
       this.flower!.update(gravity)
 
@@ -547,11 +553,7 @@ export class RichFireworks extends BasicFireworks {
         tail.update(gravity)
 
         const { x, y, z } = getOffsetXYZ(i)
-        const flowerPos = new THREE.Vector3(
-          flowerGeometry.array[x],
-          flowerGeometry.array[y],
-          flowerGeometry.array[z]
-        )
+        const flowerPos = new THREE.Vector3(flowerGeometry.array[x], flowerGeometry.array[y], flowerGeometry.array[z])
 
         const position = tail.mesh.geometry.attributes.position as THREE.BufferAttribute
         const velocity = tail.mesh.geometry.attributes.velocity as THREE.BufferAttribute
@@ -588,7 +590,7 @@ export class FireworksManager {
   particleSize: number
   maxFireworks: number
 
-  constructor (scene: THREE.Scene, sceneOrigin: SceneOrigin, config?: FireworksManagerConfig) {
+  constructor(scene: THREE.Scene, sceneOrigin: SceneOrigin, config?: FireworksManagerConfig) {
     this.fireworksInstances = []
     this.scene = scene
     this.sceneOrigin = sceneOrigin
@@ -597,7 +599,7 @@ export class FireworksManager {
     this.maxFireworks = config?.maxActiveFireworks ?? FIREWORKS_CONFIG.maxActiveFireworks
   }
 
-  launchFirework (options?: FireworkLaunchOptions) {
+  launchFirework(options?: FireworkLaunchOptions) {
     if (this.fireworksInstances.length >= this.maxFireworks) return
 
     const particleSize = options?.particleSize ?? this.particleSize
@@ -621,11 +623,11 @@ export class FireworksManager {
     }
   }
 
-  repositionAll (): void {
+  repositionAll(): void {
     // No-op: tracked objects are automatically repositioned by SceneOrigin
   }
 
-  update () {
+  update() {
     const explodedIndexList: number[] = []
 
     for (let i = this.fireworksInstances.length - 1; i >= 0; i--) {
@@ -655,7 +657,7 @@ export class FireworksManager {
     }
   }
 
-  clear () {
+  clear() {
     for (const instance of this.fireworksInstances) {
       this.sceneOrigin.removeAndUntrack(instance.meshGroup)
       instance.seed.disposeAll()
@@ -667,7 +669,7 @@ export class FireworksManager {
     this.fireworksInstances = []
   }
 
-  dispose () {
+  dispose() {
     this.clear()
     this.texture.dispose()
   }

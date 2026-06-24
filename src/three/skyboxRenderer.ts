@@ -24,22 +24,23 @@ export class SkyboxRenderer {
   private readonly brightnessAtPosition = 1
   debugGui: DebugGui
 
-  constructor (private readonly scene: THREE.Scene, public defaultSkybox: boolean, public initialImage: string | null) {
-    this.debugGui = new DebugGui('skybox_renderer', this, [
-      'temperature',
-      'worldTime',
-      'inWater',
-      'waterBreathing',
-      'fogOrangeness',
-      'brightnessAtPosition',
-      'distanceFactor'
-    ], {
-      brightnessAtPosition: { min: 0, max: 1, step: 0.01 },
-      temperature: { min: 0, max: 1, step: 0.01 },
-      worldTime: { min: 0, max: 24_000, step: 1 },
-      fogOrangeness: { min: -1, max: 1, step: 0.01 },
-      distanceFactor: { min: 0, max: 5, step: 0.01 },
-    })
+  constructor(
+    private readonly scene: THREE.Scene,
+    public defaultSkybox: boolean,
+    public initialImage: string | null
+  ) {
+    this.debugGui = new DebugGui(
+      'skybox_renderer',
+      this,
+      ['temperature', 'worldTime', 'inWater', 'waterBreathing', 'fogOrangeness', 'brightnessAtPosition', 'distanceFactor'],
+      {
+        brightnessAtPosition: { min: 0, max: 1, step: 0.01 },
+        temperature: { min: 0, max: 1, step: 0.01 },
+        worldTime: { min: 0, max: 24_000, step: 1 },
+        fogOrangeness: { min: -1, max: 1, step: 0.01 },
+        distanceFactor: { min: 0, max: 5, step: 0.01 }
+      }
+    )
 
     if (!initialImage) {
       this.createGradientSky()
@@ -47,13 +48,13 @@ export class SkyboxRenderer {
     // this.debugGui.activate()
   }
 
-  async init () {
+  async init() {
     if (this.initialImage) {
       await this.setSkyboxImage(this.initialImage)
     }
   }
 
-  async setSkyboxImage (imageUrl: string) {
+  async setSkyboxImage(imageUrl: string) {
     // Dispose old textures if they exist
     if (this.texture) {
       this.texture.dispose()
@@ -61,19 +62,16 @@ export class SkyboxRenderer {
 
     // Load the equirectangular texture
     const textureLoader = new THREE.TextureLoader()
-    this.texture = await new Promise((resolve) => {
-      textureLoader.load(
-        imageUrl,
-        (texture) => {
-          texture.mapping = THREE.EquirectangularReflectionMapping
-          texture.colorSpace = THREE.SRGBColorSpace
-          // Keep pixelated look
-          texture.minFilter = THREE.NearestFilter
-          texture.magFilter = THREE.NearestFilter
-          texture.needsUpdate = true
-          resolve(texture)
-        }
-      )
+    this.texture = await new Promise(resolve => {
+      textureLoader.load(imageUrl, texture => {
+        texture.mapping = THREE.EquirectangularReflectionMapping
+        texture.colorSpace = THREE.SRGBColorSpace
+        // Keep pixelated look
+        texture.minFilter = THREE.NearestFilter
+        texture.magFilter = THREE.NearestFilter
+        texture.needsUpdate = true
+        resolve(texture)
+      })
     })
 
     // Create or update the skybox
@@ -99,7 +97,7 @@ export class SkyboxRenderer {
     }
   }
 
-  update (cameraPosition: THREE.Vector3, newViewDistance: number) {
+  update(cameraPosition: THREE.Vector3, newViewDistance: number) {
     if (newViewDistance !== this.viewDistance) {
       this.viewDistance = newViewDistance
       this.updateSkyColors()
@@ -117,7 +115,7 @@ export class SkyboxRenderer {
   }
 
   // Update world time
-  updateTime (timeOfDay: number, partialTicks = 0) {
+  updateTime(timeOfDay: number, partialTicks = 0) {
     if (this.debugGui.visible) return
     this.worldTime = timeOfDay
     this.partialTicks = partialTicks
@@ -125,20 +123,20 @@ export class SkyboxRenderer {
   }
 
   // Update view distance
-  updateViewDistance (viewDistance: number) {
+  updateViewDistance(viewDistance: number) {
     this.viewDistance = viewDistance
     this.updateSkyColors()
   }
 
   // Update temperature (for biome support)
-  updateTemperature (temperature: number) {
+  updateTemperature(temperature: number) {
     if (this.debugGui.visible) return
     this.temperature = temperature
     this.updateSkyColors()
   }
 
   // Update water state
-  updateWaterState (inWater: boolean, waterBreathing: boolean) {
+  updateWaterState(inWater: boolean, waterBreathing: boolean) {
     if (this.debugGui.visible) return
     this.inWater = inWater
     this.waterBreathing = waterBreathing
@@ -146,13 +144,13 @@ export class SkyboxRenderer {
   }
 
   // Update default skybox setting
-  updateDefaultSkybox (defaultSkybox: boolean) {
+  updateDefaultSkybox(defaultSkybox: boolean) {
     if (this.debugGui.visible) return
     this.defaultSkybox = defaultSkybox
     this.updateSkyColors()
   }
 
-  private createGradientSky () {
+  private createGradientSky() {
     const size = 64
     const scale = 256 / size + 2
 
@@ -189,7 +187,7 @@ export class SkyboxRenderer {
     this.updateSkyColors()
   }
 
-  private getFogColor (partialTicks = 0): THREE.Vector3 {
+  private getFogColor(partialTicks = 0): THREE.Vector3 {
     const angle = this.getCelestialAngle(partialTicks)
     let rotation = Math.cos(angle * Math.PI * 2) * 2 + 0.5
     rotation = Math.max(0, Math.min(1, rotation))
@@ -198,14 +196,14 @@ export class SkyboxRenderer {
     let y = 0.847_058_83
     let z = 1
 
-    x *= (rotation * 0.94 + 0.06)
-    y *= (rotation * 0.94 + 0.06)
-    z *= (rotation * 0.91 + 0.09)
+    x *= rotation * 0.94 + 0.06
+    y *= rotation * 0.94 + 0.06
+    z *= rotation * 0.91 + 0.09
 
     return new THREE.Vector3(x, y, z)
   }
 
-  private getSkyColor (x = 0, z = 0, partialTicks = 0): THREE.Vector3 {
+  private getSkyColor(x = 0, z = 0, partialTicks = 0): THREE.Vector3 {
     const angle = this.getCelestialAngle(partialTicks)
     let brightness = Math.cos(angle * 3.141_593 * 2) * 2 + 0.5
 
@@ -219,15 +217,11 @@ export class SkyboxRenderer {
     const green = ((rgb >> 8) & 0xff) / 255
     const blue = (rgb & 0xff) / 255
 
-    return new THREE.Vector3(
-      red * brightness,
-      green * brightness,
-      blue * brightness
-    )
+    return new THREE.Vector3(red * brightness, green * brightness, blue * brightness)
   }
 
-  private calculateCelestialAngle (time: number, partialTicks: number): number {
-    const modTime = (time % 24_000)
+  private calculateCelestialAngle(time: number, partialTicks: number): number {
+    const modTime = time % 24_000
     let angle = (modTime + partialTicks) / 24_000 - 0.25
 
     if (angle < 0) {
@@ -237,21 +231,21 @@ export class SkyboxRenderer {
       angle--
     }
 
-    angle = 1 - ((Math.cos(angle * Math.PI) + 1) / 2)
+    angle = 1 - (Math.cos(angle * Math.PI) + 1) / 2
     angle += (angle - angle) / 3
 
     return angle
   }
 
-  private getCelestialAngle (partialTicks: number): number {
+  private getCelestialAngle(partialTicks: number): number {
     return this.calculateCelestialAngle(this.worldTime, partialTicks)
   }
 
-  private getTemperature (x: number, z: number): number {
+  private getTemperature(x: number, z: number): number {
     return this.temperature
   }
 
-  private getSkyColorByTemp (temperature: number): number {
+  private getSkyColorByTemp(temperature: number): number {
     temperature /= 3
     if (temperature < -1) temperature = -1
     if (temperature > 1) temperature = 1
@@ -261,17 +255,20 @@ export class SkyboxRenderer {
     // Orange is around hue 0.08-0.15, so we need to shift from blue-purple (0.62) toward orange
     // Use a more dramatic shift and also increase saturation for more noticeable effect
     const orangeHue = 0.12 // Orange hue value
-    const hue = this.fogOrangeness > 0
-      ? baseHue + (orangeHue - baseHue) * this.fogOrangeness * 0.8 // Blend toward orange
-      : baseHue + this.fogOrangeness * 0.1 // Subtle shift for negative values
+    const hue =
+      this.fogOrangeness > 0
+        ? baseHue + (orangeHue - baseHue) * this.fogOrangeness * 0.8 // Blend toward orange
+        : baseHue + this.fogOrangeness * 0.1 // Subtle shift for negative values
     const saturation = 0.5 + temperature * 0.1 + Math.abs(this.fogOrangeness) * 0.3 // Increase saturation with orangeness
     const brightness = 1
 
     return this.hsbToRgb(hue, saturation, brightness)
   }
 
-  private hsbToRgb (hue: number, saturation: number, brightness: number): number {
-    let r = 0; let g = 0; let b = 0
+  private hsbToRgb(hue: number, saturation: number, brightness: number): number {
+    let r = 0
+    let g = 0
+    let b = 0
     if (saturation === 0) {
       r = g = b = Math.floor(brightness * 255 + 0.5)
     } else {
@@ -279,7 +276,7 @@ export class SkyboxRenderer {
       const f = h - Math.floor(h)
       const p = brightness * (1 - saturation)
       const q = brightness * (1 - saturation * f)
-      const t = brightness * (1 - (saturation * (1 - f)))
+      const t = brightness * (1 - saturation * (1 - f))
       switch (Math.floor(h)) {
         case 0:
           r = Math.floor(brightness * 255 + 0.5)
@@ -313,10 +310,10 @@ export class SkyboxRenderer {
           break
       }
     }
-    return 0xff_00_00_00 | (r << 16) | (g << 8) | (Math.trunc(b))
+    return 0xff_00_00_00 | (r << 16) | (g << 8) | Math.trunc(b)
   }
 
-  private updateSkyColors () {
+  private updateSkyColors() {
     if (!this.skyMesh || !this.voidMesh) return
 
     // If default skybox is disabled, hide the skybox meshes
@@ -356,7 +353,7 @@ export class SkyboxRenderer {
 
     // Normal sky colors
     const viewDistance = this.viewDistance * 16
-    const viewFactor = 1 - (0.25 + 0.75 * this.viewDistance / 32) ** 0.25
+    const viewFactor = 1 - (0.25 + (0.75 * this.viewDistance) / 32) ** 0.25
 
     const angle = this.getCelestialAngle(this.partialTicks)
     const skyColor = this.getSkyColor(0, 0, this.partialTicks)
@@ -374,16 +371,11 @@ export class SkyboxRenderer {
 
     this.scene.background = new THREE.Color(red, green, blue)
     this.scene.fog = new THREE.Fog(new THREE.Color(red, green, blue), 0.0025, viewDistance * this.distanceFactor)
-
     ;(this.skyMesh.material as THREE.MeshBasicMaterial).color.set(new THREE.Color(skyColor.x, skyColor.y, skyColor.z))
-    ;(this.voidMesh.material as THREE.MeshBasicMaterial).color.set(new THREE.Color(
-      skyColor.x * 0.2 + 0.04,
-      skyColor.y * 0.2 + 0.04,
-      skyColor.z * 0.6 + 0.1
-    ))
+    ;(this.voidMesh.material as THREE.MeshBasicMaterial).color.set(new THREE.Color(skyColor.x * 0.2 + 0.04, skyColor.y * 0.2 + 0.04, skyColor.z * 0.6 + 0.1))
   }
 
-  dispose () {
+  dispose() {
     if (this.texture) {
       this.texture.dispose()
     }
