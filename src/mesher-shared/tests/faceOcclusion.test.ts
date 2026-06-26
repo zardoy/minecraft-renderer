@@ -6,14 +6,7 @@ import worldBlockProvider from 'mc-assets/dist/worldBlockProvider'
 import PrismarineBlockLoader from 'prismarine-block'
 import Chunks from 'prismarine-chunk'
 import { Vec3 } from 'vec3'
-import {
-  blockRendersSolid,
-  getOcclusionShape,
-  faceIsCulled,
-  resetFaceOcclusionCache,
-  oppositeDir,
-  buildModelGlobalMatrix
-} from '../faceOcclusion'
+import { blockRendersSolid, getOcclusionShape, faceIsCulled, resetFaceOcclusionCache, oppositeDir, buildModelGlobalMatrix } from '../faceOcclusion'
 import { elemFaces } from '../modelsGeometryCommon'
 import { setBlockStatesData, getSectionGeometry } from '../models'
 import { World } from '../world'
@@ -104,17 +97,13 @@ test('getOcclusionShape: west-facing stair fully covers west plane (step on west
 test('faceIsCulled: farmland east face culled by adjacent farmland', () => {
   const provider = blockProvider()
   const { farmlandId, element } = farmlandElement(provider)
-  expect(
-    faceIsCulled(VERSION, element, 'east', farmlandId, { stateId: farmlandId, name: 'farmland' }, provider, [1, 0, 0], null)
-  ).toBe(true)
+  expect(faceIsCulled(VERSION, element, 'east', farmlandId, { stateId: farmlandId, name: 'farmland' }, provider, [1, 0, 0], null)).toBe(true)
 })
 
 test('faceIsCulled: farmland east face not culled by air', () => {
   const provider = blockProvider()
   const { farmlandId, element } = farmlandElement(provider)
-  expect(
-    faceIsCulled(VERSION, element, 'east', 0, { stateId: farmlandId, name: 'farmland' }, provider, [1, 0, 0], null)
-  ).toBe(false)
+  expect(faceIsCulled(VERSION, element, 'east', 0, { stateId: farmlandId, name: 'farmland' }, provider, [1, 0, 0], null)).toBe(false)
 })
 
 test('faceIsCulled: glass identical neighbor still culls', () => {
@@ -123,9 +112,7 @@ test('faceIsCulled: glass identical neighbor still culls', () => {
   const provider = blockProvider()
   const models = provider.getAllResolvedModels0_1({ name: 'glass', properties: {} }, false)
   const element = models[0]![0]!.elements![0]!
-  expect(
-    faceIsCulled(VERSION, element, 'north', glassId, { stateId: glassId, name: 'glass' }, provider, [0, 0, -1], null)
-  ).toBe(true)
+  expect(faceIsCulled(VERSION, element, 'north', glassId, { stateId: glassId, name: 'glass' }, provider, [0, 0, -1], null)).toBe(true)
 })
 
 test('legacy mesher: adjacent farmland culled internal side', () => {
@@ -150,11 +137,7 @@ test('faceIsCulled: east stair interior faces culled against identical stair', (
   for (const element of model.elements ?? []) {
     for (const face of Object.keys(element.faces)) {
       const localDir = elemFaces[face as keyof typeof elemFaces].dir as [number, number, number]
-      const worldDir = [
-        Math.round(localDir[0]),
-        Math.round(localDir[1]),
-        Math.round(localDir[2])
-      ] as [number, number, number]
+      const worldDir = [Math.round(localDir[0]), Math.round(localDir[1]), Math.round(localDir[2])] as [number, number, number]
       if (faceIsCulled(VERSION, element, face, stairId, { stateId: stairId, name: 'cut_copper_stairs' }, provider, worldDir, globalMatrix)) {
         culled++
       }

@@ -205,9 +205,7 @@ function cutCopperStairsEastWestMirrorBlocks(): BlockSpec[] {
 }
 
 function countQuadsForFacing(facing: 'east' | 'west' | 'south' | 'north', half: 'bottom' | 'top'): number {
-  const world = buildWorld([
-    { x: 0, y: 0, z: 0, name: 'cut_copper_stairs', props: { facing, half, shape: 'straight', waterlogged: false } }
-  ])
+  const world = buildWorld([{ x: 0, y: 0, z: 0, name: 'cut_copper_stairs', props: { facing, half, shape: 'straight', waterlogged: false } }])
   return countQuadsFromWasm(world)
 }
 

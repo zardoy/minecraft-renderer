@@ -39,28 +39,28 @@ const faceProjections: Record<
   }
 > = {
   up: {
-    touches: (e) => e.to[1] === 16,
-    rect: (e) => [e.from[0], e.from[2], e.to[0], e.to[2]]
+    touches: e => e.to[1] === 16,
+    rect: e => [e.from[0], e.from[2], e.to[0], e.to[2]]
   },
   down: {
-    touches: (e) => e.from[1] === 0,
-    rect: (e) => [e.from[0], e.from[2], e.to[0], e.to[2]]
+    touches: e => e.from[1] === 0,
+    rect: e => [e.from[0], e.from[2], e.to[0], e.to[2]]
   },
   east: {
-    touches: (e) => e.to[0] === 16,
-    rect: (e) => [e.from[2], e.from[1], e.to[2], e.to[1]]
+    touches: e => e.to[0] === 16,
+    rect: e => [e.from[2], e.from[1], e.to[2], e.to[1]]
   },
   west: {
-    touches: (e) => e.from[0] === 0,
-    rect: (e) => [e.from[2], e.from[1], e.to[2], e.to[1]]
+    touches: e => e.from[0] === 0,
+    rect: e => [e.from[2], e.from[1], e.to[2], e.to[1]]
   },
   south: {
-    touches: (e) => e.to[2] === 16,
-    rect: (e) => [e.from[0], e.from[1], e.to[0], e.to[1]]
+    touches: e => e.to[2] === 16,
+    rect: e => [e.from[0], e.from[1], e.to[0], e.to[1]]
   },
   north: {
-    touches: (e) => e.from[2] === 0,
-    rect: (e) => [e.from[0], e.from[1], e.to[0], e.to[1]]
+    touches: e => e.from[2] === 0,
+    rect: e => [e.from[0], e.from[1], e.to[0], e.to[1]]
   }
 }
 
@@ -84,9 +84,7 @@ export function buildModelGlobalMatrix(model: { x?: number; y?: number; z?: numb
   let globalMatrix = null as number[][] | null
   for (const axis of ['x', 'y', 'z'] as const) {
     if (axis in model) {
-      globalMatrix = globalMatrix
-        ? matmulmat3(globalMatrix, buildRotationMatrix(axis, -(model[axis] ?? 0)))
-        : buildRotationMatrix(axis, -(model[axis] ?? 0))
+      globalMatrix = globalMatrix ? matmulmat3(globalMatrix, buildRotationMatrix(axis, -(model[axis] ?? 0))) : buildRotationMatrix(axis, -(model[axis] ?? 0))
     }
   }
   return globalMatrix
@@ -107,7 +105,7 @@ function dirKey(dir: CardinalDir): string {
 
 function dirIndex(dir: CardinalDir): number {
   const key = dirKey(dir)
-  const idx = DIR_KEYS.findIndex((d) => dirKey(d) === key)
+  const idx = DIR_KEYS.findIndex(d => dirKey(d) === key)
   return idx >= 0 ? idx : 0
 }
 
@@ -144,11 +142,7 @@ function rotatePointAboutCenter(globalMatrix: number[][] | null, point: [number,
   if (!globalMatrix) return point
   const centered = vecsub3(point, BLOCK_CENTER)
   const rotated = matmul3(globalMatrix, centered)
-  return [
-    snapBlockUnit(rotated[0] + 8),
-    snapBlockUnit(rotated[1] + 8),
-    snapBlockUnit(rotated[2] + 8)
-  ]
+  return [snapBlockUnit(rotated[0] + 8), snapBlockUnit(rotated[1] + 8), snapBlockUnit(rotated[2] + 8)]
 }
 
 function rectToFaceCorners3D(faceName: FaceName, rect: [number, number, number, number]): [number, number, number][] {
@@ -199,10 +193,7 @@ function rectToFaceCorners3D(faceName: FaceName, rect: [number, number, number, 
   }
 }
 
-function boundingRectOnWorldPlane(
-  corners: [number, number, number][],
-  worldDir: CardinalDir
-): [number, number, number, number] {
+function boundingRectOnWorldPlane(corners: [number, number, number][], worldDir: CardinalDir): [number, number, number, number] {
   const dk = dirKey(worldDir)
   let minU = 16
   let minV = 16
@@ -238,7 +229,7 @@ function worldFaceRect(
   const proj = faceProjections[faceName]
   if (!proj || !proj.touches(element)) return null
   const rect = proj.rect(element)
-  const corners = rectToFaceCorners3D(faceName, rect).map((c) => rotatePointAboutCenter(globalMatrix, c))
+  const corners = rectToFaceCorners3D(faceName, rect).map(c => rotatePointAboutCenter(globalMatrix, c))
   return boundingRectOnWorldPlane(corners, worldFaceDir)
 }
 
@@ -261,11 +252,7 @@ function getBlockFromStateId(version: string, stateId: number) {
   return Block.fromStateId(stateId, 1)
 }
 
-function getAllShapesForState(
-  version: string,
-  stateId: number,
-  blockProvider: WorldBlockProvider
-): Uint16Array[] {
+function getAllShapesForState(version: string, stateId: number, blockProvider: WorldBlockProvider): Uint16Array[] {
   const cacheKey = `${version}:${stateId}`
   const cached = shapeCache.get(cacheKey)
   if (cached) return cached
@@ -277,10 +264,7 @@ function getAllShapesForState(
     return shapes
   }
 
-  const models = blockProvider.getAllResolvedModels0_1(
-    { name: blockObj.name, properties: blockObj.getProperties() },
-    false
-  ) as BlockModelPartsResolved
+  const models = blockProvider.getAllResolvedModels0_1({ name: blockObj.name, properties: blockObj.getProperties() }, false) as BlockModelPartsResolved
 
   for (const modelVars of models ?? []) {
     const model = modelVars[0]
@@ -297,7 +281,7 @@ function getAllShapesForState(
         const localDir = elemFaces[faceName].dir as CardinalDir
         const worldDir = roundCardinalDir(matmul3(globalMatrix, localDir))
         const rect = proj.rect(element)
-        const corners = rectToFaceCorners3D(faceName, rect).map((c) => rotatePointAboutCenter(globalMatrix, c))
+        const corners = rectToFaceCorners3D(faceName, rect).map(c => rotatePointAboutCenter(globalMatrix, c))
         const [u0, v0, u1, v1] = boundingRectOnWorldPlane(corners, worldDir)
         orRectIntoShape(u0, v0, u1, v1, shapes[dirIndex(worldDir)]!)
       }
@@ -308,12 +292,7 @@ function getAllShapesForState(
   return shapes
 }
 
-export function getOcclusionShape(
-  version: string,
-  stateId: number,
-  worldDir: CardinalDir,
-  blockProvider: WorldBlockProvider
-): Uint16Array {
+export function getOcclusionShape(version: string, stateId: number, worldDir: CardinalDir, blockProvider: WorldBlockProvider): Uint16Array {
   return getAllShapesForState(version, stateId, blockProvider)[dirIndex(worldDir)]!
 }
 
@@ -330,10 +309,7 @@ export function faceIsCulled(
   const face = currentElement.faces[faceName]
   if (!face?.cullface) return false
 
-  if (
-    neighborStateId === currentBlock.stateId &&
-    /glass|ice/.test(currentBlock.name)
-  ) {
+  if (neighborStateId === currentBlock.stateId && /glass|ice/.test(currentBlock.name)) {
     return true
   }
 
