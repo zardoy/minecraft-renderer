@@ -86,7 +86,7 @@ function countQuadsFromLegacy(world: World): number {
   return opaque + blend
 }
 
-function countQuadsFromWasm(world: World): number {
+function countQuadsFromWasm(world: World, shaderCubes = false): number {
   const column = world.getColumn(0, 0)!
   const conversion = convertChunkToWasm(column, VERSION, 0, 0, SECTION_Y, SECTION_Y + SECTION_HEIGHT, SECTION_Y, SECTION_HEIGHT)
   const wasmResult = wasmModule.generate_geometry(
@@ -112,18 +112,21 @@ function countQuadsFromWasm(world: World): number {
   )
   const section = renderWasmOutputToGeometry(wasmResult, VERSION, '0,0,0', { x: 8, y: 8, z: 8 }, world, {
     sectionHeight: SECTION_HEIGHT,
-    shaderCubes: false
+    shaderCubes
   })
   const opaque = section.geometry.indices.length / 6
   const blend = section.blendGeometry?.indices.length ? section.blendGeometry.indices.length / 6 : 0
-  return opaque + blend
+  const shader = shaderCubes ? (section.shaderCubes?.count ?? 0) : 0
+  return opaque + blend + shader
 }
 
 function assertMesherParity(world: World, expectedQuads: number) {
   const legacy = countQuadsFromLegacy(world)
-  const wasm = countQuadsFromWasm(world)
+  const wasmLegacy = countQuadsFromWasm(world, false)
+  const wasmShader = countQuadsFromWasm(world, true)
   expect(legacy).toBe(expectedQuads)
-  expect(wasm).toBe(expectedQuads)
+  expect(wasmLegacy).toBe(expectedQuads)
+  expect(wasmShader).toBe(expectedQuads)
 }
 
 function farmlandFieldBlocks(): BlockSpec[] {
@@ -252,11 +255,13 @@ test('culling regression: cut copper stairs ascent', () => {
 test('culling regression: 3 east + 3 west stairs mirror user scenario', () => {
   const world = buildWorld(cutCopperStairsEastWestMirrorBlocks())
   const legacy = countQuadsFromLegacy(world)
-  const wasm = countQuadsFromWasm(world)
-  expect(legacy).toBe(wasm)
+  const wasmLegacy = countQuadsFromWasm(world, false)
+  const wasmShader = countQuadsFromWasm(world, true)
+  expect(legacy).toBe(wasmLegacy)
+  expect(legacy).toBe(wasmShader)
   // 6 stairs with 2 internal interfaces culled per row; gap at x=3 prevents east↔west culling
-  expect(wasm).toBe(58)
-  expect(wasm).toBeLessThan(3 * 11 * 2)
+  expect(wasmShader).toBe(58)
+  expect(wasmShader).toBeLessThan(3 * 11 * 2)
 })
 
 test('culling regression: all stair facings and top half match east baseline', () => {
@@ -271,4 +276,31 @@ test('culling regression: glass/leaves cluster — see-through blocks not over-c
   const world = buildWorld(glassLeavesClusterBlocks())
   // Leaves never occlude; glass self-culls. Baseline locks parity (pre shape-cull guard was 24 legacy-only).
   assertMesherParity(world, 20)
+})
+
+test('shader cubes: dirt UP face culled under farmland', () => {
+  const world = buildWorld([
+    { x: 0, y: 0, z: 0, name: 'dirt' },
+    { x: 0, y: 1, z: 0, name: 'farmland' }
+  ])
+  assertMesherParity(world, 10)
+})
+
+test('shader cubes: dirt DOWN face culled under top slab', () => {
+  const world = buildWorld([
+    { x: 0, y: 0, z: 0, name: 'stone_slab', props: { type: 'top' } },
+    { x: 0, y: 1, z: 0, name: 'dirt' }
+  ])
+  assertMesherParity(world, 10)
+})
+
+test('shader cubes: dirt side not culled beside bottom slab', () => {
+  const world = buildWorld([
+    { x: 0, y: 0, z: 0, name: 'dirt' },
+    { x: 1, y: 0, z: 0, name: 'stone_slab', props: { type: 'bottom' } }
+  ])
+  const legacy = countQuadsFromLegacy(world)
+  const wasmShader = countQuadsFromWasm(world, true)
+  expect(wasmShader).toBe(legacy)
+  expect(wasmShader).toBeGreaterThan(5)
 })

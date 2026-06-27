@@ -304,6 +304,8 @@ export type BuildShaderCubeInstancesOpts = {
    * diagonal flip — matches legacy render-from-wasm path.
    */
   doAO?: boolean
+  /** Bitmask of faces to skip (same indices as visible_faces: 0=up … 5=north). */
+  forceCullMask?: number
 }
 
 /**
@@ -317,7 +319,7 @@ export function tryBuildShaderCubeInstances(
   opts: BuildShaderCubeInstancesOpts,
   words: number[]
 ): boolean {
-  const { sectionOrigin, sectionHeight, biome, tintPalette, textureIndexMapping, doAO = true } = opts
+  const { sectionOrigin, sectionHeight, biome, tintPalette, textureIndexMapping, doAO = true, forceCullMask = 0 } = opts
 
   if (!isShaderCubeBlock(cached, model, sectionHeight, textureIndexMapping)) {
     return false
@@ -336,6 +338,7 @@ export function tryBuildShaderCubeInstances(
   for (const faceName of WASM_FACE_ORDER) {
     const faceIdx = FACE_NAME_TO_INDEX[faceName]
     if ((block.visible_faces & (1 << faceIdx)) === 0) continue
+    if ((forceCullMask & (1 << faceIdx)) !== 0) continue
 
     const faceDataIndex = wasmFaceToDataIndex[faceIdx]
     if (faceDataIndex === undefined) continue
