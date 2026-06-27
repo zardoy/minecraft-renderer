@@ -656,16 +656,7 @@ export function renderWasmOutputToGeometry(
             }
             if (
               neighborStateId !== null &&
-              faceIsCulled(
-                version,
-                element,
-                faceName,
-                neighborStateId,
-                { stateId: blockStateId, name: prismBlock.name },
-                blockProvider,
-                dir,
-                null
-              )
+              faceIsCulled(version, element, faceName, neighborStateId, { stateId: blockStateId, name: prismBlock.name }, blockProvider, dir, null)
             ) {
               forceCullMask |= 1 << faceIdx
             }
