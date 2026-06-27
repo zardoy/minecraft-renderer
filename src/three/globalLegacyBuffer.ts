@@ -643,46 +643,6 @@ export class GlobalLegacyBuffer {
     if (uf?.value?.set) uf.value.set(cameraOriginFrac.x, cameraOriginFrac.y, cameraOriginFrac.z)
   }
 
-  raycastSections(raycaster: THREE.Raycaster, sectionKeys: Iterable<string>, out: THREE.Intersection[]): THREE.Intersection[] {
-    const ray = raycaster.ray
-    const closest = raycaster.near
-    const far = raycaster.far
-    _raycastOrigin.copy(ray.origin).sub(_raycastRenderOrigin.set(this.renderOrigin.x, this.renderOrigin.y, this.renderOrigin.z))
-    _raycastRay.origin.copy(_raycastOrigin)
-    _raycastRay.direction.copy(ray.direction)
-
-    for (const key of sectionKeys) {
-      const slot = this.sectionSlots.get(key)
-      if (!slot) continue
-
-      const dstVertBase = slot.start * VERTS_PER_QUAD
-      const dstFloatBase = dstVertBase * FLOATS_PER_VERT
-      const dstIndexBase = slot.start * INDICES_PER_QUAD
-      const indexLen = slot.count * INDICES_PER_QUAD
-
-      for (let i = 0; i < indexLen; i += 3) {
-        const i0 = this.indices[dstIndexBase + i]!
-        const i1 = this.indices[dstIndexBase + i + 1]!
-        const i2 = this.indices[dstIndexBase + i + 2]!
-        if (i0 === i1 && i1 === i2) continue
-
-        const hit = intersectTriangle(_raycastRay, this.positions, this.aOrigin, dstFloatBase, i0, i1, i2, closest, far)
-        if (hit !== null) {
-          out.push({
-            distance: hit,
-            point: ray.at(hit, new THREE.Vector3()),
-            object: this.mesh,
-            face: null,
-            faceIndex: Math.floor(i / 3)
-          })
-        }
-      }
-    }
-
-    out.sort((a, b) => a.distance - b.distance)
-    return out
-  }
-
   getHighWatermark(): number {
     return this.highWatermark
   }
@@ -978,71 +938,4 @@ export class GlobalLegacyBuffer {
 
     this.pendingRanges.length = 0
   }
-}
-
-const _vA = new THREE.Vector3()
-const _vB = new THREE.Vector3()
-const _vC = new THREE.Vector3()
-const _edge1 = new THREE.Vector3()
-const _edge2 = new THREE.Vector3()
-const _normal = new THREE.Vector3()
-const _raycastOrigin = new THREE.Vector3()
-const _raycastRenderOrigin = new THREE.Vector3()
-const _raycastRay = new THREE.Ray()
-
-function readWorldVertex(positions: Float32Array, aOrigin: Float32Array, floatBase: number, vertIndex: number, target: THREE.Vector3): void {
-  const f = floatBase + vertIndex * FLOATS_PER_VERT
-  target.set(aOrigin[f]! + positions[f]!, aOrigin[f + 1]! + positions[f + 1]!, aOrigin[f + 2]! + positions[f + 2]!)
-}
-
-function intersectTriangle(
-  ray: THREE.Ray,
-  positions: Float32Array,
-  aOrigin: Float32Array,
-  floatBase: number,
-  i0: number,
-  i1: number,
-  i2: number,
-  near: number,
-  far: number
-): number | null {
-  readWorldVertex(positions, aOrigin, floatBase, i0, _vA)
-  readWorldVertex(positions, aOrigin, floatBase, i1, _vB)
-  readWorldVertex(positions, aOrigin, floatBase, i2, _vC)
-
-  _edge1.subVectors(_vB, _vA)
-  _edge2.subVectors(_vC, _vA)
-  _normal.crossVectors(_edge1, _edge2)
-
-  const denom = _normal.dot(ray.direction)
-  if (Math.abs(denom) < 1e-8) return null
-
-  const t = _vA.clone().sub(ray.origin).dot(_normal) / denom
-  if (t < near || t > far) return null
-
-  const p = ray.at(t, new THREE.Vector3())
-  if (!pointInTriangle(p, _vA, _vB, _vC)) return null
-  return t
-}
-
-function pointInTriangle(p: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3): boolean {
-  _edge1.subVectors(b, a)
-  _edge2.subVectors(c, a)
-  const n = _normal.crossVectors(_edge1, _edge2).normalize()
-
-  const ab = _edge1
-  const ac = _edge2
-  const ap = p.clone().sub(a)
-
-  const d00 = ab.dot(ab)
-  const d01 = ab.dot(ac)
-  const d11 = ac.dot(ac)
-  const d20 = ap.dot(ab)
-  const d21 = ap.dot(ac)
-  const denom = d00 * d11 - d01 * d01
-  if (Math.abs(denom) < 1e-12) return false
-  const v = (d11 * d20 - d01 * d21) / denom
-  const w = (d00 * d21 - d01 * d20) / denom
-  const u = 1 - v - w
-  return u >= -1e-4 && v >= -1e-4 && w >= -1e-4
 }

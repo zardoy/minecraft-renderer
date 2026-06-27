@@ -32,6 +32,7 @@ import { FireworksManager } from './fireworks'
 import { SceneOrigin } from './sceneOrigin'
 import { downloadWorldGeometry } from './worldGeometryExport'
 import { ChunkMeshManager } from './chunkMeshManager'
+import { raycastVoxelSolid } from './thirdPersonVoxelRaycast'
 import type { RendererModuleManifest, RegisteredModule, RendererModuleController } from './rendererModuleSystem'
 import { BUILTIN_MODULES } from './modules/index'
 import { formatPerformanceFactorsDebug, PerformanceMonitor } from '../performanceMonitor'
@@ -148,7 +149,6 @@ export class WorldRendererThree extends WorldRendererCommon {
   private readonly _tpScenePos = new THREE.Vector3()
   private readonly _tpAxisX = new THREE.Vector3(1, 0, 0)
   private readonly _tpAxisY = new THREE.Vector3(0, 1, 0)
-  private readonly _tpRaycaster = new THREE.Raycaster()
   private readonly _tpChunkWorldPos = new THREE.Vector3()
 
   get tilesRendered() {
@@ -787,6 +787,10 @@ export class WorldRendererThree extends WorldRendererCommon {
           text += `LEG-B: ${formatCompact(s.used)}/${formatCompact(s.capacity)}q `
         }
         text += `MEM: ${this.chunkMeshManager.getEstimatedMemoryUsage().total} `
+        const camCollisionBytes = this.cameraCollisionBlockCache.getAllocatedBytes()
+        if (camCollisionBytes > 0) {
+          text += `CAM: ${formatCompact(camCollisionBytes)}b `
+        }
         const pf = formatPerformanceFactorsDebug(this.reactiveState.world.instabilityFactors)
         if (pf) text += `PF: ${pf} `
         // entities can be seen in F3
@@ -1005,50 +1009,36 @@ export class WorldRendererThree extends WorldRendererCommon {
       this.debugRaycast(pos, direction, distance)
     }
 
-    const raycaster = this._tpRaycaster
-    raycaster.set(pos, direction)
-    raycaster.far = distance
+    /** Swept-sphere radius for third-person camera collision (baked into voxel AABB expansion). */
+    const CAMERA_COLLISION_RADIUS = 0.25
+    /** Hard floor only guards zero/negative; never clamp up past a hit distance. */
+    const MIN_CAMERA_DISTANCE = 0.05
+    /** Eye→camera minimum so the lens stays outside the player head when a wall squeeze would pull closer. */
+    const MIN_THIRD_PERSON_BODY_CLEARANCE = 0.4
 
-    const maxCenterDistance = 80
-    const maxCenterDistSq = maxCenterDistance * maxCenterDistance
-    const ox = pos.x
-    const oy = pos.y
-    const oz = pos.z
-
-    // Legacy section meshes: world-space raycast (static mesh.matrix translation).
-    const legacyMeshes: THREE.Object3D[] = []
-    for (const obj of Object.values(this.sectionObjects)) {
-      if (obj.name !== 'chunk' || !obj.visible) continue
-      if (obj.worldX === undefined) continue
-      const dcx = obj.worldX - ox
-      const dcy = obj.worldY! - oy
-      const dcz = obj.worldZ! - oz
-      if (dcx * dcx + dcy * dcy + dcz * dcz > maxCenterDistSq) continue
-      const mesh = obj.children.find(child => child.name === 'mesh')
-      if (mesh) legacyMeshes.push(mesh)
-    }
-
-    const intersects = raycaster.intersectObjects(legacyMeshes, false)
+    const blockCache = this.cameraCollisionBlockCache
+    const voxelHit = raycastVoxelSolid(
+      pos.x,
+      pos.y,
+      pos.z,
+      direction.x,
+      direction.y,
+      direction.z,
+      distance,
+      CAMERA_COLLISION_RADIUS,
+      MIN_CAMERA_DISTANCE,
+      (bx, by, bz) => blockCache.isSolidBlock(bx, by, bz)
+    )
 
     let finalDistance = distance
-    if (intersects.length > 0) {
-      finalDistance = Math.max(0.5, intersects[0].distance - 0.2)
+    if (voxelHit !== undefined) {
+      finalDistance = Math.min(finalDistance, voxelHit.distance)
+    }
+    if (finalDistance < MIN_THIRD_PERSON_BODY_CLEARANCE) {
+      finalDistance = MIN_THIRD_PERSON_BODY_CLEARANCE
     }
 
-    // Shader cubes in global buffer: tight per-section AABBs (no mesh raycast).
-    const boxHit = this.chunkMeshManager.raycastShaderSectionAABBs(pos, direction, finalDistance, maxCenterDistance)
-    if (boxHit !== undefined) {
-      finalDistance = Math.max(0.5, boxHit - 0.2)
-    }
-
-    const legacyGlobalHit = this.chunkMeshManager.raycastGlobalLegacySections(raycaster, pos, maxCenterDistance)
-    if (legacyGlobalHit !== undefined) {
-      finalDistance = Math.max(0.5, legacyGlobalHit - 0.2)
-    }
-
-    const finalPos = new Vec3(pos.x + direction.x * finalDistance, pos.y + direction.y * finalDistance, pos.z + direction.z * finalDistance)
-
-    return finalPos
+    return new Vec3(pos.x + direction.x * finalDistance, pos.y + direction.y * finalDistance, pos.z + direction.z * finalDistance)
   }
 
   private debugRaycastHelper?: THREE.ArrowHelper

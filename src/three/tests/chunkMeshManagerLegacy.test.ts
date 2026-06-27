@@ -295,36 +295,6 @@ test('ChunkMeshManager: invalid blend geometry falls back to pooled mesh', () =>
   manager.dispose()
 })
 
-test('ChunkMeshManager: raycastGlobalLegacySections rejects off-ray sections within center distance', () => {
-  const manager = createManager()
-  const onRayKey = '0,0,0'
-  const offRayKey = '0,2,0'
-
-  manager.updateSection(onRayKey, makeBlendOnlyGeometry())
-
-  const offRayGeo = makeBlendOnlyGeometry()
-  offRayGeo.sz = 40
-  manager.updateSection(offRayKey, offRayGeo)
-
-  expect(manager.globalLegacyBlendBuffer?.hasSection(onRayKey)).toBe(true)
-  expect(manager.globalLegacyBlendBuffer?.hasSection(offRayKey)).toBe(true)
-  expect(manager.sectionObjects[offRayKey]?.worldZ).toBe(40)
-
-  const origin = new THREE.Vector3(4, 8, 8)
-  const direction = new THREE.Vector3(1, 0, 0).normalize()
-  const raycaster = new THREE.Raycaster(origin, direction)
-  raycaster.far = 4
-
-  const hit = manager.raycastGlobalLegacySections(raycaster, origin, 80)
-  expect(hit).toBeDefined()
-  expect(hit!).toBeGreaterThan(2)
-  expect(hit!).toBeLessThan(4)
-
-  manager.cleanupSection(onRayKey)
-  manager.cleanupSection(offRayKey)
-  manager.dispose()
-})
-
 test('ChunkMeshManager: mixed opaque and blend route to separate global buffers', () => {
   const manager = createManager()
   const key = '0,0,0'

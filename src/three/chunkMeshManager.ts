@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import * as nbt from 'prismarine-nbt'
 import { Vec3 } from 'vec3'
 import { MesherGeometryOutput } from '../mesher-shared/shared'
-import { getShaderCubeResources, SHADER_CUBES_WORDS_PER_FACE } from '../wasm-mesher/bridge/shaderCubeBridge'
+import { getShaderCubeResources } from '../wasm-mesher/bridge/shaderCubeBridge'
 import {
   createCubeBlockMaterial,
   computeSectionOriginRel,
@@ -21,19 +21,12 @@ import {
   setLegacyLightmapParams,
   type RenderOrigin
 } from './shaders/legacyBlockShader'
-import { LEGACY_SECTION_HALF_EXTENT, sectionIntersectsFrustum, setupLegacySectionMatrix, updateLegacySectionCullState } from './legacySectionCull'
+import { sectionIntersectsFrustum, setupLegacySectionMatrix, updateLegacySectionCullState } from './legacySectionCull'
 import { createShaderCubeMesh, disposeShaderCubeMesh } from './shaderCubeMesh'
 import { GlobalBlockBuffer } from './globalBlockBuffer'
 import { buildVisibleCubeSpans } from './cubeDrawSpans'
 import { GlobalLegacyBuffer, type LegacySectionGeometry } from './globalLegacyBuffer'
-import {
-  computeShaderSectionRaycastAabb,
-  isPointInsideAabb,
-  raycastAabb,
-  raycastShaderBlocksAabb,
-  sectionAabbIntersectsRay,
-  type ShaderSectionRaycastEntry
-} from './sectionRaycastAabb'
+import { computeShaderSectionRaycastAabb, type ShaderSectionRaycastEntry } from './sectionRaycastAabb'
 import { getMesh } from './entity/EntityMesh'
 import type { WorldRendererThree } from './worldRendererThree'
 import { armorModel } from './entity/armorModels'
@@ -169,11 +162,8 @@ export class ChunkMeshManager {
   globalBlockBuffer: GlobalBlockBuffer | null = null
   globalLegacyBuffer: GlobalLegacyBuffer | null = null
   globalLegacyBlendBuffer: GlobalLegacyBuffer | null = null
-  /** Tight world AABBs for third-person raycast; block word0 read from GlobalBlockBuffer or deferred. */
+  /** Tight world AABBs for shader-cube frustum culling (section centers). */
   private readonly shaderSectionRaycastBoxes = new Map<string, ShaderSectionRaycastEntry>()
-  /** Per-raycast block dedup; safe while the eye is inside at most one section aggregate AABB per call. */
-  private readonly blockRaycastVisitGen = new Uint16Array(4096)
-  private blockRaycastVisitStamp = 1
 
   // Performance tracking
   private hits = 0
@@ -737,35 +727,6 @@ export class ChunkMeshManager {
     this.markCullDirty()
   }
 
-  raycastGlobalLegacySections(raycaster: THREE.Raycaster, origin: THREE.Vector3, maxCenterDistance: number): number | undefined {
-    const maxDistSq = maxCenterDistance * maxCenterDistance
-    const dirX = raycaster.ray.direction.x
-    const dirY = raycaster.ray.direction.y
-    const dirZ = raycaster.ray.direction.z
-    const far = raycaster.far
-    const halfExtent = LEGACY_SECTION_HALF_EXTENT + 0.01
-    const candidates: string[] = []
-    for (const [key] of this.legacyCullSections) {
-      const section = this.sectionObjects[key]
-      if (!section || section.worldX === undefined) continue
-      const dx = section.worldX - origin.x
-      const dy = (section.worldY ?? 0) - origin.y
-      const dz = (section.worldZ ?? 0) - origin.z
-      if (dx * dx + dy * dy + dz * dz > maxDistSq) continue
-      if (!sectionAabbIntersectsRay(section.worldX, section.worldY ?? 0, section.worldZ ?? 0, origin.x, origin.y, origin.z, dirX, dirY, dirZ, far, halfExtent))
-        continue
-      candidates.push(key)
-    }
-
-    if (candidates.length === 0) return undefined
-
-    const hits: THREE.Intersection[] = []
-    this.globalLegacyBuffer?.raycastSections(raycaster, candidates, hits)
-    this.globalLegacyBlendBuffer?.raycastSections(raycaster, candidates, hits)
-
-    return hits[0]?.distance
-  }
-
   registerShaderSectionRaycastBox(
     sectionKey: string,
     words: Uint32Array,
@@ -789,91 +750,6 @@ export class ChunkMeshManager {
 
   unregisterShaderSectionRaycastBox(sectionKey: string): void {
     this.shaderSectionRaycastBoxes.delete(sectionKey)
-  }
-
-  /** Closest hit against registered shader-cube AABBs (world-space ray). */
-  raycastShaderSectionAABBs(originWorld: THREE.Vector3, direction: THREE.Vector3, maxDist: number, maxCenterDistance = 80): number | undefined {
-    const ox = originWorld.x
-    const oy = originWorld.y
-    const oz = originWorld.z
-    const dx = direction.x
-    const dy = direction.y
-    const dz = direction.z
-    const maxCenterDistSq = maxCenterDistance * maxCenterDistance
-
-    let closest = maxDist
-    let found = false
-
-    this.blockRaycastVisitStamp++
-    if (this.blockRaycastVisitStamp >= 65535) {
-      this.blockRaycastVisitGen.fill(0)
-      this.blockRaycastVisitStamp = 1
-    }
-
-    for (const [key, entry] of this.shaderSectionRaycastBoxes) {
-      const section = this.sectionObjects[key]
-      if (section && !section.visible) continue
-
-      const { box } = entry
-      const dcx = box.cx - ox
-      const dcy = box.cy - oy
-      const dcz = box.cz - oz
-      if (dcx * dcx + dcy * dcy + dcz * dcz > maxCenterDistSq) continue
-
-      let t = raycastAabb(ox, oy, oz, dx, dy, dz, box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ, closest)
-      if (t === undefined && isPointInsideAabb(ox, oy, oz, box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ)) {
-        const gb = this.globalBlockBuffer
-        const slot = gb?.getSectionSlot(key)
-        if (gb && slot) {
-          t = raycastShaderBlocksAabb(
-            gb.getW0(),
-            slot.start,
-            slot.count,
-            1,
-            entry.sectionCenterX,
-            entry.sectionCenterY,
-            entry.sectionCenterZ,
-            ox,
-            oy,
-            oz,
-            dx,
-            dy,
-            dz,
-            closest,
-            this.blockRaycastVisitGen,
-            this.blockRaycastVisitStamp
-          )
-        } else {
-          const def = this.sectionObjects[key]?.deferredShaderCubes
-          if (def) {
-            t = raycastShaderBlocksAabb(
-              def.words,
-              0,
-              def.count,
-              SHADER_CUBES_WORDS_PER_FACE,
-              entry.sectionCenterX,
-              entry.sectionCenterY,
-              entry.sectionCenterZ,
-              ox,
-              oy,
-              oz,
-              dx,
-              dy,
-              dz,
-              closest,
-              this.blockRaycastVisitGen,
-              this.blockRaycastVisitStamp
-            )
-          }
-        }
-      }
-      if (t !== undefined && t < closest) {
-        closest = t
-        found = true
-      }
-    }
-
-    return found ? closest : undefined
   }
 
   /**
