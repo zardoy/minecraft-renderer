@@ -31,6 +31,7 @@ import { generateSpiralMatrix } from './spiral'
 import { PlayerStateReactive } from '../playerState/playerState'
 import { IndexedData } from 'minecraft-data'
 import { WorldRendererConfig } from '../graphicsBackend/config'
+import { CameraCollisionBlockCache } from '../three/cameraCollisionBlockCache'
 
 function mod(x, n) {
   return ((x % n) + n) % n
@@ -42,6 +43,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   timeOfTheDay = 0
   lastMesherSkyLight = 15
   worldSizeParams = { minY: 0, worldHeight: 256 }
+  /** Block columns for third-person voxel DDA (renderer thread). */
+  cameraCollisionBlockCache: CameraCollisionBlockCache
   reactiveDebugParams = proxy({
     stopRendering: false,
     chunksRenderAboveOverride: undefined as number | undefined,
@@ -215,6 +218,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     public displayOptions: DisplayWorldOptions,
     public initOptions: GraphicsInitOptions
   ) {
+    this.cameraCollisionBlockCache = new CameraCollisionBlockCache(this.displayOptions.version)
     this.snapshotInitialValues()
     this.worldRendererConfig = displayOptions.inWorldRenderingConfig
     this.playerStateReactive = displayOptions.playerStateReactive!
@@ -891,6 +895,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         `-> chunk ${JSON.stringify({ x, z, chunkLength: chunk.length, customBlockModelsLength: customBlockModels ? Object.keys(customBlockModels).length : 0 })}`
     )
     this.mesherLogReader?.chunkReceived(x, z, chunk.length)
+    this.cameraCollisionBlockCache.ingestColumn(x, z, chunk)
     const sectionHeight = this.getSectionHeight()
     const CHUNK_SIZE = 16
 
@@ -959,6 +964,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       delete this.finishedSections[sectionKey]
     }
     this.highestBlocksByChunks.delete(`${x},${z}`)
+    this.cameraCollisionBlockCache.removeColumn(x, z)
     const heightmapKey = `${Math.floor(x / 16)},${Math.floor(z / 16)}`
     delete this.reactiveState.world.heightmaps[heightmapKey]
 
@@ -1035,6 +1041,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       'loadChunk',
       ({ x, z, chunk, worldConfig, isLightUpdate }) => {
         this.worldSizeParams = worldConfig
+        this.cameraCollisionBlockCache.setWorldBounds(worldConfig.minY, worldConfig.worldHeight)
         this.queuedChunks.add(`${x},${z}`)
         const args = [x, z, chunk, isLightUpdate]
         if (!currentLoadChunkBatch) {
@@ -1138,6 +1145,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       worldEmitter,
       'onWorldSwitch',
       () => {
+        this.cameraCollisionBlockCache.clear()
         for (const fn of this.onWorldSwitched) {
           try {
             fn()
@@ -1228,6 +1236,9 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       }
     }
     this.logWorkerWork(`-> blockUpdate ${JSON.stringify({ pos, stateId, customBlockModels })}`)
+    if (stateId !== undefined) {
+      this.cameraCollisionBlockCache.setBlockStateId(pos.x, pos.y, pos.z, stateId)
+    }
     this.setSectionDirty(pos, true, true)
     if (this.neighborChunkUpdates) {
       const CHUNK_SIZE = 16
