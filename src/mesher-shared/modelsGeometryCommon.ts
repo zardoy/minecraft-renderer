@@ -87,6 +87,28 @@ export function matmulmat3(a, b) {
   return te
 }
 
+export function buildElementRotation(rotation) {
+  let localMatrix = buildRotationMatrix(rotation.axis, rotation.angle)
+  let localShift = vecsub3(rotation.origin, matmul3(localMatrix, rotation.origin))
+
+  if (rotation.rescale) {
+    const FIT_TO_BLOCK_SCALE_MULTIPLIER = 2 - Math.sqrt(2)
+    const angleRad = (rotation.angle * Math.PI) / 180
+    const scale = Math.abs(Math.sin(angleRad)) * FIT_TO_BLOCK_SCALE_MULTIPLIER
+    const axisX = rotation.axis === 'x' ? 1 : 0
+    const axisY = rotation.axis === 'y' ? 1 : 0
+    const axisZ = rotation.axis === 'z' ? 1 : 0
+    const scaleMatrix = [
+      [(1 - axisX) * scale + 1, 0, 0],
+      [0, (1 - axisY) * scale + 1, 0],
+      [0, 0, (1 - axisZ) * scale + 1]
+    ]
+    localMatrix = matmulmat3(localMatrix, scaleMatrix)
+    localShift = vecsub3(rotation.origin, matmul3(localMatrix, rotation.origin))
+  }
+  return { localMatrix, localShift }
+}
+
 export const elemFaces = {
   up: {
     dir: [0, 1, 0],

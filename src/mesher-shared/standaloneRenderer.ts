@@ -4,7 +4,7 @@ import { Block } from 'prismarine-block'
 import { IndexedData } from 'minecraft-data'
 import * as THREE from 'three'
 import { BlockModelPartsResolved } from './world'
-import { BlockElement, buildRotationMatrix, elemFaces, matmul3, matmulmat3, vecadd3, vecsub3 } from './modelsGeometryCommon'
+import { BlockElement, buildElementRotation, buildRotationMatrix, elemFaces, matmul3, matmulmat3, vecadd3, vecsub3 } from './modelsGeometryCommon'
 
 type NeighborSide = 'up' | 'down' | 'east' | 'west' | 'north' | 'south'
 
@@ -77,10 +77,7 @@ function renderElement(element: BlockElement, doAO: boolean, attr, globalMatrix,
     let localShift = null as any
 
     if (element.rotation) {
-      // todo do we support rescale?
-      localMatrix = buildRotationMatrix(element.rotation.axis, element.rotation.angle)
-
-      localShift = vecsub3(element.rotation.origin, matmul3(localMatrix, element.rotation.origin))
+      ;({ localMatrix, localShift } = buildElementRotation(element.rotation))
     }
 
     const aos: number[] = []

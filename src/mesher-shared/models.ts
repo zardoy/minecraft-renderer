@@ -3,7 +3,7 @@ import worldBlockProvider, { WorldBlockProvider } from 'mc-assets/dist/worldBloc
 import moreBlockDataGeneratedJson from '../lib/moreBlockDataGenerated.json'
 import { BlockType } from '../playground/shared'
 import { World, BlockModelPartsResolved, WorldBlock as Block, WorldBlock, worldColumnKey } from './world'
-import { BlockElement, buildRotationMatrix, elemFaces, matmul3, matmulmat3, vecadd3, vecsub3 } from './modelsGeometryCommon'
+import { BlockElement, buildElementRotation, buildRotationMatrix, elemFaces, matmul3, matmulmat3, vecadd3, vecsub3 } from './modelsGeometryCommon'
 import { getSideShading } from './vertexShading'
 import { INVISIBLE_BLOCKS } from './worldConstants'
 import { MesherGeometryOutput, HighestBlockInfo } from './shared'
@@ -341,35 +341,7 @@ function renderElement(
     let localShift = null as any
 
     if (element.rotation && !needTiles) {
-      // Rescale support for block model rotations
-      localMatrix = buildRotationMatrix(element.rotation.axis, element.rotation.angle)
-
-      localShift = vecsub3(element.rotation.origin, matmul3(localMatrix, element.rotation.origin))
-
-      // Apply rescale if specified
-      if (element.rotation.rescale) {
-        const FIT_TO_BLOCK_SCALE_MULTIPLIER = 2 - Math.sqrt(2)
-        const angleRad = (element.rotation.angle * Math.PI) / 180
-        const scale = Math.abs(Math.sin(angleRad)) * FIT_TO_BLOCK_SCALE_MULTIPLIER
-
-        // Get axis vector components (1 for the rotation axis, 0 for others)
-        const axisX = element.rotation.axis === 'x' ? 1 : 0
-        const axisY = element.rotation.axis === 'y' ? 1 : 0
-        const axisZ = element.rotation.axis === 'z' ? 1 : 0
-
-        // Create scale matrix: scale = (1 - axisComponent) * scaleFactor + 1
-        const scaleMatrix = [
-          [(1 - axisX) * scale + 1, 0, 0],
-          [0, (1 - axisY) * scale + 1, 0],
-          [0, 0, (1 - axisZ) * scale + 1]
-        ]
-
-        // Apply scaling to the transformation matrix
-        localMatrix = matmulmat3(localMatrix, scaleMatrix)
-
-        // Recalculate shift with the new matrix
-        localShift = vecsub3(element.rotation.origin, matmul3(localMatrix, element.rotation.origin))
-      }
+      ;({ localMatrix, localShift } = buildElementRotation(element.rotation))
     }
 
     const aos: number[] = []

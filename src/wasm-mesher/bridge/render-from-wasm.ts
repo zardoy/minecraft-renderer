@@ -8,7 +8,7 @@ import blockStatesModels from 'mc-assets/dist/blockStatesModels.json'
 import MinecraftData from 'minecraft-data'
 import PrismarineBlockLoader from 'prismarine-block'
 import { Vec3 } from 'vec3'
-import { elemFaces, buildRotationMatrix, matmul3, matmulmat3, vecadd3, vecsub3 } from '../../mesher-shared/modelsGeometryCommon'
+import { elemFaces, buildElementRotation, buildRotationMatrix, matmul3, matmulmat3, vecadd3, vecsub3 } from '../../mesher-shared/modelsGeometryCommon'
 import type { ExportedWorldGeometry, ExportedSection } from '../../mesher-shared/exportedGeometryTypes'
 import type { MesherGeometryOutput } from '../../mesher-shared/shared'
 import { bakeLegacyVertexColors } from '../../lib/bakeLegacyLight'
@@ -289,8 +289,7 @@ function getCachedBlockModel(
             let localMatrix = null as any
             let localShift = null as any
             if (element.rotation) {
-              localMatrix = buildRotationMatrix(element.rotation.axis, element.rotation.angle)
-              localShift = vecsub3(element.rotation.origin, matmul3(localMatrix, element.rotation.origin))
+              ;({ localMatrix, localShift } = buildElementRotation(element.rotation))
             }
             return { element, localMatrix, localShift }
           })
@@ -754,8 +753,7 @@ export function renderWasmOutputToGeometry(
         let localMatrix = null as any
         let localShift = null as any
         if (element.rotation) {
-          localMatrix = buildRotationMatrix(element.rotation.axis, element.rotation.angle)
-          localShift = vecsub3(element.rotation.origin, matmul3(localMatrix, element.rotation.origin))
+          ;({ localMatrix, localShift } = buildElementRotation(element.rotation))
         }
 
         // eslint-disable-next-line guard-for-in
