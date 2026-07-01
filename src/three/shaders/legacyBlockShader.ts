@@ -227,7 +227,7 @@ export function createGlobalLegacyBlendMaterial(): THREE.ShaderMaterial {
     fragmentShader,
     uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, legacyUniforms]),
     transparent: true,
-    depthWrite: true,
+    depthWrite: false,
     depthTest: true,
     vertexColors: true,
     glslVersion: THREE.GLSL3,

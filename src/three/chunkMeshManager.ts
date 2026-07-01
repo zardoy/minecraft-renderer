@@ -158,6 +158,11 @@ export class ChunkMeshManager {
   private readonly _lastCullCamQuat = new THREE.Quaternion()
   private readonly _cullViewQuat = new THREE.Quaternion()
   private _cullCamInitialized = false
+  /** Visible blend section keys from last cull pass — used by per-quad blend sort. */
+  private _visibleBlendKeys: string[] = []
+  private readonly _lastBlendSortPos = new THREE.Vector3()
+  private _lastBlendSortLayoutVersion = -1
+  private _blendSortPosInitialized = false
   /** One instanced mesh for all shader-cube faces (single draw call). */
   globalBlockBuffer: GlobalBlockBuffer | null = null
   globalLegacyBuffer: GlobalLegacyBuffer | null = null
@@ -458,6 +463,7 @@ export class ChunkMeshManager {
     const blendVisible = visible.filter(v => blendBuf?.hasSection(v.key))
     blendVisible.sort((a, b) => b.distSq - a.distSq)
     const blendKeys = blendVisible.map(v => v.key)
+    this._visibleBlendKeys = blendKeys
 
     const cubeVisibleKeys: string[] = []
     const visibleSlots: Array<{ start: number; count: number }> = []
@@ -529,6 +535,33 @@ export class ChunkMeshManager {
 
     this.lastBufferStateKey = this.bufferStateKey()
     this.updatePooledLegacyCullState(cameraWorldX, cameraWorldY, cameraWorldZ)
+  }
+
+  private static readonly BLEND_RESORT_DISTANCE = 1.0
+
+  /** Per-quad back-to-front reorder within visible blend sections; throttled by camera translation. */
+  sortVisibleBlendSections(camX: number, camY: number, camZ: number): void {
+    const blendBuf = this.globalLegacyBlendBuffer
+    if (!blendBuf || this._visibleBlendKeys.length === 0) return
+
+    const layoutVersion = blendBuf.getLayoutVersion()
+    const layoutChanged = layoutVersion !== this._lastBlendSortLayoutVersion
+    if (this._blendSortPosInitialized && !layoutChanged) {
+      const dx = camX - this._lastBlendSortPos.x
+      const dy = camY - this._lastBlendSortPos.y
+      const dz = camZ - this._lastBlendSortPos.z
+      if (dx * dx + dy * dy + dz * dz < ChunkMeshManager.BLEND_RESORT_DISTANCE * ChunkMeshManager.BLEND_RESORT_DISTANCE) {
+        return
+      }
+    }
+
+    for (const key of this._visibleBlendKeys) {
+      blendBuf.reorderSectionBlendIndices(key, camX, camY, camZ)
+    }
+
+    this._lastBlendSortPos.set(camX, camY, camZ)
+    this._blendSortPosInitialized = true
+    this._lastBlendSortLayoutVersion = layoutVersion
   }
 
   private bufferStateKey(): string {

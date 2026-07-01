@@ -1326,11 +1326,13 @@ export class WorldRendererThree extends WorldRendererCommon {
       globalLegacyBuffer.suppressThreeDraw()
     }
     const globalLegacyBlendBuffer = this.chunkMeshManager.globalLegacyBlendBuffer
+    let didBlendAllAttrUpload = false
     if (globalLegacyBlendBuffer) {
       globalLegacyBlendBuffer.setDebugOverlay(this.displayOptions.inWorldRenderingConfig.enableDebugOverlay)
       globalLegacyBlendBuffer.compactStep()
       if (globalLegacyBlendBuffer.hasPendingUploads()) {
         globalLegacyBlendBuffer.uploadDirtyRange()
+        didBlendAllAttrUpload = true
       }
       globalLegacyBlendBuffer.suppressThreeDraw()
     }
@@ -1340,6 +1342,10 @@ export class WorldRendererThree extends WorldRendererCommon {
     if (this.chunkMeshManager.cullDirty) {
       this.chunkMeshManager.updateSectionCullAndSort(cam, this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z)
       this.chunkMeshManager.clearCullDirty()
+    }
+    this.chunkMeshManager.sortVisibleBlendSections(camX, camY, camZ)
+    if (!didBlendAllAttrUpload && globalLegacyBlendBuffer?.hasPendingIndexUploads()) {
+      globalLegacyBlendBuffer.uploadDirtyIndexRange()
     }
     this.renderer.render(this.scene, cam)
 

@@ -21,8 +21,30 @@ function makeQuadGeometry(): {
   }
 }
 
+/** Two quads along +Z: quad 0 centered at z=0, quad 1 centered at z=8. */
+function makeTwoQuadGeometry(): {
+  positions: Float32Array
+  colors: Float32Array
+  skyLights: Float32Array
+  blockLights: Float32Array
+  uvs: Float32Array
+  indices: Uint32Array
+} {
+  return {
+    positions: new Float32Array([-1, 0, -1, 1, 0, -1, 1, 0, 1, -1, 0, 1, -1, 0, 7, 1, 0, 7, 1, 0, 9, -1, 0, 9]),
+    colors: new Float32Array(24).fill(1),
+    skyLights: new Float32Array(8).fill(1),
+    blockLights: new Float32Array(8).fill(0),
+    uvs: new Float32Array(16).fill(0),
+    indices: new Uint32Array([0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 5, 6])
+  }
+}
+
 type BufferInternals = {
   pendingRanges: Array<{ start: number; end: number }>
+  indexPendingRanges: Array<{ start: number; end: number }>
+  quadCentroids: Float32Array
+  quadIndexTemplate: Uint8Array
   pendingMove: { key: string; oldStart: number; newStart: number; count: number } | null
   growCapacity: (minQuads: number) => void
 }
@@ -33,6 +55,10 @@ function getInternals(buffer: GlobalLegacyBuffer): BufferInternals {
 
 function drainUploads(buffer: GlobalLegacyBuffer): void {
   while (getInternals(buffer).pendingRanges.length) buffer.uploadDirtyRange()
+}
+
+function drainIndexUploads(buffer: GlobalLegacyBuffer): void {
+  while (buffer.hasPendingIndexUploads()) buffer.uploadDirtyIndexRange()
 }
 
 function finishCurrentMove(buffer: GlobalLegacyBuffer): void {
@@ -755,6 +781,75 @@ test('GlobalLegacyBuffer: suppressThreeDraw uses minimal non-zero draw range', (
   buffer.suppressThreeDraw()
   expect(buffer.mesh.geometry.drawRange.start).toBe(0)
   expect(buffer.mesh.geometry.drawRange.count).toBe(3)
+
+  buffer.dispose()
+  mat.dispose()
+})
+
+test('GlobalLegacyBuffer: reorderSectionBlendIndices sorts quads back-to-front', () => {
+  const scene = new THREE.Scene()
+  const mat = createGlobalLegacyBlockMaterial()
+  const buffer = new GlobalLegacyBuffer(mat, scene)
+  const geo = makeTwoQuadGeometry()
+
+  buffer.addSection('blend', geo, 0, 0, 0)
+  drainUploads(buffer)
+
+  const layoutBefore = buffer.getLayoutVersion()
+  const slot = buffer.getSectionSlot('blend')!
+  const vertBase0 = slot.start * 4
+  const vertBase1 = (slot.start + 1) * 4
+
+  expect(buffer.reorderSectionBlendIndices('blend', 0, 0, -20)).toBe(true)
+  expect(buffer.getLayoutVersion()).toBe(layoutBefore)
+
+  let indices = readSectionIndices(buffer, 'blend')
+  expect(indices.slice(0, 6)).toEqual([vertBase1, vertBase1 + 2, vertBase1 + 1, vertBase1, vertBase1 + 1, vertBase1 + 2])
+  expect(indices.slice(6, 12)).toEqual([vertBase0, vertBase0 + 1, vertBase0 + 2, vertBase0, vertBase0 + 2, vertBase0 + 3])
+
+  expect(buffer.reorderSectionBlendIndices('blend', 0, 0, 20)).toBe(true)
+  indices = readSectionIndices(buffer, 'blend')
+  expect(indices.slice(0, 6)).toEqual([vertBase0, vertBase0 + 1, vertBase0 + 2, vertBase0, vertBase0 + 2, vertBase0 + 3])
+  expect(indices.slice(6, 12)).toEqual([vertBase1, vertBase1 + 2, vertBase1 + 1, vertBase1, vertBase1 + 1, vertBase1 + 2])
+
+  expect(getInternals(buffer).indexPendingRanges.length).toBeGreaterThan(0)
+  drainIndexUploads(buffer)
+  expect(buffer.hasPendingIndexUploads()).toBe(false)
+
+  buffer.dispose()
+  mat.dispose()
+})
+
+test('GlobalLegacyBuffer: blend reorder metadata survives compaction', () => {
+  const scene = new THREE.Scene()
+  const mat = createGlobalLegacyBlockMaterial()
+  const buffer = new GlobalLegacyBuffer(mat, scene)
+  const geo = makeQuadGeometry()
+  const twoGeo = makeTwoQuadGeometry()
+
+  buffer.addSection('a', geo, 0, 0, 0)
+  buffer.addSection('b', geo, 8, 0, 0)
+  buffer.addSection('blend', twoGeo, 16, 0, 0)
+  expect(buffer.getSectionSlot('blend')).toEqual({ start: 2, count: 2 })
+
+  buffer.removeSection('a')
+  buffer.removeSection('b')
+  drainUploads(buffer)
+  buffer.compactStep()
+  finishCurrentMove(buffer)
+
+  const slot = buffer.getSectionSlot('blend')!
+  expect(slot).toEqual({ start: 0, count: 2 })
+
+  const internals = getInternals(buffer)
+  expect(internals.quadCentroids[slot.start * 3 + 2]).toBeCloseTo(0, 5)
+  expect(internals.quadCentroids[(slot.start + 1) * 3 + 2]).toBeCloseTo(8, 5)
+  expect(Array.from(internals.quadIndexTemplate.slice((slot.start + 1) * 6, (slot.start + 1) * 6 + 6))).toEqual([0, 2, 1, 0, 1, 2])
+
+  expect(buffer.reorderSectionBlendIndices('blend', 0, 0, -20)).toBe(true)
+  const vertBase1 = (slot.start + 1) * 4
+  const indices = readSectionIndices(buffer, 'blend')
+  expect(indices[0]).toBe(vertBase1)
 
   buffer.dispose()
   mat.dispose()
