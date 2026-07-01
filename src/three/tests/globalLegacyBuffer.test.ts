@@ -31,10 +31,7 @@ function makeTwoQuadGeometry(): {
   indices: Uint32Array
 } {
   return {
-    positions: new Float32Array([
-      -1, 0, -1, 1, 0, -1, 1, 0, 1, -1, 0, 1,
-      -1, 0, 7, 1, 0, 7, 1, 0, 9, -1, 0, 9
-    ]),
+    positions: new Float32Array([-1, 0, -1, 1, 0, -1, 1, 0, 1, -1, 0, 1, -1, 0, 7, 1, 0, 7, 1, 0, 9, -1, 0, 9]),
     colors: new Float32Array(24).fill(1),
     skyLights: new Float32Array(8).fill(1),
     blockLights: new Float32Array(8).fill(0),
