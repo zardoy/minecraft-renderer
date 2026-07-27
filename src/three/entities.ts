@@ -315,6 +315,7 @@ export class Entities {
   }
 
   handlePlayerEntity(playerData: SceneEntity['originalEntity']) {
+    if (!this.isRenderingAllowed()) return
     // Create player entity if it doesn't exist
     if (!this.playerEntity) {
       // Create the player entity similar to how normal entities are created
@@ -328,7 +329,7 @@ export class Entities {
 
       group.name = 'player_entity'
       this.playerEntity = group
-      this.worldRenderer.scene.add(group)
+      this.syncSceneAttachment(group)
 
       void this.updatePlayerSkin(playerData.id, playerData.username, playerData.uuid ?? undefined, stevePngUrl)
     }
@@ -391,9 +392,27 @@ export class Entities {
   }
 
   setRendering(rendering: boolean, entity: THREE.Object3D | null = null) {
-    this.currentlyRendering = rendering
-    for (const ent of entity ? [entity] : Object.values(this.entities)) {
-      if (rendering) {
+    this.currentlyRendering = rendering && this.isRenderingAllowed()
+    this.setSceneAttached(this.currentlyRendering, entity)
+  }
+
+  isRenderingAllowed(): boolean {
+    return this.worldRenderer.worldRendererConfig.renderEntities !== false && !this.worldRenderer.reactiveDebugParams.disableEntities
+  }
+
+  /** Add or remove entity meshes from the scene (including third-person player). */
+  syncSceneAttachment(entity: THREE.Object3D | null = null): void {
+    const attached = this.isRenderingAllowed()
+    this.currentlyRendering = attached
+    this.setSceneAttached(attached, entity)
+  }
+
+  private setSceneAttached(attached: boolean, entity: THREE.Object3D | null = null): void {
+    const targets = entity
+      ? [entity]
+      : [...Object.values(this.entities), ...(this.playerEntity ? [this.playerEntity] : [])]
+    for (const ent of targets) {
+      if (attached) {
         if (!this.worldRenderer.scene.children.includes(ent)) this.worldRenderer.scene.add(ent)
       } else {
         this.worldRenderer.scene.remove(ent)
@@ -413,10 +432,8 @@ export class Entities {
   }
 
   render() {
-    const renderEntitiesConfig = this.worldRenderer.worldRendererConfig.renderEntities
-    if (renderEntitiesConfig !== this.currentlyRendering) {
-      this.setRendering(renderEntitiesConfig)
-    }
+    this.syncSceneAttachment()
+    if (!this.isRenderingAllowed()) return
 
     this.clock.update(performance.now())
     const dt = Math.min(this.clock.getDelta(), 1 / 30)
@@ -891,6 +908,7 @@ export class Entities {
       delete this.entities[entity.id]
       return
     }
+    if (!this.isRenderingAllowed()) return
 
     let mesh: THREE.Object3D | undefined
     if (e === undefined) {
@@ -984,7 +1002,6 @@ export class Entities {
       group.add(mesh)
       group.add(boxHelper)
       boxHelper.visible = false
-      this.worldRenderer.scene.add(group)
 
       e = group
       e.name = 'entity'
@@ -995,7 +1012,7 @@ export class Entities {
         void this.updatePlayerSkin(entity.id, entity.username, overrides?.texture ? entity.uuid : undefined, overrides?.texture || stevePngUrl)
       }
       this.setDebugMode(this.debugMode, group)
-      this.setRendering(this.currentlyRendering, group)
+      this.syncSceneAttachment(group)
 
       this.afterAddEntity(entity)
     } else {

@@ -21,7 +21,7 @@ export const defaultWorldRendererConfig = {
   futuristicReveal: false,
 
   /** Master toggle for section occlusion graph (smart / cave cull). Disabled in spectator. */
-  smartCull: true,
+  smartCull: false,
 
   // Performance settings
   wasmMesher: true,

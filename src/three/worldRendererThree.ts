@@ -583,6 +583,9 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.onReactiveConfigUpdated('futuristicReveal', () => {
       this.updateModulesFromConfig()
     })
+    this.onReactiveDebugUpdated('disableEntities', () => {
+      this.entities.syncSceneAttachment()
+    })
 
     let currentHandRenderer = this.displayOptions.inWorldRenderingConfig.handRenderer
     this.onReactiveConfigUpdated('handRenderer', value => {
@@ -1362,11 +1365,9 @@ export class WorldRendererThree extends WorldRendererCommon {
       this.chunkMeshManager.clearCullDirty()
     }
     this.chunkMeshManager.updateCaveCullingDebug(this.reactiveDebugParams.caveCullingDebug, smartCull)
-    if (!this.reactiveDebugParams.disableEntities) {
-      const entitiesStart = performance.now()
-      this.entities.render()
-      entitiesRenderMs = performance.now() - entitiesStart
-    }
+    const entitiesStart = performance.now()
+    this.entities.render()
+    entitiesRenderMs = performance.now() - entitiesStart
     this.chunkMeshManager.sortVisibleBlendSections(camX, camY, camZ)
     if (!didBlendAllAttrUpload && globalLegacyBlendBuffer?.hasPendingIndexUploads()) {
       globalLegacyBlendBuffer.uploadDirtyIndexRange()

@@ -56,7 +56,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     disableEntities: false,
     /** Tint section borders by occlusion BFS step (perf debug overlay). */
     caveCullingDebug: false,
-    smartCull: true
+    smartCull: false
     // disableParticles: false
   })
 
