@@ -38,6 +38,11 @@ export function getEntityTweenDurationMs(entity: EntityWithRenderHints | undefin
   return ENTITY_TWEEN_DURATION_MS
 }
 
+/** Rotation follows the same instant-vs-remote policy as entity position. */
+export function getEntityRotationTweenDurationMs(entity: EntityWithRenderHints | undefined, justAdded: boolean): number {
+  return getEntityTweenDurationMs(entity, justAdded)
+}
+
 export function samePosition(a: Vec3Like, b: Vec3Like, epsilon = CAMERA_POSITION_EPSILON): boolean {
   return Math.abs(a.x - b.x) < epsilon && Math.abs(a.y - b.y) < epsilon && Math.abs(a.z - b.z) < epsilon
 }

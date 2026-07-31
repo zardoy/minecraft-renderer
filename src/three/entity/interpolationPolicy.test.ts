@@ -4,6 +4,7 @@ import {
   LOCAL_MOVEMENT_TWEEN_DURATION_MS,
   SPECTATING_CAMERA_TWEEN_DURATION_MS,
   getCameraMovementTweenDurationMs,
+  getEntityRotationTweenDurationMs,
   getEntityTweenDurationMs,
   getHorsePassengerWorldPosition,
   getLocalVehicleWorldPosition,
@@ -102,6 +103,12 @@ test('local vehicle skips position tween', () => {
   expect(usesCameraSyncedVehiclePosition({ renderHints: { localVehicle: true } })).toBe(true)
   expect(getEntityTweenDurationMs({ renderHints: { localVehicle: true } }, false)).toBe(0)
   expect(getEntityTweenDurationMs({ renderHints: { localVehicle: true } }, true)).toBe(0)
+})
+
+test('local vehicle skips rotation tween while remote vehicles keep it', () => {
+  expect(getEntityRotationTweenDurationMs({ renderHints: { localVehicle: true } }, false)).toBe(0)
+  expect(getEntityRotationTweenDurationMs({ renderHints: { localVehicle: false } }, false)).toBe(ENTITY_TWEEN_DURATION_MS)
+  expect(getEntityRotationTweenDurationMs(undefined, true)).toBe(0)
 })
 
 test('locally ridden vehicle camera-sync policy stays separate from server-vehicle mode', () => {

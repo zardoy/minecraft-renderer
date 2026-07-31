@@ -36,6 +36,7 @@ import { processRemoteBoatPassengerRotations, type RemoteBoatPassengerEntity } f
 import {
   ENTITY_TWEEN_DURATION_MS,
   getEntityTweenDurationMs,
+  getEntityRotationTweenDurationMs,
   resolveLocalVehicleWorldPosition,
   type EntityRenderHints,
   type Vec3Like,
@@ -1410,7 +1411,7 @@ export class Entities {
           .start()
       }
     }
-    const rotationTweenDuration = justAdded ? 0 : ENTITY_TWEEN_DURATION_MS
+    const rotationTweenDuration = getEntityRotationTweenDurationMs(entity, justAdded)
     /** World yaw for the whole model: for PlayerObject skins, rotate body to head look dir; head mesh stays yaw-fixed (pitch only). */
     let targetYaw: number | undefined
     if (e.playerObject && overrides?.rotation?.head) {
@@ -1423,10 +1424,16 @@ export class Entities {
       targetYaw = entity.yaw
     }
     if (typeof targetYaw === 'number' && Number.isFinite(targetYaw)) {
-      const dy = shortestYawRadians(e.rotation.y, targetYaw)
       // Stop previous rotation tween to prevent accumulation (mirror _posTween)
       e.userData._rotTween?.stop()
-      e.userData._rotTween = new TWEEN.Tween(e.rotation).to({ y: e.rotation.y + dy }, rotationTweenDuration).start()
+      e.userData._rotTween = undefined
+      const currentYaw = Number.isFinite(e.rotation.y) ? e.rotation.y : 0
+      const dy = shortestYawRadians(currentYaw, targetYaw)
+      if (rotationTweenDuration === 0) {
+        e.rotation.y = currentYaw + dy
+      } else {
+        e.userData._rotTween = new TWEEN.Tween(e.rotation).to({ y: currentYaw + dy }, rotationTweenDuration).start()
+      }
     }
 
     if (e?.playerObject && overrides?.rotation?.head) {
