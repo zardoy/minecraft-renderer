@@ -44,6 +44,17 @@ import {
   isRideableMinecartEntityName
 } from './entity/interpolationPolicy'
 import { getMesh } from './entity/EntityMesh'
+import {
+  HORSE_HEAD_ANIMATION_USER_DATA_KEY,
+  HORSE_HEAD_RIG_USER_DATA_KEY,
+  advanceHorseHeadAnimation,
+  applyHorseHeadPose,
+  calculateHorseHeadPose,
+  createHorseHeadAnimationState,
+  updateHorseHeadAnimationFrame,
+  type HorseHeadAnimationState,
+  type HorseHeadRig
+} from './entity/horseHeadAnimation'
 import { WalkingGeneralSwing } from './entity/animations'
 import { disposeObject, loadNearestFilterTexture, loadTexture, loadThreeJsTextureFromUrl } from './threeJsUtils'
 import { armorModel, armorTextures, elytraTexture } from './entity/armorModels'
@@ -468,6 +479,20 @@ export class Entities {
 
       if (playerObject?.animation) {
         playerObject.animation.update(playerObject, dt)
+      }
+
+      const horseHeadRig = entity.userData[HORSE_HEAD_RIG_USER_DATA_KEY] as HorseHeadRig | undefined
+      const horseAnimation = entity.userData[HORSE_HEAD_ANIMATION_USER_DATA_KEY] as HorseHeadAnimationState | undefined
+      if (horseHeadRig && horseAnimation) {
+        const animation = updateHorseHeadAnimationFrame(horseAnimation, dt)
+        const pose = calculateHorseHeadPose({
+          entityPitch: entity.userData._horseHeadPitch ?? 0,
+          headYaw: entity.userData._horseHeadYaw ?? entity.userData._horseBodyYaw ?? 0,
+          bodyYaw: entity.userData._horseBodyYaw ?? 0,
+          limbSwing: animation.limbSwing,
+          limbSwingAmount: animation.limbSwingAmount
+        })
+        applyHorseHeadPose(horseHeadRig, pose)
       }
 
       if (!isPlayerEntity && playerObject) {
@@ -1020,6 +1045,8 @@ export class Entities {
       if (!e) return
       e.userData._posTween?.stop()
       e.userData._rotTween?.stop()
+      e.userData[HORSE_HEAD_ANIMATION_USER_DATA_KEY] = undefined
+      e.userData[HORSE_HEAD_RIG_USER_DATA_KEY] = undefined
       const boatMesh = e.children.find(c => c.name === 'mesh')
       if (boatMesh) disposeBoatWaterPatch(boatMesh)
       if (e.additionalCleanup) e.additionalCleanup()
@@ -1145,6 +1172,11 @@ export class Entities {
       this.setRendering(this.currentlyRendering, group)
 
       this.afterAddEntity(entity)
+      const horseHeadRig = mesh.userData[HORSE_HEAD_RIG_USER_DATA_KEY] as HorseHeadRig | undefined
+      if (horseHeadRig) {
+        e.userData[HORSE_HEAD_RIG_USER_DATA_KEY] = horseHeadRig
+        e.userData[HORSE_HEAD_ANIMATION_USER_DATA_KEY] = createHorseHeadAnimationState()
+      }
     } else {
       mesh = e.children.find(c => c.name === 'mesh')
       if (entity.renderHints) {
@@ -1385,6 +1417,12 @@ export class Entities {
     const e = this.entities[entity.id]
     if (!e) return
     this.applyEntityRenderHints(e, entity)
+    if (e.userData[HORSE_HEAD_RIG_USER_DATA_KEY]) {
+      e.userData._horseHeadPitch = typeof entity.pitch === 'number' && Number.isFinite(entity.pitch) ? entity.pitch : 0
+      const headYaw = (entity as any).headYaw
+      e.userData._horseHeadYaw = typeof headYaw === 'number' && Number.isFinite(headYaw) ? headYaw : entity.yaw
+      e.userData._horseBodyYaw = typeof entity.yaw === 'number' && Number.isFinite(entity.yaw) ? entity.yaw : 0
+    }
     const cameraSynced = usesCameraSyncedVehiclePosition(entity)
     if (entity.position) {
       if (cameraSynced) {
@@ -1409,6 +1447,10 @@ export class Entities {
             e.position.set(e.userData._tweenTarget.x, e.userData._tweenTarget.y, e.userData._tweenTarget.z)
           })
           .start()
+      }
+      const horseAnimation = e.userData[HORSE_HEAD_ANIMATION_USER_DATA_KEY] as HorseHeadAnimationState | undefined
+      if (horseAnimation && Number.isFinite(entity.position.x) && Number.isFinite(entity.position.z)) {
+        advanceHorseHeadAnimation(horseAnimation, entity.position)
       }
     }
     const rotationTweenDuration = getEntityRotationTweenDurationMs(entity, justAdded)

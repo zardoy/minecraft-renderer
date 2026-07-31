@@ -15,6 +15,7 @@ import externalTexturesJson from './externalTextures.json'
 import { createAnimatedObject } from './gltfAnimationUtils'
 import { BOAT_OBJ_OFFSET_Y } from './boatRenderSetup'
 import { VANILLA_117_HORSE_ENTITY_SCALES } from './horseEntityScale'
+import { createHorseHeadRig } from './horseHeadAnimation'
 
 interface ElemFace {
   dir: [number, number, number]
@@ -636,7 +637,7 @@ export class EntityMesh {
           child.material = material
           // todo
           if (child.name === 'Head layer') child.visible = false
-          if (child.name === 'Head' && overrides.rotation?.head) {
+          if (type !== 'horse' && child.name === 'Head' && overrides.rotation?.head) {
             // todo
             child.rotation.x -= ((overrides.rotation.head.x ?? 0) * Math.PI) / 180
             child.rotation.y -= ((overrides.rotation.head.y ?? 0) * Math.PI) / 180
@@ -644,6 +645,7 @@ export class EntityMesh {
           }
         }
       })
+      if (type === 'horse') createHorseHeadRig(obj)
       this.mesh = obj
       debugFlags.type = 'obj'
       return
