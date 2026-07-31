@@ -47,10 +47,10 @@ import { getMesh } from './entity/EntityMesh'
 import {
   HORSE_HEAD_ANIMATION_USER_DATA_KEY,
   HORSE_HEAD_RIG_USER_DATA_KEY,
-  advanceHorseHeadAnimation,
   applyHorseHeadPose,
   calculateHorseHeadPose,
   createHorseHeadAnimationState,
+  setHorseHeadAnimationPosition,
   updateHorseHeadAnimationFrame,
   type HorseHeadAnimationState,
   type HorseHeadRig
@@ -1413,7 +1413,12 @@ export class Entities {
     syncBoatPaddleAnimationTargets(animState, leftActive, rightActive)
   }
 
-  updateEntityPosition(entity: SceneEntity['originalEntity'], justAdded: boolean, overrides: { rotation?: { head?: { y: number; x: number } } }) {
+  updateEntityPosition(
+    entity: SceneEntity['originalEntity'],
+    justAdded: boolean,
+    overrides: { rotation?: { head?: { y: number; x: number } } },
+    headRotationOnly = false
+  ) {
     const e = this.entities[entity.id]
     if (!e) return
     this.applyEntityRenderHints(e, entity)
@@ -1449,8 +1454,8 @@ export class Entities {
           .start()
       }
       const horseAnimation = e.userData[HORSE_HEAD_ANIMATION_USER_DATA_KEY] as HorseHeadAnimationState | undefined
-      if (horseAnimation && Number.isFinite(entity.position.x) && Number.isFinite(entity.position.z)) {
-        advanceHorseHeadAnimation(horseAnimation, entity.position)
+      if (!headRotationOnly && horseAnimation && Number.isFinite(entity.position.x) && Number.isFinite(entity.position.z)) {
+        setHorseHeadAnimationPosition(horseAnimation, entity.position)
       }
     }
     const rotationTweenDuration = getEntityRotationTweenDurationMs(entity, justAdded)

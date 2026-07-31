@@ -15,6 +15,7 @@ import { getMyHand } from './hand'
 import { createHoldingBlock } from './holdingBlockFactory'
 import type { IHoldingBlock } from './holdingBlockTypes'
 import { getMesh } from './entity/EntityMesh'
+import { resolveEntityHeadPose } from './entity/entityHeadPose'
 import { armorModel } from './entity/armorModels'
 import { disposeObject, loadThreeJsTextureFromBitmap } from './threeJsUtils'
 import { CursorBlock } from './world/cursorBlock'
@@ -480,17 +481,18 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
 
   updateEntity(e, isPosUpdate = false) {
+    const headPose = resolveEntityHeadPose(e)
     const overrides = {
       rotation: {
         head: {
-          x: e.headPitch ?? e.pitch,
-          y: e.headYaw,
+          x: headPose.pitch,
+          y: headPose.headYaw,
           z: 0
         }
       }
     }
     if (isPosUpdate) {
-      this.entities.updateEntityPosition(e, false, overrides)
+      this.entities.updateEntityPosition(e, false, overrides, e.headRotationOnly === true)
     } else {
       this.entities.update(e, overrides)
     }

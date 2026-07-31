@@ -2,12 +2,14 @@ import * as THREE from 'three'
 import { expect, test } from 'vitest'
 import {
   HORSE_HEAD_MAX_YAW,
-  advanceHorseHeadAnimation,
   applyHorseHeadPose,
   calculateHorseHeadPose,
   createHorseHeadAnimationState,
   createHorseHeadRig,
   getInterpolatedHorseHeadAnimation,
+  HORSE_HEAD_TICK_SECONDS,
+  setHorseHeadAnimationPosition,
+  updateHorseHeadAnimationFrame
 } from './horseHeadAnimation'
 
 test('head rig keeps world bounds and includes duplicate head parts', () => {
@@ -40,52 +42,111 @@ test('head rig keeps world bounds and includes duplicate head parts', () => {
   expect(createHorseHeadRig(root)).toBe(rig)
 })
 
-test('horse head pitch and gait use radians', () => {
+test('horse head pitch follows entity pitch in radians', () => {
   const pose = calculateHorseHeadPose({
-    entityPitch: Math.PI / 6,
+    entityPitch: -Math.PI / 6,
     headYaw: 0,
     bodyYaw: 0,
     limbSwing: 0,
-    limbSwingAmount: 1,
+    limbSwingAmount: 0
   })
-  expect(pose.pitch).toBeCloseTo(Math.PI / 6 + 0.15)
+  expect(pose.pitch).toBeCloseTo(-Math.PI / 6)
   expect(pose.yaw).toBe(0)
 })
 
-test('horse gait is disabled for a small limb amount', () => {
-  expect(calculateHorseHeadPose({
-    entityPitch: 0.3,
+test('horse gait subtracts from pitch at full limb amount', () => {
+  const pose = calculateHorseHeadPose({
+    entityPitch: 0,
     headYaw: 0,
     bodyYaw: 0,
-    limbSwing: Math.PI,
-    limbSwingAmount: 0.2,
-  }).pitch).toBeCloseTo(0.3)
+    limbSwing: 0,
+    limbSwingAmount: 1
+  })
+  expect(pose.pitch).toBeCloseTo(-0.15)
+})
+
+test('horse gait is disabled for a small limb amount', () => {
+  expect(
+    calculateHorseHeadPose({
+      entityPitch: 0.3,
+      headYaw: 0,
+      bodyYaw: 0,
+      limbSwing: Math.PI,
+      limbSwingAmount: 0.2
+    }).pitch
+  ).toBeCloseTo(0.3)
 })
 
 test('relative head yaw is shortest-path and limited to twenty degrees', () => {
-  expect(calculateHorseHeadPose({
-    entityPitch: 0,
-    headYaw: -Math.PI + 0.1,
-    bodyYaw: Math.PI - 0.1,
-    limbSwing: 0,
-    limbSwingAmount: 0,
-  }).yaw).toBeCloseTo(0.2)
-  expect(calculateHorseHeadPose({
-    entityPitch: 0,
-    headYaw: Math.PI / 2,
-    bodyYaw: 0,
-    limbSwing: 0,
-    limbSwingAmount: 0,
-  }).yaw).toBeCloseTo(HORSE_HEAD_MAX_YAW)
+  expect(
+    calculateHorseHeadPose({
+      entityPitch: 0,
+      headYaw: -Math.PI + 0.1,
+      bodyYaw: Math.PI - 0.1,
+      limbSwing: 0,
+      limbSwingAmount: 0
+    }).yaw
+  ).toBeCloseTo(0.2)
+  expect(
+    calculateHorseHeadPose({
+      entityPitch: 0,
+      headYaw: Math.PI / 2,
+      bodyYaw: 0,
+      limbSwing: 0,
+      limbSwingAmount: 0
+    }).yaw
+  ).toBeCloseTo(HORSE_HEAD_MAX_YAW)
 })
 
 test('animation phase uses authoritative horizontal distance and interpolates between ticks', () => {
   const state = createHorseHeadAnimationState()
-  advanceHorseHeadAnimation(state, { x: 10, z: 10 })
-  advanceHorseHeadAnimation(state, { x: 10.1, z: 10 })
+  setHorseHeadAnimationPosition(state, { x: 10, z: 10 })
+  updateHorseHeadAnimationFrame(state, HORSE_HEAD_TICK_SECONDS)
+  setHorseHeadAnimationPosition(state, { x: 10.1, z: 10 })
+  updateHorseHeadAnimationFrame(state, HORSE_HEAD_TICK_SECONDS)
   expect(state.limbSwingAmount).toBeCloseTo(0.16)
   expect(getInterpolatedHorseHeadAnimation(state, 0).limbSwingAmount).toBe(0)
   expect(getInterpolatedHorseHeadAnimation(state, 1).limbSwingAmount).toBeCloseTo(0.16)
+})
+
+test('movement position is consumed once per render tick', () => {
+  const state = createHorseHeadAnimationState()
+  setHorseHeadAnimationPosition(state, { x: 10, z: 10 })
+  updateHorseHeadAnimationFrame(state, HORSE_HEAD_TICK_SECONDS)
+  setHorseHeadAnimationPosition(state, { x: 10.1, z: 10 })
+  updateHorseHeadAnimationFrame(state, HORSE_HEAD_TICK_SECONDS)
+  expect(state.limbSwingAmount).toBeCloseTo(0.16)
+
+  setHorseHeadAnimationPosition(state, { x: 10.2, z: 10 })
+  expect(state.limbSwingAmount).toBeCloseTo(0.16)
+  updateHorseHeadAnimationFrame(state, HORSE_HEAD_TICK_SECONDS)
+  expect(state.limbSwingAmount).toBeCloseTo(0.256)
+  expect(state.limbSwing).toBeCloseTo(0.416)
+})
+
+test('render frames decay gait when a remote horse stops sending movement updates', () => {
+  const state = createHorseHeadAnimationState()
+  setHorseHeadAnimationPosition(state, { x: 10, z: 10 })
+  updateHorseHeadAnimationFrame(state, HORSE_HEAD_TICK_SECONDS)
+  setHorseHeadAnimationPosition(state, { x: 10.1, z: 10 })
+  updateHorseHeadAnimationFrame(state, HORSE_HEAD_TICK_SECONDS)
+  updateHorseHeadAnimationFrame(state, HORSE_HEAD_TICK_SECONDS)
+  expect(state.limbSwingAmount).toBeCloseTo(0.096)
+  expect(state.limbSwing).toBeCloseTo(0.256)
+})
+
+test('interpolates the leftover time after a tick at 30 FPS', () => {
+  const state = createHorseHeadAnimationState()
+  setHorseHeadAnimationPosition(state, { x: 10, z: 10 })
+  updateHorseHeadAnimationFrame(state, HORSE_HEAD_TICK_SECONDS)
+  setHorseHeadAnimationPosition(state, { x: 10.1, z: 10 })
+
+  updateHorseHeadAnimationFrame(state, 0.033)
+  const interpolated = updateHorseHeadAnimationFrame(state, 0.033)
+
+  expect(state.tickAccumulatorSeconds).toBeCloseTo(0.016)
+  expect(state.elapsedSeconds / HORSE_HEAD_TICK_SECONDS).toBeCloseTo(0.32)
+  expect(interpolated.limbSwingAmount).toBeCloseTo(0.16 * 0.32)
 })
 
 test('applying a pose changes only the runtime rig', () => {
