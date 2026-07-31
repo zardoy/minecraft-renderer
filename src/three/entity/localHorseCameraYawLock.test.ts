@@ -1,10 +1,6 @@
 import * as THREE from 'three'
 import { expect, test } from 'vitest'
-import {
-  applyLocalHorseCameraYawLock,
-  shouldApplyLocalHorseCameraYawLock,
-  type EntityRenderHints
-} from './interpolationPolicy'
+import { applyLocalHorseCameraYawLock, shouldApplyLocalHorseCameraYawLock, type EntityRenderHints } from './interpolationPolicy'
 
 function makeHorseSceneEntity(initialYaw = 0) {
   const entity = new THREE.Group()
@@ -69,7 +65,7 @@ test('shouldApplyLocalHorseCameraYawLock is true only for local horse yaw lock h
 test.each([
   ['remote horse', { passengerLayout: 'horse' } satisfies EntityRenderHints],
   ['local boat', { localVehicle: true, passengerLayout: 'boat' } satisfies EntityRenderHints],
-  ['local minecart', { localVehicle: true, passengerLayout: 'minecart' } satisfies EntityRenderHints],
+  ['local minecart', { localVehicle: true, passengerLayout: 'minecart' } satisfies EntityRenderHints]
 ])('%s does not receive yaw lock', (_label, renderHints) => {
   expect(shouldApplyLocalHorseCameraYawLock(renderHints)).toBe(false)
 })

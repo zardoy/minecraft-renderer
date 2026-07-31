@@ -39,10 +39,7 @@ export function shouldApplyLocalHorseCameraYawLock(renderHints: EntityRenderHint
 }
 
 /** Visual-only: align local horse model yaw with camera before head pose and passengers. */
-export function applyLocalHorseCameraYawLock(
-  sceneEntity: { rotation: { y: number }; userData: Record<string, unknown> },
-  cameraYaw: number
-): boolean {
+export function applyLocalHorseCameraYawLock(sceneEntity: { rotation: { y: number }; userData: Record<string, unknown> }, cameraYaw: number): boolean {
   if (!Number.isFinite(cameraYaw)) return false
   sceneEntity.rotation.y = cameraYaw
   sceneEntity.userData._horseBodyYaw = cameraYaw
