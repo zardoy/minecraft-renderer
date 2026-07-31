@@ -15,6 +15,8 @@ export type Vec3Like = { x: number; y: number; z: number }
 export type EntityRenderHints = {
   localVehicle?: boolean
   localVehicleVerticalCameraLock?: 'horse'
+  /** Render-only: lock locally controlled horse yaw to camera each frame. */
+  localVehicleYawLock?: 'horse'
   boatWaterPatchVisible?: boolean
   boatPaddleLeft?: boolean
   boatPaddleRight?: boolean
@@ -30,6 +32,22 @@ export type EntityWithRenderHints = {
 
 export function usesCameraSyncedVehiclePosition(entity: EntityWithRenderHints | undefined): boolean {
   return !!entity?.renderHints?.localVehicle
+}
+
+export function shouldApplyLocalHorseCameraYawLock(renderHints: EntityRenderHints | undefined): boolean {
+  return renderHints?.localVehicleYawLock === 'horse'
+}
+
+/** Visual-only: align local horse model yaw with camera before head pose and passengers. */
+export function applyLocalHorseCameraYawLock(
+  sceneEntity: { rotation: { y: number }; userData: Record<string, unknown> },
+  cameraYaw: number
+): boolean {
+  if (!Number.isFinite(cameraYaw)) return false
+  sceneEntity.rotation.y = cameraYaw
+  sceneEntity.userData._horseBodyYaw = cameraYaw
+  sceneEntity.userData._horseHeadYaw = cameraYaw
+  return true
 }
 
 export function getEntityTweenDurationMs(entity: EntityWithRenderHints | undefined, justAdded: boolean): number {

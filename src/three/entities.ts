@@ -35,9 +35,11 @@ import { applyNetworkHeadPitch, storeNetworkHeadPitch, storeNetworkHeadYaw } fro
 import { processRemoteBoatPassengerRotations, type RemoteBoatPassengerEntity } from './entity/remoteBoatPassengerRotation'
 import {
   ENTITY_TWEEN_DURATION_MS,
+  applyLocalHorseCameraYawLock,
   getEntityTweenDurationMs,
   getEntityRotationTweenDurationMs,
   resolveLocalVehicleWorldPosition,
+  shouldApplyLocalHorseCameraYawLock,
   type EntityRenderHints,
   type Vec3Like,
   usesCameraSyncedVehiclePosition,
@@ -479,6 +481,13 @@ export class Entities {
 
       if (playerObject?.animation) {
         playerObject.animation.update(playerObject, dt)
+      }
+
+      if (!isPlayerEntity) {
+        const renderHints = entity.userData.renderHints as EntityRenderHints | undefined
+        if (shouldApplyLocalHorseCameraYawLock(renderHints)) {
+          applyLocalHorseCameraYawLock(entity, this.worldRenderer.cameraShake.getBaseRotation().yaw)
+        }
       }
 
       const horseHeadRig = entity.userData[HORSE_HEAD_RIG_USER_DATA_KEY] as HorseHeadRig | undefined
