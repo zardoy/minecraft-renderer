@@ -153,8 +153,8 @@ export const createGraphicsBackendOffThread: GraphicsBackendLoader = async initO
     setRendering(rendering) {
       proxy.setRendering(rendering)
     },
-    updateCamera(pos, yaw, pitch) {
-      proxy.updateCamera(pos ? { x: pos.x, y: pos.y, z: pos.z } : null, yaw, pitch)
+    updateCamera(pos, yaw, pitch, options) {
+      proxy.updateCamera(pos ? { x: pos.x, y: pos.y, z: pos.z } : null, yaw, pitch, options)
     },
     soundSystem: undefined,
     backendMethods: backendMethodsProxy

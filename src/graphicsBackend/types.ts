@@ -9,6 +9,9 @@ import { ResourcesManagerTransferred } from '../resourcesManager'
 import { WorldViewWorker } from '../worldView'
 import { Vec3 } from 'vec3'
 import { WorldRendererConfig } from './config'
+import type { UpdateCameraOptions } from '../three/entity/interpolationPolicy'
+
+export type { CameraMovementMode, UpdateCameraOptions } from '../three/entity/interpolationPolicy'
 
 // ============================================================================
 // Graphics Backend Configuration
@@ -134,7 +137,7 @@ export interface GraphicsBackend {
   startWorld(options: DisplayWorldOptions): Promise<void>
   disconnect(): void
   setRendering(rendering: boolean): void
-  updateCamera(pos: Vec3 | null, yaw: number, pitch: number): void
+  updateCamera(pos: Vec3 | null, yaw: number, pitch: number, options?: UpdateCameraOptions): void
   soundSystem?: any
   backendMethods?: any
   getDebugOverlay?(): { entitiesString?: string; left?: Record<string, string>; right?: Record<string, string> }

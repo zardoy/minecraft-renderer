@@ -7,7 +7,7 @@ import { subscribeKey } from 'valtio/utils'
 import { proxy, subscribe } from 'valtio'
 import type { ResourcesManagerTransferred } from '../resourcesManager/resourcesManager'
 import { dynamicMcDataFiles } from './buildSharedConfig.mjs'
-import { DisplayWorldOptions, GraphicsInitOptions, RendererReactiveState, SoundSystem } from '../graphicsBackend/types'
+import { DisplayWorldOptions, GraphicsInitOptions, RendererReactiveState, SoundSystem, UpdateCameraOptions } from '../graphicsBackend/types'
 import {
   HighestBlockInfo,
   CustomBlockModels,
@@ -712,7 +712,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
   abstract handleWorkerMessage(data: WorkerReceive): void
 
-  abstract updateCamera(pos: Vec3 | null, yaw: number, pitch: number): void
+  abstract updateCamera(pos: Vec3 | null, yaw: number, pitch: number, options?: UpdateCameraOptions): void
 
   abstract render(): void
 

@@ -18,7 +18,8 @@ import type {
   GraphicsInitOptions,
   DisplayWorldOptions,
   RendererReactiveState,
-  NonReactiveState
+  NonReactiveState,
+  UpdateCameraOptions
 } from './types'
 import { WorldView, WorldProvider, WorldViewWorker } from '../worldView'
 import { getInitialPlayerState } from './playerState'
@@ -273,8 +274,8 @@ export class AppViewer {
   /**
    * Update camera position and rotation.
    */
-  updateCamera(pos: Vec3 | null, yaw: number, pitch: number): void {
-    this.backend?.updateCamera(pos, yaw, pitch)
+  updateCamera(pos: Vec3 | null, yaw: number, pitch: number, options?: UpdateCameraOptions): void {
+    this.backend?.updateCamera(pos, yaw, pitch, options)
   }
 
   /**

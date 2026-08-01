@@ -32,6 +32,7 @@ export class WalkingGeneralSwing extends PlayerAnimation {
   isRunning = false
   isMoving = true
   isCrouched = false
+  isRiding = false
 
   _dt = 0
   _phase = 0
@@ -127,7 +128,7 @@ export class WalkingGeneralSwing extends PlayerAnimation {
     if (!this._defaults) this._captureDefaults(player)
     this._applyDefaults(player)
 
-    const targetMove = this.isMoving ? 1 : 0
+    const targetMove = this.isRiding ? 0 : this.isMoving ? 1 : 0
     const kMove = Math.min(1, dt * 20)
     this._moveBlend += (targetMove - this._moveBlend) * kMove
 
@@ -139,35 +140,46 @@ export class WalkingGeneralSwing extends PlayerAnimation {
 
     applyCrouchPose(player, this.isCrouched ? 1 : 0)
 
-    const boundary = this.isRunning ? Math.cos(t) : Math.sin(t)
-    if (Math.abs(boundary) < 0.02) {
-      if (this.switchAnimationCallback) {
-        reset = true
+    if (this.isRiding) {
+      player.skin.rightArm.rotation.x -= Math.PI / 5
+      player.skin.leftArm.rotation.x -= Math.PI / 5
+
+      // Vanilla HumanoidModel uses ModelPart Z→Y→X order with yRot/zRot signs as in Java.
+      // skinview3d Y/Z axes are opposite the Java model, so ZYX plus inverted Y/Z signs
+      // matches vanilla Rz × Ry × Rx (see BOAT_RIDING_LEG_SPREAD.md).
+      player.skin.rightLeg.rotation.set(-1.4137167, -Math.PI / 10, -Math.PI / 40, 'ZYX')
+      player.skin.leftLeg.rotation.set(-1.4137167, Math.PI / 10, Math.PI / 40, 'ZYX')
+    } else {
+      const boundary = this.isRunning ? Math.cos(t) : Math.sin(t)
+      if (Math.abs(boundary) < 0.02) {
+        if (this.switchAnimationCallback) {
+          reset = true
+        }
       }
-    }
 
-    if (this.isRunning) {
-      player.skin.leftLeg.rotation.x += Math.cos(t + Math.PI) * 1.3 * this._moveBlend
-      player.skin.rightLeg.rotation.x += Math.cos(t) * 1.3 * this._moveBlend
-    } else {
-      player.skin.leftLeg.rotation.x += Math.sin(t) * 0.5 * this._moveBlend
-      player.skin.rightLeg.rotation.x += Math.sin(t + Math.PI) * 0.5 * this._moveBlend
-    }
+      if (this.isRunning) {
+        player.skin.leftLeg.rotation.x += Math.cos(t + Math.PI) * 1.3 * this._moveBlend
+        player.skin.rightLeg.rotation.x += Math.cos(t) * 1.3 * this._moveBlend
+      } else {
+        player.skin.leftLeg.rotation.x += Math.sin(t) * 0.5 * this._moveBlend
+        player.skin.rightLeg.rotation.x += Math.sin(t + Math.PI) * 0.5 * this._moveBlend
+      }
 
-    if (this.isRunning) {
-      player.skin.leftArm.rotation.x += Math.cos(t) * 1.5 * this._moveBlend
-      player.skin.rightArm.rotation.x += Math.cos(t + Math.PI) * 1.5 * this._moveBlend
+      if (this.isRunning) {
+        player.skin.leftArm.rotation.x += Math.cos(t) * 1.5 * this._moveBlend
+        player.skin.rightArm.rotation.x += Math.cos(t + Math.PI) * 1.5 * this._moveBlend
 
-      const basicArmRotationZ = Math.PI * 0.1
-      player.skin.leftArm.rotation.z += (Math.cos(t) * 0.1 + basicArmRotationZ) * this._moveBlend
-      player.skin.rightArm.rotation.z += (Math.cos(t + Math.PI) * 0.1 - basicArmRotationZ) * this._moveBlend
-    } else {
-      player.skin.leftArm.rotation.x += Math.sin(t + Math.PI) * 0.5 * this._moveBlend
-      player.skin.rightArm.rotation.x += Math.sin(t) * 0.5 * this._moveBlend
+        const basicArmRotationZ = Math.PI * 0.1
+        player.skin.leftArm.rotation.z += (Math.cos(t) * 0.1 + basicArmRotationZ) * this._moveBlend
+        player.skin.rightArm.rotation.z += (Math.cos(t + Math.PI) * 0.1 - basicArmRotationZ) * this._moveBlend
+      } else {
+        player.skin.leftArm.rotation.x += Math.sin(t + Math.PI) * 0.5 * this._moveBlend
+        player.skin.rightArm.rotation.x += Math.sin(t) * 0.5 * this._moveBlend
 
-      const basicArmRotationZ = Math.PI * 0.02
-      player.skin.leftArm.rotation.z += (Math.cos(t) * 0.03 + basicArmRotationZ) * this._moveBlend
-      player.skin.rightArm.rotation.z += (Math.cos(t + Math.PI) * 0.03 - basicArmRotationZ) * this._moveBlend
+        const basicArmRotationZ = Math.PI * 0.02
+        player.skin.leftArm.rotation.z += (Math.cos(t) * 0.03 + basicArmRotationZ) * this._moveBlend
+        player.skin.rightArm.rotation.z += (Math.cos(t + Math.PI) * 0.03 - basicArmRotationZ) * this._moveBlend
+      }
     }
 
     if (this._swingTime !== null) {

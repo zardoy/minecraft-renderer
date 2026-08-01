@@ -7,7 +7,7 @@
 
 import * as THREE from 'three'
 import { Vec3 } from 'vec3'
-import type { GraphicsBackend, GraphicsInitOptions, DisplayWorldOptions } from '../graphicsBackend'
+import type { GraphicsBackend, GraphicsInitOptions, DisplayWorldOptions, UpdateCameraOptions } from '../graphicsBackend'
 import { createWorkerProxy, restoreTransferred } from '../lib/workerProxy'
 import { ResourcesManager } from '../resourcesManager'
 import { FrameTimingCollector } from '../lib/frameTimingCollector'
@@ -279,10 +279,10 @@ export const createGraphicsBackendBase = () => {
         }
       }
     }),
-    updateCamera(pos: Vec3 | null, yaw: number, pitch: number) {
+    updateCamera(pos: Vec3 | null, yaw: number, pitch: number, options?: UpdateCameraOptions) {
       // Mark camera update event for frame timing visualization
       frameTimingCollector?.markCameraUpdate(!pos)
-      worldRenderer?.setFirstPersonCamera(pos, yaw, pitch)
+      worldRenderer?.setFirstPersonCamera(pos, yaw, pitch, options)
     },
     get soundSystem() {
       return worldRenderer?.soundSystem
@@ -310,10 +310,10 @@ export const createGraphicsBackendBase = () => {
         startWorld,
         disconnect,
         setRendering: backend.setRendering,
-        updateCamera(pos, yaw, pitch) {
+        updateCamera(pos, yaw, pitch, options?: UpdateCameraOptions) {
           const posVec = pos ? new Vec3(pos.x, pos.y, pos.z) : null
           frameTimingCollector?.markCameraUpdate(!posVec)
-          backend.updateCamera(posVec, yaw, pitch)
+          backend.updateCamera(posVec, yaw, pitch, options)
         },
         async callBackendMethod<K extends keyof ThreeJsBackendMethods>(
           method: K,

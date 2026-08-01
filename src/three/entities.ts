@@ -19,7 +19,44 @@ import { configurePlayerSkinMaterials, PlayerObjectType } from '../lib/createPla
 import { getBlockMeshFromModel } from './holdingBlock'
 import { createItemMesh } from './itemMesh'
 import * as Entity from './entity/EntityMesh'
+import { setupBoatMesh, disposeBoatWaterPatch } from './entity/boatRenderSetup'
+import { getBoatMeshYawOffset, isBoatEntityName } from './entity/boatModelRotation'
+import { resolveBoatPassengerThirdPersonRotation, shouldApplyBoatPassengerThirdPersonRotation } from './entity/boatPassengerRotation'
+import {
+  createBoatPaddleAnimationState,
+  createBoatPaddlePivotScratch,
+  syncBoatPaddleAnimationTargets,
+  updateBoatPaddleAnimationState,
+  type BoatPaddleAnimationState
+} from './entity/boatPaddleAnimation'
+import { releaseVehiclePassengerPosition } from './entity/vehiclePassengerRendering'
+import { updateVehiclePassengerPositions as applyVehiclePassengerPositions } from './entity/vehiclePassengerUpdate'
+import { applyNetworkHeadPitch, storeNetworkHeadPitch, storeNetworkHeadYaw } from './entity/networkHeadPitchRendering'
+import { processRemoteBoatPassengerRotations, type RemoteBoatPassengerEntity } from './entity/remoteBoatPassengerRotation'
+import {
+  ENTITY_TWEEN_DURATION_MS,
+  applyLocalHorseCameraYawLock,
+  getEntityTweenDurationMs,
+  getEntityRotationTweenDurationMs,
+  resolveLocalVehicleWorldPosition,
+  shouldApplyLocalHorseCameraYawLock,
+  type EntityRenderHints,
+  type Vec3Like,
+  usesCameraSyncedVehiclePosition,
+  isRideableMinecartEntityName
+} from './entity/interpolationPolicy'
 import { getMesh } from './entity/EntityMesh'
+import {
+  HORSE_HEAD_ANIMATION_USER_DATA_KEY,
+  HORSE_HEAD_RIG_USER_DATA_KEY,
+  applyHorseHeadPose,
+  calculateHorseHeadPose,
+  createHorseHeadAnimationState,
+  setHorseHeadAnimationPosition,
+  updateHorseHeadAnimationFrame,
+  type HorseHeadAnimationState,
+  type HorseHeadRig
+} from './entity/horseHeadAnimation'
 import { WalkingGeneralSwing } from './entity/animations'
 import { disposeObject, loadNearestFilterTexture, loadTexture, loadThreeJsTextureFromUrl } from './threeJsUtils'
 import { armorModel, armorTextures, elytraTexture } from './entity/armorModels'
@@ -40,7 +77,7 @@ type EntityMetadataVersions = {
 
 export const steveTexture = loadThreeJsTextureFromUrl(stevePngUrl)
 
-export const TWEEN_DURATION = 120
+export const TWEEN_DURATION = ENTITY_TWEEN_DURATION_MS
 
 const degreesToRadians = (degrees: number) => degrees * (Math.PI / 180)
 
@@ -264,7 +301,7 @@ export type SceneEntity = THREE.Object3D & {
   username?: string
   uuid?: string
   additionalCleanup?: () => void
-  originalEntity: import('prismarine-entity').Entity & { delete?; pos?; name; team?: Team }
+  originalEntity: import('prismarine-entity').Entity & { delete?; pos?; name; team?: Team; renderHints?: EntityRenderHints }
 }
 
 export class Entities {
@@ -280,6 +317,7 @@ export class Entities {
   cachedMapsImages = {} as Record<number, string>
   itemFrameMaps = {} as Record<number, Array<THREE.Mesh<THREE.PlaneGeometry, THREE.MeshLambertMaterial>>>
   pendingModelOverrides = new Map<string, { parts: EntityModelOverridePart[] }>()
+  private boatPaddleScratch = createBoatPaddlePivotScratch()
 
   get entitiesByName(): Record<string, SceneEntity[]> {
     const byName: Record<string, SceneEntity[]> = {}
@@ -449,7 +487,8 @@ export class Entities {
         const thirdPerson = this.worldRenderer.playerStateUtils.isThirdPerson()
         entity.visible = thirdPerson
 
-        if (thirdPerson) {
+        const isAnchoredPassenger = entity.userData._passengerVehicleId != null || entity.userData._boatPassengerVehicleId != null
+        if (thirdPerson && !isAnchoredPassenger) {
           const yOffset = this.worldRenderer.playerStateReactive.eyeHeight
           entity.position.set(this.worldRenderer.cameraWorldPos.x, this.worldRenderer.cameraWorldPos.y - yOffset, this.worldRenderer.cameraWorldPos.z)
         }
@@ -459,6 +498,31 @@ export class Entities {
 
       if (playerObject?.animation) {
         playerObject.animation.update(playerObject, dt)
+      }
+
+      if (!isPlayerEntity) {
+        const renderHints = entity.userData.renderHints as EntityRenderHints | undefined
+        if (shouldApplyLocalHorseCameraYawLock(renderHints)) {
+          applyLocalHorseCameraYawLock(entity, this.worldRenderer.cameraShake.getBaseRotation().yaw)
+        }
+      }
+
+      const horseHeadRig = entity.userData[HORSE_HEAD_RIG_USER_DATA_KEY] as HorseHeadRig | undefined
+      const horseAnimation = entity.userData[HORSE_HEAD_ANIMATION_USER_DATA_KEY] as HorseHeadAnimationState | undefined
+      if (horseHeadRig && horseAnimation) {
+        const animation = updateHorseHeadAnimationFrame(horseAnimation, dt)
+        const pose = calculateHorseHeadPose({
+          entityPitch: entity.userData._horseHeadPitch ?? 0,
+          headYaw: entity.userData._horseHeadYaw ?? entity.userData._horseBodyYaw ?? 0,
+          bodyYaw: entity.userData._horseBodyYaw ?? 0,
+          limbSwing: animation.limbSwing,
+          limbSwingAmount: animation.limbSwingAmount
+        })
+        applyHorseHeadPose(horseHeadRig, pose)
+      }
+
+      if (!isPlayerEntity && playerObject) {
+        applyNetworkHeadPitch(playerObject, entity.userData)
       }
 
       entity.traverse(child => {
@@ -481,21 +545,122 @@ export class Entities {
         this.maybeRenderPlayerSkin(entityIdRaw)
       }
 
-      if (entity.visible) {
+      if (entity.userData.renderHints?.localVehicle) {
+        const worldPos = this.resolveLocalVehicleRenderWorldPos(entity)
+        entity.position.set(worldPos.x, worldPos.y, worldPos.z)
+      }
+
+      if (entity.visible && !isPlayerEntity) {
         this.syncArmorPositions(entity)
       }
-
-      if (isPlayerEntity && entity.visible) {
-        const rotation = this.worldRenderer.cameraShake.getBaseRotation()
-        entity.rotation.set(0, rotation.yaw, 0)
-
-        entity.traverse(c => {
-          if (c.name === 'head') {
-            c.rotation.set(-rotation.pitch, 0, 0)
-          }
-        })
-      }
     }
+
+    this.updateVehiclePassengerPositions()
+    this.applyRemoteBoatPassengerRotations()
+    this.applyLocalThirdPersonPlayerRotation()
+    this.updateBoatPaddleAnimations(dt)
+  }
+
+  private applyRemoteBoatPassengerRotations() {
+    processRemoteBoatPassengerRotations({
+      entities: this.entities as Record<string, RemoteBoatPassengerEntity>,
+      syncArmor: entity => this.syncArmorPositions(entity as SceneEntity)
+    })
+  }
+
+  private updateBoatPaddleAnimations(dt: number) {
+    for (const entity of Object.values(this.entities)) {
+      if (!entity) continue
+      if (!isBoatEntityName(entity['realName'] as string | undefined)) continue
+
+      const mesh = entity.children.find(child => child.name === 'mesh')
+      if (!mesh) continue
+
+      let animState = mesh.userData.boatPaddleAnimation as BoatPaddleAnimationState | undefined
+      if (!animState) continue
+
+      updateBoatPaddleAnimationState(
+        animState,
+        dt,
+        mesh.userData.boatPaddleLeftPivot as THREE.Object3D | undefined,
+        mesh.userData.boatPaddleRightPivot as THREE.Object3D | undefined,
+        this.boatPaddleScratch
+      )
+    }
+  }
+
+  private applyLocalThirdPersonPlayerRotation() {
+    const entity = this.playerEntity
+    if (!entity?.visible || !entity.playerObject) return
+
+    const rotation = this.worldRenderer.cameraShake.getBaseRotation()
+    const isAnchoredPassenger = entity.userData._passengerVehicleId != null || entity.userData._boatPassengerVehicleId != null
+    const anchoredVehicleId = entity.userData._passengerVehicleId ?? entity.userData._boatPassengerVehicleId
+    const vehicle = anchoredVehicleId != null ? this.entities[anchoredVehicleId] : undefined
+    const vehicleName = vehicle?.['realName'] ?? vehicle?.originalEntity.name
+    const vehicleYaw = vehicle?.rotation.y
+
+    if (
+      shouldApplyBoatPassengerThirdPersonRotation({
+        isThirdPerson: true,
+        isAnchoredPassenger,
+        vehicleName,
+        vehicleYaw
+      })
+    ) {
+      const resolved = resolveBoatPassengerThirdPersonRotation({
+        cameraYaw: rotation.yaw,
+        cameraPitch: rotation.pitch,
+        vehicleYaw: vehicleYaw!
+      })
+      entity.rotation.set(0, resolved.bodyYaw, 0)
+      entity.traverse(child => {
+        if (child.name !== 'head') return
+        child.rotation.set(resolved.headPitch, resolved.headYaw, 0)
+      })
+    } else {
+      entity.rotation.set(0, rotation.yaw, 0)
+      entity.traverse(child => {
+        if (child.name !== 'head') return
+        child.rotation.set(-rotation.pitch, 0, 0)
+      })
+    }
+
+    this.syncArmorPositions(entity)
+  }
+
+  private resolvePassengerEntity(passengerId: number): SceneEntity | undefined {
+    if (this.playerEntity?.originalEntity.id === passengerId) {
+      return this.playerEntity
+    }
+    return this.entities[passengerId]
+  }
+
+  private resolveLocalVehicleRenderWorldPos(sceneEntity: SceneEntity): Vec3Like {
+    const originalEntity = sceneEntity.originalEntity
+    const renderHints = sceneEntity.userData.renderHints as EntityRenderHints | undefined
+    const rawVehicleY = sceneEntity.userData._localVehicleY ?? originalEntity.position?.y ?? sceneEntity.position.y
+    return resolveLocalVehicleWorldPosition({
+      cameraWorldPos: this.worldRenderer.cameraWorldPos,
+      rawVehicleY,
+      eyeHeight: this.worldRenderer.playerStateReactive.eyeHeight,
+      vehicleName: sceneEntity['realName'] ?? originalEntity.name,
+      vehicleHeight: originalEntity.height ?? 1.6,
+      verticalCameraLock: renderHints?.localVehicleVerticalCameraLock
+    })
+  }
+
+  updateVehiclePassengerPositions() {
+    applyVehiclePassengerPositions({
+      entities: this.entities,
+      localPlayer: this.playerEntity,
+      getWorldPosition: target => this.worldRenderer.sceneOrigin.getWorldPosition(target as SceneEntity)
+    })
+  }
+
+  /** @deprecated Use updateVehiclePassengerPositions */
+  updateBoatPassengerPositions() {
+    this.updateVehiclePassengerPositions()
   }
 
   private syncArmorPositions(entity: SceneEntity) {
@@ -762,7 +927,10 @@ export class Entities {
     }
   }
 
-  private applyMovementAnimation(playerObject: PlayerObjectType, animation: 'walking' | 'running' | 'oneSwing' | 'idle' | 'crouch' | 'crouchWalking'): void {
+  private applyMovementAnimation(
+    playerObject: PlayerObjectType,
+    animation: 'walking' | 'running' | 'oneSwing' | 'idle' | 'crouch' | 'crouchWalking' | 'riding'
+  ): void {
     const anim = playerObject.animation as WalkingGeneralSwing | undefined
     if (!anim) return
 
@@ -772,12 +940,21 @@ export class Entities {
     }
 
     anim.switchAnimationCallback = null
+    if (animation === 'riding') {
+      anim.isMoving = false
+      anim.isRunning = false
+      anim.isCrouched = false
+      anim.isRiding = true
+      return
+    }
+
+    anim.isRiding = false
     anim.isMoving = animation === 'walking' || animation === 'running' || animation === 'crouchWalking'
     anim.isRunning = animation === 'running'
     anim.isCrouched = animation === 'crouch' || animation === 'crouchWalking'
   }
 
-  playAnimation(entityPlayerId, animation: 'walking' | 'running' | 'oneSwing' | 'idle' | 'crouch' | 'crouchWalking') {
+  playAnimation(entityPlayerId, animation: 'walking' | 'running' | 'oneSwing' | 'idle' | 'crouch' | 'crouchWalking' | 'riding') {
     const playerObject =
       entityPlayerId === 'player_entity' ? this.playerEntity?.playerObject : (this.getPlayerObject(entityPlayerId) ?? this.playerEntity?.playerObject)
 
@@ -897,6 +1074,10 @@ export class Entities {
       if (!e) return
       e.userData._posTween?.stop()
       e.userData._rotTween?.stop()
+      e.userData[HORSE_HEAD_ANIMATION_USER_DATA_KEY] = undefined
+      e.userData[HORSE_HEAD_RIG_USER_DATA_KEY] = undefined
+      const boatMesh = e.children.find(c => c.name === 'mesh')
+      if (boatMesh) disposeBoatWaterPatch(boatMesh)
       if (e.additionalCleanup) e.additionalCleanup()
       e.traverse(c => {
         if (c['additionalCleanup']) c['additionalCleanup']()
@@ -988,6 +1169,11 @@ export class Entities {
       }
       if (!mesh) return
       mesh.name = 'mesh'
+      const boatMeshYawOffset = getBoatMeshYawOffset(entity.name)
+      if (boatMeshYawOffset != null) {
+        mesh.rotation.y = boatMeshYawOffset
+        setupBoatMesh(mesh)
+      }
       // set initial position so there are no weird jumps update after
       const pos = entity.pos ?? entity.position
       this.worldRenderer.sceneOrigin.track(group)
@@ -1015,9 +1201,19 @@ export class Entities {
       this.syncSceneAttachment(group)
 
       this.afterAddEntity(entity)
+      const horseHeadRig = mesh.userData[HORSE_HEAD_RIG_USER_DATA_KEY] as HorseHeadRig | undefined
+      if (horseHeadRig) {
+        e.userData[HORSE_HEAD_RIG_USER_DATA_KEY] = horseHeadRig
+        e.userData[HORSE_HEAD_ANIMATION_USER_DATA_KEY] = createHorseHeadAnimationState()
+      }
     } else {
       mesh = e.children.find(c => c.name === 'mesh')
+      if (entity.renderHints) {
+        e.originalEntity.renderHints = entity.renderHints
+      }
     }
+
+    this.applyEntityRenderHints(e, entity)
 
     // Update equipment
     this.updateEntityEquipment(e, entity)
@@ -1210,26 +1406,88 @@ export class Entities {
     this.updateEntityPosition(entity, justAdded, overrides)
   }
 
-  updateEntityPosition(entity: import('prismarine-entity').Entity, justAdded: boolean, overrides: { rotation?: { head?: { y: number; x: number } } }) {
+  applyEntityRenderHints(e: SceneEntity, entity: SceneEntity['originalEntity']) {
+    if (entity.renderHints) {
+      const hints = entity.renderHints as EntityRenderHints
+      const nextPassengerIds = new Set(hints.passengerIds ?? hints.boatPassengerIds ?? [])
+      const previousPassengerIds = e.userData.renderHints?.passengerIds ?? e.userData.renderHints?.boatPassengerIds ?? []
+      const isPassengerVehicle = isBoatEntityName(entity.name) || isRideableMinecartEntityName(entity.name)
+      if (isPassengerVehicle) {
+        for (const previousPassengerId of previousPassengerIds) {
+          if (nextPassengerIds.has(previousPassengerId)) continue
+          const previousPassenger = this.resolvePassengerEntity(previousPassengerId)
+          if (previousPassenger) {
+            releaseVehiclePassengerPosition(previousPassenger, String(entity.id), this.worldRenderer.sceneOrigin.getWorldPosition(previousPassenger))
+          }
+        }
+      }
+      e.userData.renderHints = entity.renderHints
+    }
+    if (!isBoatEntityName(entity.name)) return
+    const mesh = e.children.find(c => c.name === 'mesh')
+    if (!mesh) return
+    const waterPatch = mesh.userData.boatWaterPatch as THREE.Object3D | undefined
+    if (waterPatch) {
+      waterPatch.visible = entity.renderHints?.boatWaterPatchVisible === true
+    }
+
+    const hints = (e.userData.renderHints ?? entity.renderHints) as EntityRenderHints | undefined
+    const leftActive = hints?.boatPaddleLeft === true
+    const rightActive = hints?.boatPaddleRight === true
+    let animState = mesh.userData.boatPaddleAnimation as BoatPaddleAnimationState | undefined
+    if (!animState) {
+      animState = createBoatPaddleAnimationState()
+      mesh.userData.boatPaddleAnimation = animState
+    }
+    syncBoatPaddleAnimationTargets(animState, leftActive, rightActive)
+  }
+
+  updateEntityPosition(
+    entity: SceneEntity['originalEntity'],
+    justAdded: boolean,
+    overrides: { rotation?: { head?: { y: number; x: number } } },
+    headRotationOnly = false
+  ) {
     const e = this.entities[entity.id]
     if (!e) return
-    const ANIMATION_DURATION = justAdded ? 0 : TWEEN_DURATION
-    if (entity.position) {
-      // Initialize tween target from current world position
-      const currentWorld = this.worldRenderer.sceneOrigin.getWorldPosition(e) ?? { x: entity.position.x, y: entity.position.y, z: entity.position.z }
-      if (!e.userData._tweenTarget) {
-        e.userData._tweenTarget = { x: currentWorld.x, y: currentWorld.y, z: currentWorld.z }
-      }
-      // Stop previous position tween to prevent accumulation
-      e.userData._posTween?.stop()
-      // Tween a separate target object, apply via proxy on each update
-      e.userData._posTween = new TWEEN.Tween(e.userData._tweenTarget)
-        .to({ x: entity.position.x, y: entity.position.y, z: entity.position.z }, ANIMATION_DURATION)
-        .onUpdate(() => {
-          e.position.set(e.userData._tweenTarget.x, e.userData._tweenTarget.y, e.userData._tweenTarget.z)
-        })
-        .start()
+    this.applyEntityRenderHints(e, entity)
+    if (e.userData[HORSE_HEAD_RIG_USER_DATA_KEY]) {
+      e.userData._horseHeadPitch = typeof entity.pitch === 'number' && Number.isFinite(entity.pitch) ? entity.pitch : 0
+      const headYaw = (entity as any).headYaw
+      e.userData._horseHeadYaw = typeof headYaw === 'number' && Number.isFinite(headYaw) ? headYaw : entity.yaw
+      e.userData._horseBodyYaw = typeof entity.yaw === 'number' && Number.isFinite(entity.yaw) ? entity.yaw : 0
     }
+    const cameraSynced = usesCameraSyncedVehiclePosition(entity)
+    if (entity.position) {
+      if (cameraSynced) {
+        e.userData._localVehicleY = entity.position.y
+        e.userData._posTween?.stop()
+        e.userData._posTween = undefined
+        const worldPos = this.resolveLocalVehicleRenderWorldPos(e)
+        e.position.set(worldPos.x, worldPos.y, worldPos.z)
+      } else {
+        const ANIMATION_DURATION = getEntityTweenDurationMs(entity, justAdded)
+        // Initialize tween target from current world position
+        const currentWorld = this.worldRenderer.sceneOrigin.getWorldPosition(e) ?? { x: entity.position.x, y: entity.position.y, z: entity.position.z }
+        if (!e.userData._tweenTarget) {
+          e.userData._tweenTarget = { x: currentWorld.x, y: currentWorld.y, z: currentWorld.z }
+        }
+        // Stop previous position tween to prevent accumulation
+        e.userData._posTween?.stop()
+        // Tween a separate target object, apply via proxy on each update
+        e.userData._posTween = new TWEEN.Tween(e.userData._tweenTarget)
+          .to({ x: entity.position.x, y: entity.position.y, z: entity.position.z }, ANIMATION_DURATION)
+          .onUpdate(() => {
+            e.position.set(e.userData._tweenTarget.x, e.userData._tweenTarget.y, e.userData._tweenTarget.z)
+          })
+          .start()
+      }
+      const horseAnimation = e.userData[HORSE_HEAD_ANIMATION_USER_DATA_KEY] as HorseHeadAnimationState | undefined
+      if (!headRotationOnly && horseAnimation && Number.isFinite(entity.position.x) && Number.isFinite(entity.position.z)) {
+        setHorseHeadAnimationPosition(horseAnimation, entity.position)
+      }
+    }
+    const rotationTweenDuration = getEntityRotationTweenDurationMs(entity, justAdded)
     /** World yaw for the whole model: for PlayerObject skins, rotate body to head look dir; head mesh stays yaw-fixed (pitch only). */
     let targetYaw: number | undefined
     if (e.playerObject && overrides?.rotation?.head) {
@@ -1242,18 +1500,29 @@ export class Entities {
       targetYaw = entity.yaw
     }
     if (typeof targetYaw === 'number' && Number.isFinite(targetYaw)) {
-      const dy = shortestYawRadians(e.rotation.y, targetYaw)
       // Stop previous rotation tween to prevent accumulation (mirror _posTween)
       e.userData._rotTween?.stop()
-      e.userData._rotTween = new TWEEN.Tween(e.rotation).to({ y: e.rotation.y + dy }, ANIMATION_DURATION).start()
+      e.userData._rotTween = undefined
+      const currentYaw = Number.isFinite(e.rotation.y) ? e.rotation.y : 0
+      const dy = shortestYawRadians(currentYaw, targetYaw)
+      if (rotationTweenDuration === 0) {
+        e.rotation.y = currentYaw + dy
+      } else {
+        e.userData._rotTween = new TWEEN.Tween(e.rotation).to({ y: currentYaw + dy }, rotationTweenDuration).start()
+      }
     }
 
     if (e?.playerObject && overrides?.rotation?.head) {
       const { playerObject } = e
+      const hy = overrides.rotation.head.y
+      storeNetworkHeadYaw(e.userData, hy, entity.yaw)
       playerObject.skin.head.rotation.y = 0
 
       const hp = overrides.rotation.head.x
-      playerObject.skin.head.rotation.x = typeof hp === 'number' && Number.isFinite(hp) ? -hp : 0
+      storeNetworkHeadPitch(e.userData, hp)
+      applyNetworkHeadPitch(playerObject, e.userData)
+    } else if (e?.playerObject && typeof entity.yaw === 'number' && Number.isFinite(entity.yaw)) {
+      storeNetworkHeadYaw(e.userData, undefined, entity.yaw)
     }
   }
 
