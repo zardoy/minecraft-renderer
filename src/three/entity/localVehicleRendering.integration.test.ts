@@ -13,6 +13,10 @@ import {
 
 type Vec3 = { x: number; y: number; z: number }
 
+const TEST_VERSION = '1.17.1'
+const BOAT_HEIGHT = 0.5625
+const MINECART_HEIGHT = 0.7
+
 function staleOffsetVehiclePosition(cameraWorldPos: Vec3, vehiclePosition: Vec3, stalePassengerPosition: Vec3): Vec3 {
   return {
     x: cameraWorldPos.x + (vehiclePosition.x - stalePassengerPosition.x),
@@ -73,23 +77,23 @@ test('render frames between press and release keep zero horizontal delta to came
 test('boat passenger positions use vanilla 1.17.1 riding and seat offsets', () => {
   const boat = { x: 10, y: 64, z: 20 }
 
-  expect(getBoatPassengerWorldPosition(boat, 0, 0, 1)).toEqual({
+  expect(getBoatPassengerWorldPosition(boat, 0, 0, 1, TEST_VERSION, 'oak_boat', BOAT_HEIGHT)).toEqual({
     x: 10,
     y: 63.55,
     z: 20
   })
-  expect(getBoatPassengerWorldPosition(boat, 0, 0, 2)).toEqual({
+  expect(getBoatPassengerWorldPosition(boat, 0, 0, 2, TEST_VERSION, 'oak_boat', BOAT_HEIGHT)).toEqual({
     x: 10,
     y: 63.55,
     z: 20.2
   })
-  expect(getBoatPassengerWorldPosition(boat, 0, 1, 2)).toEqual({
+  expect(getBoatPassengerWorldPosition(boat, 0, 1, 2, TEST_VERSION, 'oak_boat', BOAT_HEIGHT)).toEqual({
     x: 10,
     y: 63.55,
     z: 19.4
   })
 
-  const rotated = getBoatPassengerWorldPosition(boat, Math.PI / 2, 0, 2)
+  const rotated = getBoatPassengerWorldPosition(boat, Math.PI / 2, 0, 2, TEST_VERSION, 'oak_boat', BOAT_HEIGHT)
   expect(rotated.x).toBeCloseTo(9.8)
   expect(rotated.y).toBe(63.55)
   expect(rotated.z).toBeCloseTo(20)
@@ -109,7 +113,15 @@ test('remote player follows the tracked boat each frame and releases from an emp
   sceneOrigin.track(passenger)
   passenger.position.set(90, 64, 190)
 
-  const firstPassengerPosition = getBoatPassengerWorldPosition(sceneOrigin.getWorldPosition(boat)!, boat.rotation.y, 0, 1)
+  const firstPassengerPosition = getBoatPassengerWorldPosition(
+    sceneOrigin.getWorldPosition(boat)!,
+    boat.rotation.y,
+    0,
+    1,
+    TEST_VERSION,
+    'oak_boat',
+    BOAT_HEIGHT
+  )
   anchorVehiclePassengerPosition(passenger, firstPassengerPosition, '10')
 
   expect(stopPositionTween).toHaveBeenCalledOnce()
@@ -118,7 +130,15 @@ test('remote player follows the tracked boat each frame and releases from an emp
 
   boat.position.set(102, 64.2, 203)
   boat.rotation.y = Math.PI / 2
-  const movedPassengerPosition = getBoatPassengerWorldPosition(sceneOrigin.getWorldPosition(boat)!, boat.rotation.y, 0, 1)
+  const movedPassengerPosition = getBoatPassengerWorldPosition(
+    sceneOrigin.getWorldPosition(boat)!,
+    boat.rotation.y,
+    0,
+    1,
+    TEST_VERSION,
+    'oak_boat',
+    BOAT_HEIGHT
+  )
   anchorVehiclePassengerPosition(passenger, movedPassengerPosition, '10')
   expect(sceneOrigin.getWorldPosition(passenger)?.x).toBe(102)
   expect(sceneOrigin.getWorldPosition(passenger)?.y).toBeCloseTo(63.75)
@@ -141,7 +161,7 @@ test('remote player follows the tracked boat each frame and releases from an emp
 
 test('minecart passenger uses vanilla 1.17.1 riding Y offset', () => {
   const minecart = { x: 10, y: 64, z: 20 }
-  expect(getMinecartPassengerWorldPosition(minecart)).toEqual({
+  expect(getMinecartPassengerWorldPosition(minecart, TEST_VERSION, 'minecart', MINECART_HEIGHT)).toEqual({
     x: 10,
     y: 63.65,
     z: 20
@@ -162,13 +182,13 @@ test('minecart passenger anchor follows vehicle world position without inheritin
   sceneOrigin.track(passenger)
   passenger.position.set(90, 64, 190)
 
-  const firstPosition = getMinecartPassengerWorldPosition(sceneOrigin.getWorldPosition(minecart)!)
+  const firstPosition = getMinecartPassengerWorldPosition(sceneOrigin.getWorldPosition(minecart)!, TEST_VERSION, 'minecart', MINECART_HEIGHT)
   anchorVehiclePassengerPosition(passenger, firstPosition, '42')
   const anchoredYaw = passenger.rotation.y
 
   minecart.position.set(103, 64.5, 205)
   minecart.rotation.y = Math.PI
-  const movedPosition = getMinecartPassengerWorldPosition(sceneOrigin.getWorldPosition(minecart)!)
+  const movedPosition = getMinecartPassengerWorldPosition(sceneOrigin.getWorldPosition(minecart)!, TEST_VERSION, 'minecart', MINECART_HEIGHT)
   anchorVehiclePassengerPosition(passenger, movedPosition, '42')
 
   expect(sceneOrigin.getWorldPosition(passenger)).toEqual({
@@ -233,7 +253,7 @@ test('local minecart passenger anchors to camera-synced vehicle position', () =>
   for (const camera of cameraFrames) {
     const syncedMinecart = getLocalVehicleWorldPosition(camera, vehicleY)
     minecart.position.set(syncedMinecart.x, syncedMinecart.y, syncedMinecart.z)
-    const seatPosition = getMinecartPassengerWorldPosition(syncedMinecart)
+    const seatPosition = getMinecartPassengerWorldPosition(syncedMinecart, TEST_VERSION, 'minecart', MINECART_HEIGHT)
     anchorVehiclePassengerPosition(passenger, seatPosition, '42')
     const passengerWorld = sceneOrigin.getWorldPosition(passenger)!
 

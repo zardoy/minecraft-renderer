@@ -654,7 +654,8 @@ export class Entities {
     applyVehiclePassengerPositions({
       entities: this.entities,
       localPlayer: this.playerEntity,
-      getWorldPosition: target => this.worldRenderer.sceneOrigin.getWorldPosition(target as SceneEntity)
+      getWorldPosition: target => this.worldRenderer.sceneOrigin.getWorldPosition(target as SceneEntity),
+      version: this.worldRenderer.version
     })
   }
 

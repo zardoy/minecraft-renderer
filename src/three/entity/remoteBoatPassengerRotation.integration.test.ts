@@ -20,6 +20,7 @@ const BOAT_YAW = -0.5645049299419149
 const REMOTE_PLAYER_A = 8
 const REMOTE_PLAYER_B = 9
 const BOAT_ID = 10
+const TEST_VERSION = '1.17.1'
 
 function makePlayerObject(): PlayerObjectType {
   return new PlayerObject() as PlayerObjectType
@@ -70,7 +71,8 @@ function createHarness(passengerIds: number[]) {
     updateVehiclePassengerPositions({
       entities: entities as Parameters<typeof updateVehiclePassengerPositions>[0]['entities'],
       localPlayer: null,
-      getWorldPosition: target => sceneOrigin.getWorldPosition(target as THREE.Object3D)
+      getWorldPosition: target => sceneOrigin.getWorldPosition(target as THREE.Object3D),
+      version: TEST_VERSION
     })
 
   const runRemoteRotation = () =>

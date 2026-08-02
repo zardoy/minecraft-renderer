@@ -1,3 +1,5 @@
+import { versionToNumber } from '../../lib/utils'
+
 export const LOCAL_MOVEMENT_TWEEN_DURATION_MS = 50
 export const ENTITY_TWEEN_DURATION_MS = 120
 export const SPECTATING_CAMERA_TWEEN_DURATION_MS = 150
@@ -115,11 +117,6 @@ export function resolveLocalVehicleWorldPosition(args: {
   return getLocalVehicleWorldPosition(cameraWorldPos, rawVehicleY)
 }
 
-const BOAT_PASSENGER_RIDING_OFFSET_Y = -0.1
-const PLAYER_RIDING_OFFSET_Y = -0.35
-/** Vanilla 1.17.1 AbstractMinecart#getPassengersRidingOffset() */
-const MINECART_PASSENGER_RIDING_OFFSET_Y = 0
-
 const RIDEABLE_MINECART_ENTITY_NAMES = new Set([
   'minecart',
   'chest_minecart',
@@ -147,21 +144,79 @@ export function getBoatPassengerSeatOffset(passengerIndex: number, passengerCoun
   return passengerIndex === 0 ? 0.2 : -0.6
 }
 
-/** Vanilla 1.17.1 Boat#positionRider position, without applying the passenger pose. */
-export function getBoatPassengerWorldPosition(boatWorldPos: Vec3Like, boatYaw: number, passengerIndex: number, passengerCount: number): Vec3Like {
+const DEFAULT_BOAT_HEIGHT = 0.5625
+const DEFAULT_MINECART_HEIGHT = 0.7
+
+// <= 1.20.1: Entity#positionRider = y + vehicle.getPassengersRidingOffset() + passenger.getMyRidingOffset()
+// Vanilla 1.17.1 sources: vehicle/Boat#getPassengersRidingOffset() = -0.1,
+// vehicle/AbstractMinecart#getPassengersRidingOffset() = 0, player/Player#getMyRidingOffset() = -0.35.
+const LEGACY_PLAYER_RIDING_OFFSET_Y = -0.35 // Player#getMyRidingOffset(), <= 1.20.1
+const LEGACY_BOAT_RIDING_OFFSET_Y = -0.1 // Boat#getPassengersRidingOffset(), <= 1.20.1
+const LEGACY_MINECART_RIDING_OFFSET_Y = 0 // AbstractMinecart#getPassengersRidingOffset(), <= 1.20.1
+
+// >= 1.20.2: y is based on the vehicle's PASSENGER attachment point.
+// The player's contribution is numerically the same, but the mechanism changed:
+//   1.20.2-1.20.4: PASSENGER.y + Player#ridingOffset() (-0.6)
+//   >= 1.20.5:     PASSENGER.y - Player.DEFAULT_VEHICLE_ATTACHMENT.y (0.6)
+// Vanilla sources: Entity#positionRider, Boat#getPassengerAttachmentPoint,
+// EntityType.*_MINECART#passengerAttachments and Player#ridingOffset / DEFAULT_VEHICLE_ATTACHMENT.
+const MODERN_PLAYER_RIDING_OFFSET_Y = -0.6
+const MODERN_MINECART_PASSENGER_ATTACHMENT_Y = 0.1875 // EntityType.*_MINECART.passengerAttachments()
+const MODERN_BOAT_RIDE_HEIGHT_FACTOR = 1 / 3 // (Abstract)Boat#rideHeight(), >= 1.20.2
+const MODERN_RAFT_RIDE_HEIGHT_FACTOR = 0.8888889 // Raft#rideHeight(), >= 1.21.2
+
+/**
+ * Vanilla seat offset for a player passenger in a boat or minecart.
+ * Rafts before 1.21.2 are intentionally treated as boats because their entity
+ * name is 'boat' and their metadata variant is not read by this project.
+ */
+export function getVehiclePassengerFeetOffsetY(
+  layout: 'boat' | 'minecart',
+  version: string,
+  vehicleName: string | undefined,
+  vehicleHeight: number | undefined
+): number {
+  const height = Number.isFinite(vehicleHeight) ? vehicleHeight! : layout === 'boat' ? DEFAULT_BOAT_HEIGHT : DEFAULT_MINECART_HEIGHT
+
+  if (versionToNumber(version) >= versionToNumber('1.20.2')) {
+    const isRaft = typeof vehicleName === 'string' && vehicleName.toLowerCase().endsWith('_raft')
+    const passengerAttachmentY =
+      layout === 'boat' ? height * (isRaft ? MODERN_RAFT_RIDE_HEIGHT_FACTOR : MODERN_BOAT_RIDE_HEIGHT_FACTOR) : MODERN_MINECART_PASSENGER_ATTACHMENT_Y
+    return passengerAttachmentY + MODERN_PLAYER_RIDING_OFFSET_Y
+  }
+
+  const vehicleRidingOffset = layout === 'boat' ? LEGACY_BOAT_RIDING_OFFSET_Y : LEGACY_MINECART_RIDING_OFFSET_Y
+  return vehicleRidingOffset + LEGACY_PLAYER_RIDING_OFFSET_Y
+}
+
+/** Vanilla Boat#positionRider position, without applying the passenger pose. */
+export function getBoatPassengerWorldPosition(
+  boatWorldPos: Vec3Like,
+  boatYaw: number,
+  passengerIndex: number,
+  passengerCount: number,
+  version: string,
+  vehicleName: string | undefined,
+  vehicleHeight: number | undefined
+): Vec3Like {
   const seatOffset = getBoatPassengerSeatOffset(passengerIndex, passengerCount)
   return {
     x: boatWorldPos.x - Math.sin(boatYaw) * seatOffset,
-    y: boatWorldPos.y + BOAT_PASSENGER_RIDING_OFFSET_Y + PLAYER_RIDING_OFFSET_Y,
+    y: boatWorldPos.y + getVehiclePassengerFeetOffsetY('boat', version, vehicleName, vehicleHeight),
     z: boatWorldPos.z + Math.cos(boatYaw) * seatOffset
   }
 }
 
-/** Vanilla 1.17.1 minecart positionRider for a centered player passenger. */
-export function getMinecartPassengerWorldPosition(minecartWorldPos: Vec3Like): Vec3Like {
+/** Vanilla minecart positionRider for a centered player passenger. */
+export function getMinecartPassengerWorldPosition(
+  minecartWorldPos: Vec3Like,
+  version: string,
+  vehicleName: string | undefined,
+  vehicleHeight: number | undefined
+): Vec3Like {
   return {
     x: minecartWorldPos.x,
-    y: minecartWorldPos.y + MINECART_PASSENGER_RIDING_OFFSET_Y + PLAYER_RIDING_OFFSET_Y,
+    y: minecartWorldPos.y + getVehiclePassengerFeetOffsetY('minecart', version, vehicleName, vehicleHeight),
     z: minecartWorldPos.z
   }
 }

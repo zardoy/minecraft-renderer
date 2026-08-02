@@ -9,6 +9,8 @@ const REMOTE_PLAYER_ID = 8
 const MINECART_ID = '42'
 const EYE_HEIGHT = 1.62
 const PLAYER_HEIGHT = 1.8
+const TEST_VERSION = '1.17.1'
+const MINECART_HEIGHT = 0.7
 
 type PassengerLike = THREE.Group & {
   playerObject: Record<string, unknown>
@@ -41,7 +43,7 @@ function anchorMinecartPassengers(
   remotePlayers: Record<number, PassengerLike>
 ) {
   const vehicleWorldPos = sceneOrigin.getWorldPosition(minecart)!
-  const seatPosition = getMinecartPassengerWorldPosition(vehicleWorldPos)
+  const seatPosition = getMinecartPassengerWorldPosition(vehicleWorldPos, TEST_VERSION, 'minecart', MINECART_HEIGHT)
   for (const passengerId of passengerIds) {
     const passenger = resolveMinecartPassenger(passengerId, localPlayer, remotePlayers)
     if (!passenger?.playerObject) continue
@@ -195,7 +197,7 @@ test('local boat passenger uses the same anchor as remote passenger', () => {
   sceneOrigin.track(localPlayer)
   sceneOrigin.track(remotePlayer)
 
-  const boatSeat = getBoatPassengerWorldPosition(sceneOrigin.getWorldPosition(boat)!, boat.rotation.y, 0, 1)
+  const boatSeat = getBoatPassengerWorldPosition(sceneOrigin.getWorldPosition(boat)!, boat.rotation.y, 0, 1, TEST_VERSION, 'oak_boat', 0.5625)
   if (shouldAnchorPassenger(localPlayer, 'boat', true)) {
     anchorVehiclePassengerPosition(localPlayer, boatSeat, '10')
   }

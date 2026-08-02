@@ -73,7 +73,7 @@ test('minecart passenger anchor preserves head rotation', () => {
   storeNetworkHeadPitch(userData, 0.45)
   applyNetworkHeadPitch(playerObject, userData)
 
-  const seat = getMinecartPassengerWorldPosition({ x: 10, y: 64, z: 20 })
+  const seat = getMinecartPassengerWorldPosition({ x: 10, y: 64, z: 20 }, '1.17.1', 'minecart', 0.7)
   anchorVehiclePassengerPosition(passenger, seat, '42')
   simulateAnimationFrames(playerObject, userData, 4)
 

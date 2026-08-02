@@ -9,6 +9,7 @@ import {
   getHorsePassengerWorldPosition,
   getLocalVehicleWorldPosition,
   getMinecartPassengerWorldPosition,
+  getVehiclePassengerFeetOffsetY,
   resolveLocalVehicleWorldPosition,
   samePosition,
   shouldRestartCameraPositionTween,
@@ -243,7 +244,28 @@ test('horse vertical camera lock falls back to raw Y when result is non-finite',
 })
 
 test('minecart passenger feet Y is vehicleY - 0.35', () => {
-  expect(getMinecartPassengerWorldPosition({ x: 0, y: 64, z: 0 }).y).toBeCloseTo(63.65, 5)
+  expect(getMinecartPassengerWorldPosition({ x: 0, y: 64, z: 0 }, '1.17.1', 'minecart', 0.7).y).toBeCloseTo(63.65, 5)
+})
+
+test.each([
+  ['1.17.1', 'boat', -0.45],
+  ['1.20.1', 'boat', -0.45],
+  ['1.20.2', 'boat', -0.4125],
+  ['1.21.4', 'boat', -0.4125],
+  ['1.17.1', 'minecart', -0.35],
+  ['1.20.1', 'minecart', -0.35],
+  ['1.20.2', 'minecart', -0.4125],
+  ['1.21.4', 'minecart', -0.4125],
+  ['1.21.4', 'bamboo_raft', -0.1]
+])('vehicle %s %s seat offset matches vanilla', (version, vehicleName, expected) => {
+  const layout = vehicleName === 'minecart' ? 'minecart' : 'boat'
+  const height = layout === 'boat' ? 0.5625 : 0.7
+  expect(getVehiclePassengerFeetOffsetY(layout, version, vehicleName, height)).toBeCloseTo(expected, 5)
+})
+
+test('vehicle seat offset falls back to the default vehicle height', () => {
+  expect(getVehiclePassengerFeetOffsetY('boat', '1.20.2', 'oak_boat', undefined)).toBeCloseTo(-0.4125, 5)
+  expect(getVehiclePassengerFeetOffsetY('minecart', '1.20.2', 'minecart', undefined)).toBeCloseTo(-0.4125, 5)
 })
 
 test.each([

@@ -7,6 +7,7 @@ import { updateVehiclePassengerPositions, type VehiclePassengerSceneEntity, type
 
 const LOCAL_PLAYER_ID = 7
 const REMOTE_PLAYER_ID = 8
+const TEST_VERSION = '1.17.1'
 
 type PassengerLike = THREE.Group & VehiclePassengerSceneEntity
 
@@ -42,7 +43,8 @@ function createHarness() {
     updateVehiclePassengerPositions({
       entities,
       localPlayer,
-      getWorldPosition: target => sceneOrigin.getWorldPosition(target as THREE.Object3D)
+      getWorldPosition: target => sceneOrigin.getWorldPosition(target as THREE.Object3D),
+      version: TEST_VERSION
     })
 
   return { sceneOrigin, localPlayer, entities, cameraWorldPos, runUpdate }
@@ -64,7 +66,15 @@ test('updateVehiclePassengerPositions anchors local boat and minecart passengers
 
   runUpdate()
 
-  const expectedBoatSeat = getBoatPassengerWorldPosition(sceneOrigin.getWorldPosition(boat)!, boat.rotation.y, 0, 1)
+  const expectedBoatSeat = getBoatPassengerWorldPosition(
+    sceneOrigin.getWorldPosition(boat)!,
+    boat.rotation.y,
+    0,
+    1,
+    TEST_VERSION,
+    'oak_boat',
+    boat.originalEntity.height
+  )
   expect(localPlayer.userData._passengerVehicleId).toBe('10')
   expect(sceneOrigin.getWorldPosition(localPlayer)).toEqual(expectedBoatSeat)
 
@@ -76,7 +86,12 @@ test('updateVehiclePassengerPositions anchors local boat and minecart passengers
 
   runUpdate()
 
-  const expectedMinecartSeat = getMinecartPassengerWorldPosition(sceneOrigin.getWorldPosition(minecart)!)
+  const expectedMinecartSeat = getMinecartPassengerWorldPosition(
+    sceneOrigin.getWorldPosition(minecart)!,
+    TEST_VERSION,
+    'minecart',
+    minecart.originalEntity.height
+  )
   expect(localPlayer.userData._passengerVehicleId).toBe('42')
   expect(sceneOrigin.getWorldPosition(localPlayer)).toEqual(expectedMinecartSeat)
 })
@@ -118,8 +133,8 @@ test('local and remote boat passengers use the same seat algorithm per index', (
   const vehicleWorldPos = sceneOrigin.getWorldPosition(boat)!
   const localWorld = sceneOrigin.getWorldPosition(localPlayer)!
   const remoteWorld = sceneOrigin.getWorldPosition(remotePlayer)!
-  expect(localWorld).toEqual(getBoatPassengerWorldPosition(vehicleWorldPos, boat.rotation.y, 0, 2))
-  expect(remoteWorld).toEqual(getBoatPassengerWorldPosition(vehicleWorldPos, boat.rotation.y, 1, 2))
+  expect(localWorld).toEqual(getBoatPassengerWorldPosition(vehicleWorldPos, boat.rotation.y, 0, 2, TEST_VERSION, 'oak_boat', boat.originalEntity.height))
+  expect(remoteWorld).toEqual(getBoatPassengerWorldPosition(vehicleWorldPos, boat.rotation.y, 1, 2, TEST_VERSION, 'oak_boat', boat.originalEntity.height))
   expect(localWorld.y).toBeCloseTo(63.55, 5)
   expect(remoteWorld.y).toBeCloseTo(63.55, 5)
 })

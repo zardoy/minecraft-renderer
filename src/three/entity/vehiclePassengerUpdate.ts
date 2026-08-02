@@ -32,6 +32,7 @@ export function updateVehiclePassengerPositions(args: {
   entities: Record<string, VehiclePassengerSceneEntity | VehiclePassengerVehicle>
   localPlayer: VehiclePassengerSceneEntity | null
   getWorldPosition: (target: unknown) => Vec3Like | undefined
+  version: string
 }): Set<VehiclePassengerSceneEntity> {
   const attachedPassengers = new Set<VehiclePassengerSceneEntity>()
 
@@ -60,10 +61,18 @@ export function updateVehiclePassengerPositions(args: {
 
       const passengerWorldPos =
         layout === 'minecart'
-          ? getMinecartPassengerWorldPosition(vehicleWorldPos)
+          ? getMinecartPassengerWorldPosition(vehicleWorldPos, args.version, vehicleName, vehicle.originalEntity.height)
           : layout === 'horse'
             ? getHorsePassengerWorldPosition(vehicleWorldPos, vehicleName, vehicle.originalEntity.height ?? 1.6)
-            : getBoatPassengerWorldPosition(vehicleWorldPos, vehicle.rotation.y, passengerIndex, passengerIds.length)
+            : getBoatPassengerWorldPosition(
+                vehicleWorldPos,
+                vehicle.rotation.y,
+                passengerIndex,
+                passengerIds.length,
+                args.version,
+                vehicleName,
+                vehicle.originalEntity.height
+              )
 
       if (!isFiniteVec3(passengerWorldPos)) continue
       anchorVehiclePassengerPosition(passenger, passengerWorldPos, vehicleId)
