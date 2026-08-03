@@ -1,5 +1,7 @@
 /** Shared geometry export shapes (worker bridge + main-thread viewer). */
 
+import { SHADER_CUBES_FORMAT_VERSION } from './shaderCubeFormat'
+
 export interface ExportedSection {
   key: string
   position: { x: number; y: number; z: number }
@@ -24,7 +26,7 @@ export interface ExportedSection {
   shaderCubes?: {
     words: Uint32Array
     count: number
-    formatVersion: 3
+    formatVersion: typeof SHADER_CUBES_FORMAT_VERSION
   }
   visibilitySet?: number
 }

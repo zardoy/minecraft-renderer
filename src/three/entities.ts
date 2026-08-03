@@ -446,9 +446,7 @@ export class Entities {
   }
 
   private setSceneAttached(attached: boolean, entity: THREE.Object3D | null = null): void {
-    const targets = entity
-      ? [entity]
-      : [...Object.values(this.entities), ...(this.playerEntity ? [this.playerEntity] : [])]
+    const targets = entity ? [entity] : [...Object.values(this.entities), ...(this.playerEntity ? [this.playerEntity] : [])]
     for (const ent of targets) {
       if (attached) {
         if (!this.worldRenderer.scene.children.includes(ent)) this.worldRenderer.scene.add(ent)
