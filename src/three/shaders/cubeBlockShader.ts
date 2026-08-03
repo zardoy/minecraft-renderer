@@ -6,6 +6,64 @@ export type { BlockLightmapParams }
 // Face order: UP=0, DOWN=1, EAST=2, WEST=3, SOUTH=4, NORTH=5
 // matches WASM mesher face order (mesher.rs FACE_NAMES)
 
+/** Term of tile-local UV in quad-corner coordinates (u, v ∈ {0,1}). */
+type FaceUvTerm = 'u' | '1-u' | 'v' | '1-v'
+
+/**
+ * Canonical tile-local UV per face for su>0, sv>0. Matches legacy elemFaces
+ * (+ implicit +180° on down; see render-from-wasm.ts `r += 180`).
+ * Index = faceId: UP, DOWN, EAST, WEST, SOUTH, NORTH.
+ * Single source of truth — GLSL and shaderCubeFaceUv() are generated from this.
+ */
+export const FACE_UV_TERMS: ReadonlyArray<readonly [FaceUvTerm, FaceUvTerm]> = [
+  ['u', '1-v'], // UP
+  ['1-u', 'v'], // DOWN
+  ['v', 'u'], // EAST
+  ['v', 'u'], // WEST
+  ['u', 'v'], // SOUTH
+  ['1-u', 'v'] // NORTH
+]
+
+const glslTerm = (t: FaceUvTerm) =>
+  ({
+    u: 'u',
+    v: 'v',
+    '1-u': '1.0 - u',
+    '1-v': '1.0 - v'
+  })[t]
+
+/** GLSL if/else-if chain for per-face UV — must stay in sync with FACE_UV_TERMS. */
+export function buildFaceUvGlsl(): string {
+  return FACE_UV_TERMS.map(([ut, vt], i) => `    ${i === 0 ? 'if' : 'else if'} (faceId == ${i}u) uv = vec2(${glslTerm(ut)}, ${glslTerm(vt)});`).join('\n')
+}
+
+function evalFaceUvTerm(t: FaceUvTerm, cu: number, cv: number): number {
+  switch (t) {
+    case 'u':
+      return cu
+    case '1-u':
+      return 1 - cu
+    case 'v':
+      return cv
+    case '1-v':
+      return 1 - cv
+  }
+}
+
+/** vi — quad corner in shader order (0..3): u = vi & 1, v = (vi >> 1) & 1. */
+export function shaderCubeFaceUv(faceId: number, vi: number, flipU: boolean, flipV: boolean): [number, number] {
+  const [ut, vt] = FACE_UV_TERMS[faceId] ?? FACE_UV_TERMS[0]
+  const cu = vi & 1
+  const cv = (vi >> 1) & 1
+  let uLocal = evalFaceUvTerm(ut, cu, cv)
+  let vLocal = evalFaceUvTerm(vt, cu, cv)
+  if (flipU) uLocal = 1 - uLocal
+  if (flipV) vLocal = 1 - vLocal
+  return [uLocal, vLocal]
+}
+
+const faceUvGlsl = buildFaceUvGlsl()
+
 const vertexShader = /* glsl */ `
 precision highp float;
 precision highp int;
@@ -142,18 +200,16 @@ void main() {
     v_tintIndex = int(tint);
     v_faceId = int(faceId);
 
-    // --- Per-face UV transform (legacy elemFaces + down +180°) ---
-    if (faceId == 0u) {
-        v_uv = vec2(u, 1.0 - v);
-    } else if (faceId == 1u) {
-        v_uv = vec2(1.0 - u, 1.0 - v);
-    } else if (faceId == 2u || faceId == 3u) {
-        v_uv = vec2(v, u);
-    } else if (faceId == 4u) {
-        v_uv = vec2(u, v);
-    } else { // faceId == 5u
-        v_uv = vec2(1.0 - u, v);
-    }
+    // --- Per-face UV: canonical tile-local UV (su>0, sv>0), generated from
+    // FACE_UV_TERMS — same source as shaderCubeFaceUv() ---
+    vec2 uv;
+${faceUvGlsl}
+
+    // su/sv sign from resolved model: negative scale = mirror on axis.
+    // Bit offsets mirror WORD2.FLIP_U_SHIFT / WORD0.FLIP_V_SHIFT (GLSL cannot import TS).
+    if (((a_w2 >> 31u) & 0x1u) != 0u) uv.x = 1.0 - uv.x;
+    if (((a_w0 >> 31u) & 0x1u) != 0u) uv.y = 1.0 - uv.y;
+    v_uv = uv;
 
     // --- Position: section base (multiples of 16) + face quad + block-local 0..15 ---
     // Must mirror WORD2/WORD3 constants in TS (GLSL cannot import them).
@@ -320,6 +376,9 @@ void main() {
 }
 `
 
+/** Vertex shader source (includes generated face UV table). Exported for parity tests. */
+export const cubeBlockVertexShader = vertexShader
+
 export function createCubeBlockMaterial(): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     vertexShader,
@@ -416,7 +475,8 @@ export const WORD0 = {
   FACE_SHIFT: 12,
   TINT_SHIFT: 15,
   AO_SHIFT: 23,
-  TRANSPARENT_SHIFT: 31
+  /** sv<0 mirror flag — no free bits remain in word0 after this. */
+  FLIP_V_SHIFT: 31
 } as const
 
 export const WORD1 = {
@@ -433,7 +493,8 @@ export const WORD2 = {
   SECTION_X_HI_SHIFT: 19,
   SECTION_Z_HI_SHIFT: 25,
   SECTION_HI_BITS: 6,
-  SPARE_BITS: 1
+  /** su<0 mirror flag — no free bits remain in word2 after this. */
+  FLIP_U_SHIFT: 31
 } as const
 
 /** Section base X/Z: low 16 bits in a_w3, high 6 in a_w2 (22-bit biased section index). */

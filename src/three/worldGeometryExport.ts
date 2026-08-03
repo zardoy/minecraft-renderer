@@ -4,6 +4,7 @@ import type { ExportedSection, ExportedWorldGeometry } from '../mesher-shared/ex
 import { calculateSkyLightSimple } from '../lib/skyLight'
 import { bakeLegacyVertexColors } from '../lib/bakeLegacyLight'
 import { getShaderCubeResources } from '../wasm-mesher/bridge/shaderCubeBridge'
+import { SHADER_CUBES_FORMAT_VERSION } from '../mesher-shared/shaderCubeFormat'
 import { createCubeBlockMaterial, setCubeSkyLevel } from './shaders/cubeBlockShader'
 import { createShaderCubeMesh } from './shaderCubeMesh'
 
@@ -180,6 +181,8 @@ export function createMeshesFromExport(
 ): THREE.Group[] {
   const groups: THREE.Group[] = []
   const resolvedShaderMat = shaderMaterial ?? shaderMaterialForExport(material, skyLevel)
+  let skippedShaderCubeSections = 0
+  let skippedShaderCubeFormatVersion: number | undefined
 
   for (const section of exportData.sections) {
     const group = new THREE.Group()
@@ -212,14 +215,26 @@ export function createMeshesFromExport(
 
     const shaderCubes = section.shaderCubes
     if (shaderCubes && shaderCubes.count > 0 && resolvedShaderMat) {
-      const shaderMesh = createShaderCubeMesh(shaderCubes, resolvedShaderMat)
-      shaderMesh.position.set(section.position.x, section.position.y, section.position.z)
-      group.add(shaderMesh)
+      if (shaderCubes.formatVersion !== SHADER_CUBES_FORMAT_VERSION) {
+        skippedShaderCubeSections++
+        skippedShaderCubeFormatVersion ??= shaderCubes.formatVersion
+      } else {
+        const shaderMesh = createShaderCubeMesh(shaderCubes, resolvedShaderMat)
+        shaderMesh.position.set(section.position.x, section.position.y, section.position.z)
+        group.add(shaderMesh)
+      }
     }
 
     if (group.children.length > 0) {
       groups.push(group)
     }
+  }
+
+  if (skippedShaderCubeSections > 0) {
+    console.warn(
+      `[worldGeometryExport] Skipped ${skippedShaderCubeSections} shader-cube section(s): ` +
+        `export format ${skippedShaderCubeFormatVersion} ≠ current ${SHADER_CUBES_FORMAT_VERSION}`
+    )
   }
 
   return groups

@@ -3,6 +3,7 @@ import { convertChunkToWasm, getBlockMeta, type ChunkConversionResult } from '..
 import { extractColumnHeightmap, splitColumnWasmOutputToSections } from '../bridge/render-from-wasm'
 import { setBlockStatesData as setMesherData } from '../../mesher-shared/models'
 import { defaultMesherConfig, type MesherGeometryOutput, SECTION_HEIGHT } from '../../mesher-shared/shared'
+import { SHADER_CUBES_FORMAT_VERSION } from '../../mesher-shared/shaderCubeFormat'
 import { packVisibilitySet, VISIBILITY_SET_ALL_TRUE } from '../../mesher-shared/visibilitySet'
 import { VisGraph } from '../../mesher-shared/visGraph'
 import { worldColumnKey, World } from '../../mesher-shared/world'
@@ -1531,7 +1532,7 @@ function processColumnTick() {
             geometry.shaderCubes = {
               words: new Uint32Array(exported.shaderCubes.words),
               count: exported.shaderCubes.count,
-              formatVersion: 3
+              formatVersion: SHADER_CUBES_FORMAT_VERSION
             }
           }
           if (exported.blendGeometry && hasBlendMesh) {

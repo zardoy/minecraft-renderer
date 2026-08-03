@@ -5,12 +5,12 @@
  */
 
 import blocksAtlasesJson from 'mc-assets/dist/blocksAtlases.json'
+import { SHADER_CUBES_FORMAT_VERSION, SHADER_CUBES_WORDS_PER_FACE } from '../../mesher-shared/shaderCubeFormat'
 import { WORD0, WORD1, WORD2, WORD3 } from '../../three/shaders/cubeBlockShader'
 import { TextureIndexMapping, type TextureEntry } from '../../three/shaders/textureIndexMapping'
 import { TintPalette } from '../../three/shaders/tintPalette'
 
-export const SHADER_CUBES_FORMAT_VERSION = 3 as const
-export const SHADER_CUBES_WORDS_PER_FACE = 4 as const
+export { SHADER_CUBES_FORMAT_VERSION, SHADER_CUBES_WORDS_PER_FACE } from '../../mesher-shared/shaderCubeFormat'
 
 export type ShaderCubesOutput = {
   words: Uint32Array
@@ -82,32 +82,78 @@ let tintPalette: TintPalette | null = null
 let textureIndexMapping: TextureIndexMapping | null = null
 let tintsMissingWarned = false
 
-/** Convert mc-assets texture scales (normalized or negative) to pixel tile size for index lookup. */
-function normalizeTextureEntryForTileIndex(tex: { u?: number; v?: number; su?: number; sv?: number }, atlasWidth: number, tileSize: number): TextureEntry {
+type FaceTextureRef = TextureEntry & { tileIndex?: number }
+
+export type ResolvedFaceUv = { tileIndex: number; flipU: boolean; flipV: boolean }
+
+const UV_RESOLVE_EPS = 1e-6
+
+function isNearInteger(value: number): boolean {
+  return Math.abs(value - Math.round(value)) <= UV_RESOLVE_EPS
+}
+
+/**
+ * Resolve a face to (atlas tile + mirror flags).
+ * null ⇒ face does not fit exactly one aligned tile; block must use legacy path.
+ */
+export function resolveFaceUv(tex: FaceTextureRef, texMapping: TextureIndexMapping): ResolvedFaceUv | null {
+  const tileSize = 16
   let u = tex.u ?? 0
   let v = tex.v ?? 0
   let su = tex.su ?? tileSize
   let sv = tex.sv ?? tileSize
-  if (u > 0 && u <= 1) u = Math.round(u * atlasWidth)
-  if (v > 0 && v <= 1) v = Math.round(v * atlasWidth)
-  if (Math.abs(su) > 0 && Math.abs(su) <= 1) su = Math.round(Math.abs(su) * atlasWidth) || tileSize
-  else if (su < 0) su = tileSize
-  if (Math.abs(sv) > 0 && Math.abs(sv) <= 1) sv = Math.round(Math.abs(sv) * atlasWidth) || tileSize
-  else if (sv < 0) sv = tileSize
-  return { u, v, su, sv }
-}
 
-type FaceTextureRef = TextureEntry & { tileIndex?: number }
-
-/** Prefer atlas `tileIndex` from block model (legacy path uses the same). */
-export function resolveFaceTileIndex(tex: FaceTextureRef, texMapping: TextureIndexMapping): number {
-  const fromAtlas = tex.tileIndex
-  // tile 0 is a special/atlas-padding slot; use pixel fallback for block faces
-  if (typeof fromAtlas === 'number' && fromAtlas > 0 && fromAtlas < 4096) {
-    return fromAtlas
+  if (!Number.isFinite(u) || !Number.isFinite(v) || !Number.isFinite(su) || !Number.isFinite(sv)) {
+    return null
   }
-  const entry = normalizeTextureEntryForTileIndex(tex, texMapping.getTilesPerRow() * 16, 16)
-  return texMapping.tileIndexFromTextureEntry(entry)
+
+  const atlasWidth = texMapping.getTilesPerRow() * tileSize
+  if (Math.abs(su) <= 1) {
+    u *= atlasWidth
+    v *= atlasWidth
+    su *= atlasWidth
+    sv *= atlasWidth
+  }
+
+  if (!isNearInteger(u) || !isNearInteger(v) || !isNearInteger(su) || !isNearInteger(sv)) {
+    return null
+  }
+
+  const uPx = Math.round(u)
+  const vPx = Math.round(v)
+  const suPx = Math.round(su)
+  const svPx = Math.round(sv)
+
+  const flipU = suPx < 0
+  const flipV = svPx < 0
+
+  if (Math.abs(suPx) !== tileSize || Math.abs(svPx) !== tileSize) {
+    return null
+  }
+
+  const uMin = flipU ? uPx + suPx : uPx
+  const vMin = flipV ? vPx + svPx : vPx
+
+  if (uMin % tileSize !== 0 || vMin % tileSize !== 0) {
+    return null
+  }
+  if (uMin < 0 || vMin < 0) {
+    return null
+  }
+
+  const derived = texMapping.tileIndexFromPixelCoords(uMin, vMin)
+  if (derived < 0) {
+    return null
+  }
+
+  if (typeof tex.tileIndex === 'number') {
+    if (tex.tileIndex !== derived) {
+      return null
+    }
+    return { tileIndex: derived, flipU, flipV }
+  }
+
+  return { tileIndex: derived, flipU, flipV }
 }
 
 /** Main thread + worker: use `loadedData` set by the app / mesher (see mesherWasm). */
@@ -157,8 +203,8 @@ export function resetShaderCubeResources(): void {
 
 /**
  * Returns true when the block is a plain 1×1×1 cube that the instanced shader path
- * can render exactly like the legacy mesher (no model rotation, single un-rotated
- * element with all 6 cardinal faces present, atlas matches shader gate).
+ * can render with pixel-parity UV (no model rotation, single un-rotated element with
+ * all 6 cardinal faces present, each face exactly one aligned atlas tile).
  * Pass the already-resolved model variant (`modelVars[variantIndex][0]`).
  */
 export function isShaderCubeBlock(
@@ -190,7 +236,7 @@ export function isShaderCubeBlock(
     if ((eFace as { rotation?: number }).rotation) return false
     const tex = eFace.texture
     if (!tex) return false
-    if (resolveFaceTileIndex(tex as FaceTextureRef, texMapping) < 0) {
+    if (resolveFaceUv(tex as FaceTextureRef, texMapping) === null) {
       return false
     }
   }
@@ -198,7 +244,7 @@ export function isShaderCubeBlock(
   return true
 }
 
-function packWord0(lx: number, ly: number, lz: number, faceId: number, tintIndex: number, ao: number[]): number {
+function packWord0(lx: number, ly: number, lz: number, faceId: number, tintIndex: number, ao: number[], flipV: boolean): number {
   let w = 0
   w |= (lx & 0xf) << WORD0.LX_SHIFT
   w |= (ly & 0xf) << WORD0.LY_SHIFT
@@ -207,6 +253,9 @@ function packWord0(lx: number, ly: number, lz: number, faceId: number, tintIndex
   w |= (tintIndex & 0xff) << WORD0.TINT_SHIFT
   for (let i = 0; i < WORD0.NUM_CORNERS; i++) {
     w |= ((ao[i] ?? 3) & 3) << (WORD0.AO_SHIFT + i * WORD0.AO_BITS_PER_CORNER)
+  }
+  if (flipV) {
+    w |= 1 << WORD0.FLIP_V_SHIFT
   }
   return w >>> 0
 }
@@ -223,7 +272,7 @@ function biasedSectionIndex(sectionBaseCoord: number): number {
   return (Math.floor(sectionBaseCoord / 16) + WORD3.SECTION_BIAS) & WORD3.SECTION_MASK
 }
 
-export function packWord2(texIndex: number, aoDiagonalFlip: boolean, sectionBaseX: number, sectionBaseY: number, sectionBaseZ: number): number {
+export function packWord2(texIndex: number, aoDiagonalFlip: boolean, sectionBaseX: number, sectionBaseY: number, sectionBaseZ: number, flipU = false): number {
   let w = texIndex & ((1 << WORD2.TEX_INDEX_BITS) - 1)
   if (aoDiagonalFlip) {
     w |= 1 << WORD2.DIAGONAL_FLAG_SHIFT
@@ -234,6 +283,9 @@ export function packWord2(texIndex: number, aoDiagonalFlip: boolean, sectionBase
   const sz = biasedSectionIndex(sectionBaseZ)
   w |= ((sx >>> 16) & 0x3f) << WORD2.SECTION_X_HI_SHIFT
   w |= ((sz >>> 16) & 0x3f) << WORD2.SECTION_Z_HI_SHIFT
+  if (flipU) {
+    w |= 1 << WORD2.FLIP_U_SHIFT
+  }
   return w >>> 0
 }
 
@@ -345,11 +397,12 @@ export function tryBuildShaderCubeInstances(
 
     const eFace = faces[faceName]
     const tex = eFace.texture! as FaceTextureRef
-    const texIndex = resolveFaceTileIndex(tex, textureIndexMapping)
-    if (texIndex < 0) {
+    const resolved = resolveFaceUv(tex, textureIndexMapping)
+    if (resolved === null) {
       words.length = wordsStart
       return false
     }
+    const { tileIndex: texIndex, flipU, flipV } = resolved
 
     const rawAo = block.ao_data[faceDataIndex] ?? [3, 3, 3, 3]
     const rawLight = lightCombinedForFace(block, faceDataIndex)
@@ -371,9 +424,9 @@ export function tryBuildShaderCubeInstances(
     const tintIndex = tintPalette.getTintIndex(eFace.tintindex, cached.blockName, cached.blockProps, biome ?? 'plains')
 
     words.push(
-      packWord0(lx, ly, lz, faceIdx, tintIndex, ao),
+      packWord0(lx, ly, lz, faceIdx, tintIndex, ao, flipV),
       packWord1(lightCombined),
-      packWord2(texIndex, aoDiagonalFlip, sectionOrigin.x, sectionOrigin.y, sectionOrigin.z),
+      packWord2(texIndex, aoDiagonalFlip, sectionOrigin.x, sectionOrigin.y, sectionOrigin.z, flipU),
       packWord3(sectionOrigin.x, sectionOrigin.z)
     )
   }

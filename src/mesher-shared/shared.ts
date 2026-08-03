@@ -1,4 +1,5 @@
 import { BlockType } from '../playground/shared'
+import { SHADER_CUBES_FORMAT_VERSION } from './shaderCubeFormat'
 
 export const SECTION_HEIGHT = 16
 
@@ -79,7 +80,7 @@ export type MesherGeometryOutput = {
   shaderCubes?: {
     words: Uint32Array
     count: number
-    formatVersion: 3
+    formatVersion: typeof SHADER_CUBES_FORMAT_VERSION
   }
   /** Packed VisibilitySet (36 bits) for section occlusion / smart cull. */
   visibilitySet?: number
