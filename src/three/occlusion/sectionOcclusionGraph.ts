@@ -8,9 +8,12 @@ import { Direction, DIRECTIONS, VISIBILITY_SET_ALL_TRUE, oppositeDirection, visi
 
 export type OcclusionSectionRecord = {
   visibilitySet: number
-  worldX: number
-  worldY: number
-  worldZ: number
+  /** Section corner world X (block coord of section origin). */
+  sectionX: number
+  sectionY: number
+  sectionZ: number
+  /** Six neighbour section keys (DOWN, UP, NORTH, SOUTH, WEST, EAST). */
+  neighborKeys: readonly string[]
 }
 
 export type OcclusionUpdateParams = {
@@ -22,6 +25,11 @@ export type OcclusionUpdateParams = {
   sectionHeight: number
   worldMinY: number
   worldMaxY: number
+}
+
+export type OcclusionRebuildStats = {
+  durationMs: number
+  nodeCount: number
 }
 
 export class OcclusionNode {
@@ -68,38 +76,58 @@ function parseSectionKey(key: string): { x: number; y: number; z: number } {
   return { x: x!, y: y!, z: z! }
 }
 
-function getNeighborKey(key: string, dir: Direction, sectionHeight: number): string {
+function buildNeighborKeys(x: number, y: number, z: number, sectionHeight: number): readonly string[] {
+  return [
+    sectionKeyFromWorld(x, y - sectionHeight, z),
+    sectionKeyFromWorld(x, y + sectionHeight, z),
+    sectionKeyFromWorld(x, y, z - 16),
+    sectionKeyFromWorld(x, y, z + 16),
+    sectionKeyFromWorld(x - 16, y, z),
+    sectionKeyFromWorld(x + 16, y, z)
+  ]
+}
+
+export function buildOcclusionSectionRecord(key: string, visibilitySet: number, sectionHeight: number): OcclusionSectionRecord {
   const { x, y, z } = parseSectionKey(key)
-  switch (dir) {
-    case Direction.DOWN:
-      return sectionKeyFromWorld(x, y - sectionHeight, z)
-    case Direction.UP:
-      return sectionKeyFromWorld(x, y + sectionHeight, z)
-    case Direction.NORTH:
-      return sectionKeyFromWorld(x, y, z - 16)
-    case Direction.SOUTH:
-      return sectionKeyFromWorld(x, y, z + 16)
-    case Direction.WEST:
-      return sectionKeyFromWorld(x - 16, y, z)
-    case Direction.EAST:
-      return sectionKeyFromWorld(x + 16, y, z)
-    default:
-      return key
+  return {
+    visibilitySet,
+    sectionX: x,
+    sectionY: y,
+    sectionZ: z,
+    neighborKeys: buildNeighborKeys(x, y, z, sectionHeight)
   }
 }
 
-function isInViewDistance(cameraKey: string, sectionKey: string, viewDistance: number, sectionHeight: number): boolean {
-  const cam = parseSectionKey(cameraKey)
-  const sec = parseSectionKey(sectionKey)
-  const camChunkX = Math.floor(cam.x / 16)
-  const camChunkZ = Math.floor(cam.z / 16)
-  const secChunkX = Math.floor(sec.x / 16)
-  const secChunkZ = Math.floor(sec.z / 16)
+export function occlusionSectionRecordsEqual(a: OcclusionSectionRecord, b: OcclusionSectionRecord): boolean {
+  return (
+    a.visibilitySet === b.visibilitySet &&
+    a.sectionX === b.sectionX &&
+    a.sectionY === b.sectionY &&
+    a.sectionZ === b.sectionZ &&
+    a.neighborKeys.length === b.neighborKeys.length &&
+    a.neighborKeys.every((key, index) => key === b.neighborKeys[index])
+  )
+}
+
+function isInViewDistance(
+  camX: number,
+  camY: number,
+  camZ: number,
+  secX: number,
+  secY: number,
+  secZ: number,
+  viewDistance: number,
+  sectionHeight: number
+): boolean {
+  const camChunkX = Math.floor(camX / 16)
+  const camChunkZ = Math.floor(camZ / 16)
+  const secChunkX = Math.floor(secX / 16)
+  const secChunkZ = Math.floor(secZ / 16)
   if (Math.abs(secChunkX - camChunkX) > viewDistance || Math.abs(secChunkZ - camChunkZ) > viewDistance) {
     return false
   }
-  const camSecY = Math.floor(cam.y / sectionHeight)
-  const secSecY = Math.floor(sec.y / sectionHeight)
+  const camSecY = Math.floor(camY / sectionHeight)
+  const secSecY = Math.floor(secY / sectionHeight)
   return Math.abs(secSecY - camSecY) <= viewDistance
 }
 
@@ -108,26 +136,26 @@ export class SectionOcclusionGraph {
   private readonly nodeByKey = new Map<string, OcclusionNode>()
   private visibleKeys = new Set<string>()
   private stepByKey = new Map<string, number>()
-  private needsFullUpdate = true
-  private lastCameraKey = ''
+  private version = 0
+  private lastRebuildStats: OcclusionRebuildStats = { durationMs: 0, nodeCount: 0 }
 
-  registerSection(key: string, record: OcclusionSectionRecord): void {
-    // v1: every register/unregister triggers a synchronous full BFS on next update (no partial graph).
+  setSection(key: string, record: OcclusionSectionRecord): void {
     this.sections.set(key, record)
-    this.needsFullUpdate = true
   }
 
-  unregisterSection(key: string): void {
-    if (this.sections.delete(key)) {
-      this.needsFullUpdate = true
-    }
+  hasSection(key: string): boolean {
+    return this.sections.has(key)
+  }
+
+  getSection(key: string): OcclusionSectionRecord | undefined {
+    return this.sections.get(key)
+  }
+
+  removeSection(key: string): void {
+    this.sections.delete(key)
     this.nodeByKey.delete(key)
     this.visibleKeys.delete(key)
     this.stepByKey.delete(key)
-  }
-
-  invalidate(): void {
-    this.needsFullUpdate = true
   }
 
   getVisibleKeys(): ReadonlySet<string> {
@@ -142,36 +170,33 @@ export class SectionOcclusionGraph {
     return this.visibleKeys.has(key)
   }
 
-  update(params: OcclusionUpdateParams): Set<string> {
-    const cameraKey = sectionKeyFromWorld(
-      Math.floor(params.cameraWorldX / 16) * 16,
-      Math.floor(params.cameraWorldY / params.sectionHeight) * params.sectionHeight,
-      Math.floor(params.cameraWorldZ / 16) * 16
-    )
-
-    if (cameraKey !== this.lastCameraKey) {
-      this.needsFullUpdate = true
-      this.lastCameraKey = cameraKey
-    }
-
-    if (!params.smartCull) {
-      this.visibleKeys = new Set(this.sections.keys())
-      this.stepByKey.clear()
-      for (const key of this.visibleKeys) {
-        this.stepByKey.set(key, 0)
-      }
-      return this.visibleKeys
-    }
-
-    if (this.needsFullUpdate) {
-      this.runFullUpdate(cameraKey, params)
-      this.needsFullUpdate = false
-    }
-
-    return this.visibleKeys
+  getVersion(): number {
+    return this.version
   }
 
-  private runFullUpdate(cameraKey: string, params: OcclusionUpdateParams): void {
+  getLastRebuildStats(): Readonly<OcclusionRebuildStats> {
+    return this.lastRebuildStats
+  }
+
+  getSectionCount(): number {
+    return this.sections.size
+  }
+
+  needsRebuild(): boolean {
+    return this.sections.size > 0 && this.visibleKeys.size === 0 && this.version === 0
+  }
+
+  clear(): void {
+    this.sections.clear()
+    this.nodeByKey.clear()
+    this.visibleKeys = new Set()
+    this.stepByKey.clear()
+    this.version++
+    this.lastRebuildStats = { durationMs: 0, nodeCount: 0 }
+  }
+
+  runFullUpdate(cameraKey: string, params: OcclusionUpdateParams): void {
+    const start = performance.now()
     this.nodeByKey.clear()
     this.visibleKeys = new Set()
     this.stepByKey.clear()
@@ -179,20 +204,38 @@ export class SectionOcclusionGraph {
     const queue: OcclusionNode[] = []
     this.initializeQueueForFullUpdate(cameraKey, queue, params)
 
-    while (queue.length > 0) {
-      const node = queue.shift()!
+    const cam = parseSectionKey(cameraKey)
+    let head = 0
+    while (head < queue.length) {
+      const node = queue[head++]!
       const sectionKey = node.sectionKey
-      if (!this.sections.has(sectionKey)) continue
+      const record = this.sections.get(sectionKey)
+      if (!record) continue
 
       this.visibleKeys.add(sectionKey)
       this.stepByKey.set(sectionKey, node.step)
 
-      const visibilitySet = this.sections.get(sectionKey)?.visibilitySet ?? VISIBILITY_SET_ALL_TRUE
+      const visibilitySet = record.visibilitySet
 
-      for (const exitDir of DIRECTIONS) {
-        const neighborSectionKey = getNeighborKey(sectionKey, exitDir, params.sectionHeight)
+      for (let dirIndex = 0; dirIndex < DIRECTIONS.length; dirIndex++) {
+        const exitDir = DIRECTIONS[dirIndex]!
+        const neighborSectionKey = record.neighborKeys[dirIndex]!
         if (!this.sections.has(neighborSectionKey)) continue
-        if (!isInViewDistance(cameraKey, neighborSectionKey, params.viewDistance, params.sectionHeight)) continue
+        const neighbor = this.sections.get(neighborSectionKey)!
+        if (
+          !isInViewDistance(
+            cam.x,
+            cam.y,
+            cam.z,
+            neighbor.sectionX,
+            neighbor.sectionY,
+            neighbor.sectionZ,
+            params.viewDistance,
+            params.sectionHeight
+          )
+        ) {
+          continue
+        }
 
         if (node.hasDirection(oppositeDirection(exitDir))) continue
 
@@ -217,6 +260,12 @@ export class SectionOcclusionGraph {
           queue.push(next)
         }
       }
+    }
+
+    this.version++
+    this.lastRebuildStats = {
+      durationMs: performance.now() - start,
+      nodeCount: this.sections.size
     }
   }
 
@@ -245,7 +294,12 @@ export class SectionOcclusionGraph {
       for (let dz = -params.viewDistance; dz <= params.viewDistance; dz++) {
         const key = sectionKeyFromWorld((camChunkX + dx) * 16, surfaceY, (camChunkZ + dz) * 16)
         if (!this.sections.has(key)) continue
-        if (!isInViewDistance(cameraKey, key, params.viewDistance, params.sectionHeight)) continue
+        const neighbor = this.sections.get(key)!
+        if (
+          !isInViewDistance(cam.x, cam.y, cam.z, neighbor.sectionX, neighbor.sectionY, neighbor.sectionZ, params.viewDistance, params.sectionHeight)
+        ) {
+          continue
+        }
 
         const entryDir = belowMin ? Direction.UP : Direction.DOWN
         const node = new OcclusionNode(key, entryDir, 0)
@@ -256,8 +310,7 @@ export class SectionOcclusionGraph {
         else if (dz < 0) node.setDirections(node.directions, Direction.NORTH)
 
         const center = new Vec3(cam.x + 8, cam.y + 8, cam.z + 8)
-        const sec = parseSectionKey(key)
-        const distSq = center.distanceTo(new Vec3(sec.x + 8, sec.y + 8, sec.z + 8))
+        const distSq = center.distanceTo(new Vec3(neighbor.sectionX + 8, neighbor.sectionY + 8, neighbor.sectionZ + 8))
         seeds.push({ node, distSq })
       }
     }

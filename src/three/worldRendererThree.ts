@@ -58,12 +58,33 @@ export class WorldRendererThree extends WorldRendererCommon {
 
   /** Section occlusion graph (smart / cave cull); forced off in spectator per issue #77. */
   isSmartCullEnabled(): boolean {
-    return this.worldRendererConfig.smartCull !== false && this.reactiveDebugParams.smartCull !== false && this.playerStateReactive.gameMode !== 'spectator'
+    if (this.playerStateReactive.gameMode === 'spectator') return false
+    return this.worldRendererConfig.smartCull === true
   }
 
   isSectionOcclusionVisible(sectionKey: string): boolean {
     if (!this.isSmartCullEnabled()) return true
     return this.chunkMeshManager.isSectionOcclusionVisible(sectionKey)
+  }
+
+  /** Entity visibility gate — vanilla LevelRenderer.extractEntities + this project's occlusion requirement. */
+  isPositionOcclusionVisible(worldX: number, worldY: number, worldZ: number): boolean {
+    if (worldY < this.worldSizeParams.minY || worldY >= this.worldMaxYRender) return true
+    const key = this.entitySectionKey(worldX, worldY, worldZ)
+    if (this.chunkMeshManager.hasRegisteredOcclusionSection(key) && !this.finishedSections[key]) return false
+    return this.isSectionOcclusionVisible(key)
+  }
+
+  override addColumn(x: number, z: number, chunk: any, isLightUpdate: boolean) {
+    if (!this.active) return
+    super.addColumn(x, z, chunk, isLightUpdate)
+    this.chunkMeshManager.registerColumnOcclusionGrid(
+      x,
+      z,
+      this.worldMinYRender,
+      this.worldMaxYRender,
+      this.getSectionHeight()
+    )
   }
 
   entitySectionKey(worldX: number, worldY: number, worldZ: number): string {
@@ -827,6 +848,10 @@ export class WorldRendererThree extends WorldRendererCommon {
         }
         const pf = formatPerformanceFactorsDebug(this.reactiveState.world.instabilityFactors)
         if (pf) text += `PF: ${pf} `
+        const occStats = this.chunkMeshManager.getOcclusionRebuildStats()
+        if (occStats.nodeCount > 0) {
+          text += `OCC: ${occStats.durationMs.toFixed(1)}ms/${occStats.nodeCount}n `
+        }
         // entities can be seen in F3
         pane.updateText(text)
         this.backendInfoReport = text
@@ -929,6 +954,7 @@ export class WorldRendererThree extends WorldRendererCommon {
 
       if (!this.chunkMeshManager.sectionHasRenderableContent(update.geometry)) {
         this.chunkMeshManager.releaseSection(update.key)
+        this.chunkMeshManager.registerSectionOcclusion(update.key, update.geometry)
         continue
       }
 
@@ -973,6 +999,7 @@ export class WorldRendererThree extends WorldRendererCommon {
 
       if (!this.chunkMeshManager.sectionHasRenderableContent(data.geometry)) {
         this.chunkMeshManager.releaseSection(data.key)
+        this.chunkMeshManager.registerSectionOcclusion(data.key, data.geometry)
         return
       }
       const sectionObject = this.chunkMeshManager.updateSection(data.key, data.geometry)
@@ -1478,8 +1505,8 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
 
   lightUpdate(chunkX: number, chunkZ: number) {
-    // set all sections in the chunk dirty
-    for (let y = this.worldSizeParams.minY; y < this.worldSizeParams.worldHeight; y += 16) {
+    const sectionHeight = this.getSectionHeight()
+    for (let y = this.worldMinYRender; y < this.worldMaxYRender; y += sectionHeight) {
       this.setSectionDirty(new Vec3(chunkX, y, chunkZ))
     }
   }
@@ -1551,16 +1578,13 @@ export class WorldRendererThree extends WorldRendererCommon {
     super.removeColumn(x, z)
 
     this.clearPendingSectionUpdatesForChunk(x, z)
-    const sectionHeight = this.getSectionHeight()
-    const worldMinY = this.worldMinYRender
-    for (let y = worldMinY; y < this.worldSizeParams.worldHeight; y += sectionHeight) {
-      const key = `${x},${y},${z}`
-      if (this.chunkMeshManager.sectionObjects[key]) {
-        this.chunkMeshManager.releaseSection(key)
-      }
-    }
-    // Drop near-first reveal state and re-check any farther chunks
-    // that may have been blocked by this column.
+    this.chunkMeshManager.unregisterColumnOcclusionGrid(
+      x,
+      z,
+      this.worldMinYRender,
+      this.worldMaxYRender,
+      this.getSectionHeight()
+    )
     this.chunkMeshManager.onChunkRemovedFromGate(`${x},${z}`)
   }
 
