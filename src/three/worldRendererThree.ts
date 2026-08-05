@@ -78,13 +78,7 @@ export class WorldRendererThree extends WorldRendererCommon {
   override addColumn(x: number, z: number, chunk: any, isLightUpdate: boolean) {
     if (!this.active) return
     super.addColumn(x, z, chunk, isLightUpdate)
-    this.chunkMeshManager.registerColumnOcclusionGrid(
-      x,
-      z,
-      this.worldMinYRender,
-      this.worldMaxYRender,
-      this.getSectionHeight()
-    )
+    this.chunkMeshManager.registerColumnOcclusionGrid(x, z, this.worldMinYRender, this.worldMaxYRender, this.getSectionHeight())
   }
 
   entitySectionKey(worldX: number, worldY: number, worldZ: number): string {
@@ -1578,13 +1572,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     super.removeColumn(x, z)
 
     this.clearPendingSectionUpdatesForChunk(x, z)
-    this.chunkMeshManager.unregisterColumnOcclusionGrid(
-      x,
-      z,
-      this.worldMinYRender,
-      this.worldMaxYRender,
-      this.getSectionHeight()
-    )
+    this.chunkMeshManager.unregisterColumnOcclusionGrid(x, z, this.worldMinYRender, this.worldMaxYRender, this.getSectionHeight())
     this.chunkMeshManager.onChunkRemovedFromGate(`${x},${z}`)
   }
 

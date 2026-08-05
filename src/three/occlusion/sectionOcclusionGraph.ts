@@ -222,18 +222,7 @@ export class SectionOcclusionGraph {
         const neighborSectionKey = record.neighborKeys[dirIndex]!
         if (!this.sections.has(neighborSectionKey)) continue
         const neighbor = this.sections.get(neighborSectionKey)!
-        if (
-          !isInViewDistance(
-            cam.x,
-            cam.y,
-            cam.z,
-            neighbor.sectionX,
-            neighbor.sectionY,
-            neighbor.sectionZ,
-            params.viewDistance,
-            params.sectionHeight
-          )
-        ) {
+        if (!isInViewDistance(cam.x, cam.y, cam.z, neighbor.sectionX, neighbor.sectionY, neighbor.sectionZ, params.viewDistance, params.sectionHeight)) {
           continue
         }
 
@@ -295,9 +284,7 @@ export class SectionOcclusionGraph {
         const key = sectionKeyFromWorld((camChunkX + dx) * 16, surfaceY, (camChunkZ + dz) * 16)
         if (!this.sections.has(key)) continue
         const neighbor = this.sections.get(key)!
-        if (
-          !isInViewDistance(cam.x, cam.y, cam.z, neighbor.sectionX, neighbor.sectionY, neighbor.sectionZ, params.viewDistance, params.sectionHeight)
-        ) {
+        if (!isInViewDistance(cam.x, cam.y, cam.z, neighbor.sectionX, neighbor.sectionY, neighbor.sectionZ, params.viewDistance, params.sectionHeight)) {
           continue
         }
 
