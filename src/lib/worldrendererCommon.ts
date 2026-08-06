@@ -55,8 +55,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     chunksRenderDistanceEnabled: false,
     disableEntities: false,
     /** Tint section borders by occlusion BFS step (perf debug overlay). */
-    caveCullingDebug: false,
-    smartCull: false
+    caveCullingDebug: false
     // disableParticles: false
   })
 
@@ -581,7 +580,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         // ensure chunk data was added, not a neighbor chunk update
         let loaded = true
         const sectionHeight = this.getSectionHeight()
-        for (let y = this.worldMinYRender; y < this.worldSizeParams.worldHeight; y += sectionHeight) {
+        for (let y = this.worldMinYRender; y < this.worldMaxYRender; y += sectionHeight) {
           if (!this.finishedSections[`${chunkCoords[0]},${y},${chunkCoords[2]}`]) {
             loaded = false
             break
@@ -681,7 +680,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
     if (data.type === 'neighborDataArrived') {
       const sectionHeight = this.getSectionHeight()
-      for (let y = this.worldMinYRender; y < this.worldSizeParams.worldHeight; y += sectionHeight) {
+      for (let y = this.worldMinYRender; y < this.worldMaxYRender; y += sectionHeight) {
         this.setSectionDirty(new Vec3(data.x, y, data.z))
       }
     }
@@ -812,7 +811,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       clipWorldBelowY: this.worldRendererConfig.clipWorldBelowY,
       disableBlockEntityTextures: !this.worldRendererConfig.extraBlockRenderers,
       worldMinY: this.worldMinYRender,
-      worldMaxY: this.worldMinYRender + this.worldSizeParams.worldHeight,
+      worldMaxY: this.worldMaxYRender,
       disableConversionCache: this.worldRendererConfig.disableMesherConversionCache,
       computeWireframeEdges: this.worldRendererConfig.futuristicReveal === true,
       shaderCubeBlocks: this.isShaderCubeBlocksEnabled()
@@ -854,6 +853,11 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   get worldMinYRender() {
     const sectionHeight = this.getSectionHeight()
     return Math.floor(Math.max(this.worldSizeParams.minY, this.worldRendererConfig.clipWorldBelowY ?? -Infinity) / sectionHeight) * sectionHeight
+  }
+
+  /** Exclusive top of the rendered section grid (world Y, not a height). */
+  get worldMaxYRender() {
+    return this.worldSizeParams.minY + this.worldSizeParams.worldHeight
   }
 
   updateChunksStats() {
@@ -909,7 +913,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     const sectionHeight = this.getSectionHeight()
     const CHUNK_SIZE = 16
 
-    for (let y = this.worldMinYRender; y < this.worldSizeParams.worldHeight; y += sectionHeight) {
+    for (let y = this.worldMinYRender; y < this.worldMaxYRender; y += sectionHeight) {
       const loc = new Vec3(x, y, z)
       this.setSectionDirty(loc)
       if (this.neighborChunkUpdates && (!isLightUpdate || this.worldRendererConfig.smoothLighting)) {
@@ -962,7 +966,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       this.initialChunkLoadWasStartedIn = undefined
     }
     const sectionHeight = this.getSectionHeight()
-    for (let y = this.worldMinYRender; y < this.worldSizeParams.worldHeight; y += sectionHeight) {
+    for (let y = this.worldMinYRender; y < this.worldMaxYRender; y += sectionHeight) {
       const sectionKey = `${x},${y},${z}`
       const waitingCount = this.sectionsWaiting.get(sectionKey)
       if (waitingCount !== undefined && waitingCount > 0) {
