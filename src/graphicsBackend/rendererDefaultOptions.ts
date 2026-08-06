@@ -54,7 +54,7 @@ export const RENDERER_DEFAULT_OPTIONS = {
   menuBackgroundV2CameraSpeed: MB.v2CameraSpeedPercent,
   menuBackgroundV2BlockSpeed: MB.v2BlockSpeedPercent,
   rendererFuturisticReveal: false as boolean,
-  rendererSmartCull: false as boolean,
+  rendererSmartCull: true as boolean,
   rendererPerfDebugOverlay: false as boolean,
   disableBlockEntityTextures: false as boolean,
   rendererMesher: 'wasm' as RendererMesherPipeline,
