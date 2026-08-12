@@ -19,6 +19,7 @@
 
 import * as THREE from 'three/webgpu'
 import { packWord2Empty } from '../wasm-mesher/bridge/shaderCubeBridge'
+import { WORD0 } from '../three/shaders/cubeBlockShader'
 
 export const WORDS_PER_FACE = 4
 export const BYTES_PER_FACE = WORDS_PER_FACE * 4
@@ -28,12 +29,75 @@ const GROWTH_INCREMENT_FACES = 1_000_000
 const MAX_UPLOAD_FACES_PER_FRAME = 15_000
 const FRAGMENTATION_THRESHOLD = 0.25
 
-/** Fields per section metadata record: sx, sy, sz, faceStart, faceCount, _pad0..2 (16 B align). */
-export const SECTION_META_STRIDE = 8
+/**
+ * Fields per section metadata record:
+ *   0..2  sx, sy, sz
+ *   3     faceStart
+ *   4     faceCount
+ *   5..10 faceCount per direction (UP, DOWN, EAST, WEST, SOUTH, NORTH)
+ *   11..15 spare
+ *
+ * The per-direction counts exist because faces are stored **sorted by direction**, so the
+ * cull pass can emit only camera-facing runs without testing individual faces. See
+ * `sortFacesByDirection`.
+ */
+export const SECTION_META_STRIDE = 16
+
+/** Offset of the per-direction run counts within a section metadata record. */
+export const RUN_COUNTS_OFFSET = 5
+export const FACE_DIRECTIONS = 6
 
 const EMPTY_W2 = packWord2Empty()
 
 type Slot = { start: number; count: number; metaIndex: number }
+
+export type SortedFaces = {
+  /** Faces reordered so all UP faces come first, then DOWN, EAST, WEST, SOUTH, NORTH. */
+  words: Uint32Array
+  /** Face count per direction, indexed by faceId. */
+  runCounts: Int32Array
+}
+
+/**
+ * Counting-sorts a section's faces by direction (faceId, word0 bits 12..14).
+ *
+ * Doing this once at upload converts a per-face, per-frame GPU test into six integer
+ * comparisons per section: because each direction is contiguous, the cull pass can reserve
+ * and emit whole runs for the (at most three) directions facing the camera, and skip the
+ * rest without ever reading a face word.
+ *
+ * Faces within a run keep their relative order, so this is stable and does not perturb any
+ * ordering the mesher established.
+ */
+export function sortFacesByDirection(words: Uint32Array, faceCount: number, out?: Uint32Array): SortedFaces {
+  const runCounts = new Int32Array(FACE_DIRECTIONS)
+  for (let f = 0; f < faceCount; f++) {
+    const faceId = (words[f * WORDS_PER_FACE] >>> WORD0.FACE_SHIFT) & 0x7
+    if (faceId < FACE_DIRECTIONS) runCounts[faceId]++
+  }
+
+  // Exclusive prefix sum -> write cursor per direction.
+  const cursor = new Int32Array(FACE_DIRECTIONS)
+  let running = 0
+  for (let d = 0; d < FACE_DIRECTIONS; d++) {
+    cursor[d] = running
+    running += runCounts[d]
+  }
+
+  const sorted = out && out.length >= faceCount * WORDS_PER_FACE ? out : new Uint32Array(faceCount * WORDS_PER_FACE)
+  for (let f = 0; f < faceCount; f++) {
+    const src = f * WORDS_PER_FACE
+    const faceId = (words[src] >>> WORD0.FACE_SHIFT) & 0x7
+    const dir = faceId < FACE_DIRECTIONS ? faceId : 0
+    const dst = cursor[dir]++ * WORDS_PER_FACE
+    sorted[dst] = words[src]
+    sorted[dst + 1] = words[src + 1]
+    sorted[dst + 2] = words[src + 2]
+    sorted[dst + 3] = words[src + 3]
+  }
+
+  return { words: sorted, runCounts }
+}
 
 export type GlobalBlockBufferGPUOptions = {
   initialCapacityFaces?: number
@@ -65,6 +129,8 @@ export class GlobalBlockBufferGPU {
 
   private dirtyFaceRanges: Array<{ start: number; end: number }> = []
   private metaDirty = true
+  /** Reused destination for the direction sort, so uploads don't allocate per section. */
+  private sortScratch: Uint32Array = new Uint32Array(0)
 
   /** Number of section slots the cull pass must dispatch over. */
   get sectionDispatchCount(): number {
@@ -107,12 +173,16 @@ export class GlobalBlockBufferGPU {
    * @param words interleaved uvec4 words straight from the mesher (length >= faceCount*4)
    */
   addSection(sectionKey: string, words: Uint32Array, faceCount: number, sx: number, sy: number, sz: number): boolean {
+    // Sort by direction up front so the cull pass can emit camera-facing runs only.
+    const { words: sorted, runCounts } = sortFacesByDirection(words, faceCount, this.sortScratch)
+    if (sorted === this.sortScratch || sorted.length > this.sortScratch.length) this.sortScratch = sorted
+
     const existing = this.sectionSlots.get(sectionKey)
     if (existing) {
       if (existing.count === faceCount) {
         // Same size — overwrite in place, no allocator churn.
-        this.words.set(words.subarray(0, faceCount * WORDS_PER_FACE), existing.start * WORDS_PER_FACE)
-        this.writeMeta(existing.metaIndex, sx, sy, sz, existing.start, faceCount)
+        this.words.set(sorted.subarray(0, faceCount * WORDS_PER_FACE), existing.start * WORDS_PER_FACE)
+        this.writeMeta(existing.metaIndex, sx, sy, sz, existing.start, faceCount, runCounts)
         this.markFaceDirty(existing.start, existing.start + faceCount)
         return true
       }
@@ -130,9 +200,9 @@ export class GlobalBlockBufferGPU {
       return false
     }
 
-    this.words.set(words.subarray(0, faceCount * WORDS_PER_FACE), alloc.start * WORDS_PER_FACE)
+    this.words.set(sorted.subarray(0, faceCount * WORDS_PER_FACE), alloc.start * WORDS_PER_FACE)
     this.sectionSlots.set(sectionKey, { start: alloc.start, count: faceCount, metaIndex })
-    this.writeMeta(metaIndex, sx, sy, sz, alloc.start, faceCount)
+    this.writeMeta(metaIndex, sx, sy, sz, alloc.start, faceCount, runCounts)
     this.markFaceDirty(alloc.start, alloc.start + faceCount)
     return true
   }
@@ -151,13 +221,16 @@ export class GlobalBlockBufferGPU {
     this.release(slot.start, slot.count)
   }
 
-  private writeMeta(metaIndex: number, sx: number, sy: number, sz: number, faceStart: number, faceCount: number): void {
+  private writeMeta(metaIndex: number, sx: number, sy: number, sz: number, faceStart: number, faceCount: number, runCounts?: Int32Array): void {
     const o = metaIndex * SECTION_META_STRIDE
     this.meta[o] = sx
     this.meta[o + 1] = sy
     this.meta[o + 2] = sz
     this.meta[o + 3] = faceStart
     this.meta[o + 4] = faceCount
+    for (let d = 0; d < FACE_DIRECTIONS; d++) {
+      this.meta[o + RUN_COUNTS_OFFSET + d] = runCounts?.[d] ?? 0
+    }
     this.metaDirty = true
   }
 

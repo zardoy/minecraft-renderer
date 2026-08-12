@@ -49,7 +49,7 @@ import {
 import { WORD0, WORD1, WORD2, WORD3 } from '../../three/shaders/cubeBlockShader'
 import { FACE_BASE, FACE_DU, FACE_DV, FACE_NORMAL, VI_NORMAL, VI_FLIPPED } from './faceTables'
 import { faceUvTsl } from './faceUvTsl'
-import { storageTyped } from './tslCompat'
+import { storageTyped, ivec2n } from './tslCompat'
 import { DEFAULT_LIGHTMAP_PARAMS, type BlockLightmapParams } from '../../lib/blockEntityLighting'
 
 export const VERTICES_PER_FACE = 6
@@ -237,10 +237,10 @@ export function createCubeBlockNodeMaterial(res: CubeBlockNodeResources, u: Cube
   material.fragmentNode = Fn(() => {
     // Pixelated atlas sample (texelFetch equivalent, no filtering).
     const atlasNode = texture(res.atlas)
-    const atlasSize = ivec2(atlasNode.size(int(0)))
+    const atlasSize = ivec2n(atlasNode.size(int(0)))
     const tilesPerRow = atlasSize.x.div(int(16)).toVar()
-    const tileOrigin = ivec2(vTexIndex.mod(tilesPerRow), vTexIndex.div(tilesPerRow)).mul(int(16))
-    const texel = tileOrigin.add(clamp(ivec2(vUv.mul(16)), ivec2(0), ivec2(15)))
+    const tileOrigin = ivec2n(vTexIndex.mod(tilesPerRow), vTexIndex.div(tilesPerRow)).mul(int(16))
+    const texel = tileOrigin.add(clamp(ivec2n(vUv.mul(16)), ivec2n(0), ivec2n(15)))
     const baseColor = atlasNode.load(texel).toVar()
 
     const out = vec4(0, 0, 0, 1).toVar()

@@ -11,7 +11,7 @@
  * places we're ahead of the typings are explicit.
  */
 
-import { storage } from 'three/tsl'
+import { storage, ivec2 } from 'three/tsl'
 import type * as THREE from 'three/webgpu'
 
 /** TSL scalar/vector type names accepted by the runtime `storage()`. */
@@ -29,3 +29,9 @@ export function storageTyped(attribute: AnyStorageAttribute, type: StorageScalar
 
 /** Marks an expression as an untyped TSL node (typings gap, not a correctness escape). */
 export const node = (value: any): any => value
+
+/**
+ * `ivec2()` accepting node arguments. The typed overloads only cover numeric literals
+ * and a couple of node shapes, so texture-size / UV conversions don't resolve.
+ */
+export const ivec2n = (...args: any[]): any => (ivec2 as any)(...args)
