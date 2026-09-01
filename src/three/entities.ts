@@ -61,6 +61,7 @@ import { WalkingGeneralSwing } from './entity/animations'
 import { disposeObject, loadNearestFilterTexture, loadTexture, loadThreeJsTextureFromUrl } from './threeJsUtils'
 import { armorModel, armorTextures, elytraTexture } from './entity/armorModels'
 import { WorldRendererThree } from './worldRendererThree'
+import type { EntityLightMeta } from './entityLightController'
 import { IndexedData } from 'minecraft-data'
 import { ItemSpecificContextProperties } from '../playerState/types'
 
@@ -385,9 +386,12 @@ export class Entities {
     }
 
     this.updateEntityEquipment(this.playerEntity, playerData)
+    this.registerEntityLight(this.playerEntity, this.playerEntity.originalEntity)
+    this.invalidateEntityLight(this.playerEntity)
   }
 
   clear() {
+    this.worldRenderer.entityLightController?.clear()
     for (const mesh of Object.values(this.entities)) {
       this.worldRenderer.sceneOrigin.removeAndUntrack(mesh)
       disposeObject(mesh)
@@ -557,6 +561,7 @@ export class Entities {
     this.applyRemoteBoatPassengerRotations()
     this.applyLocalThirdPersonPlayerRotation()
     this.updateBoatPaddleAnimations(dt)
+    this.applyEntityLights()
   }
 
   private applyRemoteBoatPassengerRotations() {
@@ -1082,6 +1087,7 @@ export class Entities {
         if (c['additionalCleanup']) c['additionalCleanup']()
       })
       this.onRemoveEntity(entity)
+      this.worldRenderer.entityLightController?.unregister(e)
       this.worldRenderer.sceneOrigin.removeAndUntrack(e)
       disposeObject(e)
       // todo dispose textures as well ?
@@ -1403,6 +1409,12 @@ export class Entities {
     this.updateNameTagVisibility(e)
 
     this.updateEntityPosition(entity, justAdded, overrides)
+    if (justAdded) {
+      this.registerEntityLight(e, entity)
+    } else {
+      this.worldRenderer.entityLightController?.setMeta(e, this.entityLightMeta(entity))
+      this.invalidateEntityLight(e)
+    }
   }
 
   applyEntityRenderHints(e: SceneEntity, entity: SceneEntity['originalEntity']) {
@@ -1699,8 +1711,52 @@ export class Entities {
     }
   }
 
+  onEntityMeshReady(mesh: THREE.Object3D) {
+    this.worldRenderer.entityLightController?.invalidateFromDescendant(mesh)
+  }
+
+  private entityLightSharedMaterials() {
+    return new Set<THREE.Material>([this.worldRenderer.material])
+  }
+
+  private entityLightMeta(entity: SceneEntity['originalEntity']): EntityLightMeta {
+    const localPlayerId = this.playerEntity?.originalEntity.id
+    const useLocalEyeHeight = entity.name === 'player' && localPlayerId !== undefined && entity.id === localPlayerId
+    return {
+      name: entity.name,
+      height: entity.height,
+      eyeHeight: useLocalEyeHeight ? this.worldRenderer.playerStateReactive.eyeHeight : undefined
+    }
+  }
+
+  private registerEntityLight(root: SceneEntity, entity: SceneEntity['originalEntity']) {
+    this.worldRenderer.entityLightController?.register(root, this.entityLightMeta(entity), this.entityLightSharedMaterials())
+  }
+
+  private invalidateEntityLight(root: THREE.Object3D) {
+    this.worldRenderer.entityLightController?.invalidateMaterials(root)
+  }
+
+  private applyEntityLights() {
+    const controller = this.worldRenderer.entityLightController
+    if (!controller) return
+    const shared = this.entityLightSharedMaterials()
+    const apply = (root: SceneEntity | null) => {
+      if (!root) return
+      if (root === this.playerEntity) {
+        controller.setMeta(root, this.entityLightMeta(root.originalEntity))
+      }
+      const worldPos = this.worldRenderer.sceneOrigin.getWorldPosition(root)
+      if (!worldPos) return
+      controller.update(root, worldPos, shared)
+    }
+    for (const entity of Object.values(this.entities)) apply(entity)
+    apply(this.playerEntity)
+  }
+
   handleDamageEvent(entityId, damageAmount) {
-    const entityMesh = this.entities[entityId]?.children.find(c => c.name === 'mesh')
+    const entity = this.entities[entityId]
+    const entityMesh = entity?.children.find(c => c.name === 'mesh')
     if (entityMesh) {
       entityMesh.traverse(child => {
         if (child instanceof THREE.Mesh && child.material.clone) {
@@ -1712,6 +1768,18 @@ export class Entities {
           new TWEEN.Tween(child.material.color).to(originalColor, 500).start()
         }
       })
+    }
+    if (entity) {
+      this.worldRenderer.entityLightController?.markFlash(entity)
+      this.invalidateEntityLight(entity)
+      setTimeout(() => {
+        if (!this.entities[entityId]) return
+        this.worldRenderer.entityLightController?.endFlash(entity)
+        const worldPos = this.worldRenderer.sceneOrigin.getWorldPosition(entity)
+        if (worldPos) {
+          this.worldRenderer.entityLightController?.update(entity, worldPos, this.entityLightSharedMaterials())
+        }
+      }, 500)
     }
   }
 

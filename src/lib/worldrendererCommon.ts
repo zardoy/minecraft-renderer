@@ -32,6 +32,7 @@ import { PlayerStateReactive } from '../playerState/playerState'
 import { IndexedData } from 'minecraft-data'
 import { WorldRendererConfig } from '../graphicsBackend/config'
 import { CameraCollisionBlockCache } from '../three/cameraCollisionBlockCache'
+import { RendererLightCache } from '../three/rendererLightCache'
 
 function mod(x, n) {
   return ((x % n) + n) % n
@@ -45,6 +46,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   worldSizeParams = { minY: 0, worldHeight: 256 }
   /** Block columns for third-person voxel DDA (renderer thread). */
   cameraCollisionBlockCache: CameraCollisionBlockCache
+  /** Packed block/sky light for entity sampling (renderer thread). */
+  rendererLightCache: RendererLightCache
   reactiveDebugParams = proxy({
     stopRendering: false,
     chunksRenderAboveOverride: undefined as number | undefined,
@@ -222,6 +225,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     public initOptions: GraphicsInitOptions
   ) {
     this.cameraCollisionBlockCache = new CameraCollisionBlockCache(this.displayOptions.version)
+    this.rendererLightCache = new RendererLightCache(this.displayOptions.version)
     this.snapshotInitialValues()
     this.worldRendererConfig = displayOptions.inWorldRenderingConfig
     this.playerStateReactive = displayOptions.playerStateReactive!
@@ -885,7 +889,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         x,
         z,
         chunk,
-        customBlockModels: customBlockModels || undefined
+        customBlockModels: customBlockModels || undefined,
+        isLightUpdate
       })
     }
     // WASM mesher pushes heightmaps from `processColumnTick` after each
@@ -906,6 +911,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     )
     this.mesherLogReader?.chunkReceived(x, z, chunk.length)
     this.cameraCollisionBlockCache.ingestColumn(x, z, chunk)
+    this.rendererLightCache.ingestColumn(x, z, chunk)
     const sectionHeight = this.getSectionHeight()
     const CHUNK_SIZE = 16
 
@@ -975,6 +981,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     }
     this.highestBlocksByChunks.delete(`${x},${z}`)
     this.cameraCollisionBlockCache.removeColumn(x, z)
+    this.rendererLightCache.removeColumn(x, z)
     const heightmapKey = `${Math.floor(x / 16)},${Math.floor(z / 16)}`
     delete this.reactiveState.world.heightmaps[heightmapKey]
 
@@ -1052,6 +1059,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       ({ x, z, chunk, worldConfig, isLightUpdate }) => {
         this.worldSizeParams = worldConfig
         this.cameraCollisionBlockCache.setWorldBounds(worldConfig.minY, worldConfig.worldHeight)
+        this.rendererLightCache.setWorldBounds(worldConfig.minY, worldConfig.worldHeight)
         this.queuedChunks.add(`${x},${z}`)
         const args = [x, z, chunk, isLightUpdate]
         if (!currentLoadChunkBatch) {
@@ -1156,6 +1164,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       'onWorldSwitch',
       () => {
         this.cameraCollisionBlockCache.clear()
+        this.rendererLightCache.clear()
         for (const fn of this.onWorldSwitched) {
           try {
             fn()

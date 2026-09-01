@@ -39,6 +39,7 @@ import { FireworksManager } from './fireworks'
 import { SceneOrigin } from './sceneOrigin'
 import { downloadWorldGeometry } from './worldGeometryExport'
 import { ChunkMeshManager } from './chunkMeshManager'
+import { EntityLightController } from './entityLightController'
 import { raycastVoxelSolid } from './thirdPersonVoxelRaycast'
 import type { RendererModuleManifest, RegisteredModule, RendererModuleController } from './rendererModuleSystem'
 import { BUILTIN_MODULES } from './modules/index'
@@ -88,6 +89,7 @@ export class WorldRendererThree extends WorldRendererCommon {
   ambientLight = new THREE.AmbientLight(0xcc_cc_cc, WorldRendererThree.LEGACY_TO_PHYSICAL_LIGHT)
   directionalLight = new THREE.DirectionalLight(0xff_ff_ff, 0.5 * WorldRendererThree.LEGACY_TO_PHYSICAL_LIGHT)
   entities = new Entities(this, (globalThis as any).mcData)
+  entityLightController?: EntityLightController
   performanceMonitor!: PerformanceMonitor
   cameraGroupVr?: THREE.Object3D
   material = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, alphaTest: 0.1 })
@@ -203,6 +205,14 @@ export class WorldRendererThree extends WorldRendererCommon {
 
     // Initialize chunk mesh manager
     this.chunkMeshManager = new ChunkMeshManager(this, this.scene, this.material, this.worldSizeParams.worldHeight, this.viewDistance)
+    this.entityLightController = new EntityLightController({
+      getLight: (x, y, z) => this.rendererLightCache.getLight(x, y, z),
+      getSkyLevel: () => this.chunkMeshManager.getSkyLevel(),
+      getLightmapParams: () => this.chunkMeshManager.getLightmapParams(),
+      getColumnRevision: (cx, cz) => this.rendererLightCache.getColumnRevision(cx, cz),
+      getGlobalRevision: () => this.rendererLightCache.getGlobalRevision(),
+      lightingEnabled: () => this.worldRendererConfig.enableLighting !== false
+    })
     this.onRenderDistanceChanged = viewDistance => {
       this.chunkMeshManager.updateViewDistance(viewDistance)
     }
@@ -593,6 +603,13 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.onReactiveConfigUpdated('futuristicReveal', () => {
       this.updateModulesFromConfig()
     })
+    this.onReactiveConfigUpdated(
+      'enableLighting',
+      () => {
+        this.rerenderAllChunks()
+      },
+      false
+    )
     this.onReactiveDebugUpdated('disableEntities', () => {
       this.entities.syncSceneAttachment()
     })
@@ -824,6 +841,10 @@ export class WorldRendererThree extends WorldRendererCommon {
         const camCollisionBytes = this.cameraCollisionBlockCache.getAllocatedBytes()
         if (camCollisionBytes > 0) {
           text += `CAM: ${formatCompact(camCollisionBytes)}b `
+        }
+        const entityLightBytes = this.rendererLightCache.getAllocatedBytes()
+        if (entityLightBytes > 0) {
+          text += `ELIGHT: ${formatCompact(entityLightBytes)}b `
         }
         const pf = formatPerformanceFactorsDebug(this.reactiveState.world.instabilityFactors)
         if (pf) text += `PF: ${pf} `

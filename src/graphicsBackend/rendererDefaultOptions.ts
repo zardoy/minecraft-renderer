@@ -65,7 +65,7 @@ export const RENDERER_DEFAULT_OPTIONS = {
   backgroundRendering: '20fps' as 'full' | '20fps' | '5fps',
   vanillaLook: false as boolean,
   smoothLighting: true as boolean,
-  newVersionsLighting: false as boolean,
+  newVersionsLighting: true as boolean,
   vrSupport: true as boolean,
   vrPageGameRendering: false as boolean,
   clipWorldBelowY: undefined as number | undefined,
@@ -121,6 +121,29 @@ export function migrateRendererOptions(saved: Record<string, unknown>): void {
     }
     delete saved[oldKey]
   }
+
+  // Internal one-shot flag from an earlier lighting-default migration. Never a user option.
+  delete saved.migratedNewVersionsLightingDefault
+}
+
+/**
+ * One-shot upgrade of the old default (`false`) to the current default (`true`).
+ * `alreadyMigrated` must live outside user-visible options (e.g. a dedicated localStorage key).
+ * Returns true so the caller can persist that the upgrade has run.
+ */
+export function upgradeStoredNewVersionsLightingDefault(saved: Record<string, unknown>, alreadyMigrated: boolean): boolean {
+  if (!alreadyMigrated && saved.newVersionsLighting === false) {
+    delete saved.newVersionsLighting
+  }
+  return true
+}
+
+/**
+ * Runtime `enableLighting` from the stored option and protocol.
+ * Pre-1.13 (no blockStateId) always lights. Missing protocol (menu, no bot) must not throw.
+ */
+export function resolveEnableLighting(newVersionsLighting: boolean, blockStateIdSupported: boolean | undefined): boolean {
+  return blockStateIdSupported !== true || newVersionsLighting
 }
 
 /** Settings UI metadata for {@link RENDERER_DEFAULT_OPTIONS} keys. */
@@ -235,7 +258,8 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
   },
   smoothLighting: {},
   newVersionsLighting: {
-    text: 'Lighting in newer versions'
+    text: 'Lighting in newer versions',
+    tooltip: 'Block, sky, and entity lighting for 1.13+. Off renders the world fullbright.'
   },
   vrSupport: {
     text: 'VR support',
