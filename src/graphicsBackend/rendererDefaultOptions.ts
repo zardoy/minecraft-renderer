@@ -131,10 +131,7 @@ export function migrateRendererOptions(saved: Record<string, unknown>): void {
  * `alreadyMigrated` must live outside user-visible options (e.g. a dedicated localStorage key).
  * Returns true so the caller can persist that the upgrade has run.
  */
-export function upgradeStoredNewVersionsLightingDefault(
-  saved: Record<string, unknown>,
-  alreadyMigrated: boolean
-): boolean {
+export function upgradeStoredNewVersionsLightingDefault(saved: Record<string, unknown>, alreadyMigrated: boolean): boolean {
   if (!alreadyMigrated && saved.newVersionsLighting === false) {
     delete saved.newVersionsLighting
   }
@@ -145,10 +142,7 @@ export function upgradeStoredNewVersionsLightingDefault(
  * Runtime `enableLighting` from the stored option and protocol.
  * Pre-1.13 (no blockStateId) always lights. Missing protocol (menu, no bot) must not throw.
  */
-export function resolveEnableLighting(
-  newVersionsLighting: boolean,
-  blockStateIdSupported: boolean | undefined
-): boolean {
+export function resolveEnableLighting(newVersionsLighting: boolean, blockStateIdSupported: boolean | undefined): boolean {
   return blockStateIdSupported !== true || newVersionsLighting
 }
 

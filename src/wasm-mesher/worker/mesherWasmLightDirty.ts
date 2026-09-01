@@ -14,11 +14,7 @@ export function sectionYsForLightColumnDirty(worldMinY: number, worldMaxY: numbe
  * column reload must drop that entry so the JSON column walk is used.
  * Normal chunk loads must keep it (`setRawMapChunk` arrives first).
  */
-export function dropRawMapChunkOnLightOnlyReload(
-  isLightUpdate: boolean | undefined,
-  rawCache: { delete: (key: string) => boolean },
-  key: string
-): boolean {
+export function dropRawMapChunkOnLightOnlyReload(isLightUpdate: boolean | undefined, rawCache: { delete: (key: string) => boolean }, key: string): boolean {
   if (!isLightUpdate) return false
   return rawCache.delete(key)
 }

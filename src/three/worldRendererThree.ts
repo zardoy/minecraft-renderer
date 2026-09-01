@@ -603,9 +603,13 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.onReactiveConfigUpdated('futuristicReveal', () => {
       this.updateModulesFromConfig()
     })
-    this.onReactiveConfigUpdated('enableLighting', () => {
-      this.rerenderAllChunks()
-    }, false)
+    this.onReactiveConfigUpdated(
+      'enableLighting',
+      () => {
+        this.rerenderAllChunks()
+      },
+      false
+    )
     this.onReactiveDebugUpdated('disableEntities', () => {
       this.entities.syncSceneAttachment()
     })

@@ -9,7 +9,10 @@ describe('sectionYsForLightColumnDirty', () => {
 
 describe('dropRawMapChunkOnLightOnlyReload', () => {
   it('deletes only the fused raw entry when the chunk reload is light-only', () => {
-    const raw = new Map<string, number>([['0,0', 1], ['16,0', 2]])
+    const raw = new Map<string, number>([
+      ['0,0', 1],
+      ['16,0', 2]
+    ])
     expect(dropRawMapChunkOnLightOnlyReload(false, raw, '0,0')).toBe(false)
     expect(raw.has('0,0')).toBe(true)
     expect(dropRawMapChunkOnLightOnlyReload(undefined, raw, '0,0')).toBe(false)

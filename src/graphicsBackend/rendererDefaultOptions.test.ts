@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  migrateRendererOptions,
-  resolveEnableLighting,
-  upgradeStoredNewVersionsLightingDefault
-} from './rendererDefaultOptions'
+import { migrateRendererOptions, resolveEnableLighting, upgradeStoredNewVersionsLightingDefault } from './rendererDefaultOptions'
 
 describe('migrateRendererOptions', () => {
   it('drops the leaked migration flag so it is not a user option', () => {

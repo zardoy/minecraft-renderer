@@ -215,13 +215,6 @@ export function subscribeRendererOptions<T extends RendererStorageOptions>(
 }
 
 /** Call when mineflayer bot is created (lighting depends on protocol features). */
-export function applyRendererEnableLighting(
-  appViewer: AppViewer,
-  newVersionsLighting: boolean,
-  blockStateIdSupported: boolean | undefined
-): void {
-  appViewer.inWorldRenderingConfig.enableLighting = resolveEnableLighting(
-    newVersionsLighting,
-    blockStateIdSupported
-  )
+export function applyRendererEnableLighting(appViewer: AppViewer, newVersionsLighting: boolean, blockStateIdSupported: boolean | undefined): void {
+  appViewer.inWorldRenderingConfig.enableLighting = resolveEnableLighting(newVersionsLighting, blockStateIdSupported)
 }
