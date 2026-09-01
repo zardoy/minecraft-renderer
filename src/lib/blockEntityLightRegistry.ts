@@ -40,6 +40,10 @@ export class BlockEntityLightRegistry {
     return this.skyLevel
   }
 
+  getLightmapParams(): BlockLightmapParams {
+    return { ...this.lightmapParams }
+  }
+
   private refreshAll(): void {
     for (const entry of this.entries) {
       this.applyBrightness(entry)
