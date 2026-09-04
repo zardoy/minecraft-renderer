@@ -239,12 +239,18 @@ function getUsernameTexture(
   const iconSize = fontSize * 0.85
   const iconAreaWidth = voiceState ? iconSize + padding * 2.5 : 0
 
-  const canvas = createCanvas(iconAreaWidth + textWidth, height)
+  // The nametag sprite is anchored (and thus centered above the player) at the
+  // midpoint of this canvas. Mirroring the icon's width as a second, unpainted
+  // margin on the right moves that midpoint to align with the *text's* own
+  // center instead of the icon+text bounding box's center — otherwise the
+  // icon's extra width on the left alone drags the whole sprite's anchor left,
+  // which visually reads as the text drifting right of the player.
+  const canvas = createCanvas(iconAreaWidth * 2 + textWidth, height)
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('Could not get 2d context')
 
   ctx.fillStyle = nameTagBackgroundColor
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.fillRect(0, 0, iconAreaWidth + textWidth, canvas.height)
   if (voiceState) {
     drawVoiceStateIcon(ctx, voiceState, iconAreaWidth / 2, canvas.height / 2, iconSize)
   }
