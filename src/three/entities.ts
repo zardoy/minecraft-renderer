@@ -144,11 +144,11 @@ function shortestYawRadians(fromYawRad: number, toYawRad: number): number {
   return norm > Math.PI ? norm - TAU_YAW : norm
 }
 
-/** Voice chat presence for a player, drawn as a small mic glyph before their nametag. */
+/** Voice chat presence for a player, drawn as a small speaker glyph before their nametag. */
 export type PlayerVoiceState = 'speaking' | 'muted' | 'idle'
 
 /**
- * Draws a small mic glyph centered at the origin of the current transform.
+ * Draws a small speaker glyph centered at the origin of the current transform.
  * `size` is the glyph's bounding box (both width and height).
  */
 function drawVoiceStateIcon(ctx: OffscreenCanvasRenderingContext2D, state: PlayerVoiceState, cx: number, cy: number, size: number) {
@@ -156,46 +156,42 @@ function drawVoiceStateIcon(ctx: OffscreenCanvasRenderingContext2D, state: Playe
 
   ctx.save()
   ctx.translate(cx, cy)
-
-  if (state === 'speaking') {
-    ctx.beginPath()
-    ctx.arc(0, 0, size * 0.62, 0, Math.PI * 2)
-    ctx.strokeStyle = 'rgba(61, 220, 71, 0.55)'
-    ctx.lineWidth = Math.max(1, size * 0.08)
-    ctx.stroke()
-  }
-
   ctx.fillStyle = color
   ctx.strokeStyle = color
-  ctx.lineWidth = Math.max(1, size * 0.12)
+  ctx.lineWidth = Math.max(1.5, size * 0.09)
+  ctx.lineCap = 'round'
 
-  // Mic body: a rounded capsule
-  const bodyWidth = size * 0.34
-  const bodyHeight = size * 0.55
-  const bodyRadius = bodyWidth / 2
+  // Speaker silhouette: a small box with a cone opening to the right
+  const boxWidth = size * 0.22
+  const boxHeight = size * 0.34
+  const coneWidth = size * 0.24
+  const left = -size * 0.44
+
   ctx.beginPath()
-  ctx.moveTo(-bodyRadius, -bodyHeight / 2 + bodyRadius)
-  ctx.arcTo(-bodyRadius, -bodyHeight / 2, 0, -bodyHeight / 2, bodyRadius)
-  ctx.arcTo(bodyRadius, -bodyHeight / 2, bodyRadius, -bodyHeight / 2 + bodyRadius, bodyRadius)
-  ctx.lineTo(bodyRadius, bodyHeight / 2 - bodyRadius)
-  ctx.arcTo(bodyRadius, bodyHeight / 2, 0, bodyHeight / 2, bodyRadius)
-  ctx.arcTo(-bodyRadius, bodyHeight / 2, -bodyRadius, bodyHeight / 2 - bodyRadius, bodyRadius)
+  ctx.moveTo(left, -boxHeight / 2)
+  ctx.lineTo(left + boxWidth, -boxHeight / 2)
+  ctx.lineTo(left + boxWidth + coneWidth, -size * 0.5)
+  ctx.lineTo(left + boxWidth + coneWidth, size * 0.5)
+  ctx.lineTo(left + boxWidth, boxHeight / 2)
+  ctx.lineTo(left, boxHeight / 2)
   ctx.closePath()
   ctx.fill()
 
-  // Stand: arc + base line
-  ctx.beginPath()
-  ctx.arc(0, bodyHeight / 2 - bodyRadius / 2, size * 0.32, Math.PI * 0.15, Math.PI * 0.85, false)
-  ctx.stroke()
-  ctx.beginPath()
-  ctx.moveTo(0, size * 0.5)
-  ctx.lineTo(0, size * 0.62)
-  ctx.stroke()
+  const coneTip = left + boxWidth + coneWidth
+
+  if (state === 'speaking') {
+    ctx.beginPath()
+    ctx.arc(coneTip + size * 0.06, 0, size * 0.16, -Math.PI * 0.32, Math.PI * 0.32)
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.arc(coneTip + size * 0.06, 0, size * 0.28, -Math.PI * 0.28, Math.PI * 0.28)
+    ctx.stroke()
+  }
 
   if (state === 'muted') {
     ctx.beginPath()
-    ctx.moveTo(-size * 0.42, -size * 0.42)
-    ctx.lineTo(size * 0.42, size * 0.42)
+    ctx.moveTo(-size * 0.46, -size * 0.46)
+    ctx.lineTo(size * 0.46, size * 0.46)
     ctx.stroke()
   }
 
@@ -226,25 +222,22 @@ function getUsernameTexture(
 
   const height = (fontSize + padding) * plainLines.length
 
-  // Render the text on its own canvas first so the existing centered-text
-  // layout in renderComponent() is unaffected by the icon we add alongside it.
+  // Render the text onto its own transparent canvas so the existing
+  // centered-text layout in renderComponent() is unaffected by compositing it
+  // alongside the icon. The background plate is painted exactly once, on the
+  // final canvas below — painting it here too would double-blend the alpha
+  // under the text relative to the icon area, producing a visible seam.
   const textCanvas = createCanvas(textWidth, height)
   const textCtx = textCanvas.getContext('2d')
   if (!textCtx) throw new Error('Could not get 2d context')
 
-  textCtx.fillStyle = nameTagBackgroundColor
-  textCtx.fillRect(0, 0, textCanvas.width, textCanvas.height)
   textCtx.globalAlpha = nameTagTextOpacity / 255
-
   const textRendered = renderComponent(username, PrismarineChat, textCanvas, fontSize, 'white', -padding + fontSize)
   if (!textRendered) return undefined
-
   textCtx.globalAlpha = 1
 
-  if (!voiceState) return textCanvas
-
-  const iconSize = fontSize * 0.55
-  const iconAreaWidth = iconSize + padding * 2
+  const iconSize = fontSize * 0.85
+  const iconAreaWidth = voiceState ? iconSize + padding * 2.5 : 0
 
   const canvas = createCanvas(iconAreaWidth + textWidth, height)
   const ctx = canvas.getContext('2d')
@@ -252,7 +245,9 @@ function getUsernameTexture(
 
   ctx.fillStyle = nameTagBackgroundColor
   ctx.fillRect(0, 0, canvas.width, canvas.height)
-  drawVoiceStateIcon(ctx, voiceState, iconAreaWidth / 2, canvas.height / 2, iconSize)
+  if (voiceState) {
+    drawVoiceStateIcon(ctx, voiceState, iconAreaWidth / 2, canvas.height / 2, iconSize)
+  }
   ctx.drawImage(textCanvas, iconAreaWidth, 0)
 
   return canvas
