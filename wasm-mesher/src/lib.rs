@@ -5,6 +5,7 @@ mod chunk;
 mod chunk_parser_common;
 mod dump_parser;
 mod geometry;
+mod light_engine;
 mod lighting;
 mod mesher;
 mod parser_v18plus;

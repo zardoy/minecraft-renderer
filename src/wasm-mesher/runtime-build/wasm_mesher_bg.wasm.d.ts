@@ -1,6 +1,13 @@
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
+export const __wbg_jslightengine_free: (a: number, b: number) => void;
+export const jslightengine_js_new: (a: number, b: number) => number;
+export const jslightengine_setLightTables: (a: number, b: number, c: number, d: number, e: number) => void;
+export const jslightengine_pushEvent: (a: number, b: any) => void;
+export const jslightengine_step: (a: number, b: number) => number;
+export const jslightengine_pollCompletedPublication: (a: number) => any;
+export const jslightengine_getBlockLight: (a: number, b: number, c: number, d: number) => number;
 export const generate_geometry: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number) => any;
 export const generate_geometry_multi: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number) => any;
 export const parseChunkDump118: (a: number, b: number, c: number, d: number, e: number) => any;

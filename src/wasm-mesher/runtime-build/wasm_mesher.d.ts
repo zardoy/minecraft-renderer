@@ -1,6 +1,17 @@
 /* tslint:disable */
 /* eslint-disable */
 
+export class JsLightEngine {
+  free(): void;
+  [Symbol.dispose](): void;
+  constructor(world_min_y: number, world_height: number);
+  setLightTables(emission: Uint8Array, opacity: Uint8Array): void;
+  pushEvent(event: any): void;
+  step(budget_ms: number): boolean;
+  pollCompletedPublication(): any;
+  getBlockLight(x: number, y: number, z: number): number;
+}
+
 /**
  * Compute wireframe edge positions from a triangle mesh.
  *
@@ -226,6 +237,13 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
+  readonly __wbg_jslightengine_free: (a: number, b: number) => void;
+  readonly jslightengine_js_new: (a: number, b: number) => number;
+  readonly jslightengine_setLightTables: (a: number, b: number, c: number, d: number, e: number) => void;
+  readonly jslightengine_pushEvent: (a: number, b: any) => void;
+  readonly jslightengine_step: (a: number, b: number) => number;
+  readonly jslightengine_pollCompletedPublication: (a: number) => any;
+  readonly jslightengine_getBlockLight: (a: number, b: number, c: number, d: number) => number;
   readonly generate_geometry: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number) => any;
   readonly generate_geometry_multi: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number) => any;
   readonly parseChunkDump118: (a: number, b: number, c: number, d: number, e: number) => any;

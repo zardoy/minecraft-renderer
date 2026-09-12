@@ -6,6 +6,16 @@ function addToExternrefTable0(obj) {
     return idx;
 }
 
+function _assertBoolean(n) {
+    if (typeof(n) !== 'boolean') {
+        throw new Error(`expected a boolean argument, found ${typeof(n)}`);
+    }
+}
+
+function _assertNum(n) {
+    if (typeof(n) !== 'number') throw new Error(`expected a number argument, found ${typeof(n)}`);
+}
+
 function debugString(val) {
     // primitive types
     const type = typeof val;
@@ -158,6 +168,26 @@ function handleError(f, args) {
     }
 }
 
+function isLikeNone(x) {
+    return x === undefined || x === null;
+}
+
+function logError(f, args) {
+    try {
+        return f.apply(this, args);
+    } catch (e) {
+        let error = (function () {
+            try {
+                return e instanceof Error ? `${e.message}\n\nStack:\n${e.stack}` : e.toString();
+            } catch(_) {
+                return "<failed to stringify thrown value>";
+            }
+        }());
+        console.error("wasm-bindgen: imported JS function that was not marked as `catch` threw an error:", error);
+        throw e;
+    }
+}
+
 function passArray16ToWasm0(arg, malloc) {
     const ptr = malloc(arg.length * 2, 2) >>> 0;
     getUint16ArrayMemory0().set(arg, ptr / 2);
@@ -187,6 +217,7 @@ function passArrayF32ToWasm0(arg, malloc) {
 }
 
 function passStringToWasm0(arg, malloc, realloc) {
+    if (typeof(arg) !== 'string') throw new Error(`expected a string argument, found ${typeof(arg)}`);
     if (realloc === undefined) {
         const buf = cachedTextEncoder.encode(arg);
         const ptr = malloc(buf.length, 1) >>> 0;
@@ -214,7 +245,7 @@ function passStringToWasm0(arg, malloc, realloc) {
         ptr = realloc(ptr, len, len = offset + arg.length * 3, 1) >>> 0;
         const view = getUint8ArrayMemory0().subarray(ptr + offset, ptr + len);
         const ret = cachedTextEncoder.encodeInto(arg, view);
-
+        if (ret.read !== arg.length) throw new Error('failed to pass whole string');
         offset += ret.written;
         ptr = realloc(ptr, len, offset, 1) >>> 0;
     }
@@ -251,6 +282,91 @@ if (!('encodeInto' in cachedTextEncoder)) {
 }
 
 let WASM_VECTOR_LEN = 0;
+
+const JsLightEngineFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_jslightengine_free(ptr >>> 0, 1));
+
+export class JsLightEngine {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        JsLightEngineFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_jslightengine_free(ptr, 0);
+    }
+    /**
+     * @param {number} world_min_y
+     * @param {number} world_height
+     */
+    constructor(world_min_y, world_height) {
+        _assertNum(world_min_y);
+        _assertNum(world_height);
+        const ret = wasm.jslightengine_js_new(world_min_y, world_height);
+        this.__wbg_ptr = ret >>> 0;
+        JsLightEngineFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {Uint8Array} emission
+     * @param {Uint8Array} opacity
+     */
+    setLightTables(emission, opacity) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
+        const ptr0 = passArray8ToWasm0(emission, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(opacity, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.jslightengine_setLightTables(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+    }
+    /**
+     * @param {any} event
+     */
+    pushEvent(event) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
+        wasm.jslightengine_pushEvent(this.__wbg_ptr, event);
+    }
+    /**
+     * @param {number} budget_ms
+     * @returns {boolean}
+     */
+    step(budget_ms) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
+        const ret = wasm.jslightengine_step(this.__wbg_ptr, budget_ms);
+        return ret !== 0;
+    }
+    /**
+     * @returns {any}
+     */
+    pollCompletedPublication() {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
+        const ret = wasm.jslightengine_pollCompletedPublication(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @param {number} x
+     * @param {number} y
+     * @param {number} z
+     * @returns {number}
+     */
+    getBlockLight(x, y, z) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
+        _assertNum(x);
+        _assertNum(y);
+        _assertNum(z);
+        const ret = wasm.jslightengine_getBlockLight(this.__wbg_ptr, x, y, z);
+        return ret;
+    }
+}
+if (Symbol.dispose) JsLightEngine.prototype[Symbol.dispose] = JsLightEngine.prototype.free;
 
 /**
  * Compute wireframe edge positions from a triangle mesh.
@@ -335,6 +451,13 @@ export function computeWireframeEdgesU16(positions, indices) {
  * @returns {any}
  */
 export function generateGeometryFromDump118(section_x, section_y, section_z, section_height, world_min_y, world_max_y, section_data_start_y, dump_buffer, sky_light_concat, block_light_concat, sky_light_mask, block_light_mask, empty_sky_light_mask, empty_block_light_mask, num_sections, max_bits_per_block, max_bits_per_biome, invisible_blocks, transparent_blocks, no_ao_blocks, cull_identical_blocks, occluding_blocks, enable_lighting, smooth_lighting, sky_light_value) {
+    _assertNum(section_x);
+    _assertNum(section_y);
+    _assertNum(section_z);
+    _assertNum(section_height);
+    _assertNum(world_min_y);
+    _assertNum(world_max_y);
+    _assertNum(section_data_start_y);
     const ptr0 = passArray8ToWasm0(dump_buffer, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passArray8ToWasm0(sky_light_concat, wasm.__wbindgen_malloc);
@@ -349,6 +472,9 @@ export function generateGeometryFromDump118(section_x, section_y, section_z, sec
     const len5 = WASM_VECTOR_LEN;
     const ptr6 = passArray32ToWasm0(empty_block_light_mask, wasm.__wbindgen_malloc);
     const len6 = WASM_VECTOR_LEN;
+    _assertNum(num_sections);
+    _assertNum(max_bits_per_block);
+    _assertNum(max_bits_per_biome);
     const ptr7 = passArray16ToWasm0(invisible_blocks, wasm.__wbindgen_malloc);
     const len7 = WASM_VECTOR_LEN;
     const ptr8 = passArray16ToWasm0(transparent_blocks, wasm.__wbindgen_malloc);
@@ -359,6 +485,9 @@ export function generateGeometryFromDump118(section_x, section_y, section_z, sec
     const len10 = WASM_VECTOR_LEN;
     const ptr11 = passArray16ToWasm0(occluding_blocks, wasm.__wbindgen_malloc);
     const len11 = WASM_VECTOR_LEN;
+    _assertBoolean(enable_lighting);
+    _assertBoolean(smooth_lighting);
+    _assertNum(sky_light_value);
     const ret = wasm.generateGeometryFromDump118(section_x, section_y, section_z, section_height, world_min_y, world_max_y, section_data_start_y, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, num_sections, max_bits_per_block, max_bits_per_biome, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, ptr11, len11, enable_lighting, smooth_lighting, sky_light_value);
     return ret;
 }
@@ -399,6 +528,17 @@ export function generateGeometryFromDump118(section_x, section_y, section_z, sec
 export function generateGeometryFromMapChunkV18Plus(raw_packet, num_sections, max_bits_per_block, max_bits_per_biome, protocol, section_x, section_y, section_z, section_height, world_min_y, world_max_y, section_data_start_y, invisible_blocks, transparent_blocks, no_ao_blocks, cull_identical_blocks, occluding_blocks, enable_lighting, smooth_lighting, sky_light_value) {
     const ptr0 = passArray8ToWasm0(raw_packet, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
+    _assertNum(num_sections);
+    _assertNum(max_bits_per_block);
+    _assertNum(max_bits_per_biome);
+    _assertNum(protocol);
+    _assertNum(section_x);
+    _assertNum(section_y);
+    _assertNum(section_z);
+    _assertNum(section_height);
+    _assertNum(world_min_y);
+    _assertNum(world_max_y);
+    _assertNum(section_data_start_y);
     const ptr1 = passArray16ToWasm0(invisible_blocks, wasm.__wbindgen_malloc);
     const len1 = WASM_VECTOR_LEN;
     const ptr2 = passArray16ToWasm0(transparent_blocks, wasm.__wbindgen_malloc);
@@ -409,6 +549,9 @@ export function generateGeometryFromMapChunkV18Plus(raw_packet, num_sections, ma
     const len4 = WASM_VECTOR_LEN;
     const ptr5 = passArray16ToWasm0(occluding_blocks, wasm.__wbindgen_malloc);
     const len5 = WASM_VECTOR_LEN;
+    _assertBoolean(enable_lighting);
+    _assertBoolean(smooth_lighting);
+    _assertNum(sky_light_value);
     const ret = wasm.generateGeometryFromMapChunkV18Plus(ptr0, len0, num_sections, max_bits_per_block, max_bits_per_biome, protocol, section_x, section_y, section_z, section_height, world_min_y, world_max_y, section_data_start_y, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, enable_lighting, smooth_lighting, sky_light_value);
     return ret;
 }
@@ -455,10 +598,20 @@ export function generateGeometryFromMapChunkV18Plus(raw_packet, num_sections, ma
 export function generateGeometryFromMapChunkV18PlusMulti(raw_packets, num_sections_list, max_bits_per_block, max_bits_per_biome, protocol, chunk_xs, chunk_zs, section_x, section_y, section_z, section_height, world_min_y, world_max_y, section_data_start_y, invisible_blocks, transparent_blocks, no_ao_blocks, cull_identical_blocks, occluding_blocks, enable_lighting, smooth_lighting, sky_light_value) {
     const ptr0 = passArray32ToWasm0(num_sections_list, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
+    _assertNum(max_bits_per_block);
+    _assertNum(max_bits_per_biome);
+    _assertNum(protocol);
     const ptr1 = passArray32ToWasm0(chunk_xs, wasm.__wbindgen_malloc);
     const len1 = WASM_VECTOR_LEN;
     const ptr2 = passArray32ToWasm0(chunk_zs, wasm.__wbindgen_malloc);
     const len2 = WASM_VECTOR_LEN;
+    _assertNum(section_x);
+    _assertNum(section_y);
+    _assertNum(section_z);
+    _assertNum(section_height);
+    _assertNum(world_min_y);
+    _assertNum(world_max_y);
+    _assertNum(section_data_start_y);
     const ptr3 = passArray16ToWasm0(invisible_blocks, wasm.__wbindgen_malloc);
     const len3 = WASM_VECTOR_LEN;
     const ptr4 = passArray16ToWasm0(transparent_blocks, wasm.__wbindgen_malloc);
@@ -469,6 +622,9 @@ export function generateGeometryFromMapChunkV18PlusMulti(raw_packets, num_sectio
     const len6 = WASM_VECTOR_LEN;
     const ptr7 = passArray16ToWasm0(occluding_blocks, wasm.__wbindgen_malloc);
     const len7 = WASM_VECTOR_LEN;
+    _assertBoolean(enable_lighting);
+    _assertBoolean(smooth_lighting);
+    _assertNum(sky_light_value);
     const ret = wasm.generateGeometryFromMapChunkV18PlusMulti(raw_packets, ptr0, len0, max_bits_per_block, max_bits_per_biome, protocol, ptr1, len1, ptr2, len2, section_x, section_y, section_z, section_height, world_min_y, world_max_y, section_data_start_y, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, enable_lighting, smooth_lighting, sky_light_value);
     return ret;
 }
@@ -514,12 +670,22 @@ export function generateGeometryFromParsedV16V17(chunk_data, bit_map_lo_hi, num_
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passArray32ToWasm0(bit_map_lo_hi, wasm.__wbindgen_malloc);
     const len1 = WASM_VECTOR_LEN;
+    _assertNum(num_sections);
+    _assertNum(max_bits_per_block);
     const ptr2 = passArray32ToWasm0(biomes_cells, wasm.__wbindgen_malloc);
     const len2 = WASM_VECTOR_LEN;
+    _assertNum(default_biome);
     const ptr3 = passArray8ToWasm0(sky_light, wasm.__wbindgen_malloc);
     const len3 = WASM_VECTOR_LEN;
     const ptr4 = passArray8ToWasm0(block_light, wasm.__wbindgen_malloc);
     const len4 = WASM_VECTOR_LEN;
+    _assertNum(section_x);
+    _assertNum(section_y);
+    _assertNum(section_z);
+    _assertNum(section_height);
+    _assertNum(world_min_y);
+    _assertNum(world_max_y);
+    _assertNum(section_data_start_y);
     const ptr5 = passArray16ToWasm0(invisible_blocks, wasm.__wbindgen_malloc);
     const len5 = WASM_VECTOR_LEN;
     const ptr6 = passArray16ToWasm0(transparent_blocks, wasm.__wbindgen_malloc);
@@ -530,6 +696,9 @@ export function generateGeometryFromParsedV16V17(chunk_data, bit_map_lo_hi, num_
     const len8 = WASM_VECTOR_LEN;
     const ptr9 = passArray16ToWasm0(occluding_blocks, wasm.__wbindgen_malloc);
     const len9 = WASM_VECTOR_LEN;
+    _assertBoolean(enable_lighting);
+    _assertBoolean(smooth_lighting);
+    _assertNum(sky_light_value);
     const ret = wasm.generateGeometryFromParsedV16V17(ptr0, len0, ptr1, len1, num_sections, max_bits_per_block, ptr2, len2, default_biome, ptr3, len3, ptr4, len4, section_x, section_y, section_z, section_height, world_min_y, world_max_y, section_data_start_y, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, ptr9, len9, enable_lighting, smooth_lighting, sky_light_value);
     return ret;
 }
@@ -584,10 +753,19 @@ export function generateGeometryFromParsedV16V17Multi(chunk_data_list, bit_map_l
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passArray32ToWasm0(num_sections_list, wasm.__wbindgen_malloc);
     const len1 = WASM_VECTOR_LEN;
+    _assertNum(max_bits_per_block);
+    _assertNum(default_biome);
     const ptr2 = passArray32ToWasm0(chunk_xs, wasm.__wbindgen_malloc);
     const len2 = WASM_VECTOR_LEN;
     const ptr3 = passArray32ToWasm0(chunk_zs, wasm.__wbindgen_malloc);
     const len3 = WASM_VECTOR_LEN;
+    _assertNum(section_x);
+    _assertNum(section_y);
+    _assertNum(section_z);
+    _assertNum(section_height);
+    _assertNum(world_min_y);
+    _assertNum(world_max_y);
+    _assertNum(section_data_start_y);
     const ptr4 = passArray16ToWasm0(invisible_blocks, wasm.__wbindgen_malloc);
     const len4 = WASM_VECTOR_LEN;
     const ptr5 = passArray16ToWasm0(transparent_blocks, wasm.__wbindgen_malloc);
@@ -598,6 +776,9 @@ export function generateGeometryFromParsedV16V17Multi(chunk_data_list, bit_map_l
     const len7 = WASM_VECTOR_LEN;
     const ptr8 = passArray16ToWasm0(occluding_blocks, wasm.__wbindgen_malloc);
     const len8 = WASM_VECTOR_LEN;
+    _assertBoolean(enable_lighting);
+    _assertBoolean(smooth_lighting);
+    _assertNum(sky_light_value);
     const ret = wasm.generateGeometryFromParsedV16V17Multi(chunk_data_list, ptr0, len0, ptr1, len1, max_bits_per_block, biomes_cells_list, default_biome, sky_light_list, block_light_list, ptr2, len2, ptr3, len3, section_x, section_y, section_z, section_height, world_min_y, world_max_y, section_data_start_y, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, enable_lighting, smooth_lighting, sky_light_value);
     return ret;
 }
@@ -629,6 +810,13 @@ export function generateGeometryFromParsedV16V17Multi(chunk_data_list, bit_map_l
  * @returns {any}
  */
 export function generate_geometry(section_x, section_y, section_z, section_height, world_min_y, world_max_y, section_data_start_y, block_states, block_light, sky_light, biomes, invisible_blocks, transparent_blocks, no_ao_blocks, cull_identical_blocks, occluding_blocks, enable_lighting, smooth_lighting, sky_light_value) {
+    _assertNum(section_x);
+    _assertNum(section_y);
+    _assertNum(section_z);
+    _assertNum(section_height);
+    _assertNum(world_min_y);
+    _assertNum(world_max_y);
+    _assertNum(section_data_start_y);
     const ptr0 = passArray16ToWasm0(block_states, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passArray8ToWasm0(block_light, wasm.__wbindgen_malloc);
@@ -647,6 +835,9 @@ export function generate_geometry(section_x, section_y, section_z, section_heigh
     const len7 = WASM_VECTOR_LEN;
     const ptr8 = passArray16ToWasm0(occluding_blocks, wasm.__wbindgen_malloc);
     const len8 = WASM_VECTOR_LEN;
+    _assertBoolean(enable_lighting);
+    _assertBoolean(smooth_lighting);
+    _assertNum(sky_light_value);
     const ret = wasm.generate_geometry(section_x, section_y, section_z, section_height, world_min_y, world_max_y, section_data_start_y, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, enable_lighting, smooth_lighting, sky_light_value);
     return ret;
 }
@@ -676,6 +867,13 @@ export function generate_geometry(section_x, section_y, section_z, section_heigh
  * @returns {any}
  */
 export function generate_geometry_multi(section_x, section_y, section_z, section_height, world_min_y, world_max_y, section_data_start_y, chunk_xs, chunk_zs, block_states, block_light, sky_light, biomes, invisible_blocks, transparent_blocks, no_ao_blocks, cull_identical_blocks, occluding_blocks, enable_lighting, smooth_lighting, sky_light_value) {
+    _assertNum(section_x);
+    _assertNum(section_y);
+    _assertNum(section_z);
+    _assertNum(section_height);
+    _assertNum(world_min_y);
+    _assertNum(world_max_y);
+    _assertNum(section_data_start_y);
     const ptr0 = passArray32ToWasm0(chunk_xs, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passArray32ToWasm0(chunk_zs, wasm.__wbindgen_malloc);
@@ -698,6 +896,9 @@ export function generate_geometry_multi(section_x, section_y, section_z, section
     const len9 = WASM_VECTOR_LEN;
     const ptr10 = passArray16ToWasm0(occluding_blocks, wasm.__wbindgen_malloc);
     const len10 = WASM_VECTOR_LEN;
+    _assertBoolean(enable_lighting);
+    _assertBoolean(smooth_lighting);
+    _assertNum(sky_light_value);
     const ret = wasm.generate_geometry_multi(section_x, section_y, section_z, section_height, world_min_y, world_max_y, section_data_start_y, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, enable_lighting, smooth_lighting, sky_light_value);
     return ret;
 }
@@ -716,6 +917,9 @@ export function generate_geometry_multi(section_x, section_y, section_z, section
 export function parseChunkDump118(buffer, num_sections, max_bits_per_block, max_bits_per_biome) {
     const ptr0 = passArray8ToWasm0(buffer, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
+    _assertNum(num_sections);
+    _assertNum(max_bits_per_block);
+    _assertNum(max_bits_per_biome);
     const ret = wasm.parseChunkDump118(ptr0, len0, num_sections, max_bits_per_block, max_bits_per_biome);
     return ret;
 }
@@ -739,6 +943,9 @@ export function parseChunkDump118(buffer, num_sections, max_bits_per_block, max_
 export function parseChunkDump118FullColumn(buffer, num_sections, max_bits_per_block, max_bits_per_biome) {
     const ptr0 = passArray8ToWasm0(buffer, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
+    _assertNum(num_sections);
+    _assertNum(max_bits_per_block);
+    _assertNum(max_bits_per_biome);
     const ret = wasm.parseChunkDump118FullColumn(ptr0, len0, num_sections, max_bits_per_block, max_bits_per_biome);
     return ret;
 }
@@ -783,6 +990,9 @@ export function parseChunkDump118FullColumnAll(dump_buffer, sky_light_concat, bl
     const len5 = WASM_VECTOR_LEN;
     const ptr6 = passArray32ToWasm0(empty_block_light_mask, wasm.__wbindgen_malloc);
     const len6 = WASM_VECTOR_LEN;
+    _assertNum(num_sections);
+    _assertNum(max_bits_per_block);
+    _assertNum(max_bits_per_biome);
     const ret = wasm.parseChunkDump118FullColumnAll(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, num_sections, max_bits_per_block, max_bits_per_biome);
     return ret;
 }
@@ -799,6 +1009,9 @@ export function parseChunkDump118FullColumnAll(dump_buffer, sky_light_concat, bl
 export function parseChunkDump118NoMarshal(buffer, num_sections, max_bits_per_block, max_bits_per_biome) {
     const ptr0 = passArray8ToWasm0(buffer, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
+    _assertNum(num_sections);
+    _assertNum(max_bits_per_block);
+    _assertNum(max_bits_per_biome);
     const ret = wasm.parseChunkDump118NoMarshal(ptr0, len0, num_sections, max_bits_per_block, max_bits_per_biome);
     return ret;
 }
@@ -845,8 +1058,11 @@ export function parseChunkSectionsV16V17(chunk_data, bit_map_lo_hi, num_sections
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passArray32ToWasm0(bit_map_lo_hi, wasm.__wbindgen_malloc);
     const len1 = WASM_VECTOR_LEN;
+    _assertNum(num_sections);
+    _assertNum(max_bits_per_block);
     const ptr2 = passArray32ToWasm0(biomes_cells, wasm.__wbindgen_malloc);
     const len2 = WASM_VECTOR_LEN;
+    _assertNum(default_biome);
     const ret = wasm.parseChunkSectionsV16V17(ptr0, len0, ptr1, len1, num_sections, max_bits_per_block, ptr2, len2, default_biome);
     return ret;
 }
@@ -872,6 +1088,10 @@ export function parseChunkSectionsV16V17(chunk_data, bit_map_lo_hi, num_sections
 export function parseMapChunkV18Plus(raw_packet, num_sections, max_bits_per_block, max_bits_per_biome, protocol) {
     const ptr0 = passArray8ToWasm0(raw_packet, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
+    _assertNum(num_sections);
+    _assertNum(max_bits_per_block);
+    _assertNum(max_bits_per_biome);
+    _assertNum(protocol);
     const ret = wasm.parseMapChunkV18Plus(ptr0, len0, num_sections, max_bits_per_block, max_bits_per_biome, protocol);
     return ret;
 }
@@ -896,6 +1116,7 @@ export function parseMapChunkV18Plus(raw_packet, num_sections, max_bits_per_bloc
 export function parseUpdateLightV17(raw_packet, num_sections) {
     const ptr0 = passArray8ToWasm0(raw_packet, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
+    _assertNum(num_sections);
     const ret = wasm.parseUpdateLightV17(ptr0, len0, num_sections);
     return ret;
 }
@@ -949,10 +1170,10 @@ async function __wbg_load(module, imports) {
 function __wbg_get_imports() {
     const imports = {};
     imports.wbg = {};
-    imports.wbg.__wbg_Error_52673b7de5a0ca89 = function(arg0, arg1) {
+    imports.wbg.__wbg_Error_52673b7de5a0ca89 = function() { return logError(function (arg0, arg1) {
         const ret = Error(getStringFromWasm0(arg0, arg1));
         return ret;
-    };
+    }, arguments) };
     imports.wbg.__wbg___wbindgen_debug_string_adfb662ae34724b6 = function(arg0, arg1) {
         const ret = debugString(arg1);
         const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -960,14 +1181,45 @@ function __wbg_get_imports() {
         getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
         getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
     };
+    imports.wbg.__wbg___wbindgen_is_null_dfda7d66506c95b5 = function(arg0) {
+        const ret = arg0 === null;
+        _assertBoolean(ret);
+        return ret;
+    };
+    imports.wbg.__wbg___wbindgen_is_undefined_f6b95eab589e0269 = function(arg0) {
+        const ret = arg0 === undefined;
+        _assertBoolean(ret);
+        return ret;
+    };
+    imports.wbg.__wbg___wbindgen_number_get_9619185a74197f95 = function(arg0, arg1) {
+        const obj = arg1;
+        const ret = typeof(obj) === 'number' ? obj : undefined;
+        if (!isLikeNone(ret)) {
+            _assertNum(ret);
+        }
+        getDataViewMemory0().setFloat64(arg0 + 8 * 1, isLikeNone(ret) ? 0 : ret, true);
+        getDataViewMemory0().setInt32(arg0 + 4 * 0, !isLikeNone(ret), true);
+    };
+    imports.wbg.__wbg___wbindgen_string_get_a2a31e16edf96e42 = function(arg0, arg1) {
+        const obj = arg1;
+        const ret = typeof(obj) === 'string' ? obj : undefined;
+        var ptr1 = isLikeNone(ret) ? 0 : passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len1 = WASM_VECTOR_LEN;
+        getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
+        getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
+    };
     imports.wbg.__wbg___wbindgen_throw_dd24417ed36fc46e = function(arg0, arg1) {
         throw new Error(getStringFromWasm0(arg0, arg1));
     };
-    imports.wbg.__wbg_get_6b7bd52aca3f9671 = function(arg0, arg1) {
+    imports.wbg.__wbg_get_6b7bd52aca3f9671 = function() { return logError(function (arg0, arg1) {
         const ret = arg0[arg1 >>> 0];
         return ret;
-    };
-    imports.wbg.__wbg_instanceof_Int32Array_b6281022039fba32 = function(arg0) {
+    }, arguments) };
+    imports.wbg.__wbg_get_af9dab7e9603ea93 = function() { return handleError(function (arg0, arg1) {
+        const ret = Reflect.get(arg0, arg1);
+        return ret;
+    }, arguments) };
+    imports.wbg.__wbg_instanceof_Int32Array_b6281022039fba32 = function() { return logError(function (arg0) {
         let result;
         try {
             result = arg0 instanceof Int32Array;
@@ -975,9 +1227,10 @@ function __wbg_get_imports() {
             result = false;
         }
         const ret = result;
+        _assertBoolean(ret);
         return ret;
-    };
-    imports.wbg.__wbg_instanceof_Uint8Array_da54ccc9d3e09434 = function(arg0) {
+    }, arguments) };
+    imports.wbg.__wbg_instanceof_Uint8Array_da54ccc9d3e09434 = function() { return logError(function (arg0) {
         let result;
         try {
             result = arg0 instanceof Uint8Array;
@@ -985,88 +1238,114 @@ function __wbg_get_imports() {
             result = false;
         }
         const ret = result;
-        return ret;
-    };
-    imports.wbg.__wbg_length_22ac23eaec9d8053 = function(arg0) {
-        const ret = arg0.length;
-        return ret;
-    };
-    imports.wbg.__wbg_length_497fc8f401ac8b1c = function(arg0) {
-        const ret = arg0.length;
-        return ret;
-    };
-    imports.wbg.__wbg_length_89c3414ed7f0594d = function(arg0) {
-        const ret = arg0.length;
-        return ret;
-    };
-    imports.wbg.__wbg_length_ab53989976907f11 = function(arg0) {
-        const ret = arg0.length;
-        return ret;
-    };
-    imports.wbg.__wbg_new_1ba21ce319a06297 = function() {
-        const ret = new Object();
-        return ret;
-    };
-    imports.wbg.__wbg_new_25f239778d6112b9 = function() {
-        const ret = new Array();
-        return ret;
-    };
-    imports.wbg.__wbg_new_with_length_1e8603a5c71d4e06 = function(arg0) {
-        const ret = new Int32Array(arg0 >>> 0);
-        return ret;
-    };
-    imports.wbg.__wbg_new_with_length_202b3db94ba5fc86 = function(arg0) {
-        const ret = new Uint32Array(arg0 >>> 0);
-        return ret;
-    };
-    imports.wbg.__wbg_new_with_length_aa5eaf41d35235e5 = function(arg0) {
-        const ret = new Uint8Array(arg0 >>> 0);
-        return ret;
-    };
-    imports.wbg.__wbg_new_with_length_d7142aa2b68069a8 = function(arg0) {
-        const ret = new Uint16Array(arg0 >>> 0);
-        return ret;
-    };
-    imports.wbg.__wbg_prototypesetcall_dd07c344a74d4bfd = function(arg0, arg1, arg2) {
-        Int32Array.prototype.set.call(getArrayI32FromWasm0(arg0, arg1), arg2);
-    };
-    imports.wbg.__wbg_prototypesetcall_dfe9b766cdc1f1fd = function(arg0, arg1, arg2) {
-        Uint8Array.prototype.set.call(getArrayU8FromWasm0(arg0, arg1), arg2);
-    };
-    imports.wbg.__wbg_set_169e13b608078b7b = function(arg0, arg1, arg2) {
-        arg0.set(getArrayU8FromWasm0(arg1, arg2));
-    };
-    imports.wbg.__wbg_set_3f1d0b984ed272ed = function(arg0, arg1, arg2) {
-        arg0[arg1] = arg2;
-    };
-    imports.wbg.__wbg_set_781438a03c0c3c81 = function() { return handleError(function (arg0, arg1, arg2) {
-        const ret = Reflect.set(arg0, arg1, arg2);
+        _assertBoolean(ret);
         return ret;
     }, arguments) };
-    imports.wbg.__wbg_set_7df433eea03a5c14 = function(arg0, arg1, arg2) {
+    imports.wbg.__wbg_length_22ac23eaec9d8053 = function() { return logError(function (arg0) {
+        const ret = arg0.length;
+        _assertNum(ret);
+        return ret;
+    }, arguments) };
+    imports.wbg.__wbg_length_497fc8f401ac8b1c = function() { return logError(function (arg0) {
+        const ret = arg0.length;
+        _assertNum(ret);
+        return ret;
+    }, arguments) };
+    imports.wbg.__wbg_length_89c3414ed7f0594d = function() { return logError(function (arg0) {
+        const ret = arg0.length;
+        _assertNum(ret);
+        return ret;
+    }, arguments) };
+    imports.wbg.__wbg_length_ab53989976907f11 = function() { return logError(function (arg0) {
+        const ret = arg0.length;
+        _assertNum(ret);
+        return ret;
+    }, arguments) };
+    imports.wbg.__wbg_new_1ba21ce319a06297 = function() { return logError(function () {
+        const ret = new Object();
+        return ret;
+    }, arguments) };
+    imports.wbg.__wbg_new_25f239778d6112b9 = function() { return logError(function () {
+        const ret = new Array();
+        return ret;
+    }, arguments) };
+    imports.wbg.__wbg_new_6421f6084cc5bc5a = function() { return logError(function (arg0) {
+        const ret = new Uint8Array(arg0);
+        return ret;
+    }, arguments) };
+    imports.wbg.__wbg_new_9f7fd5c3a6ba7298 = function() { return logError(function (arg0) {
+        const ret = new Uint16Array(arg0);
+        return ret;
+    }, arguments) };
+    imports.wbg.__wbg_new_with_length_1e8603a5c71d4e06 = function() { return logError(function (arg0) {
+        const ret = new Int32Array(arg0 >>> 0);
+        return ret;
+    }, arguments) };
+    imports.wbg.__wbg_new_with_length_202b3db94ba5fc86 = function() { return logError(function (arg0) {
+        const ret = new Uint32Array(arg0 >>> 0);
+        return ret;
+    }, arguments) };
+    imports.wbg.__wbg_new_with_length_aa5eaf41d35235e5 = function() { return logError(function (arg0) {
+        const ret = new Uint8Array(arg0 >>> 0);
+        return ret;
+    }, arguments) };
+    imports.wbg.__wbg_new_with_length_d7142aa2b68069a8 = function() { return logError(function (arg0) {
+        const ret = new Uint16Array(arg0 >>> 0);
+        return ret;
+    }, arguments) };
+    imports.wbg.__wbg_now_69d776cd24f5215b = function() { return logError(function () {
+        const ret = Date.now();
+        return ret;
+    }, arguments) };
+    imports.wbg.__wbg_prototypesetcall_b0bea5f39077cfd3 = function() { return logError(function (arg0, arg1, arg2) {
+        Uint16Array.prototype.set.call(getArrayU16FromWasm0(arg0, arg1), arg2);
+    }, arguments) };
+    imports.wbg.__wbg_prototypesetcall_dd07c344a74d4bfd = function() { return logError(function (arg0, arg1, arg2) {
+        Int32Array.prototype.set.call(getArrayI32FromWasm0(arg0, arg1), arg2);
+    }, arguments) };
+    imports.wbg.__wbg_prototypesetcall_dfe9b766cdc1f1fd = function() { return logError(function (arg0, arg1, arg2) {
+        Uint8Array.prototype.set.call(getArrayU8FromWasm0(arg0, arg1), arg2);
+    }, arguments) };
+    imports.wbg.__wbg_push_7d9be8f38fc13975 = function() { return logError(function (arg0, arg1) {
+        const ret = arg0.push(arg1);
+        _assertNum(ret);
+        return ret;
+    }, arguments) };
+    imports.wbg.__wbg_set_169e13b608078b7b = function() { return logError(function (arg0, arg1, arg2) {
+        arg0.set(getArrayU8FromWasm0(arg1, arg2));
+    }, arguments) };
+    imports.wbg.__wbg_set_3f1d0b984ed272ed = function() { return logError(function (arg0, arg1, arg2) {
+        arg0[arg1] = arg2;
+    }, arguments) };
+    imports.wbg.__wbg_set_781438a03c0c3c81 = function() { return handleError(function (arg0, arg1, arg2) {
+        const ret = Reflect.set(arg0, arg1, arg2);
+        _assertBoolean(ret);
+        return ret;
+    }, arguments) };
+    imports.wbg.__wbg_set_7df433eea03a5c14 = function() { return logError(function (arg0, arg1, arg2) {
         arg0[arg1 >>> 0] = arg2;
-    };
-    imports.wbg.__wbg_set_bb0c6a7fe60d81b5 = function(arg0, arg1, arg2) {
+    }, arguments) };
+    imports.wbg.__wbg_set_bb0c6a7fe60d81b5 = function() { return logError(function (arg0, arg1, arg2) {
         arg0.set(getArrayU16FromWasm0(arg1, arg2));
-    };
-    imports.wbg.__wbg_set_e7cd108182596b7f = function(arg0, arg1, arg2) {
+    }, arguments) };
+    imports.wbg.__wbg_set_e7cd108182596b7f = function() { return logError(function (arg0, arg1, arg2) {
         arg0.set(getArrayU32FromWasm0(arg1, arg2));
-    };
-    imports.wbg.__wbindgen_cast_2241b6af4c4b2941 = function(arg0, arg1) {
+    }, arguments) };
+    imports.wbg.__wbindgen_cast_2241b6af4c4b2941 = function() { return logError(function (arg0, arg1) {
         // Cast intrinsic for `Ref(String) -> Externref`.
         const ret = getStringFromWasm0(arg0, arg1);
         return ret;
-    };
-    imports.wbg.__wbindgen_cast_4625c577ab2ec9ee = function(arg0) {
+    }, arguments) };
+    imports.wbg.__wbindgen_cast_4625c577ab2ec9ee = function() { return logError(function (arg0) {
         // Cast intrinsic for `U64 -> Externref`.
         const ret = BigInt.asUintN(64, arg0);
         return ret;
-    };
-    imports.wbg.__wbindgen_cast_d6cd19b81560fd6e = function(arg0) {
+    }, arguments) };
+    imports.wbg.__wbindgen_cast_d6cd19b81560fd6e = function() { return logError(function (arg0) {
         // Cast intrinsic for `F64 -> Externref`.
         const ret = arg0;
         return ret;
-    };
+    }, arguments) };
     imports.wbg.__wbindgen_init_externref_table = function() {
         const table = wasm.__wbindgen_externrefs;
         const offset = table.grow(4);
