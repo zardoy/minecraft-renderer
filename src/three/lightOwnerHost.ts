@@ -22,7 +22,7 @@ export type LightOwnerEvent =
   | { type: 'unloadColumn'; sx: number; sz: number }
 
 export type LightEngineBackend = {
-  setLightTables(tables: { emission: Uint8Array; opacity: Uint8Array }): void
+  setLightTables(tables: { emission: Uint8Array; opacity: Uint8Array; occupancy?: Uint8Array }): void
   setSkyLightEnabled?(enabled: boolean): void
   pushEvent(event: LightOwnerEvent): void
   step(budgetMs: number): boolean
@@ -92,7 +92,7 @@ export class LightOwnerHost {
     return new LightOwnerHost(cache, backend, opts)
   }
 
-  setLightTables(tables: { emission: Uint8Array; opacity: Uint8Array }) {
+  setLightTables(tables: { emission: Uint8Array; opacity: Uint8Array; occupancy?: Uint8Array }) {
     this.backend.setLightTables(tables)
   }
 
@@ -145,8 +145,9 @@ async function createWasmLightBackend(worldMinY: number, worldHeight: number): P
   }
   const engine = new Engine(worldMinY, worldHeight)
   return {
-    setLightTables({ emission, opacity }) {
+    setLightTables({ emission, opacity, occupancy }) {
       engine.setLightTables(emission, opacity)
+      if (occupancy && engine.setOcclusionTable) engine.setOcclusionTable(occupancy)
     },
     setSkyLightEnabled(enabled) {
       engine.setSkyLightEnabled?.(enabled)
@@ -177,6 +178,7 @@ async function createWasmLightBackend(worldMinY: number, worldHeight: number): P
 
 type WasmEngine = {
   setLightTables(emission: Uint8Array, opacity: Uint8Array): void
+  setOcclusionTable?(occupancy: Uint8Array): void
   setSkyLightEnabled?(enabled: boolean): void
   pushEvent(event: LightOwnerEvent): void
   step(budgetMs: number): boolean

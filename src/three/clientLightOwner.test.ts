@@ -208,7 +208,7 @@ describe('flag-on in-process host: load / setBlock / unload → publication → 
     const host = await LightOwnerHost.createInProcess(cache, { worldMinY: 0, worldHeight: 256 })
     host.setLightTables({
       emission: Uint8Array.of(0, 0, 14),
-      opacity: Uint8Array.of(1, 15, 1)
+      opacity: Uint8Array.of(0, 15, 0)
     })
     for (const event of eventsFromColumnLoad({
       chunkX: 0,

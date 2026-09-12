@@ -293,6 +293,14 @@ export class JsLightEngine {
         wasm.jslightengine_setLightTables(this.__wbg_ptr, ptr0, len0, ptr1, len1);
     }
     /**
+     * @param {Uint8Array} occupancy
+     */
+    setOcclusionTable(occupancy) {
+        const ptr0 = passArray8ToWasm0(occupancy, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.jslightengine_setOcclusionTable(this.__wbg_ptr, ptr0, len0);
+    }
+    /**
      * @param {any} event
      */
     pushEvent(event) {

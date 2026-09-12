@@ -10,16 +10,20 @@ export type LightTables1171 = {
   vanillaCommit: string
   vanillaRegistryComplete: true
   emission: Uint8Array
+  /** Raw 1.17.1 getLightBlock per stateId. Engine decay uses max(1, this). */
   opacity: Uint8Array
+  /** 2×2×2 occupancy for useShapeForLightOcclusion (slabs/stairs). */
+  occupancy: Uint8Array
 }
 
 /**
  * 1.17.1 light tables for `set_light_tables`.
  *
  * Emission is evaluated from the vendored vanilla 1.17.1 Blocks.java snapshot
- * (WORLD_VERSION 2730), mapped onto minecraft-data stateIds. Opacity is the
- * 1.17.1 getLightBlock default (solid cube 15, leaves 1, tinted glass 15,
- * otherwise 1) — not a face-occlusion dump.
+ * (WORLD_VERSION 2730), mapped onto minecraft-data stateIds.
+ * `opacity` is raw getLightBlock (air 0, water/leaves 1, solid cube 15).
+ * `occupancy` is 2×2×2 face-occlusion for slabs/stairs; full cubes stay 0
+ * because vanilla blocks them via lightBlock 15, not shapes.
  */
 export function buildLightTables1171(): LightTables1171 {
   if (artifact.version !== LIGHT_TABLES_MC_VERSION) {
@@ -38,7 +42,8 @@ export function buildLightTables1171(): LightTables1171 {
     vanillaCommit: artifact.vanillaCommit,
     vanillaRegistryComplete: true,
     emission: decodeB64(artifact.emissionB64),
-    opacity: decodeB64(artifact.opacityB64)
+    opacity: decodeB64(artifact.opacityB64),
+    occupancy: decodeB64((artifact as { occupancyB64?: string }).occupancyB64 ?? '')
   }
 }
 

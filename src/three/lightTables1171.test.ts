@@ -44,6 +44,7 @@ describe('buildLightTables1171', () => {
     }
     expect(tables.emission.length).toBe(maxState + 1)
     expect(tables.opacity.length).toBe(maxState + 1)
+    expect(tables.occupancy.length).toBe(maxState + 1)
 
     for (const block of mcData.blocksArray) {
       const lo = block.minStateId ?? block.defaultState
@@ -51,8 +52,10 @@ describe('buildLightTables1171', () => {
       for (let id = lo; id <= hi; id++) {
         expect(tables.emission[id], `${block.name}#${id} emission`).toBeGreaterThanOrEqual(0)
         expect(tables.emission[id], `${block.name}#${id} emission`).toBeLessThanOrEqual(15)
-        expect(tables.opacity[id], `${block.name}#${id} opacity`).toBeGreaterThanOrEqual(1)
-        expect(tables.opacity[id], `${block.name}#${id} opacity`).toBeLessThanOrEqual(15)
+        expect(tables.opacity[id], `${block.name}#${id} lightBlock`).toBeGreaterThanOrEqual(0)
+        expect(tables.opacity[id], `${block.name}#${id} lightBlock`).toBeLessThanOrEqual(15)
+        expect(tables.occupancy[id], `${block.name}#${id} occupancy`).toBeGreaterThanOrEqual(0)
+        expect(tables.occupancy[id], `${block.name}#${id} occupancy`).toBeLessThanOrEqual(255)
       }
     }
   })
@@ -116,5 +119,47 @@ describe('buildLightTables1171', () => {
     expect(fresh.vanillaWorldVersion).toBe(2730)
     expect(fresh.emission).toEqual(tables.emission)
     expect(fresh.opacity).toEqual(tables.opacity)
+    expect(fresh.occupancy).toEqual(tables.occupancy)
+  })
+
+  it('dumps raw getLightBlock, not phase-1 max(1, lightBlock)', () => {
+    const tables = buildLightTables1171()
+    expect(tables.opacity[idsNamed('air').defaultState]).toBe(0)
+    expect(tables.opacity[idsNamed('water').defaultState]).toBe(1)
+    expect(tables.opacity[idsNamed('oak_leaves').defaultState]).toBe(1)
+    expect(tables.opacity[idsNamed('glass').defaultState]).toBe(0)
+    expect(tables.opacity[idsNamed('tinted_glass').defaultState]).toBe(15)
+    expect(tables.opacity[idsNamed('stone').defaultState]).toBe(15)
+
+    const slab = idsNamed('oak_slab')
+    let sawBottom = false
+    let sawDouble = false
+    for (let id = slab.minStateId; id <= slab.maxStateId; id++) {
+      const props = propsAt(slab, id)
+      const type = props.type
+      if (type === 'double') {
+        expect(tables.opacity[id], `oak_slab#${id} double`).toBe(15)
+        expect(tables.occupancy[id], `oak_slab#${id} double occ`).toBe(0)
+        sawDouble = true
+      } else {
+        const want = props.waterlogged === true ? 1 : 0
+        expect(tables.opacity[id], `oak_slab#${id} ${String(type)}`).toBe(want)
+        expect(tables.occupancy[id], `oak_slab#${id} occ`).toBe(type === 'top' ? 0xf0 : 0x0f)
+        if (type === 'bottom' && props.waterlogged !== true) sawBottom = true
+      }
+    }
+    expect(sawBottom).toBe(true)
+    expect(sawDouble).toBe(true)
+
+    const stairs = idsNamed('oak_stairs')
+    for (let id = stairs.minStateId; id <= stairs.maxStateId; id++) {
+      const want = propsAt(stairs, id).waterlogged === true ? 1 : 0
+      expect(tables.opacity[id], `oak_stairs#${id}`).toBe(want)
+      expect(tables.occupancy[id], `oak_stairs#${id} occ`).toBeGreaterThan(0)
+    }
+
+    expect(tables.occupancy[idsNamed('glass').defaultState]).toBe(0)
+    expect(tables.occupancy[idsNamed('stone').defaultState]).toBe(0)
+    expect(tables.occupancy[idsNamed('air').defaultState]).toBe(0)
   })
 })

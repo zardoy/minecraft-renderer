@@ -41,7 +41,7 @@ describe('LightOwnerHost publications', () => {
     const host = await LightOwnerHost.createInProcess(cache, { worldMinY: 0, worldHeight: 256 })
     host.setLightTables({
       emission: Uint8Array.of(0, 0, 14),
-      opacity: Uint8Array.of(1, 15, 1)
+      opacity: Uint8Array.of(0, 15, 0)
     })
     host.pushEvent({ type: 'ingestBlockSection', sx: 0, sy: 4, sz: 0, states: new Uint16Array(4096) })
     host.pushEvent({ type: 'blockChange', x: 8, y: 64, z: 8, stateId: 2 })
@@ -59,7 +59,7 @@ describe('LightOwnerHost publications', () => {
     const host = await LightOwnerHost.createInProcess(cache, { worldMinY: 0, worldHeight: 256 })
     host.setLightTables({
       emission: Uint8Array.of(0, 0, 14),
-      opacity: Uint8Array.of(1, 15, 1)
+      opacity: Uint8Array.of(0, 15, 0)
     })
     host.pushEvent({ type: 'ingestBlockSection', sx: 0, sy: 15, sz: 0, states: new Uint16Array(4096) })
     await host.stepUntilIdle(32)

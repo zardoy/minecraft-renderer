@@ -178,9 +178,9 @@ export function applyOwnerPublicationToRenderer(
   }
 }
 
-export function loadDefaultOwnerLightTables(): { emission: Uint8Array; opacity: Uint8Array } {
+export function loadDefaultOwnerLightTables(): { emission: Uint8Array; opacity: Uint8Array; occupancy: Uint8Array } {
   const tables = buildLightTables1171()
-  return { emission: tables.emission, opacity: tables.opacity }
+  return { emission: tables.emission, opacity: tables.opacity, occupancy: tables.occupancy }
 }
 
 export class ClientLightOwnerSession {
@@ -202,7 +202,7 @@ export class ClientLightOwnerSession {
     this.worker = opts.createWorker(data => this.onMessage(data))
     this.worker.postMessage({ type: 'init', worldMinY: opts.worldMinY, worldHeight: opts.worldHeight })
     const tables = loadDefaultOwnerLightTables()
-    this.worker.postMessage({ type: 'setLightTables', emission: tables.emission, opacity: tables.opacity })
+    this.worker.postMessage({ type: 'setLightTables', emission: tables.emission, opacity: tables.opacity, occupancy: tables.occupancy })
     this.worker.postMessage({ type: 'setSkyLightEnabled', enabled: opts.skyLightEnabled })
   }
 

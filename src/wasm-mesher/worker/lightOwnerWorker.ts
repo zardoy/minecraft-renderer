@@ -10,6 +10,7 @@ import { eventsFromWasmUpdateLight } from './updateLightToOwnerEvents'
 
 type WasmEngine = {
   setLightTables(emission: Uint8Array, opacity: Uint8Array): void
+  setOcclusionTable?(occupancy: Uint8Array): void
   setSkyLightEnabled?(enabled: boolean): void
   pushEvent(event: LightOwnerEvent): void
   step(budgetMs: number): boolean
@@ -39,6 +40,7 @@ async function handle(data: any) {
     }
     case 'setLightTables': {
       engine?.setLightTables(data.emission, data.opacity)
+      if (data.occupancy) engine?.setOcclusionTable?.(data.occupancy)
       ctx.postMessage({ type: 'tablesSet' })
       break
     }

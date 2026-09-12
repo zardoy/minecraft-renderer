@@ -4,6 +4,7 @@ export const memory: WebAssembly.Memory;
 export const __wbg_jslightengine_free: (a: number, b: number) => void;
 export const jslightengine_js_new: (a: number, b: number) => number;
 export const jslightengine_setLightTables: (a: number, b: number, c: number, d: number, e: number) => void;
+export const jslightengine_setOcclusionTable: (a: number, b: number, c: number) => void;
 export const jslightengine_pushEvent: (a: number, b: any) => void;
 export const jslightengine_step: (a: number, b: number) => number;
 export const jslightengine_pollCompletedPublication: (a: number) => any;

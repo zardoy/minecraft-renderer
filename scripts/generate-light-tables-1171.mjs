@@ -108,11 +108,95 @@ function emissionFor(rule, props) {
   }
 }
 
-function opacityFor(block) {
-  if (block.name === 'tinted_glass') return 15
-  if (block.name.endsWith('_leaves')) return 1
+function isSlabName(name) {
+  return name.endsWith('_slab') || name === 'petrified_oak_slab'
+}
+
+function isStairsName(name) {
+  return name.endsWith('_stairs')
+}
+
+function isLeavesName(name) {
+  return name.endsWith('_leaves')
+}
+
+function isLiquidName(name) {
+  return name === 'water' || name === 'lava' || name === 'bubble_column'
+}
+
+/** Raw 1.17.1 getLightBlock. Decay opacity is max(1, this); sky source stops when this != 0. */
+function lightBlockFor(block, props) {
+  const name = block.name
+  if (name === 'tinted_glass') return 15
+  if (isLeavesName(name)) return 1
+  if (isLiquidName(name)) return 1
+  if (name === 'barrier') return 1
+  if (isSlabName(name)) {
+    if (props.type === 'double') return 15
+    return props.waterlogged === true ? 1 : 0
+  }
+  if (isStairsName(name)) {
+    return props.waterlogged === true ? 1 : 0
+  }
+  if (name === 'snow') {
+    return Number(props.layers) === 8 ? 15 : 0
+  }
+  if ((name === 'piston' || name === 'sticky_piston') && props.extended === true) {
+    return 0
+  }
+  if (name === 'glass' || name.endsWith('_stained_glass')) return 0
+  const fl = block.filterLight
+  if (typeof fl === 'number') return Math.max(0, Math.min(15, fl))
   if (!block.transparent && block.boundingBox === 'block') return 15
-  return 1
+  return 0
+}
+
+const UPPER = {
+  north: 0x30,
+  south: 0xc0,
+  west: 0x50,
+  east: 0xa0
+}
+const CCW = { north: 'west', west: 'south', south: 'east', east: 'north' }
+const CW = { north: 'east', east: 'south', south: 'west', west: 'north' }
+const OUTER_OCTANT = {
+  north_west: 0x10,
+  north_east: 0x20,
+  south_west: 0x40,
+  south_east: 0x80
+}
+
+function invertY(occ) {
+  return ((occ & 0x0f) << 4) | ((occ & 0xf0) >> 4)
+}
+
+function stairOccupancy(props) {
+  const facing = String(props.facing)
+  const shape = String(props.shape)
+  const base = 0x0f
+  let occ = base
+  if (shape === 'straight') occ |= UPPER[facing] ?? 0
+  else if (shape === 'inner_left') occ |= (UPPER[facing] ?? 0) | (UPPER[CCW[facing]] ?? 0)
+  else if (shape === 'inner_right') occ |= (UPPER[facing] ?? 0) | (UPPER[CW[facing]] ?? 0)
+  else if (shape === 'outer_left') occ |= OUTER_OCTANT[`${facing}_${CCW[facing]}`] ?? OUTER_OCTANT[`${CCW[facing]}_${facing}`] ?? 0
+  else if (shape === 'outer_right') occ |= OUTER_OCTANT[`${facing}_${CW[facing]}`] ?? OUTER_OCTANT[`${CW[facing]}_${facing}`] ?? 0
+  return props.half === 'top' ? invertY(occ) : occ
+}
+
+/**
+ * 2×2×2 occupancy for 1.17.1 useShapeForLightOcclusion blocks.
+ * Full cubes stay 0: they block via lightBlock 15, and vanilla isEmptyShape is true
+ * unless useShapeForLightOcclusion. Glass/leaves: noOcclusion → 0.
+ */
+function occupancyFor(block, props) {
+  const name = block.name
+  if (isSlabName(name)) {
+    if (props.type === 'double') return 0
+    return props.type === 'top' ? 0xf0 : 0x0f
+  }
+  if (isStairsName(name)) return stairOccupancy(props)
+  if (name === 'snow' && Number(props.layers) === 8) return 0xff
+  return 0
 }
 
 export function buildVanillaLightTables1171(blocksJava, mcData = MinecraftData(VERSION)) {
@@ -127,15 +211,16 @@ export function buildVanillaLightTables1171(blocksJava, mcData = MinecraftData(V
   }
   const emission = new Uint8Array(maxState + 1)
   const opacity = new Uint8Array(maxState + 1)
-  opacity.fill(1)
+  const occupancy = new Uint8Array(maxState + 1)
   for (const block of mcData.blocksArray) {
     const rule = rules.get(block.name)
     const lo = block.minStateId ?? block.defaultState
     const hi = block.maxStateId ?? block.defaultState
-    const blockOpacity = opacityFor(block)
     for (let id = lo; id <= hi; id++) {
-      emission[id] = Math.max(0, Math.min(15, emissionFor(rule, propsAt(block, id))))
-      opacity[id] = blockOpacity
+      const props = propsAt(block, id)
+      emission[id] = Math.max(0, Math.min(15, emissionFor(rule, props)))
+      opacity[id] = lightBlockFor(block, props)
+      occupancy[id] = occupancyFor(block, props)
     }
   }
   return {
@@ -145,7 +230,8 @@ export function buildVanillaLightTables1171(blocksJava, mcData = MinecraftData(V
     vanillaCommit: VANILLA_COMMIT,
     vanillaRegistryComplete: true,
     emission,
-    opacity
+    opacity,
+    occupancy
   }
 }
 
@@ -157,7 +243,8 @@ function toArtifact(tables) {
     vanillaCommit: tables.vanillaCommit,
     vanillaRegistryComplete: tables.vanillaRegistryComplete,
     emissionB64: Buffer.from(tables.emission).toString('base64'),
-    opacityB64: Buffer.from(tables.opacity).toString('base64')
+    opacityB64: Buffer.from(tables.opacity).toString('base64'),
+    occupancyB64: Buffer.from(tables.occupancy).toString('base64')
   }
 }
 

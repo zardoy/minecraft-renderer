@@ -6,6 +6,7 @@ export class JsLightEngine {
   [Symbol.dispose](): void;
   constructor(world_min_y: number, world_height: number);
   setLightTables(emission: Uint8Array, opacity: Uint8Array): void;
+  setOcclusionTable(occupancy: Uint8Array): void;
   pushEvent(event: any): void;
   step(budget_ms: number): boolean;
   pollCompletedPublication(): any;
@@ -242,6 +243,7 @@ export interface InitOutput {
   readonly __wbg_jslightengine_free: (a: number, b: number) => void;
   readonly jslightengine_js_new: (a: number, b: number) => number;
   readonly jslightengine_setLightTables: (a: number, b: number, c: number, d: number, e: number) => void;
+  readonly jslightengine_setOcclusionTable: (a: number, b: number, c: number) => void;
   readonly jslightengine_pushEvent: (a: number, b: any) => void;
   readonly jslightengine_step: (a: number, b: number) => number;
   readonly jslightengine_pollCompletedPublication: (a: number) => any;

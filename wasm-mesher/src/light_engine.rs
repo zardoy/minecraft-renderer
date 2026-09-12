@@ -12,8 +12,24 @@ use wasm_bindgen::prelude::*;
 use crate::chunk_parser_common::{BLOCK_SECTION_VOLUME, LIGHT_SECTION_BUFFER_BYTES};
 
 pub const AIR: u16 = 0;
+#[cfg(test)]
 pub const STONE: u16 = 1;
+#[cfg(test)]
 pub const TORCH: u16 = 2;
+#[cfg(test)]
+pub const WATER: u16 = 3;
+#[cfg(test)]
+pub const LEAVES: u16 = 4;
+#[cfg(test)]
+pub const SLAB_BOTTOM: u16 = 5;
+#[cfg(test)]
+pub const SLAB_TOP: u16 = 6;
+#[cfg(test)]
+pub const SLAB_DOUBLE: u16 = 7;
+#[cfg(test)]
+pub const STAIR: u16 = 8;
+#[cfg(test)]
+pub const GLASS: u16 = 9;
 
 const DIRS: [(i32, i32, i32); 6] = [
     (1, 0, 0),
@@ -126,7 +142,11 @@ pub struct LightEngine {
     world_generation: u64,
     publication_version: u64,
     emission: Vec<u8>,
-    opacity: Vec<u8>,
+    /// Raw vanilla getLightBlock per stateId. Decay uses max(1, lightBlock).
+    /// Sky *source* stops when lightBlock != 0 (water/leaves), not when decay opacity is 1.
+    light_block: Vec<u8>,
+    /// 2×2×2 occupancy (bit = x + 2*z + 4*y). Empty unless canOcclude && useShapeForLightOcclusion.
+    occupancy: Vec<u8>,
     /// Overworld default: compute sky. Nether/end turn this off and leave sky uncomputed.
     sky_light_enabled: bool,
     sections: HashMap<SectionKey, Section>,
@@ -153,7 +173,8 @@ impl LightEngine {
             world_generation: 1,
             publication_version: 0,
             emission: Vec::new(),
-            opacity: Vec::new(),
+            light_block: Vec::new(),
+            occupancy: Vec::new(),
             sky_light_enabled: true,
             sections: HashMap::new(),
             pending: VecDeque::new(),
@@ -170,9 +191,13 @@ impl LightEngine {
         }
     }
 
-    pub fn set_light_tables(&mut self, emission: &[u8], opacity: &[u8]) {
+    pub fn set_light_tables(&mut self, emission: &[u8], light_block: &[u8]) {
         self.emission = emission.to_vec();
-        self.opacity = opacity.to_vec();
+        self.light_block = light_block.to_vec();
+    }
+
+    pub fn set_occlusion_table(&mut self, occupancy: &[u8]) {
+        self.occupancy = occupancy.to_vec();
     }
 
     /// Dimensions without sky light (nether/end) leave the sky channel uncomputed.
@@ -649,6 +674,9 @@ impl LightEngine {
             if !self.can_write(nx, ny, nz) {
                 continue;
             }
+            if self.shape_occludes(x, y, z, nx, ny, nz, dx, dy, dz) {
+                continue;
+            }
             let next = level.saturating_sub(self.opacity_at(nx, ny, nz));
             let stored = self.get_block_light(nx, ny, nz);
             if next > stored {
@@ -743,9 +771,10 @@ impl LightEngine {
         y >= self.lowest_source_y(x, z)
     }
 
-    /// Full-cube occluder (phase-1 opacity table). Air/torch stay open; stone stops the column.
+    /// Vanilla sky *source* stops on true light-blocking: getLightBlock() != 0.
+    /// Air/glass/slabs are 0 (column stays 15). Water/leaves are 1 (below is not 15).
     fn sky_occludes(&self, x: i32, y: i32, z: i32) -> bool {
-        self.opacity_at(x, y, z) >= 15
+        self.light_block_at(x, y, z) != 0
     }
 
     /// Lowest Y in this column that is a sky source, or i32::MAX if the column has no sky.
@@ -864,6 +893,9 @@ impl LightEngine {
             let ny = y + dy;
             let nz = z + dz;
             if !self.can_write(nx, ny, nz) {
+                continue;
+            }
+            if self.shape_occludes(x, y, z, nx, ny, nz, dx, dy, dz) {
                 continue;
             }
             let next = level.saturating_sub(self.opacity_at(nx, ny, nz));
@@ -1016,6 +1048,10 @@ impl LightEngine {
         self.opacity_of(self.state_at(x, y, z))
     }
 
+    fn light_block_at(&self, x: i32, y: i32, z: i32) -> u8 {
+        self.light_block_of(self.state_at(x, y, z))
+    }
+
     fn state_at(&self, x: i32, y: i32, z: i32) -> u16 {
         let (sx, sy, sz) = section_key(x, y, z);
         self.sections
@@ -1029,9 +1065,58 @@ impl LightEngine {
         self.emission.get(state_id as usize).copied().unwrap_or(0).min(15)
     }
 
+    fn light_block_of(&self, state_id: u16) -> u8 {
+        self.light_block.get(state_id as usize).copied().unwrap_or(0).min(15)
+    }
+
+    /// Neighbor spread: vanilla getOpacity = max(1, getLightBlock()). Air still costs 1.
     fn opacity_of(&self, state_id: u16) -> u8 {
-        let raw = self.opacity.get(state_id as usize).copied().unwrap_or(1);
-        raw.max(1).min(15)
+        self.light_block_of(state_id).max(1)
+    }
+
+    fn occupancy_of(&self, state_id: u16) -> u8 {
+        self.occupancy.get(state_id as usize).copied().unwrap_or(0)
+    }
+
+    /// 1.17.1 LayerLightEngine: faceShapeOccludes(from.dir, to.opposite).
+    /// Full cube (0xFF) matches Shapes.block() identity. Otherwise OR of the 3D
+    /// occupancy "slices" must fill the cube. Isolated slabs/stairs vs air do not occlude.
+    fn shape_occludes(&self, x: i32, y: i32, z: i32, nx: i32, ny: i32, nz: i32, dx: i32, dy: i32, dz: i32) -> bool {
+        let from = self.face_shape(self.occupancy_of(self.state_at(x, y, z)), dx, dy, dz);
+        let to = self.face_shape(self.occupancy_of(self.state_at(nx, ny, nz)), -dx, -dy, -dz);
+        if from == 0xFF || to == 0xFF {
+            return true;
+        }
+        if from == 0 && to == 0 {
+            return false;
+        }
+        from | to == 0xFF
+    }
+
+    fn face_shape(&self, occ: u8, dx: i32, dy: i32, dz: i32) -> u8 {
+        if occ == 0 || occ == 0xFF {
+            return occ;
+        }
+        let mask = if dx > 0 {
+            0b1010_1010
+        } else if dx < 0 {
+            0b0101_0101
+        } else if dy > 0 {
+            0b1111_0000
+        } else if dy < 0 {
+            0b0000_1111
+        } else if dz > 0 {
+            0b1100_1100
+        } else if dz < 0 {
+            0b0011_0011
+        } else {
+            0
+        };
+        if occ & mask == 0 {
+            0
+        } else {
+            occ
+        }
     }
 }
 
@@ -1127,6 +1212,11 @@ impl JsLightEngine {
     #[wasm_bindgen(js_name = setLightTables)]
     pub fn js_set_light_tables(&mut self, emission: &[u8], opacity: &[u8]) {
         self.inner.set_light_tables(emission, opacity);
+    }
+
+    #[wasm_bindgen(js_name = setOcclusionTable)]
+    pub fn js_set_occlusion_table(&mut self, occupancy: &[u8]) {
+        self.inner.set_occlusion_table(occupancy);
     }
 
     #[wasm_bindgen(js_name = pushEvent)]
@@ -1282,10 +1372,10 @@ fn js_u16_array(obj: &JsValue, key: &str) -> Result<Vec<u16>, String> {
 
 fn default_test_tables() -> (Vec<u8>, Vec<u8>) {
     let mut emission = vec![0u8; 16];
-    let mut opacity = vec![1u8; 16];
+    let mut light_block = vec![0u8; 16];
     emission[TORCH as usize] = 14;
-    opacity[STONE as usize] = 15;
-    (emission, opacity)
+    light_block[STONE as usize] = 15;
+    (emission, light_block)
 }
 
 #[cfg(test)]
@@ -1663,9 +1753,9 @@ mod tests {
     fn tables_drive_emission() {
         let mut e = LightEngine::new(0, 256);
         let mut emission = vec![0u8; 16];
-        let opacity = vec![1u8; 16];
+        let light_block = vec![0u8; 16];
         emission[TORCH as usize] = 7;
-        e.set_light_tables(&emission, &opacity);
+        e.set_light_tables(&emission, &light_block);
         load_section(&mut e, 0, 4, 0, air_section());
         e.push_event(LightEvent::BlockChange {
             x: 8,
@@ -2053,5 +2143,234 @@ mod tests {
             15,
             "disabled sky must not recompute around a roof"
         );
+    }
+
+    /// Raw lightBlock tables: air=0 so the open column is still a sky source.
+    fn engine_raw() -> LightEngine {
+        let mut e = LightEngine::new(0, 256);
+        let mut emission = vec![0u8; 16];
+        let mut light_block = vec![0u8; 16];
+        emission[TORCH as usize] = 14;
+        light_block[STONE as usize] = 15;
+        light_block[WATER as usize] = 1;
+        light_block[LEAVES as usize] = 1;
+        light_block[SLAB_DOUBLE as usize] = 15;
+        e.set_light_tables(&emission, &light_block);
+        e
+    }
+
+    fn place_state_roof(e: &mut LightEngine, y: i32, state_id: u16) {
+        for z in 0..16 {
+            for x in 0..16 {
+                e.push_event(LightEvent::BlockChange { x, y, z, state_id });
+            }
+        }
+    }
+
+    /// Water has raw lightBlock 1: it is not a sky source. Decay still uses max(1, O).
+    #[test]
+    fn sky_water_stops_source_then_14() {
+        let mut e = engine_raw();
+        load_world_top_air(&mut e);
+        finish(&mut e);
+        let y = e.world_min_y + e.world_height - 6;
+        place_state_roof(&mut e, y, WATER);
+        finish(&mut e);
+        assert_eq!(e.get_sky_light(8, y + 1, 8), 15, "air above water stays a sky source");
+        assert_eq!(e.get_sky_light(8, y, 8), 14, "water itself is 14, not a source 15");
+        assert_ne!(e.get_sky_light(8, y - 1, 8), 15, "below water is not an open sky column");
+        assert_eq!(e.get_sky_light(8, y - 1, 8), 13);
+    }
+
+    /// Leaves are the same class as water: lightBlock 1 stops the source column.
+    #[test]
+    fn sky_leaves_stop_source_then_14() {
+        let mut e = engine_raw();
+        load_world_top_air(&mut e);
+        finish(&mut e);
+        let y = e.world_min_y + e.world_height - 6;
+        place_state_roof(&mut e, y, LEAVES);
+        finish(&mut e);
+        assert_eq!(e.get_sky_light(8, y, 8), 14);
+        assert_ne!(e.get_sky_light(8, y - 1, 8), 15);
+        assert_eq!(e.get_sky_light(8, y - 1, 8), 13);
+    }
+
+    /// Glass: lightBlock 0, noOcclusion. Sky source continues (15), unlike a solid cube.
+    #[test]
+    fn sky_glass_does_not_stop_source() {
+        let mut e = engine_raw();
+        load_world_top_air(&mut e);
+        finish(&mut e);
+        let y = e.world_min_y + e.world_height - 6;
+        place_state_roof(&mut e, y, GLASS);
+        finish(&mut e);
+        assert_eq!(e.get_sky_light(8, y, 8), 15, "glass is not a light-blocking cube");
+        assert_eq!(e.get_sky_light(8, y - 1, 8), 15);
+    }
+
+    /// Bottom slab is not a full cube: sky source continues. Double slab / stone do not.
+    #[test]
+    fn sky_bottom_slab_is_not_a_full_cube() {
+        let mut e = engine_raw();
+        load_world_top_air(&mut e);
+        finish(&mut e);
+        let y = e.world_min_y + e.world_height - 6;
+        place_state_roof(&mut e, y, SLAB_BOTTOM);
+        finish(&mut e);
+        assert_eq!(e.get_sky_light(8, y, 8), 15, "bottom slab lightBlock 0 keeps the source");
+        assert_eq!(e.get_sky_light(8, y - 1, 8), 15, "air under a bottom slab stays 15");
+
+        place_state_roof(&mut e, y, SLAB_DOUBLE);
+        finish(&mut e);
+        assert_eq!(e.get_sky_light(8, y, 8), 0, "double slab is a full cube");
+        assert_eq!(e.get_sky_light(8, y - 1, 8), 0);
+    }
+
+    /// Torch emission still pins at 14 with raw air lightBlock 0.
+    #[test]
+    fn raw_air_still_spreads_torch_14() {
+        let mut e = engine_raw();
+        load_section(&mut e, 0, 4, 0, air_section());
+        e.push_event(LightEvent::BlockChange {
+            x: 8,
+            y: 64,
+            z: 8,
+            state_id: TORCH,
+        });
+        finish(&mut e);
+        assert_eq!(e.get_block_light(8, 64, 8), 14);
+        assert_eq!(e.get_block_light(9, 64, 8), 13);
+    }
+
+    fn engine_raw_with_shapes() -> LightEngine {
+        let mut e = engine_raw();
+        let mut occupancy = vec![0u8; 16];
+        occupancy[SLAB_BOTTOM as usize] = 0x0F;
+        occupancy[SLAB_TOP as usize] = 0xF0;
+        occupancy[STAIR as usize] = 0x3F;
+        e.set_occlusion_table(&occupancy);
+        e
+    }
+
+    fn stone_section() -> Vec<u16> {
+        vec![STONE; BLOCK_SECTION_VOLUME]
+    }
+
+    /// Stone tunnel along X so light cannot path around the pair under test.
+    fn load_x_tunnel(e: &mut LightEngine) {
+        load_section(e, 0, 4, 0, stone_section());
+        for x in 7..=11 {
+            e.push_event(LightEvent::BlockChange {
+                x,
+                y: 64,
+                z: 8,
+                state_id: AIR,
+            });
+        }
+        e.push_event(LightEvent::BlockChange {
+            x: 7,
+            y: 64,
+            z: 8,
+            state_id: TORCH,
+        });
+    }
+
+    /// Complementary bottom+top slabs fill the cube: vanilla faceShapeOccludes, light does not pass.
+    #[test]
+    fn face_bottom_and_top_slab_block_horizontal_light() {
+        let mut e = engine_raw_with_shapes();
+        load_x_tunnel(&mut e);
+        e.push_event(LightEvent::BlockChange {
+            x: 8,
+            y: 64,
+            z: 8,
+            state_id: SLAB_BOTTOM,
+        });
+        e.push_event(LightEvent::BlockChange {
+            x: 9,
+            y: 64,
+            z: 8,
+            state_id: SLAB_TOP,
+        });
+        finish(&mut e);
+        assert_eq!(e.get_block_light(7, 64, 8), 14);
+        assert_eq!(e.get_block_light(8, 64, 8), 13, "bottom slab vs air does not occlude");
+        assert_eq!(e.get_block_light(9, 64, 8), 0, "bottom+top slab pair occludes");
+        assert_eq!(e.get_block_light(10, 64, 8), 0);
+    }
+
+    /// Two bottom slabs do not fill the cube — light goes through the open top half.
+    #[test]
+    fn face_two_bottom_slabs_do_not_block() {
+        let mut e = engine_raw_with_shapes();
+        load_x_tunnel(&mut e);
+        e.push_event(LightEvent::BlockChange {
+            x: 8,
+            y: 64,
+            z: 8,
+            state_id: SLAB_BOTTOM,
+        });
+        e.push_event(LightEvent::BlockChange {
+            x: 9,
+            y: 64,
+            z: 8,
+            state_id: SLAB_BOTTOM,
+        });
+        finish(&mut e);
+        assert_eq!(e.get_block_light(8, 64, 8), 13);
+        assert_eq!(e.get_block_light(9, 64, 8), 12);
+        assert_eq!(e.get_block_light(10, 64, 8), 11);
+    }
+
+    /// A stair is not air: with a complementary top slab it occludes; air + top slab does not.
+    #[test]
+    fn face_stair_is_not_air() {
+        let mut stair = engine_raw_with_shapes();
+        load_x_tunnel(&mut stair);
+        stair.push_event(LightEvent::BlockChange {
+            x: 8,
+            y: 64,
+            z: 8,
+            state_id: STAIR,
+        });
+        stair.push_event(LightEvent::BlockChange {
+            x: 9,
+            y: 64,
+            z: 8,
+            state_id: SLAB_TOP,
+        });
+        finish(&mut stair);
+        assert_eq!(stair.get_block_light(8, 64, 8), 13);
+        assert_eq!(stair.get_block_light(9, 64, 8), 0, "stair ∪ top slab fills the cube");
+
+        let mut air = engine_raw_with_shapes();
+        load_x_tunnel(&mut air);
+        air.push_event(LightEvent::BlockChange {
+            x: 9,
+            y: 64,
+            z: 8,
+            state_id: SLAB_TOP,
+        });
+        finish(&mut air);
+        assert_eq!(air.get_block_light(8, 64, 8), 13, "air west of the top slab");
+        assert_eq!(air.get_block_light(9, 64, 8), 12, "top slab vs air does not occlude");
+    }
+
+    /// Glass: lightBlock 0 and empty occupancy. Spread matches air, unlike a full cube.
+    #[test]
+    fn face_glass_does_not_occlude_spread() {
+        let mut e = engine_raw_with_shapes();
+        load_x_tunnel(&mut e);
+        e.push_event(LightEvent::BlockChange {
+            x: 8,
+            y: 64,
+            z: 8,
+            state_id: GLASS,
+        });
+        finish(&mut e);
+        assert_eq!(e.get_block_light(8, 64, 8), 13);
+        assert_eq!(e.get_block_light(9, 64, 8), 12);
+        assert_eq!(e.get_block_light(10, 64, 8), 11);
     }
 }
