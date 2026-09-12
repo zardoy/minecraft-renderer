@@ -1,8 +1,9 @@
-//! Owned block-light engine for the dedicated light-worker.
+//! Owned block+sky light engine for the dedicated light-worker.
 //!
 //! ABI: `push_event` → `step(budget_ms)` → `poll_completed_publication`.
 //! Publications are versioned and copy-out packed 2048-byte channels.
 //! `sky=15` is never written as an authoritative seed.
+//! Sky and block are independent channels. Sky sources skip UP.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -126,13 +127,20 @@ pub struct LightEngine {
     publication_version: u64,
     emission: Vec<u8>,
     opacity: Vec<u8>,
+    /// Overworld default: compute sky. Nether/end turn this off and leave sky uncomputed.
+    sky_light_enabled: bool,
     sections: HashMap<SectionKey, Section>,
     pending: VecDeque<LightEvent>,
     decrease_q: VecDeque<(i32, i32, i32, u8)>,
     increase_q: VecDeque<(i32, i32, i32, u8)>,
+    /// Sky queues are independent of block light. `bool` is skip-up (vanilla sky source).
+    sky_decrease_q: VecDeque<(i32, i32, i32, u8, bool)>,
+    sky_increase_q: VecDeque<(i32, i32, i32, u8, bool)>,
     /// Publication set only — never a solver guard and never "skip seed".
     changed_for_publication: HashSet<SectionKey>,
+    changed_sky: HashSet<SectionKey>,
     check_dedup: HashSet<(i32, i32, i32)>,
+    sky_check_dedup: HashSet<(i32, i32, i32)>,
     transaction_open: bool,
     ready_publication: Option<LightPublication>,
 }
@@ -146,12 +154,17 @@ impl LightEngine {
             publication_version: 0,
             emission: Vec::new(),
             opacity: Vec::new(),
+            sky_light_enabled: true,
             sections: HashMap::new(),
             pending: VecDeque::new(),
             decrease_q: VecDeque::new(),
             increase_q: VecDeque::new(),
+            sky_decrease_q: VecDeque::new(),
+            sky_increase_q: VecDeque::new(),
             changed_for_publication: HashSet::new(),
+            changed_sky: HashSet::new(),
             check_dedup: HashSet::new(),
+            sky_check_dedup: HashSet::new(),
             transaction_open: false,
             ready_publication: None,
         }
@@ -160,6 +173,11 @@ impl LightEngine {
     pub fn set_light_tables(&mut self, emission: &[u8], opacity: &[u8]) {
         self.emission = emission.to_vec();
         self.opacity = opacity.to_vec();
+    }
+
+    /// Dimensions without sky light (nether/end) leave the sky channel uncomputed.
+    pub fn set_sky_light_enabled(&mut self, enabled: bool) {
+        self.sky_light_enabled = enabled;
     }
 
     pub fn push_event(&mut self, event: LightEvent) {
@@ -174,7 +192,7 @@ impl LightEngine {
             self.drain_waiting_events();
         }
 
-        let has_queue = !self.decrease_q.is_empty() || !self.increase_q.is_empty();
+        let has_queue = self.has_queue_work();
         if budget_ms <= 0.0 && has_queue {
             return true;
         }
@@ -185,20 +203,27 @@ impl LightEngine {
                 return true;
             }
         }
+        while let Some((x, y, z, level, skip_up)) = self.sky_decrease_q.pop_front() {
+            self.propagate_sky_decrease(x, y, z, level, skip_up);
+            if now_ms() - start >= budget_ms {
+                return true;
+            }
+        }
         while let Some((x, y, z, level)) = self.increase_q.pop_front() {
             self.propagate_increase(x, y, z, level);
             if now_ms() - start >= budget_ms {
                 return true;
             }
         }
-
-        if self.transaction_open && self.decrease_q.is_empty() && self.increase_q.is_empty() {
-            self.publish_completed();
-            self.transaction_open = false;
-            self.check_dedup.clear();
+        while let Some((x, y, z, level, skip_up)) = self.sky_increase_q.pop_front() {
+            self.propagate_sky_increase(x, y, z, level, skip_up);
+            if now_ms() - start >= budget_ms {
+                return true;
+            }
         }
 
-        !self.pending.is_empty() || !self.decrease_q.is_empty() || !self.increase_q.is_empty()
+        self.finish_transaction_if_idle();
+        self.has_remaining_work()
     }
 
     /// Deterministic slice: apply events, then at most `max_nodes` queue pops.
@@ -214,23 +239,49 @@ impl LightEngine {
                 left -= 1;
                 continue;
             }
+            if let Some((x, y, z, level, skip_up)) = self.sky_decrease_q.pop_front() {
+                self.propagate_sky_decrease(x, y, z, level, skip_up);
+                left -= 1;
+                continue;
+            }
             if let Some((x, y, z, level)) = self.increase_q.pop_front() {
                 self.propagate_increase(x, y, z, level);
                 left -= 1;
                 continue;
             }
+            if let Some((x, y, z, level, skip_up)) = self.sky_increase_q.pop_front() {
+                self.propagate_sky_increase(x, y, z, level, skip_up);
+                left -= 1;
+                continue;
+            }
             break;
         }
-        if self.transaction_open && self.decrease_q.is_empty() && self.increase_q.is_empty() {
+        self.finish_transaction_if_idle();
+        self.has_remaining_work()
+    }
+
+    fn has_queue_work(&self) -> bool {
+        !self.decrease_q.is_empty()
+            || !self.increase_q.is_empty()
+            || !self.sky_decrease_q.is_empty()
+            || !self.sky_increase_q.is_empty()
+    }
+
+    fn has_remaining_work(&self) -> bool {
+        !self.pending.is_empty() || self.has_queue_work()
+    }
+
+    fn finish_transaction_if_idle(&mut self) {
+        if self.transaction_open && !self.has_queue_work() {
             self.publish_completed();
             self.transaction_open = false;
             self.check_dedup.clear();
+            self.sky_check_dedup.clear();
         }
-        !self.pending.is_empty() || !self.decrease_q.is_empty() || !self.increase_q.is_empty()
     }
 
     fn batch_in_progress(&self) -> bool {
-        !self.decrease_q.is_empty() || !self.increase_q.is_empty()
+        self.has_queue_work()
     }
 
     pub fn poll_completed_publication(&mut self) -> Option<LightPublication> {
@@ -258,6 +309,7 @@ impl LightEngine {
 
     fn drain_waiting_events(&mut self) {
         self.check_dedup.clear();
+        self.sky_check_dedup.clear();
         let waiting = self.pending.len();
         for _ in 0..waiting {
             if let Some(event) = self.pending.pop_front() {
@@ -286,6 +338,13 @@ impl LightEngine {
                         }
                     }
                 }
+                if self.sky_light_enabled {
+                    for lz in 0..16 {
+                        for lx in 0..16 {
+                            self.update_sky_column(sx * 16 + lx as i32, sz * 16 + lz as i32);
+                        }
+                    }
+                }
                 self.mark_changed(sx, sy, sz);
             }
             LightEvent::SetAvailability {
@@ -297,6 +356,7 @@ impl LightEngine {
                 if availability == SectionAvailability::Unloaded {
                     self.sections.remove(&(sx, sy, sz));
                     self.changed_for_publication.remove(&(sx, sy, sz));
+                    self.changed_sky.remove(&(sx, sy, sz));
                     self.mark_transaction();
                     return;
                 }
@@ -316,6 +376,7 @@ impl LightEngine {
             LightEvent::UnloadColumn { sx, sz } => {
                 self.sections.retain(|key, _| !(key.0 == sx && key.2 == sz));
                 self.changed_for_publication.retain(|key| !(key.0 == sx && key.2 == sz));
+                self.changed_sky.retain(|key| !(key.0 == sx && key.2 == sz));
                 self.world_generation = self.world_generation.saturating_add(1);
                 self.mark_transaction();
             }
@@ -350,6 +411,7 @@ impl LightEngine {
             self.set_block_light(x, y, z, emission);
             self.increase_q.push_back((x, y, z, emission));
         }
+        self.update_sky_column(x, z);
     }
 
     fn apply_server_light(&mut self, sx: i32, sy: i32, sz: i32, channel: LightChannel, kind: ServerLightKind) {
@@ -386,14 +448,6 @@ impl LightEngine {
                 LightChannel::Sky => section.accepted_sky = Some(packed.to_vec()),
             }
         }
-        if channel == LightChannel::Sky {
-            {
-                let section = self.ensure_section(sx, sy, sz, SectionAvailability::LightOnly);
-                section.sky_light.copy_from_slice(packed);
-            }
-            self.mark_changed(sx, sy, sz);
-            return;
-        }
 
         let availability = self.section_availability(sx, sy, sz);
         let mut changed = Vec::new();
@@ -406,9 +460,9 @@ impl LightEngine {
                     if !self.in_world(x, y, z) {
                         continue;
                     }
-                    let old = self.get_block_light(x, y, z);
+                    let old = self.get_channel(x, y, z, channel);
                     let new = nibble_at(packed, lx, ly, lz);
-                    self.write_working_light(x, y, z, new);
+                    self.write_working(x, y, z, channel, new);
                     if old != new {
                         changed.push((x, y, z, old, new));
                     }
@@ -416,19 +470,35 @@ impl LightEngine {
             }
         }
 
+        if channel == LightChannel::Sky && !self.sky_light_enabled {
+            self.mark_sky_changed(sx, sy, sz);
+            return;
+        }
+
         match availability {
             SectionAvailability::LightOnly | SectionAvailability::Unloaded => {
                 for (x, y, z, old, new) in changed {
-                    self.enqueue_boundary_influence(x, y, z, old, new);
+                    self.enqueue_boundary_influence(x, y, z, channel, old, new);
+                }
+                if channel == LightChannel::Sky {
+                    self.update_sky_columns_in_section(sx, sz);
                 }
             }
             SectionAvailability::Loaded => {
-                for (x, y, z, _old, _new) in changed {
-                    self.check_loaded_cell(x, y, z);
+                if channel == LightChannel::Block {
+                    for (x, y, z, _old, _new) in changed {
+                        self.check_loaded_cell(x, y, z);
+                    }
+                } else {
+                    self.update_sky_columns_in_section(sx, sz);
                 }
             }
         }
-        self.mark_changed(sx, sy, sz);
+        if channel == LightChannel::Sky {
+            self.mark_sky_changed(sx, sy, sz);
+        } else {
+            self.mark_changed(sx, sy, sz);
+        }
     }
 
     fn check_loaded_cell(&mut self, x: i32, y: i32, z: i32) {
@@ -452,31 +522,64 @@ impl LightEngine {
         }
     }
 
-    fn enqueue_boundary_influence(&mut self, x: i32, y: i32, z: i32, old: u8, new: u8) {
-        if new > 0 {
-            self.increase_q.push_back((x, y, z, new));
-        }
-        if old > new {
-            for (dx, dy, dz) in DIRS {
-                let nx = x + dx;
-                let ny = y + dy;
-                let nz = z + dz;
-                if self.section_availability_at(nx, ny, nz) != SectionAvailability::Loaded {
-                    continue;
+    fn enqueue_boundary_influence(&mut self, x: i32, y: i32, z: i32, channel: LightChannel, old: u8, new: u8) {
+        match channel {
+            LightChannel::Block => {
+                if new > 0 {
+                    self.increase_q.push_back((x, y, z, new));
                 }
-                let stored = self.get_block_light(nx, ny, nz);
-                if stored == 0 {
-                    continue;
-                }
-                if stored <= old.saturating_sub(1) {
-                    self.set_block_light(nx, ny, nz, 0);
-                    self.decrease_q.push_back((nx, ny, nz, stored));
-                    let emission = self.emission_at(nx, ny, nz);
-                    if emission > 0 {
-                        self.increase_q.push_back((nx, ny, nz, emission));
+                if old > new {
+                    for (dx, dy, dz) in DIRS {
+                        let nx = x + dx;
+                        let ny = y + dy;
+                        let nz = z + dz;
+                        if self.section_availability_at(nx, ny, nz) != SectionAvailability::Loaded {
+                            continue;
+                        }
+                        let stored = self.get_block_light(nx, ny, nz);
+                        if stored == 0 {
+                            continue;
+                        }
+                        if stored <= old.saturating_sub(1) {
+                            self.set_block_light(nx, ny, nz, 0);
+                            self.decrease_q.push_back((nx, ny, nz, stored));
+                            let emission = self.emission_at(nx, ny, nz);
+                            if emission > 0 {
+                                self.increase_q.push_back((nx, ny, nz, emission));
+                            }
+                        } else {
+                            self.increase_q.push_back((nx, ny, nz, stored));
+                        }
                     }
-                } else {
-                    self.increase_q.push_back((nx, ny, nz, stored));
+                }
+            }
+            LightChannel::Sky => {
+                if new > 0 {
+                    self.sky_increase_q.push_back((x, y, z, new, new == 15));
+                }
+                if old > new {
+                    for (dx, dy, dz) in DIRS {
+                        let nx = x + dx;
+                        let ny = y + dy;
+                        let nz = z + dz;
+                        if self.section_availability_at(nx, ny, nz) != SectionAvailability::Loaded {
+                            continue;
+                        }
+                        let stored = self.get_sky_light(nx, ny, nz);
+                        if stored == 0 {
+                            continue;
+                        }
+                        if stored <= old.saturating_sub(1) {
+                            self.set_sky_light(nx, ny, nz, 0);
+                            self.sky_decrease_q.push_back((nx, ny, nz, stored, stored == 15));
+                            let emission = self.sky_emission_at(nx, ny, nz);
+                            if emission > 0 {
+                                self.sky_increase_q.push_back((nx, ny, nz, emission, true));
+                            }
+                        } else {
+                            self.sky_increase_q.push_back((nx, ny, nz, stored, false));
+                        }
+                    }
                 }
             }
         }
@@ -487,7 +590,7 @@ impl LightEngine {
             let nx = x + dx;
             let ny = y + dy;
             let nz = z + dz;
-            if let Some(boundary) = self.known_boundary_light(nx, ny, nz) {
+            if let Some(boundary) = self.known_boundary_light(nx, ny, nz, LightChannel::Block) {
                 if boundary > 0 {
                     self.increase_q.push_back((nx, ny, nz, boundary));
                 }
@@ -514,7 +617,7 @@ impl LightEngine {
     }
 
     fn propagate_increase(&mut self, x: i32, y: i32, z: i32, level: u8) {
-        if let Some(boundary) = self.known_boundary_light(x, y, z) {
+        if let Some(boundary) = self.known_boundary_light(x, y, z, LightChannel::Block) {
             if boundary == 0 {
                 return;
             }
@@ -557,21 +660,244 @@ impl LightEngine {
         }
     }
 
+    fn update_sky_columns_in_section(&mut self, sx: i32, sz: i32) {
+        if !self.sky_light_enabled {
+            return;
+        }
+        for lz in 0..16 {
+            for lx in 0..16 {
+                self.update_sky_column(sx * 16 + lx as i32, sz * 16 + lz as i32);
+            }
+        }
+    }
+
+    fn update_sky_column(&mut self, x: i32, z: i32) {
+        if !self.sky_light_enabled {
+            return;
+        }
+        let lowest = self.lowest_source_y(x, z);
+        let max_y = self.world_min_y + self.world_height;
+        for y in (self.world_min_y..max_y).rev() {
+            if self.section_availability_at(x, y, z) == SectionAvailability::Loaded {
+                self.sky_check_dedup.remove(&(x, y, z));
+                self.check_sky_cell_with_lowest(x, y, z, lowest);
+            }
+        }
+    }
+
+    fn check_sky_cell_with_lowest(&mut self, x: i32, y: i32, z: i32, lowest: i32) {
+        if !self.sky_check_dedup.insert((x, y, z)) {
+            return;
+        }
+        if self.section_availability_at(x, y, z) != SectionAvailability::Loaded {
+            return;
+        }
+        let emission = if !self.sky_occludes(x, y, z) && y >= lowest { 15 } else { 0 };
+        let stored = self.get_sky_light(x, y, z);
+        if emission < stored {
+            self.set_sky_light(x, y, z, 0);
+            self.sky_decrease_q.push_back((x, y, z, stored, stored == 15));
+        }
+        if emission > 0 {
+            if self.get_sky_light(x, y, z) < emission {
+                self.set_sky_light(x, y, z, emission);
+            }
+            self.sky_increase_q.push_back((x, y, z, emission, true));
+        } else if stored == 0 && self.sky_neighbor_level(x, y, z) > 1 {
+            self.sky_decrease_q.push_back((x, y, z, 1, false));
+        }
+    }
+
+    fn sky_neighbor_level(&self, x: i32, y: i32, z: i32) -> u8 {
+        let mut max_level = 0u8;
+        for (dx, dy, dz) in DIRS {
+            let nx = x + dx;
+            let ny = y + dy;
+            let nz = z + dz;
+            let level = self
+                .known_boundary_light(nx, ny, nz, LightChannel::Sky)
+                .unwrap_or_else(|| self.get_sky_light(nx, ny, nz));
+            max_level = max_level.max(level);
+        }
+        max_level
+    }
+
+    fn sky_emission_at(&self, x: i32, y: i32, z: i32) -> u8 {
+        if self.is_sky_source(x, y, z) {
+            15
+        } else {
+            0
+        }
+    }
+
+    fn is_sky_source(&self, x: i32, y: i32, z: i32) -> bool {
+        if !self.sky_light_enabled || !self.in_world(x, y, z) {
+            return false;
+        }
+        if self.section_availability_at(x, y, z) != SectionAvailability::Loaded {
+            return false;
+        }
+        if self.sky_occludes(x, y, z) {
+            return false;
+        }
+        y >= self.lowest_source_y(x, z)
+    }
+
+    /// Full-cube occluder (phase-1 opacity table). Air/torch stay open; stone stops the column.
+    fn sky_occludes(&self, x: i32, y: i32, z: i32) -> bool {
+        self.opacity_at(x, y, z) >= 15
+    }
+
+    /// Lowest Y in this column that is a sky source, or i32::MAX if the column has no sky.
+    /// Unknown (unloaded / LIGHT_ONLY without data) is not treated as 15.
+    fn lowest_source_y(&self, x: i32, z: i32) -> i32 {
+        if !self.sky_light_enabled {
+            return i32::MAX;
+        }
+        let max_y = self.world_min_y + self.world_height - 1;
+        let mut connected = false;
+        let mut lowest = i32::MAX;
+        for y in (self.world_min_y..=max_y).rev() {
+            match self.section_availability_at(x, y, z) {
+                SectionAvailability::Unloaded => {
+                    if connected {
+                        break;
+                    }
+                }
+                SectionAvailability::LightOnly => match self.known_boundary_light(x, y, z, LightChannel::Sky) {
+                    Some(15) => {
+                        connected = true;
+                    }
+                    Some(_) | None => {
+                        if connected {
+                            break;
+                        }
+                    }
+                },
+                SectionAvailability::Loaded => {
+                    if y == max_y {
+                        if self.sky_occludes(x, y, z) {
+                            break;
+                        }
+                        connected = true;
+                        lowest = y;
+                        continue;
+                    }
+                    if !connected {
+                        continue;
+                    }
+                    if self.sky_occludes(x, y, z) {
+                        break;
+                    }
+                    lowest = y;
+                }
+            }
+        }
+        lowest
+    }
+
+    fn propagate_sky_decrease(&mut self, x: i32, y: i32, z: i32, from_level: u8, skip_up: bool) {
+        for (dx, dy, dz) in DIRS {
+            if skip_up && dy == 1 {
+                continue;
+            }
+            let nx = x + dx;
+            let ny = y + dy;
+            let nz = z + dz;
+            if let Some(boundary) = self.known_boundary_light(nx, ny, nz, LightChannel::Sky) {
+                if boundary > 0 {
+                    self.sky_increase_q.push_back((nx, ny, nz, boundary, boundary == 15));
+                }
+                continue;
+            }
+            if !self.can_write(nx, ny, nz) {
+                continue;
+            }
+            let stored = self.get_sky_light(nx, ny, nz);
+            if stored == 0 {
+                continue;
+            }
+            if stored <= from_level.saturating_sub(1) {
+                self.set_sky_light(nx, ny, nz, 0);
+                self.sky_decrease_q.push_back((nx, ny, nz, stored, stored == 15));
+                let emission = self.sky_emission_at(nx, ny, nz);
+                if emission > 0 {
+                    self.sky_increase_q.push_back((nx, ny, nz, emission, true));
+                }
+            } else {
+                self.sky_increase_q.push_back((nx, ny, nz, stored, false));
+            }
+        }
+    }
+
+    fn propagate_sky_increase(&mut self, x: i32, y: i32, z: i32, level: u8, skip_up: bool) {
+        if let Some(boundary) = self.known_boundary_light(x, y, z, LightChannel::Sky) {
+            if boundary == 0 {
+                return;
+            }
+            self.spread_sky_increase(x, y, z, boundary.min(level), skip_up || boundary == 15);
+            return;
+        }
+        let stored = self.get_sky_light(x, y, z);
+        let emission = self.sky_emission_at(x, y, z);
+        let supported = stored.max(emission);
+        if level > supported {
+            if stored <= 1 {
+                return;
+            }
+            self.spread_sky_increase(x, y, z, stored, false);
+            return;
+        }
+        if stored < emission {
+            self.set_sky_light(x, y, z, emission);
+        }
+        let from = self.get_sky_light(x, y, z);
+        self.spread_sky_increase(x, y, z, from, skip_up || emission == 15);
+    }
+
+    fn spread_sky_increase(&mut self, x: i32, y: i32, z: i32, level: u8, skip_up: bool) {
+        for (dx, dy, dz) in DIRS {
+            if skip_up && dy == 1 {
+                continue;
+            }
+            let nx = x + dx;
+            let ny = y + dy;
+            let nz = z + dz;
+            if !self.can_write(nx, ny, nz) {
+                continue;
+            }
+            let next = level.saturating_sub(self.opacity_at(nx, ny, nz));
+            let stored = self.get_sky_light(nx, ny, nz);
+            if next > stored {
+                self.set_sky_light(nx, ny, nz, next);
+                if next > 1 {
+                    self.sky_increase_q.push_back((nx, ny, nz, next, false));
+                }
+            }
+        }
+    }
+
     fn publish_completed(&mut self) {
         if self.changed_for_publication.is_empty() {
             return;
         }
         self.publication_version = self.publication_version.saturating_add(1);
         let keys: Vec<SectionKey> = self.changed_for_publication.drain().collect();
+        let sky_keys = std::mem::take(&mut self.changed_sky);
         let mut sections = Vec::with_capacity(keys.len());
         for (sx, sy, sz) in keys {
             if let Some(section) = self.sections.get(&(sx, sy, sz)) {
+                let sky = if sky_keys.contains(&(sx, sy, sz)) {
+                    Some(section.sky_light.clone())
+                } else {
+                    None
+                };
                 sections.push(PublishedSection {
                     sx,
                     sy,
                     sz,
                     block_light: section.block_light.clone(),
-                    sky_light: None,
+                    sky_light: sky,
                 });
             }
         }
@@ -596,6 +922,11 @@ impl LightEngine {
     fn mark_changed(&mut self, sx: i32, sy: i32, sz: i32) {
         self.changed_for_publication.insert((sx, sy, sz));
         self.mark_transaction();
+    }
+
+    fn mark_sky_changed(&mut self, sx: i32, sy: i32, sz: i32) {
+        self.changed_sky.insert((sx, sy, sz));
+        self.mark_changed(sx, sy, sz);
     }
 
     fn mark_transaction(&mut self) {
@@ -626,28 +957,42 @@ impl LightEngine {
         if self.section_availability_at(x, y, z) != SectionAvailability::Loaded {
             return;
         }
-        self.write_working_light(x, y, z, value);
+        self.write_working(x, y, z, LightChannel::Block, value);
     }
 
-    fn write_working_light(&mut self, x: i32, y: i32, z: i32, value: u8) {
+    fn set_sky_light(&mut self, x: i32, y: i32, z: i32, value: u8) {
+        if self.section_availability_at(x, y, z) != SectionAvailability::Loaded {
+            return;
+        }
+        self.write_working(x, y, z, LightChannel::Sky, value);
+    }
+
+    fn write_working(&mut self, x: i32, y: i32, z: i32, channel: LightChannel, value: u8) {
         let (sx, sy, sz) = section_key(x, y, z);
         let Some(section) = self.sections.get_mut(&(sx, sy, sz)) else {
             return;
         };
-        set_nibble(&mut section.block_light, local(x), local(y), local(z), value);
+        set_nibble(channel_buf_mut(section, channel), local(x), local(y), local(z), value);
         self.changed_for_publication.insert((sx, sy, sz));
+        if channel == LightChannel::Sky {
+            self.changed_sky.insert((sx, sy, sz));
+        }
     }
 
-    fn known_boundary_light(&self, x: i32, y: i32, z: i32) -> Option<u8> {
+    fn known_boundary_light(&self, x: i32, y: i32, z: i32, channel: LightChannel) -> Option<u8> {
         let (sx, sy, sz) = section_key(x, y, z);
         let section = self.sections.get(&(sx, sy, sz))?;
         if section.availability != SectionAvailability::LightOnly {
             return None;
         }
-        if section.accepted_block.is_none() {
+        let accepted = match channel {
+            LightChannel::Block => section.accepted_block.is_some(),
+            LightChannel::Sky => section.accepted_sky.is_some(),
+        };
+        if !accepted {
             return None;
         }
-        Some(nibble_at(&section.block_light, local(x), local(y), local(z)))
+        Some(nibble_at(channel_buf(section, channel), local(x), local(y), local(z)))
     }
 
     fn can_write(&self, x: i32, y: i32, z: i32) -> bool {
@@ -808,6 +1153,16 @@ impl JsLightEngine {
     pub fn js_get_block_light(&self, x: i32, y: i32, z: i32) -> u8 {
         self.inner.get_block_light(x, y, z)
     }
+
+    #[wasm_bindgen(js_name = getSkyLight)]
+    pub fn js_get_sky_light(&self, x: i32, y: i32, z: i32) -> u8 {
+        self.inner.get_sky_light(x, y, z)
+    }
+
+    #[wasm_bindgen(js_name = setSkyLightEnabled)]
+    pub fn js_set_sky_light_enabled(&mut self, enabled: bool) {
+        self.inner.set_sky_light_enabled(enabled);
+    }
 }
 
 fn event_from_js(event: &JsValue) -> Result<LightEvent, String> {
@@ -889,6 +1244,11 @@ fn publication_to_js(publication: &LightPublication) -> JsValue {
         let block = js_sys::Uint8Array::new_with_length(section.block_light.len() as u32);
         block.copy_from(&section.block_light);
         js_sys::Reflect::set(&item, &JsValue::from_str("blockLight"), &block).unwrap();
+        if let Some(sky) = &section.sky_light {
+            let sky_arr = js_sys::Uint8Array::new_with_length(sky.len() as u32);
+            sky_arr.copy_from(sky);
+            js_sys::Reflect::set(&item, &JsValue::from_str("skyLight"), &sky_arr).unwrap();
+        }
         list.push(&item);
     }
     js_sys::Reflect::set(&obj, &JsValue::from_str("sections"), &list).unwrap();
@@ -1405,5 +1765,293 @@ mod tests {
             }
         }
         out
+    }
+
+    fn top_section_y(e: &LightEngine) -> i32 {
+        (e.world_min_y + e.world_height).div_euclid(16) - 1
+    }
+
+    fn load_world_top_air(e: &mut LightEngine) {
+        let sy = top_section_y(e);
+        load_section(e, 0, sy, 0, air_section());
+    }
+
+    fn set_sky_only_boundary(e: &mut LightEngine, sx: i32, sy: i32, sz: i32, value: u8) {
+        e.push_event(LightEvent::SetAvailability {
+            sx,
+            sy,
+            sz,
+            availability: SectionAvailability::LightOnly,
+        });
+        e.push_event(LightEvent::ServerLight {
+            sx,
+            sy,
+            sz,
+            channel: LightChannel::Sky,
+            kind: ServerLightKind::Data(pack_uniform_section(value)),
+        });
+    }
+
+    fn place_stone_roof(e: &mut LightEngine, y: i32, hole: Option<(i32, i32)>) {
+        for z in 0..16 {
+            for x in 0..16 {
+                if hole == Some((x, z)) {
+                    continue;
+                }
+                e.push_event(LightEvent::BlockChange {
+                    x,
+                    y,
+                    z,
+                    state_id: STONE,
+                });
+            }
+        }
+    }
+
+    fn remove_stone_roof(e: &mut LightEngine, y: i32) {
+        for z in 0..16 {
+            for x in 0..16 {
+                e.push_event(LightEvent::BlockChange {
+                    x,
+                    y,
+                    z,
+                    state_id: AIR,
+                });
+            }
+        }
+    }
+
+    fn sample_sky(e: &LightEngine, y: i32) -> [u8; 3] {
+        [
+            e.get_sky_light(8, y, 8),
+            e.get_sky_light(9, y, 8),
+            e.get_sky_light(8, y - 1, 8),
+        ]
+    }
+
+    /// Open air at world top is a sky source: the column stays 15 (no downward decay).
+    #[test]
+    fn sky_open_column_stays_15() {
+        let mut e = engine();
+        load_world_top_air(&mut e);
+        finish(&mut e);
+        let y = e.world_min_y + e.world_height - 1;
+        assert_eq!(e.get_sky_light(8, y, 8), 15, "world-top air is a sky source");
+        assert_eq!(e.get_sky_light(8, y - 15, 8), 15, "unobstructed column does not decay downward");
+        assert_eq!(e.get_sky_light(0, y - 7, 0), 15);
+    }
+
+    /// A 1-block hole in an opaque roof: 15 down the hole, sideways decay under the roof.
+    #[test]
+    fn sky_hole_column_stays_15_and_decays_sideways() {
+        let mut e = engine();
+        load_world_top_air(&mut e);
+        finish(&mut e);
+        let roof_y = e.world_min_y + e.world_height - 6;
+        place_stone_roof(&mut e, roof_y, Some((8, 8)));
+        finish(&mut e);
+        assert_eq!(e.get_sky_light(8, roof_y, 8), 15, "hole remains a sky source");
+        assert_eq!(e.get_sky_light(8, roof_y - 1, 8), 15, "air under the hole stays 15");
+        assert_eq!(e.get_sky_light(8, roof_y - 5, 8), 15);
+        assert_eq!(e.get_sky_light(9, roof_y - 1, 8), 14, "under-roof neighbor decays");
+        assert_eq!(e.get_sky_light(10, roof_y - 1, 8), 13);
+        assert_eq!(e.get_sky_light(11, roof_y - 1, 8), 12);
+    }
+
+    /// Opaque roof with no hole: everything below goes dark.
+    #[test]
+    fn sky_opaque_roof_darkens_below() {
+        let mut e = engine();
+        load_world_top_air(&mut e);
+        finish(&mut e);
+        let roof_y = e.world_min_y + e.world_height - 6;
+        place_stone_roof(&mut e, roof_y, None);
+        finish(&mut e);
+        assert_eq!(e.get_sky_light(8, roof_y + 1, 8), 15, "above the roof stays sky");
+        assert_eq!(e.get_sky_light(8, roof_y, 8), 0, "opaque roof is not a source");
+        assert_eq!(e.get_sky_light(8, roof_y - 1, 8), 0);
+        assert_eq!(e.get_sky_light(0, roof_y - 4, 0), 0);
+        assert_eq!(e.get_block_light(8, roof_y - 1, 8), 0, "sky must not write the block channel");
+    }
+
+    /// Removing the roof restores sky 15.
+    #[test]
+    fn sky_remove_roof_restores_column() {
+        let mut e = engine();
+        load_world_top_air(&mut e);
+        finish(&mut e);
+        let roof_y = e.world_min_y + e.world_height - 6;
+        place_stone_roof(&mut e, roof_y, None);
+        finish(&mut e);
+        assert_eq!(e.get_sky_light(8, roof_y - 1, 8), 0);
+        remove_stone_roof(&mut e, roof_y);
+        finish(&mut e);
+        assert_eq!(e.get_sky_light(8, roof_y, 8), 15);
+        assert_eq!(e.get_sky_light(8, roof_y - 1, 8), 15);
+        assert_eq!(e.get_sky_light(8, roof_y - 5, 8), 15);
+    }
+
+    /// LIGHT_ONLY sky 15 is a boundary, not air: it lights a decaying chain into Loaded.
+    #[test]
+    fn sky_invariant_boundary_15_lights_six_air_cells() {
+        let mut e = engine();
+        load_section(&mut e, 0, 4, 0, air_section());
+        set_sky_only_boundary(&mut e, 1, 4, 0, 15);
+        finish(&mut e);
+        assert_eq!(e.get_sky_light(16, 64, 8), 15, "LIGHT_ONLY sky boundary stays 15");
+        let chain: Vec<u8> = (0..6).map(|i| e.get_sky_light(15 - i, 64, 8)).collect();
+        assert_eq!(chain, vec![14, 13, 12, 11, 10, 9]);
+        assert_eq!(e.get_block_light(15, 64, 8), 0, "sky boundary must not fill block light");
+    }
+
+    /// Seeded sky without a source or LIGHT_ONLY boundary must not self-sustain.
+    #[test]
+    fn sky_invariant_seed_without_source_or_boundary_is_zero() {
+        let mut e = engine();
+        load_section(&mut e, 0, 4, 0, air_section());
+        e.push_event(LightEvent::ServerLight {
+            sx: 0,
+            sy: 4,
+            sz: 0,
+            channel: LightChannel::Sky,
+            kind: ServerLightKind::Data(pack_uniform_section(15)),
+        });
+        finish(&mut e);
+        assert_eq!(e.get_sky_light(8, 64, 8), 0, "sky seed is a candidate, not a virtual source");
+        assert_eq!(e.get_sky_light(9, 64, 8), 0);
+        assert_eq!(e.get_sky_light(15, 64, 8), 0);
+    }
+
+    /// Unloaded / unknown above a loaded air section is not treated as sky 15.
+    #[test]
+    fn sky_unknown_above_is_not_source() {
+        let mut e = engine();
+        load_section(&mut e, 0, 4, 0, air_section());
+        finish(&mut e);
+        assert_eq!(e.get_sky_light(8, 79, 8), 0, "top of a mid-world section is not open sky");
+        assert_eq!(e.get_sky_light(8, 64, 8), 0);
+    }
+
+    /// LIGHT_ONLY sky 15 above Loaded air continues the source column (15, no downward decay).
+    #[test]
+    fn sky_light_only_15_above_continues_source_column() {
+        let mut e = engine();
+        load_section(&mut e, 0, 4, 0, air_section());
+        set_sky_only_boundary(&mut e, 0, 5, 0, 15);
+        finish(&mut e);
+        assert_eq!(e.get_sky_light(8, 79, 8), 15);
+        assert_eq!(e.get_sky_light(8, 64, 8), 15);
+    }
+
+    /// Sliced roof place/remove matches continuous; stale queue entries must not resurrect sky.
+    #[test]
+    fn sky_sliced_roof_matches_continuous() {
+        let roof_y = 250;
+        let mut continuous = engine();
+        load_world_top_air(&mut continuous);
+        finish(&mut continuous);
+        place_stone_roof(&mut continuous, roof_y, None);
+        finish(&mut continuous);
+        let want_dark = sample_sky(&continuous, roof_y - 1);
+        assert_eq!(want_dark, [0, 0, 0]);
+        remove_stone_roof(&mut continuous, roof_y);
+        finish(&mut continuous);
+        let want_lit = sample_sky(&continuous, roof_y - 1);
+        assert_eq!(want_lit, [15, 15, 15]);
+
+        let mut sliced = engine();
+        load_world_top_air(&mut sliced);
+        finish(&mut sliced);
+        place_stone_roof(&mut sliced, roof_y, None);
+        sliced.step_nodes(1);
+        finish(&mut sliced);
+        assert_eq!(sample_sky(&sliced, roof_y - 1), want_dark, "sliced roof must match continuous");
+        remove_stone_roof(&mut sliced, roof_y);
+        sliced.step_nodes(3);
+        finish(&mut sliced);
+        assert_eq!(sample_sky(&sliced, roof_y - 1), want_lit, "sliced restore must match continuous");
+    }
+
+    /// Sky seed between slices on a sourced column must not underlight; sliced == continuous.
+    #[test]
+    fn sky_sliced_seed_on_open_column_matches_continuous() {
+        let mut continuous = engine();
+        load_world_top_air(&mut continuous);
+        finish(&mut continuous);
+        continuous.push_event(LightEvent::ServerLight {
+            sx: 0,
+            sy: top_section_y(&continuous),
+            sz: 0,
+            channel: LightChannel::Sky,
+            kind: ServerLightKind::Data(pack_uniform_section(0)),
+        });
+        finish(&mut continuous);
+        let y = continuous.world_min_y + continuous.world_height - 1;
+        let want = sample_sky(&continuous, y);
+        assert_eq!(want[0], 15, "zero-seed on open sky must restore sources");
+
+        let mut sliced = engine();
+        load_world_top_air(&mut sliced);
+        sliced.step_nodes(1);
+        sliced.push_event(LightEvent::ServerLight {
+            sx: 0,
+            sy: top_section_y(&sliced),
+            sz: 0,
+            channel: LightChannel::Sky,
+            kind: ServerLightKind::Data(pack_uniform_section(0)),
+        });
+        finish(&mut sliced);
+        assert_eq!(sample_sky(&sliced, y), want, "sliced sky seed must match continuous");
+    }
+
+    #[test]
+    fn sky_publication_includes_sky_channel() {
+        let mut e = engine();
+        load_world_top_air(&mut e);
+        let publication = finish(&mut e).expect("sky ingest publication");
+        let sy = top_section_y(&e);
+        let section = publication
+            .sections
+            .iter()
+            .find(|s| s.sx == 0 && s.sy == sy && s.sz == 0)
+            .expect("top section published");
+        let sky = section.sky_light.as_ref().expect("sky channel must be published");
+        assert_eq!(sky.len(), LIGHT_SECTION_BUFFER_BYTES);
+        assert_eq!(nibble_at(sky, 8, 15, 8), 15);
+    }
+
+    #[test]
+    fn sky_disabled_dimension_stays_uncomputed() {
+        let mut e = engine();
+        e.set_sky_light_enabled(false);
+        load_world_top_air(&mut e);
+        finish(&mut e);
+        let y = e.world_min_y + e.world_height - 1;
+        assert_eq!(e.get_sky_light(8, y, 8), 0, "nether/end must not invent sky 15");
+        e.push_event(LightEvent::ServerLight {
+            sx: 0,
+            sy: top_section_y(&e),
+            sz: 0,
+            channel: LightChannel::Sky,
+            kind: ServerLightKind::Data(pack_uniform_section(15)),
+        });
+        finish(&mut e);
+        assert_eq!(
+            e.get_sky_light(8, y, 8),
+            15,
+            "disabled sky stores seed without turning it into a self-sustaining source column"
+        );
+        e.push_event(LightEvent::BlockChange {
+            x: 8,
+            y,
+            z: 8,
+            state_id: STONE,
+        });
+        finish(&mut e);
+        assert_eq!(
+            e.get_sky_light(8, y - 1, 8),
+            15,
+            "disabled sky must not recompute around a roof"
+        );
     }
 }

@@ -154,11 +154,12 @@ async function createWasmLightBackend(worldMinY: number, worldHeight: number): P
       return {
         worldGeneration: raw.worldGeneration,
         publicationVersion: raw.publicationVersion,
-        sections: raw.sections.map((section: { sx: number; sy: number; sz: number; blockLight: Uint8Array }) => ({
+        sections: raw.sections.map((section: { sx: number; sy: number; sz: number; blockLight: Uint8Array; skyLight?: Uint8Array }) => ({
           sx: section.sx,
           sy: section.sy,
           sz: section.sz,
-          blockLight: section.blockLight
+          blockLight: section.blockLight,
+          skyLight: section.skyLight
         }))
       }
     }
@@ -172,6 +173,6 @@ type WasmEngine = {
   pollCompletedPublication(): null | {
     worldGeneration: number
     publicationVersion: number
-    sections: Array<{ sx: number; sy: number; sz: number; blockLight: Uint8Array }>
+    sections: Array<{ sx: number; sy: number; sz: number; blockLight: Uint8Array; skyLight?: Uint8Array }>
   }
 }

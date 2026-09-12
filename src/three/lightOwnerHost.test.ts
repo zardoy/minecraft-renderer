@@ -52,4 +52,26 @@ describe('LightOwnerHost publications', () => {
     expect(second?.publicationVersion).toBeGreaterThan(first!.publicationVersion)
     expect(cache.getLight(8, 64, 8).block).toBeCloseTo(2 / 15, 5)
   })
+
+  it('publishes sky so an opaque roof darkens the column', async () => {
+    const cache = new RendererLightCache('1.17.1')
+    cache.setWorldBounds(0, 256)
+    const host = await LightOwnerHost.createInProcess(cache, { worldMinY: 0, worldHeight: 256 })
+    host.setLightTables({
+      emission: Uint8Array.of(0, 0, 14),
+      opacity: Uint8Array.of(1, 15, 1)
+    })
+    host.pushEvent({ type: 'ingestBlockSection', sx: 0, sy: 15, sz: 0, states: new Uint16Array(4096) })
+    await host.stepUntilIdle(32)
+    expect(cache.getLight(8, 255, 8).sky).toBeCloseTo(1, 5)
+    expect(cache.getLight(8, 249, 8).sky).toBeCloseTo(1, 5)
+    for (let z = 0; z < 16; z++) {
+      for (let x = 0; x < 16; x++) {
+        host.pushEvent({ type: 'blockChange', x, y: 250, z, stateId: 1 })
+      }
+    }
+    await host.stepUntilIdle(64)
+    expect(cache.getLight(8, 251, 8).sky).toBeCloseTo(1, 5)
+    expect(cache.getLight(8, 249, 8).sky).toBeCloseTo(2 / 15, 5)
+  })
 })

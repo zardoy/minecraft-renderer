@@ -10,6 +10,8 @@ export class JsLightEngine {
   step(budget_ms: number): boolean;
   pollCompletedPublication(): any;
   getBlockLight(x: number, y: number, z: number): number;
+  getSkyLight(x: number, y: number, z: number): number;
+  setSkyLightEnabled(enabled: boolean): void;
 }
 
 /**
@@ -244,6 +246,8 @@ export interface InitOutput {
   readonly jslightengine_step: (a: number, b: number) => number;
   readonly jslightengine_pollCompletedPublication: (a: number) => any;
   readonly jslightengine_getBlockLight: (a: number, b: number, c: number, d: number) => number;
+  readonly jslightengine_getSkyLight: (a: number, b: number, c: number, d: number) => number;
+  readonly jslightengine_setSkyLightEnabled: (a: number, b: number) => void;
   readonly generate_geometry: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number) => any;
   readonly generate_geometry_multi: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number) => any;
   readonly parseChunkDump118: (a: number, b: number, c: number, d: number, e: number) => any;
