@@ -372,7 +372,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   }
 
   hasClientLightOwner(): boolean {
-    return this.clientLightOwnerSession != null
+    return this.clientLightOwnerSession?.isReady === true
   }
 
   getClientLightOwnerWorker(): Worker | null {

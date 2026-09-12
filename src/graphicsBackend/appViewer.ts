@@ -101,6 +101,18 @@ export class AppViewer {
       ...defaultWorldRendererConfig,
       ...options.rendererConfig
     })
+    // Manual live-test hatch: `?clientLight=1` in the page URL enables the experimental client
+    // light owner without touching the committed default. An explicit code override always wins;
+    // without a browser location this is a no-op (unit tests keep testing the default).
+    if (options.rendererConfig?.enableClientLightOwner === undefined && typeof location !== 'undefined') {
+      try {
+        if (new URLSearchParams(location.search).get('clientLight') === '1') {
+          this.inWorldRenderingConfig.enableClientLightOwner = true
+        }
+      } catch {
+        // ignore malformed URL in non-browser runtimes
+      }
+    }
 
     const defaultState = getDefaultRendererState()
     this.rendererState = defaultState.reactive

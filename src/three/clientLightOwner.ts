@@ -21,6 +21,8 @@ export { eventsFromParsedUpdateLight } from '../wasm-mesher/worker/updateLightTo
 
 export const LIGHT_OWNER_WORKER_SCRIPT = 'lightOwnerWorker.js'
 
+export type ClientLightOwnerLifecycle = 'starting' | 'ready' | 'failed'
+
 export function shouldSpawnClientLightOwner(config: { enableClientLightOwner?: boolean }): boolean {
   return config.enableClientLightOwner === true
 }
@@ -187,6 +189,7 @@ export class ClientLightOwnerSession {
   readonly worker: Worker
   gate: PublicationGate = { acceptedGeneration: 1, lastVersion: 0 }
   private stepScheduled = false
+  private lifecycle: ClientLightOwnerLifecycle = 'starting'
 
   constructor(
     private readonly cache: RendererLightCache,
@@ -200,25 +203,39 @@ export class ClientLightOwnerSession {
   ) {
     this.onApplied = opts.onApplied
     this.worker = opts.createWorker(data => this.onMessage(data))
+    this.worker.onerror = event => {
+      this.fail(event?.message || 'light owner worker error')
+    }
     this.worker.postMessage({ type: 'init', worldMinY: opts.worldMinY, worldHeight: opts.worldHeight })
     const tables = loadDefaultOwnerLightTables()
     this.worker.postMessage({ type: 'setLightTables', emission: tables.emission, opacity: tables.opacity, occupancy: tables.occupancy })
     this.worker.postMessage({ type: 'setSkyLightEnabled', enabled: opts.skyLightEnabled })
   }
 
+  get state(): ClientLightOwnerLifecycle {
+    return this.lifecycle
+  }
+
+  get isReady(): boolean {
+    return this.lifecycle === 'ready'
+  }
+
   private readonly onApplied: (result: OwnerPublicationApplyResult) => void
 
   pushEvent(event: LightOwnerEvent) {
+    if (this.lifecycle === 'failed') return
     this.worker.postMessage({ type: 'pushEvent', event })
     this.scheduleStep()
   }
 
   pushRawUpdateLight(kind: 'setUpdateLightV17' | 'setUpdateLightV16', payload: Record<string, unknown>) {
+    if (this.lifecycle === 'failed') return
     this.worker.postMessage({ type: kind, ...payload })
     this.scheduleStep()
   }
 
   setSkyLightEnabled(enabled: boolean) {
+    if (this.lifecycle === 'failed') return
     this.worker.postMessage({ type: 'setSkyLightEnabled', enabled })
     this.scheduleStep()
   }
@@ -239,17 +256,32 @@ export class ClientLightOwnerSession {
     this.worker.terminate()
   }
 
+  private fail(_reason: string) {
+    if (this.lifecycle === 'failed') return
+    this.lifecycle = 'failed'
+    this.stepScheduled = false
+  }
+
   private scheduleStep() {
-    if (this.stepScheduled) return
+    if (this.stepScheduled || this.lifecycle === 'failed') return
     this.stepScheduled = true
     setTimeout(() => {
       this.stepScheduled = false
+      if (this.lifecycle === 'failed') return
       this.worker.postMessage({ type: 'step', budgetMs: 5 })
     }, 0)
   }
 
   private onMessage(data: any) {
     if (!data || typeof data !== 'object') return
+    if (data.type === 'error') {
+      this.fail(typeof data.error === 'string' ? data.error : 'light owner worker error')
+      return
+    }
+    if (this.lifecycle === 'failed') return
+    if (data.type === 'ready' || data.type === 'tablesSet') {
+      this.lifecycle = 'ready'
+    }
     if (data.type === 'stepped') {
       if (data.publication) this.applyPublication(data.publication)
       if (data.remaining) this.scheduleStep()
@@ -258,6 +290,7 @@ export class ClientLightOwnerSession {
   }
 
   private applyPublication(publication: LightPublication) {
+    if (this.lifecycle !== 'ready') return
     const result = applyOwnerPublicationToRenderer(this.cache, publication, this.gate, 'section-index')
     if (!result.applied) return
     this.gate = { acceptedGeneration: result.acceptedGeneration, lastVersion: result.lastVersion }

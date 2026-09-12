@@ -156,7 +156,25 @@ describe('WorldRendererCommon client light owner spawn', () => {
     expect(renderer.workers).toHaveLength(2)
     expect(constructedScripts.filter(script => script === LIGHT_OWNER_WORKER_SCRIPT)).toHaveLength(1)
     expect(constructedScripts.filter(script => script !== LIGHT_OWNER_WORKER_SCRIPT)).toHaveLength(2)
+    expect(renderer.getClientLightOwnerWorker()).toBeTruthy()
+    expect(renderer.hasClientLightOwner()).toBe(false)
+  })
+
+  test('flag-on owner is not working until the worker reports ready', () => {
+    const renderer = createRenderer(true, 1)
+    renderer.initWorkers(1)
+    expect(renderer.hasClientLightOwner()).toBe(false)
+    const owner = renderer.getClientLightOwnerWorker() as { onmessage: ((event: MessageEvent) => void) | null }
+    owner.onmessage?.({ data: { type: 'ready' } } as MessageEvent)
     expect(renderer.hasClientLightOwner()).toBe(true)
+  })
+
+  test('flag-on owner goes failed on worker error and is not working', () => {
+    const renderer = createRenderer(true, 1)
+    renderer.initWorkers(1)
+    const owner = renderer.getClientLightOwnerWorker() as { onmessage: ((event: MessageEvent) => void) | null }
+    owner.onmessage?.({ data: { type: 'error', error: 'NetworkError loading lightOwnerWorker.js' } } as MessageEvent)
+    expect(renderer.hasClientLightOwner()).toBe(false)
   })
 
   test('flag-off setBlock / addColumn / removeColumn do not post to an owner worker', () => {

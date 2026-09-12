@@ -163,6 +163,12 @@ pub struct LightEngine {
     sky_check_dedup: HashSet<(i32, i32, i32)>,
     transaction_open: bool,
     ready_publication: Option<LightPublication>,
+    /// Events remaining in the current transaction's snapshot. New pushes stay for the next batch.
+    waiting_this_batch: usize,
+    pending_sky_xz: VecDeque<(i32, i32)>,
+    pending_sky_xz_set: HashSet<(i32, i32)>,
+    #[cfg(test)]
+    sky_column_updates: u32,
 }
 
 impl LightEngine {
@@ -188,6 +194,11 @@ impl LightEngine {
             sky_check_dedup: HashSet::new(),
             transaction_open: false,
             ready_publication: None,
+            waiting_this_batch: 0,
+            pending_sky_xz: VecDeque::new(),
+            pending_sky_xz_set: HashSet::new(),
+            #[cfg(test)]
+            sky_column_updates: 0,
         }
     }
 
@@ -213,8 +224,8 @@ impl LightEngine {
     /// Returns true if work remains. Does not publish a half-finished transaction.
     pub fn step(&mut self, budget_ms: f64) -> bool {
         let start = now_ms();
-        if !self.batch_in_progress() {
-            self.drain_waiting_events();
+        if self.drain_waiting_events(start, Some(budget_ms)) {
+            return true;
         }
 
         let has_queue = self.has_queue_work();
@@ -254,9 +265,8 @@ impl LightEngine {
     /// Deterministic slice: apply events, then at most `max_nodes` queue pops.
     /// `max_nodes == 0` applies events only. Does not use wall-clock time.
     pub fn step_nodes(&mut self, max_nodes: usize) -> bool {
-        if !self.batch_in_progress() {
-            self.drain_waiting_events();
-        }
+        let start = now_ms();
+        let _ = self.drain_waiting_events(start, None);
         let mut left = max_nodes;
         while left > 0 {
             if let Some((x, y, z, level)) = self.decrease_q.pop_front() {
@@ -293,11 +303,11 @@ impl LightEngine {
     }
 
     fn has_remaining_work(&self) -> bool {
-        !self.pending.is_empty() || self.has_queue_work()
+        !self.pending.is_empty() || self.prep_in_progress() || self.has_queue_work()
     }
 
     fn finish_transaction_if_idle(&mut self) {
-        if self.transaction_open && !self.has_queue_work() {
+        if self.transaction_open && !self.has_queue_work() && !self.prep_in_progress() {
             self.publish_completed();
             self.transaction_open = false;
             self.check_dedup.clear();
@@ -305,8 +315,12 @@ impl LightEngine {
         }
     }
 
+    fn prep_in_progress(&self) -> bool {
+        self.waiting_this_batch > 0 || !self.pending_sky_xz.is_empty()
+    }
+
     fn batch_in_progress(&self) -> bool {
-        self.has_queue_work()
+        self.prep_in_progress() || self.has_queue_work()
     }
 
     pub fn poll_completed_publication(&mut self) -> Option<LightPublication> {
@@ -332,15 +346,59 @@ impl LightEngine {
         self.sections.get(&(sx, sy, sz)).map(|s| s.block_light.as_slice())
     }
 
-    fn drain_waiting_events(&mut self) {
-        self.check_dedup.clear();
-        self.sky_check_dedup.clear();
-        let waiting = self.pending.len();
-        for _ in 0..waiting {
+    fn drain_waiting_events(&mut self, start: f64, budget_ms: Option<f64>) -> bool {
+        self.begin_batch_if_needed();
+        while self.waiting_this_batch > 0 {
             if let Some(event) = self.pending.pop_front() {
                 self.apply_event(event);
             }
+            self.waiting_this_batch = self.waiting_this_batch.saturating_sub(1);
+            if let Some(budget) = budget_ms {
+                if now_ms() - start >= budget {
+                    return true;
+                }
+            }
         }
+        self.flush_pending_sky_columns(start, budget_ms)
+    }
+
+    fn begin_batch_if_needed(&mut self) {
+        if self.batch_in_progress() {
+            return;
+        }
+        self.check_dedup.clear();
+        self.sky_check_dedup.clear();
+        self.waiting_this_batch = self.pending.len();
+    }
+
+    fn mark_sky_column_dirty(&mut self, x: i32, z: i32) {
+        if !self.sky_light_enabled {
+            return;
+        }
+        if self.pending_sky_xz_set.insert((x, z)) {
+            self.pending_sky_xz.push_back((x, z));
+        }
+    }
+
+    fn mark_sky_columns_in_section(&mut self, sx: i32, sz: i32) {
+        for lz in 0..16 {
+            for lx in 0..16 {
+                self.mark_sky_column_dirty(sx * 16 + lx as i32, sz * 16 + lz as i32);
+            }
+        }
+    }
+
+    fn flush_pending_sky_columns(&mut self, start: f64, budget_ms: Option<f64>) -> bool {
+        while let Some((x, z)) = self.pending_sky_xz.pop_front() {
+            self.pending_sky_xz_set.remove(&(x, z));
+            self.update_sky_column(x, z);
+            if let Some(budget) = budget_ms {
+                if now_ms() - start >= budget {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     fn apply_event(&mut self, event: LightEvent) {
@@ -364,11 +422,7 @@ impl LightEngine {
                     }
                 }
                 if self.sky_light_enabled {
-                    for lz in 0..16 {
-                        for lx in 0..16 {
-                            self.update_sky_column(sx * 16 + lx as i32, sz * 16 + lz as i32);
-                        }
-                    }
+                    self.mark_sky_columns_in_section(sx, sz);
                 }
                 self.mark_changed(sx, sy, sz);
             }
@@ -436,7 +490,7 @@ impl LightEngine {
             self.set_block_light(x, y, z, emission);
             self.increase_q.push_back((x, y, z, emission));
         }
-        self.update_sky_column(x, z);
+        self.mark_sky_column_dirty(x, z);
     }
 
     fn apply_server_light(&mut self, sx: i32, sy: i32, sz: i32, channel: LightChannel, kind: ServerLightKind) {
@@ -689,19 +743,16 @@ impl LightEngine {
     }
 
     fn update_sky_columns_in_section(&mut self, sx: i32, sz: i32) {
-        if !self.sky_light_enabled {
-            return;
-        }
-        for lz in 0..16 {
-            for lx in 0..16 {
-                self.update_sky_column(sx * 16 + lx as i32, sz * 16 + lz as i32);
-            }
-        }
+        self.mark_sky_columns_in_section(sx, sz);
     }
 
     fn update_sky_column(&mut self, x: i32, z: i32) {
         if !self.sky_light_enabled {
             return;
+        }
+        #[cfg(test)]
+        {
+            self.sky_column_updates = self.sky_column_updates.saturating_add(1);
         }
         let lowest = self.lowest_source_y(x, z);
         let max_y = self.world_min_y + self.world_height;
@@ -1120,7 +1171,45 @@ impl LightEngine {
     }
 }
 
+#[cfg(test)]
+mod test_clock {
+    use std::cell::Cell;
+
+    thread_local! {
+        static NOW: Cell<Option<f64>> = const { Cell::new(None) };
+        static STEP: Cell<f64> = const { Cell::new(0.0) };
+    }
+
+    pub struct Guard;
+
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            NOW.with(|c| c.set(None));
+            STEP.with(|c| c.set(0.0));
+        }
+    }
+
+    pub fn start(now: f64, step: f64) -> Guard {
+        NOW.with(|c| c.set(Some(now)));
+        STEP.with(|c| c.set(step));
+        Guard
+    }
+
+    pub fn advance_and_read() -> Option<f64> {
+        let t = NOW.with(|c| c.get())?;
+        let step = STEP.with(|c| c.get());
+        NOW.with(|c| c.set(Some(t + step)));
+        Some(t)
+    }
+}
+
 fn now_ms() -> f64 {
+    #[cfg(test)]
+    {
+        if let Some(t) = test_clock::advance_and_read() {
+            return t;
+        }
+    }
     #[cfg(target_arch = "wasm32")]
     {
         js_sys::Date::now()
@@ -2373,5 +2462,55 @@ mod tests {
         assert_eq!(e.get_block_light(8, 64, 8), 13);
         assert_eq!(e.get_block_light(9, 64, 8), 12);
         assert_eq!(e.get_block_light(10, 64, 8), 11);
+    }
+
+    /// Loading 16 sections of one column must update each (x,z) sky column once, not 16 times.
+    #[test]
+    fn ingest_many_sections_dedupes_sky_columns() {
+        let mut e = engine();
+        for sy in 0..16 {
+            load_section(&mut e, 0, sy, 0, air_section());
+        }
+        e.step_nodes(0);
+        assert_eq!(
+            e.sky_column_updates, 256,
+            "16 air sections must not rescan the same 256 columns 16 times"
+        );
+    }
+
+    /// step(5) must yield during prep: a later step finishes with the same lighting as continuous.
+    #[test]
+    fn drain_stops_mid_batch_and_later_step_matches_continuous() {
+        let mut continuous = engine();
+        for sy in 12..16 {
+            load_section(&mut continuous, 0, sy, 0, air_section());
+        }
+        finish(&mut continuous);
+        let y = continuous.world_min_y + continuous.world_height - 1;
+        let want = [
+            continuous.get_sky_light(8, y, 8),
+            continuous.get_sky_light(8, y - 15, 8),
+            continuous.get_sky_light(8, 200, 8),
+        ];
+        assert_eq!(want[0], 15);
+
+        let mut sliced = engine();
+        for sy in 12..16 {
+            load_section(&mut sliced, 0, sy, 0, air_section());
+        }
+        {
+            let _clock = super::test_clock::start(0.0, 10.0);
+            let remaining = sliced.step(5.0);
+            assert!(remaining, "budgeted prep must report remaining work");
+            assert_eq!(
+                sliced.section_availability(0, 15, 0),
+                SectionAvailability::Unloaded,
+                "one 5ms step must not ingest the whole column"
+            );
+        }
+        finish(&mut sliced);
+        assert_eq!(sliced.get_sky_light(8, y, 8), want[0]);
+        assert_eq!(sliced.get_sky_light(8, y - 15, 8), want[1]);
+        assert_eq!(sliced.get_sky_light(8, 200, 8), want[2]);
     }
 }

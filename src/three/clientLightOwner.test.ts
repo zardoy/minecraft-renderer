@@ -9,6 +9,7 @@ import { maskBitSet, worldSectionMaskBit, type ParsedUpdateLight } from '../wasm
 import {
   applyOwnerPublicationToRenderer,
   blockChangeEvent,
+  ClientLightOwnerSession,
   dirtyMeshSectionsFromChangedLight,
   eventsFromColumnLoad,
   eventsFromColumnUnload,
@@ -37,6 +38,28 @@ function unpackedSection(value: number): Uint8Array {
   return new Uint8Array(4096).fill(value & 0x0f)
 }
 
+function makeSession() {
+  let onMessage: (data: any) => void = () => {}
+  const worker = {
+    postMessage: () => {},
+    terminate: () => {},
+    onerror: null as ((event: ErrorEvent) => void) | null
+  }
+  const cache = new RendererLightCache(VERSION)
+  cache.setWorldBounds(0, 256)
+  const session = new ClientLightOwnerSession(cache, {
+    createWorker: handler => {
+      onMessage = handler
+      return worker as unknown as Worker
+    },
+    worldMinY: 0,
+    worldHeight: 256,
+    skyLightEnabled: true,
+    onApplied: () => {}
+  })
+  return { session, worker, deliver: (data: any) => onMessage(data) }
+}
+
 describe('client light owner flag', () => {
   it('stays default-off so production does not spawn the owner', () => {
     expect(defaultWorldRendererConfig.enableClientLightOwner).toBe(false)
@@ -47,6 +70,43 @@ describe('client light owner flag', () => {
     expect(shouldSpawnClientLightOwner({ enableClientLightOwner: true })).toBe(true)
     expect(shouldSpawnClientLightOwner({ enableClientLightOwner: false })).toBe(false)
     expect(shouldSpawnClientLightOwner({})).toBe(false)
+  })
+})
+
+describe('client light owner lifecycle', () => {
+  it('starts in starting and is not ready until the worker reports ready', () => {
+    const { session } = makeSession()
+    expect(session.state).toBe('starting')
+    expect(session.isReady).toBe(false)
+  })
+
+  it('becomes ready after the worker ready message', () => {
+    const { session, deliver } = makeSession()
+    deliver({ type: 'ready' })
+    expect(session.state).toBe('ready')
+    expect(session.isReady).toBe(true)
+  })
+
+  it('goes to failed on a worker error message', () => {
+    const { session, deliver } = makeSession()
+    deliver({ type: 'error', error: 'NetworkError loading lightOwnerWorker.js' })
+    expect(session.state).toBe('failed')
+    expect(session.isReady).toBe(false)
+  })
+
+  it('goes to failed on worker onerror (script 404)', () => {
+    const { session, worker } = makeSession()
+    expect(typeof worker.onerror).toBe('function')
+    worker.onerror?.({ type: 'error', message: 'NetworkError' } as ErrorEvent)
+    expect(session.state).toBe('failed')
+    expect(session.isReady).toBe(false)
+  })
+
+  it('does not leave failed after a late ready', () => {
+    const { session, deliver } = makeSession()
+    deliver({ type: 'error', error: 'init failed' })
+    deliver({ type: 'ready' })
+    expect(session.state).toBe('failed')
   })
 })
 
