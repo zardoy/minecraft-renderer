@@ -86,6 +86,11 @@ function getArrayU16FromWasm0(ptr, len) {
     return getUint16ArrayMemory0().subarray(ptr / 2, ptr / 2 + len);
 }
 
+function getArrayU32FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getUint32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
+}
+
 function getArrayU8FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return getUint8ArrayMemory0().subarray(ptr / 1, ptr / 1 + len);
@@ -879,11 +884,11 @@ export function parseMapChunkV18Plus(raw_packet, num_sections, max_bits_per_bloc
  * `raw_packet` includes the leading packet-id varint (we skip it).
  * `num_sections` should match the column the light is for (16 in 1.17).
  *
- * Returns `{ x, z, skyLight: Uint8Array(num_sections * 4096),
- *            blockLight: Uint8Array(num_sections * 4096), bytesRead }`.
- * Layout matches the existing 1.18+ light arrays
- * (`x + z*16 + y_abs*256`); the JS-side worker reorders into per-section
- * stack via the same path used for 1.18+ raw map_chunk parsing.
+ * Returns `{ x, z, trustEdges, skyLight, blockLight, skyLightMask,
+ *            emptySkyLightMask, blockLightMask, emptyBlockLightMask,
+ *            skyBelow?, skyAbove?, blockBelow?, blockAbove?, bytesRead }`.
+ * World arrays are `num_sections * 4096` (`x + z*16 + y_abs*256`).
+ * Omitted sections are left 0 and are not authoritative — use the masks.
  * @param {Uint8Array} raw_packet
  * @param {number} num_sections
  * @returns {any}
@@ -990,6 +995,10 @@ function __wbg_get_imports() {
         const ret = arg0.length;
         return ret;
     };
+    imports.wbg.__wbg_length_89c3414ed7f0594d = function(arg0) {
+        const ret = arg0.length;
+        return ret;
+    };
     imports.wbg.__wbg_length_ab53989976907f11 = function(arg0) {
         const ret = arg0.length;
         return ret;
@@ -1004,6 +1013,10 @@ function __wbg_get_imports() {
     };
     imports.wbg.__wbg_new_with_length_1e8603a5c71d4e06 = function(arg0) {
         const ret = new Int32Array(arg0 >>> 0);
+        return ret;
+    };
+    imports.wbg.__wbg_new_with_length_202b3db94ba5fc86 = function(arg0) {
+        const ret = new Uint32Array(arg0 >>> 0);
         return ret;
     };
     imports.wbg.__wbg_new_with_length_aa5eaf41d35235e5 = function(arg0) {
@@ -1035,6 +1048,9 @@ function __wbg_get_imports() {
     };
     imports.wbg.__wbg_set_bb0c6a7fe60d81b5 = function(arg0, arg1, arg2) {
         arg0.set(getArrayU16FromWasm0(arg1, arg2));
+    };
+    imports.wbg.__wbg_set_e7cd108182596b7f = function(arg0, arg1, arg2) {
+        arg0.set(getArrayU32FromWasm0(arg1, arg2));
     };
     imports.wbg.__wbindgen_cast_2241b6af4c4b2941 = function(arg0, arg1) {
         // Cast intrinsic for `Ref(String) -> Externref`.

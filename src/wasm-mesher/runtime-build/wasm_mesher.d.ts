@@ -209,11 +209,11 @@ export function parseMapChunkV18Plus(raw_packet: Uint8Array, num_sections: numbe
  * `raw_packet` includes the leading packet-id varint (we skip it).
  * `num_sections` should match the column the light is for (16 in 1.17).
  *
- * Returns `{ x, z, skyLight: Uint8Array(num_sections * 4096),
- *            blockLight: Uint8Array(num_sections * 4096), bytesRead }`.
- * Layout matches the existing 1.18+ light arrays
- * (`x + z*16 + y_abs*256`); the JS-side worker reorders into per-section
- * stack via the same path used for 1.18+ raw map_chunk parsing.
+ * Returns `{ x, z, trustEdges, skyLight, blockLight, skyLightMask,
+ *            emptySkyLightMask, blockLightMask, emptyBlockLightMask,
+ *            skyBelow?, skyAbove?, blockBelow?, blockAbove?, bytesRead }`.
+ * World arrays are `num_sections * 4096` (`x + z*16 + y_abs*256`).
+ * Omitted sections are left 0 and are not authoritative — use the masks.
  */
 export function parseUpdateLightV17(raw_packet: Uint8Array, num_sections: number): any;
 

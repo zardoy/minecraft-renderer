@@ -11,6 +11,14 @@ import { handleGetHeightmap, EMPTY_COLUMN_HEIGHTMAP_SENTINEL } from '../../meshe
 import { collectBlockEntityMetadata, type SignMeta, type HeadMeta, type BannerMeta } from '../../mesher-shared/blockEntityMetadata'
 import { SectionRequestTracker } from './mesherWasmRequestTracker'
 import { dropRawMapChunkOnLightOnlyReload, sectionYsForLightColumnDirty } from './mesherWasmLightDirty'
+import {
+  displayLightColumn,
+  isLightSectionPresent,
+  mergeUpdateLight,
+  parsedUpdateLightFromWasm,
+  worldSectionMaskBit,
+  type UpdateLightColumnCache
+} from './mesherWasmLightMerge'
 import { CONVERSION_CACHE_LIMIT, clearConversionCache, getOrConvertColumn, invalidateConversion, setConversionCacheLimit } from './mesherWasmConversionCache'
 import { PendingChunkBuffer } from './mesherWasmChunkBuffer'
 import {
@@ -49,11 +57,8 @@ function processUpdateLightV17(rawPacket: Uint8Array, numSections: number): void
     const parsed: any = (wasm as any).parseUpdateLightV17(rawPacket, numSections)
     const x = (parsed.x as number) * 16
     const z = (parsed.z as number) * 16
-    const skyLight = parsed.skyLight as Uint8Array
-    updateLightV17Cache.set(rawCacheKey(x, z), {
-      skyLight,
-      blockLight: parsed.blockLight as Uint8Array
-    })
+    const key = rawCacheKey(x, z)
+    updateLightV17Cache.set(key, mergeUpdateLight(updateLightV17Cache.get(key), parsedUpdateLightFromWasm(parsed, numSections)))
     invalidateConversion(x, z)
     dirtyColumnSectionsForLightUpdate(x, z)
     const hadColumn = !!world?.getColumn(x, z)
@@ -78,10 +83,8 @@ function processUpdateLightV16(rawPacket: Uint8Array): void {
     const parsed: any = (wasm as any).parseUpdateLightV17(rawPacket, 16)
     const x = (parsed.x as number) * 16
     const z = (parsed.z as number) * 16
-    updateLightV16Cache.set(rawCacheKey(x, z), {
-      skyLight: parsed.skyLight as Uint8Array,
-      blockLight: parsed.blockLight as Uint8Array
-    })
+    const key = rawCacheKey(x, z)
+    updateLightV16Cache.set(key, mergeUpdateLight(updateLightV16Cache.get(key), parsedUpdateLightFromWasm(parsed, 16)))
     invalidateConversion(x, z)
     dirtyColumnSectionsForLightUpdate(x, z)
   } catch (err) {
@@ -258,19 +261,29 @@ const parsedV17Cache = new Map<string, ParsedV17Entry>()
 // WASM (`parseUpdateLightV17`) and cache per-block arrays keyed by the
 // chunk origin — the next mesh tick of that column merges them in instead
 // of the sky=15/block=0 fallback. May arrive before or after `map_chunk`.
-interface UpdateLightV17Entry {
-  skyLight: Uint8Array
-  blockLight: Uint8Array
+const updateLightV17Cache = new Map<string, UpdateLightColumnCache>()
+
+function displayCachedLight(entry: UpdateLightColumnCache | undefined): { skyLight: Uint8Array; blockLight: Uint8Array } | undefined {
+  if (!entry) return undefined
+  return {
+    skyLight: displayLightColumn(entry, 'sky', config?.skyLight ?? 15),
+    blockLight: displayLightColumn(entry, 'block', 0)
+  }
 }
-const updateLightV17Cache = new Map<string, UpdateLightV17Entry>()
 /** Columns that received `update_light` before the worker column existed. */
 const pendingLightDirtyColumns = new Set<string>()
 const _syncLightPos = new Vec3(0, 0, 0)
 
-function resolveUpdateLightV17Entry(x: number, z: number, chunk: any | undefined, worldMinY: number, worldMaxY: number): UpdateLightV17Entry | undefined {
-  const cached = updateLightV17Cache.get(rawCacheKey(x, z))
-  if (cached?.blockLight?.length) return cached
-  if (!chunk) return cached
+function resolveUpdateLightV17Entry(
+  x: number,
+  z: number,
+  chunk: any | undefined,
+  worldMinY: number,
+  worldMaxY: number
+): { skyLight: Uint8Array; blockLight: Uint8Array } | undefined {
+  const displayed = displayCachedLight(updateLightV17Cache.get(rawCacheKey(x, z)))
+  if (displayed) return displayed
+  if (!chunk) return undefined
   const { result } = getOrConvertColumn(x, z, chunk, version, worldMinY, worldMaxY, () => convertChunkToWasm(chunk, version, x, z, worldMinY, worldMaxY), chunk)
   return { blockLight: result.blockLight, skyLight: result.skyLight }
 }
@@ -285,16 +298,20 @@ function syncV17LightToColumn(x: number, z: number): boolean {
   const CHUNK_SIZE = 16
   const minY = config?.worldMinY ?? 0
   const maxY = config?.worldMaxY ?? 256
-  const { blockLight, skyLight } = entry
+  const { blockLight, skyLight, blockPresent, skyPresent } = entry
 
   for (let y = minY; y < maxY; y++) {
+    const sectionIndex = Math.floor((y - minY) / CHUNK_SIZE)
+    const skyAuthoritative = isLightSectionPresent(skyPresent, worldSectionMaskBit(sectionIndex))
+    const blockAuthoritative = isLightSectionPresent(blockPresent, worldSectionMaskBit(sectionIndex))
+    if (!skyAuthoritative && !blockAuthoritative) continue
     for (let lz = 0; lz < CHUNK_SIZE; lz++) {
       for (let lx = 0; lx < CHUNK_SIZE; lx++) {
         const idx = lx + lz * CHUNK_SIZE + (y - minY) * CHUNK_SIZE * CHUNK_SIZE
-        if (idx >= blockLight.length) continue
+        if (idx >= blockLight.length && idx >= skyLight.length) continue
         _syncLightPos.set(lx, y, lz)
-        col.setBlockLight(_syncLightPos, blockLight[idx]!)
-        col.setSkyLight(_syncLightPos, skyLight[idx]!)
+        if (blockAuthoritative && idx < blockLight.length) col.setBlockLight(_syncLightPos, blockLight[idx]!)
+        if (skyAuthoritative && idx < skyLight.length) col.setSkyLight(_syncLightPos, skyLight[idx]!)
       }
     }
   }
@@ -392,7 +409,7 @@ function drainPendingChunks() {
 // `processUpdateLightV16` (which calls the shared `parseUpdateLightV17`
 // WASM export). Separate map for the same isolation reasons as
 // `parsedV16Cache` above.
-const updateLightV16Cache = new Map<string, UpdateLightV17Entry>()
+const updateLightV16Cache = new Map<string, UpdateLightColumnCache>()
 
 // Mirrors `convertChunkToWasm`'s output (same layout: x + z*16 + y*256,
 // y outer) so it can be dropped straight into `generate_geometry`.
@@ -436,7 +453,7 @@ const convertRawMapChunkToWasm = (raw: RawMapChunkEntry, version: string): Chunk
 // (expanded from the 4×4×4 cell layout). Light comes from the paired
 // `update_light` cache when available; otherwise we fall back to full
 // daylight (sky=15) and no block light so geometry stays visible.
-const convertParsedV17ToWasm = (entry: ParsedV17Entry, lightEntry: UpdateLightV17Entry | undefined, version: string): ChunkConversionResult | null => {
+const convertParsedV17ToWasm = (entry: ParsedV17Entry, lightEntry: UpdateLightColumnCache | undefined, version: string): ChunkConversionResult | null => {
   if (!wasm || !(wasm as any).parseChunkSectionsV16V17) return null
   // Empty `Int32Array` signals "no biomes captured" — WASM falls back to
   // `default_biome` for every block. Plains (id 1) matches the JS path.
@@ -453,9 +470,9 @@ const convertParsedV17ToWasm = (entry: ParsedV17Entry, lightEntry: UpdateLightV1
   const totalBlocks = blockStates.length
   let blockLight: Uint8Array
   let skyLight: Uint8Array
-  if (lightEntry && lightEntry.skyLight.length === totalBlocks) {
-    skyLight = lightEntry.skyLight
-    blockLight = lightEntry.blockLight
+  if (lightEntry) {
+    skyLight = displayLightColumn(lightEntry, 'sky', config?.skyLight ?? 15)
+    blockLight = displayLightColumn(lightEntry, 'block', 0)
   } else {
     blockLight = new Uint8Array(totalBlocks)
     skyLight = new Uint8Array(totalBlocks)
@@ -487,7 +504,7 @@ const convertParsedV17ToWasm = (entry: ParsedV17Entry, lightEntry: UpdateLightV1
 // defaults — anything else means a non-vanilla server we don't support
 // on the fast path, in which case we return null and fall back to the
 // JS column-walk via `convertChunkToWasm`.
-const convertParsedV16ToWasm = (entry: ParsedV16Entry, lightEntry: UpdateLightV17Entry | undefined, version: string): ChunkConversionResult | null => {
+const convertParsedV16ToWasm = (entry: ParsedV16Entry, lightEntry: UpdateLightColumnCache | undefined, version: string): ChunkConversionResult | null => {
   if (!wasm || !(wasm as any).parseChunkSectionsV16V17) return null
   const NUM_SECTIONS = 16
   const MAX_BITS_PER_BLOCK = 15
@@ -508,9 +525,9 @@ const convertParsedV16ToWasm = (entry: ParsedV16Entry, lightEntry: UpdateLightV1
   const totalBlocks = blockStates.length
   let blockLight: Uint8Array
   let skyLight: Uint8Array
-  if (lightEntry && lightEntry.skyLight.length === totalBlocks) {
-    skyLight = lightEntry.skyLight
-    blockLight = lightEntry.blockLight
+  if (lightEntry) {
+    skyLight = displayLightColumn(lightEntry, 'sky', config?.skyLight ?? 15)
+    blockLight = displayLightColumn(lightEntry, 'block', 0)
   } else {
     blockLight = new Uint8Array(totalBlocks)
     skyLight = new Uint8Array(totalBlocks)
@@ -761,7 +778,7 @@ const meshMultiColumnsFromParsedV16V17 = (
       const bm = entry.bitMap >>> 0
       bitMapLoHi[i * 2] = bm
       bitMapLoHi[i * 2 + 1] = 0
-      const light = updateLightV16Cache.get(key)
+      const light = displayCachedLight(updateLightV16Cache.get(key))
       skyLightList.push(light?.skyLight ?? new Uint8Array(0))
       blockLightList.push(light?.blockLight ?? new Uint8Array(0))
     }
@@ -1204,7 +1221,7 @@ function processColumnTick() {
             )
             if (wasmResult) columnMeshPath = 'v17_fused'
           } else if (v16Entry) {
-            const v16Light = updateLightV16Cache.get(rawCacheKey(x, z))
+            const v16Light = displayCachedLight(updateLightV16Cache.get(rawCacheKey(x, z)))
             const bitMapLoHi = new Uint32Array([v16Entry.bitMap >>> 0, 0])
             wasmResult = meshColumnFromParsedV16V17(
               v16Entry.chunkData,
@@ -1259,7 +1276,7 @@ function processColumnTick() {
             const cs = performance.now()
             const rawEntry = rawMapChunkCache.get(rawCacheKey(cx, cz))
             const v17Entry = parsedV17Cache.get(rawCacheKey(cx, cz))
-            const v17Light = resolveUpdateLightV17Entry(cx, cz, chunk, worldMinY, worldMaxY)
+            const v17Light = updateLightV17Cache.get(rawCacheKey(cx, cz))
             const v16Entry = parsedV16Cache.get(rawCacheKey(cx, cz))
             const v16Light = updateLightV16Cache.get(rawCacheKey(cx, cz))
 
