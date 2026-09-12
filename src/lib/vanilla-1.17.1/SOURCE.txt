@@ -1,0 +1,10 @@
+Vanilla 1.17.1 block registry snapshot for light tables.
+
+Source: MinecraftDeobfuscated-Mojang tag 1.17.1
+Commit: 72447031d70fca0cfc9087de2704da83bc12fa79
+SharedConstants.VERSION_STRING=1.17.1
+SharedConstants.WORLD_VERSION=2730
+
+Do not replace this with the current snapshot / 1.21.7 tree.
+Emission numbers come from Blocks.java lightLevel(...) on this tag.
+minecraft-data 1.17.1 is used only to map block name + properties → stateId.
