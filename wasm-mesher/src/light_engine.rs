@@ -1370,6 +1370,7 @@ fn js_u16_array(obj: &JsValue, key: &str) -> Result<Vec<u16>, String> {
     Ok(array.to_vec())
 }
 
+#[cfg(test)]
 fn default_test_tables() -> (Vec<u8>, Vec<u8>) {
     let mut emission = vec![0u8; 16];
     let mut light_block = vec![0u8; 16];
