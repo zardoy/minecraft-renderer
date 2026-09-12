@@ -23,6 +23,7 @@ export type LightOwnerEvent =
 
 export type LightEngineBackend = {
   setLightTables(tables: { emission: Uint8Array; opacity: Uint8Array }): void
+  setSkyLightEnabled?(enabled: boolean): void
   pushEvent(event: LightOwnerEvent): void
   step(budgetMs: number): boolean
   pollCompletedPublication(): LightPublication | null
@@ -33,7 +34,7 @@ export type PublicationGate = {
   lastVersion: number
 }
 
-export type ApplyPublicationResult = { applied: boolean; lastVersion: number }
+export type ApplyPublicationResult = { applied: boolean; lastVersion: number; acceptedGeneration: number }
 
 /** Engine ABI uses section indices; RendererLightCache keys are world origins. */
 export function sectionIndexToWorldOrigin(sx: number, sy: number, sz: number) {
@@ -46,11 +47,11 @@ export function applyLightPublication(
   gate: PublicationGate,
   coords: 'world' | 'section-index' = 'world'
 ): ApplyPublicationResult {
-  if (publication.worldGeneration !== gate.acceptedGeneration) {
-    return { applied: false, lastVersion: gate.lastVersion }
+  if (publication.worldGeneration < gate.acceptedGeneration) {
+    return { applied: false, lastVersion: gate.lastVersion, acceptedGeneration: gate.acceptedGeneration }
   }
-  if (publication.publicationVersion <= gate.lastVersion) {
-    return { applied: false, lastVersion: gate.lastVersion }
+  if (publication.worldGeneration === gate.acceptedGeneration && publication.publicationVersion <= gate.lastVersion) {
+    return { applied: false, lastVersion: gate.lastVersion, acceptedGeneration: gate.acceptedGeneration }
   }
   const sections = publication.sections.map(section => {
     const origin = coords === 'section-index' ? sectionIndexToWorldOrigin(section.sx, section.sy, section.sz) : section
@@ -63,7 +64,7 @@ export function applyLightPublication(
     }
   })
   cache.ingestPackedSections(sections)
-  return { applied: true, lastVersion: publication.publicationVersion }
+  return { applied: true, lastVersion: publication.publicationVersion, acceptedGeneration: publication.worldGeneration }
 }
 
 /** Production spawn stays behind `enableClientLightOwner` (default off). */
@@ -71,7 +72,7 @@ export const CLIENT_LIGHT_OWNER_FLAG = 'enableClientLightOwner' as const
 
 export class LightOwnerHost {
   private lastVersion = 0
-  private readonly generation: number
+  private generation: number
 
   private constructor(
     private readonly cache: RendererLightCache,
@@ -95,6 +96,10 @@ export class LightOwnerHost {
     this.backend.setLightTables(tables)
   }
 
+  setSkyLightEnabled(enabled: boolean) {
+    this.backend.setSkyLightEnabled?.(enabled)
+  }
+
   pushEvent(event: LightOwnerEvent) {
     this.backend.pushEvent(event)
   }
@@ -108,6 +113,7 @@ export class LightOwnerHost {
         const result = applyLightPublication(this.cache, publication, { acceptedGeneration: this.generation, lastVersion: this.lastVersion }, 'section-index')
         if (result.applied) {
           this.lastVersion = result.lastVersion
+          this.generation = result.acceptedGeneration
           last = publication
         }
       }
@@ -142,6 +148,9 @@ async function createWasmLightBackend(worldMinY: number, worldHeight: number): P
     setLightTables({ emission, opacity }) {
       engine.setLightTables(emission, opacity)
     },
+    setSkyLightEnabled(enabled) {
+      engine.setSkyLightEnabled?.(enabled)
+    },
     pushEvent(event) {
       engine.pushEvent(event)
     },
@@ -168,6 +177,7 @@ async function createWasmLightBackend(worldMinY: number, worldHeight: number): P
 
 type WasmEngine = {
   setLightTables(emission: Uint8Array, opacity: Uint8Array): void
+  setSkyLightEnabled?(enabled: boolean): void
   pushEvent(event: LightOwnerEvent): void
   step(budgetMs: number): boolean
   pollCompletedPublication(): null | {

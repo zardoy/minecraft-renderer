@@ -11,6 +11,7 @@ import { handleGetHeightmap, EMPTY_COLUMN_HEIGHTMAP_SENTINEL } from '../../meshe
 import { collectBlockEntityMetadata, type SignMeta, type HeadMeta, type BannerMeta } from '../../mesher-shared/blockEntityMetadata'
 import { SectionRequestTracker } from './mesherWasmRequestTracker'
 import { dropRawMapChunkOnLightOnlyReload, sectionYsForLightColumnDirty } from './mesherWasmLightDirty'
+import { applyPackedOwnerSectionsToLightCache } from './mesherWasmOwnerLight'
 import {
   displayLightColumn,
   isLightSectionPresent,
@@ -136,6 +137,7 @@ let config = defaultMesherConfig
 let version = '1.16.5'
 let world: World // chunkKey -> chunk data
 let dirtySections = new Map<string, number>()
+const dirtyLightMeta = new Map<string, { lightPublicationVersion?: number; worldGeneration?: number }>()
 // Kept in sync with `dirtySections` so column mode can filter outgoing
 // geometry/sectionFinished events to only the section keys requested by the
 // main thread, even though a full-column WASM call may generate more data.
@@ -855,6 +857,14 @@ const handleMessage = async (data: any) => {
     case 'dirty': {
       const loc = new Vec3(data.x, data.y, data.z)
       setSectionDirty(loc, data.value)
+      if (typeof data.lightPublicationVersion === 'number') {
+        const sectionHeight = getSectionHeight()
+        const key = sectionKey(Math.floor(loc.x / 16) * 16, Math.floor(loc.y / sectionHeight) * sectionHeight, Math.floor(loc.z / 16) * 16)
+        dirtyLightMeta.set(key, {
+          lightPublicationVersion: data.lightPublicationVersion,
+          worldGeneration: data.worldGeneration
+        })
+      }
       break
     }
     case 'chunk': {
@@ -893,6 +903,7 @@ const handleMessage = async (data: any) => {
         const [sx, , sz] = key.split(',').map(Number)
         if (sx === data.x && sz === data.z) {
           dirtySections.delete(key)
+          dirtyLightMeta.delete(key)
         }
       }
       if (Object.keys(world.columns).length === 0) softCleanup()
@@ -983,9 +994,32 @@ const handleMessage = async (data: any) => {
       processUpdateLightV16(data.rawPacket as Uint8Array)
       break
     }
+    case 'applyOwnerLightPublication': {
+      const sections = (data.sections ?? []) as Array<{ sx: number; sy: number; sz: number; blockLight: Uint8Array; skyLight?: Uint8Array }>
+      const worldMinY = config?.worldMinY ?? 0
+      const worldMaxY = config?.worldMaxY ?? 256
+      const numSections = Math.max(1, Math.floor((worldMaxY - worldMinY) / 16))
+      const columns = new Set<string>()
+      for (const section of sections) columns.add(`${section.sx},${section.sz}`)
+      for (const col of columns) {
+        const [cx, cz] = col.split(',').map(Number)
+        const key = rawCacheKey(cx, cz)
+        const v16 = updateLightV16Cache.get(key)
+        const v17 = updateLightV17Cache.get(key)
+        if (v16 && !v17) {
+          updateLightV16Cache.set(key, applyPackedOwnerSectionsToLightCache(v16, sections, worldMinY, cx, cz, v16.numSections))
+        } else {
+          updateLightV17Cache.set(key, applyPackedOwnerSectionsToLightCache(v17, sections, worldMinY, cx, cz, v17?.numSections ?? numSections))
+          syncV17LightToColumn(cx, cz)
+        }
+        invalidateConversion(cx, cz)
+      }
+      break
+    }
     case 'reset': {
       world = undefined as any
       dirtySections.clear()
+      dirtyLightMeta.clear()
       requestTracker.clear()
       clearConversionCache()
       rawMapChunkCache.clear()
@@ -1610,10 +1644,14 @@ function processColumnTick() {
           geometry.heads = heads
           geometry.banners = banners
         }
-        postMessage({ type: 'geometry', key, geometry, workerIndex }, transferable)
+        const lightMeta = dirtyLightMeta.get(key)
+        dirtyLightMeta.delete(key)
+        postMessage({ type: 'geometry', key, geometry, workerIndex, ...lightMeta }, transferable)
       } else if (hadError) {
         const errorGeometry = makeEmptyColumnGeometry(sx, sy, sz, sectionHeight, true)
-        postMessage({ type: 'geometry', key, geometry: errorGeometry, workerIndex })
+        const lightMeta = dirtyLightMeta.get(key)
+        dirtyLightMeta.delete(key)
+        postMessage({ type: 'geometry', key, geometry: errorGeometry, workerIndex, ...lightMeta })
       }
       // No targetChunk and no error: skip geometry message (mirrors
       // legacy behavior for sections whose chunk has been unloaded

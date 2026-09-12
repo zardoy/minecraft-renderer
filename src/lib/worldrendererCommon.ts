@@ -33,6 +33,15 @@ import { IndexedData } from 'minecraft-data'
 import { WorldRendererConfig } from '../graphicsBackend/config'
 import { CameraCollisionBlockCache } from '../three/cameraCollisionBlockCache'
 import { RendererLightCache } from '../three/rendererLightCache'
+import {
+  ClientLightOwnerSession,
+  LIGHT_OWNER_WORKER_SCRIPT,
+  shouldAcceptMeshGeometry,
+  shouldSpawnClientLightOwner,
+  skyLightEnabledFromRendererState,
+  type OwnerPublicationApplyResult
+} from '../three/clientLightOwner'
+import type { FeedChunkPacketPayload } from '../worldView/types'
 
 function mod(x, n) {
   return ((x % n) + n) % n
@@ -87,6 +96,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   }>
   customTexturesDataUrl = undefined as string | undefined
   workers: any[] = []
+  private clientLightOwnerSession: ClientLightOwnerSession | null = null
+  private nextDirtyLightMeta: { lightPublicationVersion?: number; worldGeneration?: number } = {}
   viewerChunkPosition?: Vec3
   // Last viewer chunk-grid coords for which `onViewerChunkPositionChanged`
   // fired — throttles the hook to chunk-grid changes.
@@ -357,6 +368,63 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     for (let i = 0; i < numWorkers; i++) {
       this.workers.push(this.createMesherWorker())
     }
+    this.maybeSpawnClientLightOwner()
+  }
+
+  hasClientLightOwner(): boolean {
+    return this.clientLightOwnerSession != null
+  }
+
+  getClientLightOwnerWorker(): Worker | null {
+    return this.clientLightOwnerSession?.worker ?? null
+  }
+
+  private maybeSpawnClientLightOwner() {
+    if (!shouldSpawnClientLightOwner(this.worldRendererConfig)) return
+    if (this.clientLightOwnerSession) return
+    this.clientLightOwnerSession = new ClientLightOwnerSession(this.rendererLightCache, {
+      createWorker: onMessage => initMesherWorker(onMessage, LIGHT_OWNER_WORKER_SCRIPT),
+      worldMinY: this.worldSizeParams.minY,
+      worldHeight: this.worldSizeParams.worldHeight,
+      skyLightEnabled: skyLightEnabledFromRendererState(this.playerStateReactive),
+      onApplied: result => this.onClientLightOwnerPublication(result)
+    })
+  }
+
+  private terminateClientLightOwner() {
+    this.clientLightOwnerSession?.terminate()
+    this.clientLightOwnerSession = null
+    this.nextDirtyLightMeta = {}
+  }
+
+  private onClientLightOwnerPublication(result: OwnerPublicationApplyResult) {
+    if (result.workerMessage) {
+      for (const worker of this.workers) {
+        worker.postMessage(result.workerMessage)
+      }
+    }
+    this.nextDirtyLightMeta = {
+      lightPublicationVersion: result.lastVersion,
+      worldGeneration: result.acceptedGeneration
+    }
+    try {
+      for (const section of result.dirtyMeshSections) {
+        this.setSectionDirty(new Vec3(section.sx, section.sy, section.sz), true, true)
+      }
+    } finally {
+      this.nextDirtyLightMeta = {}
+    }
+  }
+
+  feedChunkPacket(payload: FeedChunkPacketPayload) {
+    const { kind, ...rest } = payload
+    const message = { type: kind, ...rest }
+    for (const worker of this.workers) {
+      worker.postMessage(message)
+    }
+    if (this.clientLightOwnerSession && (kind === 'setUpdateLightV17' || kind === 'setUpdateLightV16')) {
+      this.clientLightOwnerSession.pushRawUpdateLight(kind, rest as Record<string, unknown>)
+    }
   }
 
   private syncMesherPoolSnapshot() {
@@ -492,6 +560,15 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         this.changeCardinalLight(value)
       })
     )
+    this.valtioUnsubs.push(
+      this.onReactivePlayerStateUpdated(
+        'lightingDisabled',
+        value => {
+          this.clientLightOwnerSession?.setSkyLightEnabled(skyLightEnabledFromRendererState({ lightingDisabled: value }))
+        },
+        false
+      )
+    )
   }
 
   watchReactiveConfig() {
@@ -499,6 +576,16 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       this.onReactiveConfigUpdated('fetchPlayerSkins', value => {
         setSkinsConfig({ apiEnabled: value })
       })
+    )
+    this.valtioUnsubs.push(
+      this.onReactiveConfigUpdated(
+        'enableClientLightOwner',
+        enabled => {
+          if (enabled) this.maybeSpawnClientLightOwner()
+          else this.terminateClientLightOwner()
+        },
+        false
+      )
     )
   }
 
@@ -551,10 +638,17 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   }
 
   handleMessage(rawData: any) {
-    const data = rawData as MesherMainEvent
+    const data = rawData as MesherMainEvent & { worldGeneration?: number; lightPublicationVersion?: number }
     if (!this.active) return
     this.mesherLogReader?.workerMessageReceived(data.type, data)
-    if (data.type !== 'geometry' || !this.debugStopGeometryUpdate) {
+    const staleOwnerGeometry =
+      data.type === 'geometry' &&
+      this.clientLightOwnerSession != null &&
+      !shouldAcceptMeshGeometry(
+        { worldGeneration: data.worldGeneration, lightPublicationVersion: data.lightPublicationVersion },
+        this.clientLightOwnerSession.gate
+      )
+    if ((data.type !== 'geometry' || !this.debugStopGeometryUpdate) && !staleOwnerGeometry) {
       const start = performance.now()
       this.handleWorkerMessage(data as WorkerReceive)
       this.workerCustomHandleTime += performance.now() - start
@@ -781,6 +875,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       worker.terminate()
     }
     this.workers = []
+    this.terminateClientLightOwner()
   }
 
   async resetWorkers() {
@@ -912,6 +1007,14 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.mesherLogReader?.chunkReceived(x, z, chunk.length)
     this.cameraCollisionBlockCache.ingestColumn(x, z, chunk)
     this.rendererLightCache.ingestColumn(x, z, chunk)
+    this.clientLightOwnerSession?.ingestColumn({
+      chunkX: x,
+      chunkZ: z,
+      chunkJson: chunk,
+      version: this.version,
+      worldMinY: this.worldSizeParams.minY,
+      worldHeight: this.worldSizeParams.worldHeight
+    })
     const sectionHeight = this.getSectionHeight()
     const CHUNK_SIZE = 16
 
@@ -982,6 +1085,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.highestBlocksByChunks.delete(`${x},${z}`)
     this.cameraCollisionBlockCache.removeColumn(x, z)
     this.rendererLightCache.removeColumn(x, z)
+    this.clientLightOwnerSession?.onUnload(x, z)
     const heightmapKey = `${Math.floor(x / 16)},${Math.floor(z / 16)}`
     delete this.reactiveState.world.heightmaps[heightmapKey]
 
@@ -1257,6 +1361,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.logWorkerWork(`-> blockUpdate ${JSON.stringify({ pos, stateId, customBlockModels })}`)
     if (stateId !== undefined) {
       this.cameraCollisionBlockCache.setBlockStateId(pos.x, pos.y, pos.z, stateId)
+      this.clientLightOwnerSession?.onBlockChange(pos.x, pos.y, pos.z, stateId)
     }
     this.setSectionDirty(pos, true, true)
     if (this.neighborChunkUpdates) {
@@ -1441,25 +1546,25 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     // is always dispatched to the same worker
     const hash = this.getWorkerNumber(pos, useChangeWorker && (this.mesherLogger.active || this.worldRendererConfig.dedicatedChangeWorker))
     this.sectionsWaiting.set(key, (this.sectionsWaiting.get(key) ?? 0) + 1)
+    const dirtyMessage = {
+      type: 'dirty' as const,
+      x: pos.x,
+      y: pos.y,
+      z: pos.z,
+      value,
+      config: this.getMesherConfig(),
+      ...(this.nextDirtyLightMeta.lightPublicationVersion != null
+        ? {
+            lightPublicationVersion: this.nextDirtyLightMeta.lightPublicationVersion,
+            worldGeneration: this.nextDirtyLightMeta.worldGeneration
+          }
+        : {})
+    }
     if (this.forceCallFromMesherReplayer) {
-      this.workers[hash].postMessage({
-        type: 'dirty',
-        x: pos.x,
-        y: pos.y,
-        z: pos.z,
-        value,
-        config: this.getMesherConfig()
-      })
+      this.workers[hash].postMessage(dirtyMessage)
     } else {
       this.toWorkerMessagesQueue[hash] ??= []
-      this.toWorkerMessagesQueue[hash].push({
-        type: 'dirty',
-        x: pos.x,
-        y: pos.y,
-        z: pos.z,
-        value,
-        config: this.getMesherConfig()
-      })
+      this.toWorkerMessagesQueue[hash].push(dirtyMessage)
       this.dispatchMessages()
     }
   }
@@ -1546,6 +1651,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       worker.terminate()
     }
     this.workers = []
+    this.terminateClientLightOwner()
 
     // Stop and destroy sound system
     if (this.soundSystem) {

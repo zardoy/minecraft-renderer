@@ -43,9 +43,8 @@ export const defaultWorldRendererConfig = {
    * distributed only across workers[0 .. n-2]. */
   dedicatedChangeWorker: false,
   /**
-   * Dedicated WASM light-owner worker. Default OFF until the solver
-   * sequences (seed-between-slices, place/remove freshness) stay green
-   * and production wiring is reviewed. Do not turn on from call sites.
+   * Dedicated WASM light-owner worker. Default OFF: wiring exists so a
+   * human can flip this for live 1.17.1 runs. Do not enable for players.
    */
   enableClientLightOwner: false,
 
