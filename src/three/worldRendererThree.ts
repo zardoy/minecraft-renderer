@@ -39,6 +39,7 @@ import { FireworksManager } from './fireworks'
 import { SceneOrigin } from './sceneOrigin'
 import { downloadWorldGeometry } from './worldGeometryExport'
 import { ChunkMeshManager } from './chunkMeshManager'
+import { selectReadySectionUpdates } from './pendingSectionFlush'
 import { EntityLightController } from './entityLightController'
 import { raycastVoxelSolid } from './thirdPersonVoxelRaycast'
 import type { RendererModuleManifest, RegisteredModule, RendererModuleController } from './rendererModuleSystem'
@@ -900,38 +901,18 @@ export class WorldRendererThree extends WorldRendererCommon {
     if (this.pendingSectionUpdates.size === 0) return
 
     const now = performance.now()
-    const sectionHeight = this.getSectionHeight()
-    const ready: string[] = []
-
-    for (const key of this.pendingSectionUpdates.keys()) {
-      const startedAt = this.pendingSectionBufferStartTimes.get(key) ?? now
-      const sinceFirst = now - startedAt
-
-      if (sinceFirst < WorldRendererThree.MAX_SECTION_UPDATE_BUFFER_MS) {
-        // Still within this section's grace window — wait if any neighbor is
-        // currently being re-meshed so we don't briefly expose a hole between
-        // the just-updated section and a stale neighbor (sky-flicker bug).
-        const [sx, sy, sz] = key.split(',').map(Number)
-        const neighborKeys = [
-          `${sx - 16},${sy},${sz}`,
-          `${sx + 16},${sy},${sz}`,
-          `${sx},${sy - sectionHeight},${sz}`,
-          `${sx},${sy + sectionHeight},${sz}`,
-          `${sx},${sy},${sz - 16}`,
-          `${sx},${sy},${sz + 16}`
-        ]
-        let neighborBusy = false
-        for (const neighborKey of neighborKeys) {
-          if (this.sectionsWaiting.has(neighborKey) && !this.pendingSectionUpdates.has(neighborKey) && this.sectionObjects[neighborKey]) {
-            neighborBusy = true
-            break
-          }
-        }
-        if (neighborBusy) continue
-      }
-
-      ready.push(key)
-    }
+    // Face-adjacent buffered sections are installed as one group: a lone
+    // install would show the neighbour's faces still culled against the old
+    // block state, i.e. a see-through hole (sky flash) on dig/place.
+    const ready = selectReadySectionUpdates({
+      pendingKeys: this.pendingSectionUpdates.keys(),
+      startedAt: key => this.pendingSectionBufferStartTimes.get(key),
+      now,
+      maxBufferMs: WorldRendererThree.MAX_SECTION_UPDATE_BUFFER_MS,
+      sectionHeight: this.getSectionHeight(),
+      isOutstanding: key => this.sectionsWaiting.has(key) && !this.pendingSectionUpdates.has(key),
+      hasSectionObject: key => !!this.sectionObjects[key]
+    })
 
     if (ready.length === 0) return
 
