@@ -139,31 +139,75 @@ export function eventsFromColumnLoad(opts: {
   const sx = Math.floor(opts.chunkX / 16)
   const sz = Math.floor(opts.chunkZ / 16)
   const events: LightOwnerEvent[] = []
-  const pos = new Vec3(0, 0, 0)
   const worldMaxY = opts.worldMinY + opts.worldHeight
   for (let y0 = opts.worldMinY; y0 < worldMaxY; y0 += 16) {
     const states = new Uint16Array(4096)
-    for (let ly = 0; ly < 16; ly++) {
-      pos.y = y0 + ly
-      for (let lz = 0; lz < 16; lz++) {
-        pos.z = lz
-        for (let lx = 0; lx < 16; lx++) {
-          pos.x = lx
-          let stateId = 0
-          try {
-            stateId = column.getBlockStateId(pos) || 0
-          } catch {
-            stateId = 0
-          }
-          states[lx + lz * 16 + ly * 256] = stateId
-        }
-      }
-    }
+    fillSectionStates(column, y0, states)
     const sy = Math.floor(y0 / 16)
     events.push({ type: 'ingestBlockSection', sx, sy, sz, states })
     events.push({ type: 'setAvailability', sx, sy, sz, availability: 'loaded' })
   }
   return events
+}
+
+type SectionLike = {
+  palette?: number[] | null
+  data?: { get: (index: number) => number }
+  isEmpty?: () => boolean
+  getBlock?: (pos: { x: number; y: number; z: number }) => number
+}
+
+function sectionAt(column: object, y0: number): SectionLike | null | undefined {
+  const withGet = column as { getSection?: (pos: { x: number; y: number; z: number }) => SectionLike | null }
+  if (typeof withGet.getSection === 'function') {
+    return withGet.getSection({ x: 0, y: y0, z: 0 })
+  }
+  const withArray = column as { sections?: Array<SectionLike | null>; minY?: number }
+  if (Array.isArray(withArray.sections)) {
+    return withArray.sections[(y0 - (withArray.minY ?? 0)) >> 4]
+  }
+  return undefined
+}
+
+function fillSectionStates(column: { getBlockStateId: (pos: Vec3) => number }, y0: number, states: Uint16Array) {
+  const section = sectionAt(column, y0)
+  if (section === null) {
+    return
+  }
+  if (section && typeof section.isEmpty === 'function' && section.isEmpty()) {
+    return
+  }
+  if (section && Array.isArray(section.palette) && section.palette.length === 1) {
+    const only = section.palette[0] || 0
+    if (only !== 0) states.fill(only)
+    return
+  }
+  if (section?.data && typeof section.data.get === 'function') {
+    const palette = section.palette
+    for (let i = 0; i < 4096; i++) {
+      let stateId = section.data.get(i)
+      if (palette) stateId = palette[stateId]
+      states[i] = stateId || 0
+    }
+    return
+  }
+  const pos = new Vec3(0, y0, 0)
+  for (let ly = 0; ly < 16; ly++) {
+    pos.y = y0 + ly
+    for (let lz = 0; lz < 16; lz++) {
+      pos.z = lz
+      for (let lx = 0; lx < 16; lx++) {
+        pos.x = lx
+        let stateId = 0
+        try {
+          stateId = column.getBlockStateId(pos) || 0
+        } catch {
+          stateId = 0
+        }
+        states[lx + lz * 16 + ly * 256] = stateId
+      }
+    }
+  }
 }
 
 export type OwnerWorkerLightMessage = {

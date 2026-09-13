@@ -248,6 +248,36 @@ describe('column load events', () => {
     expect(blockChangeEvent(8, 64, 8, 0)).toEqual({ type: 'blockChange', x: 8, y: 64, z: 8, stateId: 0 })
     expect(eventsFromColumnUnload(32, 48)).toEqual({ type: 'unloadColumn', sx: 2, sz: 3 })
   })
+
+  it('does not call getBlockStateId 4096 times per section when section data exists', () => {
+    const mcData = MinecraftData(VERSION)
+    const Chunk = Chunks(VERSION) as any
+    const chunk = new Chunk()
+    const torch = mcData.blocksByName.torch.defaultState
+    const stone = mcData.blocksByName.stone.defaultState
+    chunk.setBlockStateId(new Vec3(8, 64, 8), torch)
+    chunk.setBlockStateId(new Vec3(3, 20, 3), stone)
+    let calls = 0
+    const original = chunk.getBlockStateId.bind(chunk)
+    chunk.getBlockStateId = (pos: Vec3) => {
+      calls++
+      return original(pos)
+    }
+    const events = eventsFromColumnLoad({
+      chunkX: 0,
+      chunkZ: 0,
+      chunkJson: chunk,
+      version: VERSION,
+      worldMinY: 0,
+      worldHeight: 256
+    })
+    expect(calls).toBe(0)
+    const ingest = events.filter(e => e.type === 'ingestBlockSection')
+    const section4 = ingest.find(e => e.type === 'ingestBlockSection' && e.sy === 4)
+    const section1 = ingest.find(e => e.type === 'ingestBlockSection' && e.sy === 1)
+    expect(section4?.type === 'ingestBlockSection' && section4.states[8 + 8 * 16 + 0 * 256]).toBe(torch)
+    expect(section1?.type === 'ingestBlockSection' && section1.states[3 + 3 * 16 + 4 * 256]).toBe(stone)
+  })
 })
 
 describe('apply publication → cache + dirty mesh + worker fan-out', () => {
