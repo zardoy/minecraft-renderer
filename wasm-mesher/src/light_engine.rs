@@ -421,6 +421,7 @@ impl LightEngine {
                         }
                     }
                 }
+                self.wake_section_face_contacts(sx, sy, sz);
                 if self.sky_light_enabled {
                     self.mark_sky_columns_in_section(sx, sz);
                 }
@@ -433,10 +434,7 @@ impl LightEngine {
                 availability,
             } => {
                 if availability == SectionAvailability::Unloaded {
-                    self.sections.remove(&(sx, sy, sz));
-                    self.changed_for_publication.remove(&(sx, sy, sz));
-                    self.changed_sky.remove(&(sx, sy, sz));
-                    self.mark_transaction();
+                    self.unload_section(sx, sy, sz);
                     return;
                 }
                 self.ensure_section(sx, sy, sz, availability).availability = availability;
@@ -453,9 +451,18 @@ impl LightEngine {
                 self.apply_block_change(x, y, z, state_id);
             }
             LightEvent::UnloadColumn { sx, sz } => {
-                self.sections.retain(|key, _| !(key.0 == sx && key.2 == sz));
-                self.changed_for_publication.retain(|key| !(key.0 == sx && key.2 == sz));
-                self.changed_sky.retain(|key| !(key.0 == sx && key.2 == sz));
+                let keys: Vec<SectionKey> = self
+                    .sections
+                    .keys()
+                    .copied()
+                    .filter(|key| key.0 == sx && key.2 == sz)
+                    .collect();
+                for (usx, usy, usz) in &keys {
+                    self.reconcile_unloading_section(*usx, *usy, *usz);
+                }
+                for (usx, usy, usz) in keys {
+                    self.remove_section_storage(usx, usy, usz);
+                }
                 self.world_generation = self.world_generation.saturating_add(1);
                 self.mark_transaction();
             }
@@ -489,6 +496,9 @@ impl LightEngine {
         } else if emission > 0 {
             self.set_block_light(x, y, z, emission);
             self.increase_q.push_back((x, y, z, emission));
+        } else if old_light == 0 && self.block_neighbor_level(x, y, z) > 1 {
+            // Same pull as sky: opening a path (old=emission=0) re-spreads from a lit neighbor.
+            self.decrease_q.push_back((x, y, z, 1));
         }
         self.mark_sky_column_dirty(x, z);
     }
@@ -578,6 +588,95 @@ impl LightEngine {
         } else {
             self.mark_changed(sx, sy, sz);
         }
+    }
+
+    fn unload_section(&mut self, sx: i32, sy: i32, sz: i32) {
+        if !self.sections.contains_key(&(sx, sy, sz)) {
+            return;
+        }
+        self.reconcile_unloading_section(sx, sy, sz);
+        self.remove_section_storage(sx, sy, sz);
+    }
+
+    fn remove_section_storage(&mut self, sx: i32, sy: i32, sz: i32) {
+        self.sections.remove(&(sx, sy, sz));
+        self.changed_for_publication.remove(&(sx, sy, sz));
+        self.changed_sky.remove(&(sx, sy, sz));
+        self.mark_transaction();
+    }
+
+    /// Lost support from a removed section: decrease remaining Loaded contacts.
+    /// Unknown after unload is not written as a known-zero wall.
+    fn reconcile_unloading_section(&mut self, sx: i32, sy: i32, sz: i32) {
+        for (dx, dy, dz) in DIRS {
+            let nsx = sx + dx;
+            let nsy = sy + dy;
+            let nsz = sz + dz;
+            if self.section_availability(nsx, nsy, nsz) != SectionAvailability::Loaded {
+                continue;
+            }
+            for (x, y, z) in section_face_cells(sx, sy, sz, dx, dy, dz) {
+                if !self.in_world(x, y, z) {
+                    continue;
+                }
+                let old_block = self
+                    .known_boundary_light(x, y, z, LightChannel::Block)
+                    .unwrap_or_else(|| self.get_block_light(x, y, z));
+                if old_block > 0 {
+                    self.enqueue_boundary_influence(x, y, z, LightChannel::Block, old_block, 0);
+                }
+                if self.sky_light_enabled {
+                    let old_sky = self
+                        .known_boundary_light(x, y, z, LightChannel::Sky)
+                        .unwrap_or_else(|| self.get_sky_light(x, y, z));
+                    if old_sky > 0 {
+                        self.enqueue_boundary_influence(x, y, z, LightChannel::Sky, old_sky, 0);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Ingest/load contact: dark face cells pull from a lit Loaded neighbor or LIGHT_ONLY boundary.
+    fn wake_section_face_contacts(&mut self, sx: i32, sy: i32, sz: i32) {
+        for (dx, dy, dz) in DIRS {
+            match self.section_availability(sx + dx, sy + dy, sz + dz) {
+                SectionAvailability::Unloaded => continue,
+                SectionAvailability::Loaded | SectionAvailability::LightOnly => {
+                    for (x, y, z) in section_face_cells(sx, sy, sz, dx, dy, dz) {
+                        if self.in_world(x, y, z) {
+                            self.pull_block_from_neighbors(x, y, z);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn pull_block_from_neighbors(&mut self, x: i32, y: i32, z: i32) {
+        if !self.can_write(x, y, z) {
+            return;
+        }
+        if self.emission_at(x, y, z) > 0 || self.get_block_light(x, y, z) > 0 {
+            return;
+        }
+        if self.block_neighbor_level(x, y, z) > 1 {
+            self.decrease_q.push_back((x, y, z, 1));
+        }
+    }
+
+    fn block_neighbor_level(&self, x: i32, y: i32, z: i32) -> u8 {
+        let mut max_level = 0u8;
+        for (dx, dy, dz) in DIRS {
+            let nx = x + dx;
+            let ny = y + dy;
+            let nz = z + dz;
+            let level = self
+                .known_boundary_light(nx, ny, nz, LightChannel::Block)
+                .unwrap_or_else(|| self.get_block_light(nx, ny, nz));
+            max_level = max_level.max(level);
+        }
+        max_level
     }
 
     fn check_loaded_cell(&mut self, x: i32, y: i32, z: i32) {
@@ -1234,6 +1333,31 @@ fn local(v: i32) -> usize {
 
 fn block_index(x: i32, y: i32, z: i32) -> usize {
     local(x) + local(z) * 16 + local(y) * 256
+}
+
+/// Cells of section (sx,sy,sz) on the face toward (dx,dy,dz).
+fn section_face_cells(
+    sx: i32,
+    sy: i32,
+    sz: i32,
+    dx: i32,
+    dy: i32,
+    dz: i32,
+) -> impl Iterator<Item = (i32, i32, i32)> {
+    let (lx0, lx1, ly0, ly1, lz0, lz1) = match (dx, dy, dz) {
+        (1, 0, 0) => (15, 16, 0, 16, 0, 16),
+        (-1, 0, 0) => (0, 1, 0, 16, 0, 16),
+        (0, 1, 0) => (0, 16, 15, 16, 0, 16),
+        (0, -1, 0) => (0, 16, 0, 1, 0, 16),
+        (0, 0, 1) => (0, 16, 0, 16, 15, 16),
+        (0, 0, -1) => (0, 16, 0, 16, 0, 1),
+        _ => (0, 0, 0, 0, 0, 0),
+    };
+    (ly0..ly1).flat_map(move |ly| {
+        (lz0..lz1).flat_map(move |lz| {
+            (lx0..lx1).map(move |lx| (sx * 16 + lx, sy * 16 + ly, sz * 16 + lz))
+        })
+    })
 }
 
 fn pad_states(mut states: Vec<u16>) -> Vec<u16> {
@@ -2512,5 +2636,252 @@ mod tests {
         assert_eq!(sliced.get_sky_light(8, y, 8), want[0]);
         assert_eq!(sliced.get_sky_light(8, y - 15, 8), want[1]);
         assert_eq!(sliced.get_sky_light(8, 200, 8), want[2]);
+    }
+
+    fn x_air_tunnel() -> Vec<u16> {
+        let mut states = stone_section();
+        for x in 0..16 {
+            states[block_index(x, 64, 8)] = AIR;
+        }
+        states
+    }
+
+    fn block_along_x(e: &LightEngine, start: i32, count: i32) -> Vec<u8> {
+        (0..count).map(|i| e.get_block_light(start + i, 64, 8)).collect()
+    }
+
+    /// Torch already lit; removing a non-emitting stone must pull block light into the opened path.
+    #[test]
+    fn opening_block_light_path() {
+        let mut e = engine();
+        let mut states = x_air_tunnel();
+        states[block_index(4, 64, 8)] = TORCH;
+        states[block_index(8, 64, 8)] = STONE;
+        load_section(&mut e, 0, 4, 0, states);
+        finish(&mut e);
+        assert_eq!(block_along_x(&e, 4, 8), vec![14, 13, 12, 11, 0, 0, 0, 0]);
+
+        e.push_event(LightEvent::BlockChange {
+            x: 8,
+            y: 64,
+            z: 8,
+            state_id: AIR,
+        });
+        finish(&mut e);
+        assert_eq!(e.get_block_light(9, 64, 8), 9, "light must enter opened path");
+        assert_eq!(block_along_x(&e, 4, 8), vec![14, 13, 12, 11, 10, 9, 8, 7]);
+    }
+
+    /// Same opening must not depend on draining the whole BFS in one step.
+    #[test]
+    fn opening_block_light_path_sliced_matches_continuous() {
+        let setup = |e: &mut LightEngine| {
+            let mut states = x_air_tunnel();
+            states[block_index(4, 64, 8)] = TORCH;
+            states[block_index(8, 64, 8)] = STONE;
+            load_section(e, 0, 4, 0, states);
+            finish(e);
+            e.push_event(LightEvent::BlockChange {
+                x: 8,
+                y: 64,
+                z: 8,
+                state_id: AIR,
+            });
+        };
+
+        let mut continuous = engine();
+        setup(&mut continuous);
+        finish(&mut continuous);
+        let want = block_along_x(&continuous, 4, 8);
+        assert_eq!(want[5], 9);
+
+        let mut sliced = engine();
+        setup(&mut sliced);
+        sliced.step_nodes(1);
+        finish(&mut sliced);
+        assert_eq!(block_along_x(&sliced, 4, 8), want, "sliced must match continuous (opened path)");
+    }
+
+    /// Known LIGHT_ONLY 14 arriving first must seed a later Loaded air neighbor.
+    #[test]
+    fn boundary_arrives_before_loaded_blocks() {
+        let mut e = engine();
+        let mut packed = pack_uniform_section(0);
+        set_nibble(&mut packed, 15, 0, 8, 14);
+        e.push_event(LightEvent::ServerLight {
+            sx: 0,
+            sy: 4,
+            sz: 0,
+            channel: LightChannel::Block,
+            kind: ServerLightKind::Data(packed),
+        });
+        finish(&mut e);
+        load_section(&mut e, 1, 4, 0, x_air_tunnel());
+        finish(&mut e);
+        assert_eq!(
+            e.get_block_light(16, 64, 8),
+            13,
+            "known boundary must seed newly loaded neighbor"
+        );
+        assert_eq!(e.get_block_light(15, 64, 8), 14, "LIGHT_ONLY stays read-only 14");
+    }
+
+    /// Reverse arrival (Loaded first, then LIGHT_ONLY) stays the existing seed path.
+    #[test]
+    fn loaded_blocks_then_boundary_still_seeds() {
+        let mut e = engine();
+        load_section(&mut e, 1, 4, 0, x_air_tunnel());
+        finish(&mut e);
+        let mut packed = pack_uniform_section(0);
+        set_nibble(&mut packed, 15, 0, 8, 14);
+        e.push_event(LightEvent::ServerLight {
+            sx: 0,
+            sy: 4,
+            sz: 0,
+            channel: LightChannel::Block,
+            kind: ServerLightKind::Data(packed),
+        });
+        finish(&mut e);
+        assert_eq!(e.get_block_light(16, 64, 8), 13);
+        assert_eq!(e.get_block_light(15, 64, 8), 14);
+    }
+
+    /// Unloading a Loaded torch column must decrease the dependent Loaded neighbor.
+    #[test]
+    fn removing_loaded_source_column() {
+        let mut e = engine();
+        load_section(&mut e, 0, 4, 0, x_air_tunnel());
+        let mut source = x_air_tunnel();
+        source[block_index(16, 64, 8)] = TORCH;
+        load_section(&mut e, 1, 4, 0, source);
+        finish(&mut e);
+        assert_eq!(e.get_block_light(15, 64, 8), 13);
+        assert_eq!(e.get_block_light(16, 64, 8), 14);
+
+        e.push_event(LightEvent::UnloadColumn { sx: 1, sz: 0 });
+        finish(&mut e);
+        assert_eq!(
+            e.get_block_light(15, 64, 8),
+            0,
+            "unloaded source must not persist in the remaining Loaded area"
+        );
+        assert_eq!(e.section_availability(1, 4, 0), SectionAvailability::Unloaded);
+    }
+
+    /// Unloaded support is unknown, not a known-zero wall: reloading the torch restores light.
+    #[test]
+    fn removing_then_reloading_source_column_restores() {
+        let mut e = engine();
+        load_section(&mut e, 0, 4, 0, x_air_tunnel());
+        let mut source = x_air_tunnel();
+        source[block_index(16, 64, 8)] = TORCH;
+        load_section(&mut e, 1, 4, 0, source.clone());
+        finish(&mut e);
+        e.push_event(LightEvent::UnloadColumn { sx: 1, sz: 0 });
+        finish(&mut e);
+        assert_eq!(e.get_block_light(15, 64, 8), 0);
+
+        load_section(&mut e, 1, 4, 0, source);
+        finish(&mut e);
+        assert_eq!(e.get_block_light(16, 64, 8), 14);
+        assert_eq!(e.get_block_light(15, 64, 8), 13);
+    }
+
+    #[test]
+    fn removing_loaded_source_column_sliced_matches_continuous() {
+        let setup = |e: &mut LightEngine| {
+            load_section(e, 0, 4, 0, x_air_tunnel());
+            let mut source = x_air_tunnel();
+            source[block_index(16, 64, 8)] = TORCH;
+            load_section(e, 1, 4, 0, source);
+            finish(e);
+            e.push_event(LightEvent::UnloadColumn { sx: 1, sz: 0 });
+        };
+
+        let mut continuous = engine();
+        setup(&mut continuous);
+        finish(&mut continuous);
+        assert_eq!(continuous.get_block_light(15, 64, 8), 0);
+
+        let mut sliced = engine();
+        setup(&mut sliced);
+        sliced.step_nodes(2);
+        finish(&mut sliced);
+        assert_eq!(
+            sliced.get_block_light(15, 64, 8),
+            continuous.get_block_light(15, 64, 8),
+            "sliced must match continuous (unload source column)"
+        );
+    }
+
+    /// Re-ingest that opens a path (stone → air) must pull from the already-lit Loaded neighbor.
+    #[test]
+    fn ingest_replacing_blocker_opens_block_path() {
+        let mut e = engine();
+        let mut west = x_air_tunnel();
+        west[block_index(15, 64, 8)] = TORCH;
+        load_section(&mut e, 0, 4, 0, west);
+        let mut east = x_air_tunnel();
+        east[block_index(16, 64, 8)] = STONE;
+        load_section(&mut e, 1, 4, 0, east);
+        finish(&mut e);
+        assert_eq!(e.get_block_light(15, 64, 8), 14);
+        assert_eq!(e.get_block_light(16, 64, 8), 0);
+        assert_eq!(e.get_block_light(17, 64, 8), 0);
+
+        load_section(&mut e, 1, 4, 0, x_air_tunnel());
+        finish(&mut e);
+        assert_eq!(e.get_block_light(16, 64, 8), 13, "ingest must wake the opened contact");
+        assert_eq!(e.get_block_light(17, 64, 8), 12);
+    }
+
+    /// Sky analog: unloading a LIGHT_ONLY sky support must darken the dependent Loaded air.
+    #[test]
+    fn removing_sky_boundary_column_clears_dependent() {
+        let mut e = engine();
+        load_section(&mut e, 0, 4, 0, x_air_tunnel());
+        set_sky_only_boundary(&mut e, 1, 4, 0, 15);
+        finish(&mut e);
+        assert_eq!(e.get_sky_light(16, 64, 8), 15, "LIGHT_ONLY sky stays 15");
+        assert_eq!(e.get_sky_light(15, 64, 8), 14);
+
+        e.push_event(LightEvent::UnloadColumn { sx: 1, sz: 0 });
+        finish(&mut e);
+        assert_eq!(
+            e.get_sky_light(15, 64, 8),
+            0,
+            "unloaded sky boundary must not leave residual sky"
+        );
+    }
+
+    /// Seed in the same batch as torch removal still erases the far section (Phase 1).
+    #[test]
+    fn seed_erases_cross_section_decrease() {
+        let mut e = engine();
+        load_section(&mut e, 0, 4, 0, x_air_tunnel());
+        load_section(&mut e, 1, 4, 0, x_air_tunnel());
+        e.push_event(LightEvent::BlockChange {
+            x: 15,
+            y: 64,
+            z: 8,
+            state_id: TORCH,
+        });
+        finish(&mut e);
+        e.push_event(LightEvent::BlockChange {
+            x: 15,
+            y: 64,
+            z: 8,
+            state_id: AIR,
+        });
+        e.push_event(LightEvent::ServerLight {
+            sx: 0,
+            sy: 4,
+            sz: 0,
+            channel: LightChannel::Block,
+            kind: ServerLightKind::Empty,
+        });
+        finish(&mut e);
+        assert_eq!(e.get_block_light(15, 64, 8), 0);
+        assert_eq!(e.get_block_light(16, 64, 8), 0);
     }
 }
