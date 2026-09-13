@@ -11,7 +11,13 @@ import { handleGetHeightmap, EMPTY_COLUMN_HEIGHTMAP_SENTINEL } from '../../meshe
 import { collectBlockEntityMetadata, type SignMeta, type HeadMeta, type BannerMeta } from '../../mesher-shared/blockEntityMetadata'
 import { SectionRequestTracker } from './mesherWasmRequestTracker'
 import { dropRawMapChunkOnLightOnlyReload, sectionYsForLightColumnDirty } from './mesherWasmLightDirty'
-import { applyPackedOwnerSectionsToLightCache, applyRawLightPacketToCaches, ownerDeltaSectionWorldYs } from './mesherWasmOwnerLight'
+import {
+  applyOwnerPublicationToColumnCaches,
+  applyRawLightPacketToCaches,
+  ownerDeltaSectionWorldYs,
+  revertDisplayToIncoming
+} from './mesherWasmOwnerLight'
+import { snapshotMeshVersions, validateOwnerPublicationMessage } from '../../lib/clientLightVersions'
 import {
   displayLightColumn,
   isLightSectionPresent,
@@ -158,6 +164,20 @@ const dirtyTraceMeta = new Map<
   string,
   { clientLightRequestId?: number; clientLightEditSeq?: number; clientLightSessionEpoch?: number }
 >()
+const dirtyVersionMeta = new Map<
+  string,
+  {
+    sessionEpoch?: number
+    columnIncarnation?: number
+    requestId?: number
+    topologyRevision?: number
+    neighborTopologyRevisions?: Array<{ key: string; topologyRevision: number }>
+  }
+>()
+const appliedOwnerLightVersion = new Map<string, number>()
+const columnIncarnation = new Map<string, number>()
+let ownerSessionEpoch = 0
+let rejectOwnerPublications = false
 // Kept in sync with `dirtySections` so column mode can filter outgoing
 // geometry/sectionFinished events to only the section keys requested by the
 // main thread, even though a full-column WASM call may generate more data.
@@ -294,6 +314,32 @@ const parsedV17Cache = new Map<string, ParsedV17Entry>()
 const updateLightV17Cache = new Map<string, UpdateLightColumnCache>()
 const incomingUpdateLightV17Cache = new Map<string, UpdateLightColumnCache>()
 const ownerOwnedLightColumns = new Set<string>()
+
+function takeGeometryVersionMeta(key: string, sx: number, sz: number) {
+  const lightMeta = dirtyLightMeta.get(key)
+  dirtyLightMeta.delete(key)
+  const traceMeta = dirtyTraceMeta.get(key)
+  dirtyTraceMeta.delete(key)
+  const job = dirtyVersionMeta.get(key)
+  dirtyVersionMeta.delete(key)
+  const columnKey = rawCacheKey(sx, sz)
+  const owned = ownerOwnedLightColumns.has(columnKey)
+  if (!job && !owned && !lightMeta) return { ...traceMeta }
+  return {
+    ...lightMeta,
+    ...traceMeta,
+    ...snapshotMeshVersions({
+      sessionEpoch: job?.sessionEpoch ?? ownerSessionEpoch,
+      columnIncarnation: columnIncarnation.get(columnKey) ?? job?.columnIncarnation ?? 1,
+      requestId: job?.requestId ?? 0,
+      topologyRevision: job?.topologyRevision ?? 1,
+      lightPublicationVersion: appliedOwnerLightVersion.get(columnKey) ?? lightMeta?.lightPublicationVersion ?? 0,
+      worldGeneration: lightMeta?.worldGeneration ?? 0,
+      neighborTopologyRevisions: job?.neighborTopologyRevisions ?? [],
+      meshMode: owned ? 'owner' : 'legacyBootstrap'
+    })
+  }
+}
 
 function displayCachedLight(entry: UpdateLightColumnCache | undefined): { skyLight: Uint8Array; blockLight: Uint8Array } | undefined {
   if (!entry) return undefined
@@ -899,24 +945,40 @@ const handleMessage = async (data: any) => {
           worldGeneration: data.worldGeneration
         })
       }
-      if (typeof data.clientLightRequestId === 'number' || typeof data.clientLightEditSeq === 'number') {
+      {
         const sectionHeight = getSectionHeight()
         const key = sectionKey(Math.floor(loc.x / 16) * 16, Math.floor(loc.y / sectionHeight) * sectionHeight, Math.floor(loc.z / 16) * 16)
-        dirtyTraceMeta.set(key, {
-          clientLightRequestId: data.clientLightRequestId,
-          clientLightEditSeq: data.clientLightEditSeq,
-          clientLightSessionEpoch: data.clientLightSessionEpoch
-        })
-        postClientLightTrace(postMessage, {
-          phase: 'mesherEnqueue',
-          sectionKey: key,
-          requestId: data.clientLightRequestId,
-          editSeq: data.clientLightEditSeq,
-          sessionEpoch: data.clientLightSessionEpoch,
-          lightVersion: data.lightPublicationVersion,
-          worldGeneration: data.worldGeneration,
-          workerIndex
-        })
+        if (
+          typeof data.sessionEpoch === 'number' ||
+          typeof data.columnIncarnation === 'number' ||
+          typeof data.requestId === 'number' ||
+          typeof data.topologyRevision === 'number'
+        ) {
+          dirtyVersionMeta.set(key, {
+            sessionEpoch: data.sessionEpoch,
+            columnIncarnation: data.columnIncarnation,
+            requestId: data.requestId,
+            topologyRevision: data.topologyRevision,
+            neighborTopologyRevisions: data.neighborTopologyRevisions
+          })
+        }
+        if (typeof data.clientLightRequestId === 'number' || typeof data.clientLightEditSeq === 'number') {
+          dirtyTraceMeta.set(key, {
+            clientLightRequestId: data.clientLightRequestId,
+            clientLightEditSeq: data.clientLightEditSeq,
+            clientLightSessionEpoch: data.clientLightSessionEpoch
+          })
+          postClientLightTrace(postMessage, {
+            phase: 'mesherEnqueue',
+            sectionKey: key,
+            requestId: data.clientLightRequestId,
+            editSeq: data.clientLightEditSeq,
+            sessionEpoch: data.clientLightSessionEpoch,
+            lightVersion: data.lightPublicationVersion,
+            worldGeneration: data.worldGeneration,
+            workerIndex
+          })
+        }
       }
       break
     }
@@ -945,12 +1007,18 @@ const handleMessage = async (data: any) => {
     }
     case 'unloadChunk': {
       invalidateConversion(data.x, data.z)
-      rawMapChunkCache.delete(rawCacheKey(data.x, data.z))
-      parsedV17Cache.delete(rawCacheKey(data.x, data.z))
-      updateLightV17Cache.delete(rawCacheKey(data.x, data.z))
-      parsedV16Cache.delete(rawCacheKey(data.x, data.z))
-      updateLightV16Cache.delete(rawCacheKey(data.x, data.z))
-      pendingLightDirtyColumns.delete(rawCacheKey(data.x, data.z))
+      const unloadKey = rawCacheKey(data.x, data.z)
+      rawMapChunkCache.delete(unloadKey)
+      parsedV17Cache.delete(unloadKey)
+      updateLightV17Cache.delete(unloadKey)
+      incomingUpdateLightV17Cache.delete(unloadKey)
+      parsedV16Cache.delete(unloadKey)
+      updateLightV16Cache.delete(unloadKey)
+      incomingUpdateLightV16Cache.delete(unloadKey)
+      ownerOwnedLightColumns.delete(unloadKey)
+      appliedOwnerLightVersion.delete(unloadKey)
+      columnIncarnation.set(unloadKey, (columnIncarnation.get(unloadKey) ?? 1) + 1)
+      pendingLightDirtyColumns.delete(unloadKey)
       if (!world) break
       world.removeColumn(data.x, data.z)
       world.customBlockModels.delete(`${data.x},${data.z}`)
@@ -962,6 +1030,7 @@ const handleMessage = async (data: any) => {
           dirtySections.delete(key)
           dirtyLightMeta.delete(key)
           dirtyTraceMeta.delete(key)
+          dirtyVersionMeta.delete(key)
         }
       }
       if (Object.keys(world.columns).length === 0) softCleanup()
@@ -1052,7 +1121,41 @@ const handleMessage = async (data: any) => {
       processUpdateLightV16(data.rawPacket as Uint8Array)
       break
     }
+    case 'setOwnerAcceptFence': {
+      if (typeof data.sessionEpoch === 'number') ownerSessionEpoch = data.sessionEpoch
+      rejectOwnerPublications = data.rejectOwnerPublications === true
+      break
+    }
+    case 'revertOwnerLightToIncoming': {
+      if (typeof data.sessionEpoch === 'number') ownerSessionEpoch = data.sessionEpoch
+      rejectOwnerPublications = true
+      for (const key of [...ownerOwnedLightColumns]) {
+        const [cx, cz] = key.split(',').map(Number)
+        const v16In = incomingUpdateLightV16Cache.get(key)
+        const v17In = incomingUpdateLightV17Cache.get(key)
+        const v16 = updateLightV16Cache.get(key)
+        const v17 = updateLightV17Cache.get(key)
+        if (v16 && !v17) {
+          const reverted = revertDisplayToIncoming({ incoming: v16In, display: v16 })
+          if (reverted.display) updateLightV16Cache.set(key, reverted.display)
+        } else {
+          const reverted = revertDisplayToIncoming({ incoming: v17In, display: v17 })
+          if (reverted.display) {
+            updateLightV17Cache.set(key, reverted.display)
+            syncV17LightToColumn(cx, cz)
+          }
+        }
+        ownerOwnedLightColumns.delete(key)
+        appliedOwnerLightVersion.delete(key)
+        invalidateConversion(cx, cz)
+      }
+      break
+    }
     case 'applyOwnerLightPublication': {
+      if (rejectOwnerPublications) break
+      if (typeof data.sessionEpoch === 'number' && ownerSessionEpoch !== 0 && data.sessionEpoch !== ownerSessionEpoch) break
+      const checked = validateOwnerPublicationMessage(data)
+      if (!checked.ok) break
       const sections = (data.sections ?? []) as Array<{ sx: number; sy: number; sz: number; blockLight: Uint8Array; skyLight?: Uint8Array }>
       const worldMinY = config?.worldMinY ?? 0
       const worldMaxY = config?.worldMaxY ?? 256
@@ -1065,12 +1168,34 @@ const handleMessage = async (data: any) => {
         const v16 = updateLightV16Cache.get(key)
         const v17 = updateLightV17Cache.get(key)
         if (v16 && !v17) {
-          updateLightV16Cache.set(key, applyPackedOwnerSectionsToLightCache(v16, sections, worldMinY, cx, cz, v16.numSections))
+          const applied = applyOwnerPublicationToColumnCaches({
+            incoming: incomingUpdateLightV16Cache.get(key),
+            display: v16,
+            sections,
+            worldMinY,
+            columnWorldX: cx,
+            columnWorldZ: cz,
+            numSections: v16.numSections
+          })
+          if (applied.incoming) incomingUpdateLightV16Cache.set(key, applied.incoming)
+          updateLightV16Cache.set(key, applied.display)
         } else {
-          updateLightV17Cache.set(key, applyPackedOwnerSectionsToLightCache(v17, sections, worldMinY, cx, cz, v17?.numSections ?? numSections))
+          const applied = applyOwnerPublicationToColumnCaches({
+            incoming: incomingUpdateLightV17Cache.get(key),
+            display: v17,
+            sections,
+            worldMinY,
+            columnWorldX: cx,
+            columnWorldZ: cz,
+            numSections: v17?.numSections ?? numSections
+          })
+          if (applied.incoming) incomingUpdateLightV17Cache.set(key, applied.incoming)
+          updateLightV17Cache.set(key, applied.display)
           syncV17LightToColumn(cx, cz, ownerDeltaSectionWorldYs(sections, cx, cz))
         }
         ownerOwnedLightColumns.add(key)
+        appliedOwnerLightVersion.set(key, typeof data.publicationVersion === 'number' ? data.publicationVersion : 0)
+        if (typeof data.sessionEpoch === 'number') ownerSessionEpoch = data.sessionEpoch
         invalidateConversion(cx, cz)
       }
       break
@@ -1080,6 +1205,11 @@ const handleMessage = async (data: any) => {
       dirtySections.clear()
       dirtyLightMeta.clear()
       dirtyTraceMeta.clear()
+      dirtyVersionMeta.clear()
+      appliedOwnerLightVersion.clear()
+      columnIncarnation.clear()
+      ownerSessionEpoch = 0
+      rejectOwnerPublications = false
       requestTracker.clear()
       clearConversionCache()
       rawMapChunkCache.clear()
@@ -1712,18 +1842,12 @@ function processColumnTick() {
           geometry.heads = heads
           geometry.banners = banners
         }
-        const lightMeta = dirtyLightMeta.get(key)
-        dirtyLightMeta.delete(key)
-        const traceMeta = dirtyTraceMeta.get(key)
-        dirtyTraceMeta.delete(key)
-        postMessage({ type: 'geometry', key, geometry, workerIndex, ...lightMeta, ...traceMeta }, transferable)
+        const versionMeta = takeGeometryVersionMeta(key, sx, sz)
+        postMessage({ type: 'geometry', key, geometry, workerIndex, ...versionMeta }, transferable)
       } else if (hadError) {
         const errorGeometry = makeEmptyColumnGeometry(sx, sy, sz, sectionHeight, true)
-        const lightMeta = dirtyLightMeta.get(key)
-        dirtyLightMeta.delete(key)
-        const traceMeta = dirtyTraceMeta.get(key)
-        dirtyTraceMeta.delete(key)
-        postMessage({ type: 'geometry', key, geometry: errorGeometry, workerIndex, ...lightMeta, ...traceMeta })
+        const versionMeta = takeGeometryVersionMeta(key, sx, sz)
+        postMessage({ type: 'geometry', key, geometry: errorGeometry, workerIndex, ...versionMeta })
       }
       // No targetChunk and no error: skip geometry message (mirrors
       // legacy behavior for sections whose chunk has been unloaded

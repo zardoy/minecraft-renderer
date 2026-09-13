@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { createEmptyLightCache, isLightSectionPresent, worldSectionMaskBit, type ParsedUpdateLight } from './mesherWasmLightMerge'
-import { applyPackedOwnerSectionsToLightCache, applyRawLightPacketToCaches, ownerDeltaSectionWorldYs } from './mesherWasmOwnerLight'
+import {
+  applyOwnerPublicationToColumnCaches,
+  applyPackedOwnerSectionsToLightCache,
+  applyRawLightPacketToCaches,
+  detachDisplayOnOwnerTakeover,
+  ownerDeltaSectionWorldYs,
+  revertDisplayToIncoming
+} from './mesherWasmOwnerLight'
 import { packUnpackedLightSection } from '../../mesher-shared/lightNibblePack'
 
 describe('applyPackedOwnerSectionsToLightCache', () => {
@@ -107,5 +114,61 @@ describe('applyRawLightPacketToCaches', () => {
     expect(result.dirtyDisplay).toBe(false)
     expect(result.display?.blockLight[4 * 4096]).toBe(3)
     expect(result.incoming.blockLight[4 * 4096]).toBe(9)
+  })
+})
+
+describe('owner takeover incoming/display split', () => {
+  it('clones display once so an in-place owner write does not change incoming server light', () => {
+    const incoming = createEmptyLightCache(16)
+    incoming.blockLight[4 * 4096] = 9
+    const aliased = detachDisplayOnOwnerTakeover({ incoming, display: incoming })
+    expect(aliased.display).not.toBe(aliased.incoming)
+
+    const unpacked = new Uint8Array(4096).fill(0)
+    unpacked[0] = 3
+    const packed = packUnpackedLightSection(unpacked)
+    const applied = applyOwnerPublicationToColumnCaches({
+      incoming: aliased.incoming,
+      display: aliased.display,
+      sections: [{ sx: 0, sy: 64, sz: 0, blockLight: packed }],
+      worldMinY: 0,
+      columnWorldX: 0,
+      columnWorldZ: 0,
+      numSections: 16
+    })
+    expect(applied.incoming?.blockLight[4 * 4096]).toBe(9)
+    expect(applied.display.blockLight[4 * 4096]).toBe(3)
+    expect(applied.display.blockLight).not.toBe(applied.incoming?.blockLight)
+  })
+
+  it('does not clone the full column on a second owner delta', () => {
+    const incoming = createEmptyLightCache(16)
+    incoming.blockLight[4 * 4096] = 9
+    const first = detachDisplayOnOwnerTakeover({ incoming, display: incoming })
+    const displayRef = first.display!.blockLight
+    const unpacked = new Uint8Array(4096).fill(0)
+    unpacked[0] = 3
+    const packed = packUnpackedLightSection(unpacked)
+    const second = applyOwnerPublicationToColumnCaches({
+      incoming: first.incoming,
+      display: first.display,
+      sections: [{ sx: 0, sy: 64, sz: 0, blockLight: packed }],
+      worldMinY: 0,
+      columnWorldX: 0,
+      columnWorldZ: 0,
+      numSections: 16
+    })
+    expect(second.display.blockLight).toBe(displayRef)
+  })
+
+  it('reverts display to last server incoming without zeroing omitted sections', () => {
+    const incoming = createEmptyLightCache(16)
+    incoming.blockLight[4 * 4096] = 9
+    const display = createEmptyLightCache(16)
+    display.blockLight[4 * 4096] = 3
+    const reverted = revertDisplayToIncoming({ incoming, display })
+    expect(reverted.display?.blockLight[4 * 4096]).toBe(9)
+    expect(reverted.incoming?.blockLight[4 * 4096]).toBe(9)
+    expect(isLightSectionPresent(reverted.incoming!.blockPresent, worldSectionMaskBit(0))).toBe(false)
   })
 })

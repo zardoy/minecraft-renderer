@@ -938,6 +938,12 @@ export class WorldRendererThree extends WorldRendererCommon {
         continue
       }
 
+      const commit = this.evaluateOwnerGeometry(update).accepted
+      if (!commit || update.geometry?.hadErrors) {
+        this.noteRejectedOwnerGeometry(update.key, undefined, { expectLaterFinished: false })
+        continue
+      }
+
       if (!this.chunkMeshManager.sectionHasRenderableContent(update.geometry)) {
         this.chunkMeshManager.releaseSection(update.key)
         continue
@@ -969,6 +975,11 @@ export class WorldRendererThree extends WorldRendererCommon {
       if (!this.loadedChunks[chunkKey] || !this.active) {
         this.pendingSectionUpdates.delete(data.key)
         this.pendingSectionBufferStartTimes.delete(data.key)
+        return
+      }
+
+      if (!this.evaluateOwnerGeometry(data).accepted || data.geometry?.hadErrors) {
+        this.noteRejectedOwnerGeometry(data.key, undefined, { expectLaterFinished: true })
         return
       }
 

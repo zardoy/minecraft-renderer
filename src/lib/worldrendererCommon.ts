@@ -54,6 +54,12 @@ import {
   skyLightEnabledFromRendererState,
   type OwnerPublicationApplyResult
 } from '../three/clientLightOwner'
+import {
+  nextTopologyRevision,
+  shouldDispatchCoveringRemesh,
+  validateMeshResultVersions,
+  type MeshSectionLightRequirement
+} from './clientLightVersions'
 import type { FeedChunkPacketPayload } from '../worldView/types'
 
 function mod(x, n) {
@@ -110,6 +116,12 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   customTexturesDataUrl = undefined as string | undefined
   workers: any[] = []
   private clientLightOwnerSession: ClientLightOwnerSession | null = null
+  private clientLightOwnerFailureReason: string | null = null
+  private clientLightOwnerFence = { sessionEpoch: 1, rejectStaleOwnerMeshes: false }
+  private columnIncarnationByColumn = new Map<string, number>()
+  private topologyRevisionBySection = new Map<string, number>()
+  private pendingCoveringBySection = new Map<string, { requiredVersion: number; worldGeneration: number }>()
+  private rejectedFinishedBySection = new Map<string, number>()
   private nextDirtyLightMeta: { lightPublicationVersion?: number; worldGeneration?: number } = {}
   viewerChunkPosition?: Vec3
   // Last viewer chunk-grid coords for which `onViewerChunkPositionChanged`
@@ -408,23 +420,79 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   private maybeSpawnClientLightOwner() {
     if (!shouldSpawnClientLightOwner(this.worldRendererConfig)) return
     if (this.clientLightOwnerSession) return
+    this.clientLightOwnerFence = { sessionEpoch: this.clientLightOwnerFence.sessionEpoch, rejectStaleOwnerMeshes: false }
+    this.clientLightOwnerFailureReason = null
     this.clientLightOwnerSession = new ClientLightOwnerSession(this.rendererLightCache, {
       createWorker: onMessage => initMesherWorker(onMessage, LIGHT_OWNER_WORKER_SCRIPT),
       worldMinY: this.worldSizeParams.minY,
       worldHeight: this.worldSizeParams.worldHeight,
       skyLightEnabled: skyLightEnabledFromRendererState(this.playerStateReactive),
-      onApplied: result => this.onClientLightOwnerPublication(result)
+      onApplied: result => this.onClientLightOwnerPublication(result),
+      onFailed: reason => this.onClientLightOwnerFailed(reason)
     })
+    this.postOwnerAcceptFence()
   }
 
   private terminateClientLightOwner() {
+    if (this.clientLightOwnerSession) {
+      this.revertOwnerLightToIncoming('owner-disabled')
+    }
     this.clientLightOwnerSession?.terminate()
     this.clientLightOwnerSession = null
     this.nextDirtyLightMeta = {}
   }
 
+  getClientLightOwnerFailureReason(): string | null {
+    return this.clientLightOwnerFailureReason ?? this.clientLightOwnerSession?.lastFailureReason ?? null
+  }
+
+  columnIncarnationFor(columnKey: string): number {
+    return this.columnIncarnationByColumn.get(columnKey) ?? 1
+  }
+
+  private onClientLightOwnerFailed(reason: string) {
+    this.clientLightOwnerFailureReason = reason
+    this.revertOwnerLightToIncoming(reason)
+  }
+
+  private revertOwnerLightToIncoming(reason: string) {
+    this.clientLightOwnerFence = {
+      sessionEpoch: this.clientLightOwnerFence.sessionEpoch + 1,
+      rejectStaleOwnerMeshes: true
+    }
+    this.clientLightOwnerFailureReason = reason
+    this.clientLightOwnerSession?.requiredLightBySection.clear()
+    const message = {
+      type: 'revertOwnerLightToIncoming' as const,
+      sessionEpoch: this.clientLightOwnerFence.sessionEpoch,
+      worldGeneration: this.clientLightOwnerSession?.gate.acceptedGeneration ?? 1
+    }
+    for (const worker of this.workers) {
+      worker.postMessage(message)
+      worker.postMessage({
+        type: 'setOwnerAcceptFence',
+        sessionEpoch: this.clientLightOwnerFence.sessionEpoch,
+        rejectOwnerPublications: true
+      })
+    }
+  }
+
+  private postOwnerAcceptFence() {
+    for (const worker of this.workers) {
+      worker.postMessage({
+        type: 'setOwnerAcceptFence',
+        sessionEpoch: this.clientLightOwnerFence.sessionEpoch,
+        rejectOwnerPublications: this.clientLightOwnerFence.rejectStaleOwnerMeshes
+      })
+    }
+  }
+
   private onClientLightOwnerPublication(result: OwnerPublicationApplyResult) {
     if (result.workerMessage) {
+      const workerMessage = {
+        ...result.workerMessage,
+        sessionEpoch: this.clientLightOwnerFence.sessionEpoch
+      }
       const targets = meshWorkerIndexesForDirtySections(
         result.dirtyMeshSections,
         this.workers.length,
@@ -432,7 +500,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       )
       const indexes = targets.length ? targets : this.workers.map((_, index) => index)
       for (const index of indexes) {
-        this.workers[index]?.postMessage(result.workerMessage)
+        this.workers[index]?.postMessage(workerMessage)
       }
     }
     this.nextDirtyLightMeta = {
@@ -441,6 +509,11 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     }
     try {
       for (const section of result.dirtyMeshSections) {
+        const key = `${section.sx},${section.sy},${section.sz}`
+        this.pendingCoveringBySection.set(key, {
+          requiredVersion: result.lastVersion,
+          worldGeneration: result.acceptedGeneration
+        })
         this.setSectionDirty(new Vec3(section.sx, section.sy, section.sz), true, true)
       }
     } finally {
@@ -507,6 +580,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.sectionDirtyCount.clear()
     this.sectionDirtyPendingArgs.clear()
     this.sectionDirtyLightMeta.clear()
+    this.pendingCoveringBySection.clear()
+    this.rejectedFinishedBySection.clear()
     this.reactiveState.world.mesherWork = false
   }
 
@@ -672,19 +747,78 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.isProcessingQueue = false
   }
 
-  private rejectStaleOwnerGeometry(data: MesherMainEvent & { worldGeneration?: number; lightPublicationVersion?: number }): boolean {
-    if (data.type !== 'geometry' || this.clientLightOwnerSession == null) return false
-    const required = this.clientLightOwnerSession.requiredLightForSection(data.key)
+  protected evaluateOwnerGeometry(data: {
+    type?: string
+    key?: string
+    worldGeneration?: number
+    lightPublicationVersion?: number
+    topologyRevision?: number
+    sessionEpoch?: number
+    columnIncarnation?: number
+    hadErrors?: boolean
+    meshMode?: 'owner' | 'legacyBootstrap'
+    geometry?: { hadErrors?: boolean }
+  }): { accepted: boolean } {
+    if (data.type !== 'geometry') return { accepted: true }
+    const ownerManaged = this.clientLightOwnerSession?.isReady === true || this.clientLightOwnerFence.rejectStaleOwnerMeshes
+    if (!ownerManaged && this.clientLightOwnerSession == null) return { accepted: true }
+    if (data.key) {
+      const versions = validateMeshResultVersions({ ...data, key: data.key })
+      if (!versions.ok && this.clientLightOwnerSession?.isReady) return { accepted: false }
+    }
+    const required = data.key ? this.clientLightOwnerSession?.requiredLightForSection(data.key) : undefined
+    const [x, , z] = (data.key ?? '').split(',').map(Number)
     const accepted = shouldAcceptMeshGeometry(
-      { worldGeneration: data.worldGeneration, lightPublicationVersion: data.lightPublicationVersion },
-      this.clientLightOwnerSession.gate,
-      required
+      {
+        worldGeneration: data.worldGeneration,
+        lightPublicationVersion: data.lightPublicationVersion,
+        topologyRevision: data.topologyRevision,
+        sessionEpoch: data.sessionEpoch,
+        columnIncarnation: data.columnIncarnation,
+        hadErrors: data.hadErrors ?? data.geometry?.hadErrors,
+        meshMode: data.meshMode
+      },
+      this.clientLightOwnerSession?.gate ?? { acceptedGeneration: 1, lastVersion: 0 },
+      required,
+      {
+        ownerManaged,
+        sessionEpoch: this.clientLightOwnerFence.sessionEpoch,
+        columnIncarnation: Number.isFinite(x) && Number.isFinite(z) ? this.columnIncarnationFor(`${x},${z}`) : undefined
+      }
     )
-    if (accepted) return false
+    return { accepted }
+  }
+
+  protected noteRejectedOwnerGeometry(
+    key: string,
+    required: MeshSectionLightRequirement | null | undefined,
+    opts?: { expectLaterFinished?: boolean }
+  ) {
+    if (opts?.expectLaterFinished !== false) {
+      this.rejectedFinishedBySection.set(key, (this.rejectedFinishedBySection.get(key) ?? 0) + 1)
+    }
+    required ??= this.clientLightOwnerSession?.requiredLightForSection(key)
+    if (required == null) return
+    const outstandingCount = this.sectionsWaiting.get(key) ?? 0
+    const pending = this.pendingCoveringBySection.get(key)
+    if (
+      !shouldDispatchCoveringRemesh({
+        required,
+        outstandingCount,
+        pendingCoveringVersion: pending?.requiredVersion,
+        pendingCoveringGeneration: pending?.worldGeneration
+      })
+    ) {
+      return
+    }
     const replacement = coveringReplacementForReject({ accepted: false, required })
-    const [x, y, z] = data.key.split(',').map(Number)
+    const [x, y, z] = key.split(',').map(Number)
     if (replacement && Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z) && this.loadedChunks[`${x},${z}`]) {
-      this.sectionDirtyLightMeta.set(data.key, replacement)
+      this.pendingCoveringBySection.set(key, {
+        requiredVersion: replacement.lightPublicationVersion,
+        worldGeneration: replacement.worldGeneration
+      })
+      this.sectionDirtyLightMeta.set(key, replacement)
       this.nextDirtyLightMeta = replacement
       try {
         this._dispatchDirtyImmediate(new Vec3(x, y, z), true, true)
@@ -692,6 +826,24 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         this.nextDirtyLightMeta = {}
       }
     }
+  }
+
+  private rejectStaleOwnerGeometry(
+    data: MesherMainEvent & {
+      worldGeneration?: number
+      lightPublicationVersion?: number
+      topologyRevision?: number
+      sessionEpoch?: number
+      columnIncarnation?: number
+      meshMode?: 'owner' | 'legacyBootstrap'
+    }
+  ): boolean {
+    if (data.type !== 'geometry') return false
+    const { accepted } = this.evaluateOwnerGeometry(data)
+    if (accepted) return false
+    this.noteRejectedOwnerGeometry(data.key, this.clientLightOwnerSession?.requiredLightForSection(data.key), {
+      expectLaterFinished: true
+    })
     return true
   }
 
@@ -748,6 +900,11 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     if (data.type === 'sectionFinished') {
       // on after load & unload section
       this.logWorkerWork(`<- ${data.workerIndex} sectionFinished ${data.key} ${JSON.stringify({ processTime: data.processTime })}`)
+      const rejectedFinishes = this.rejectedFinishedBySection.get(data.key) ?? 0
+      if (rejectedFinishes > 0) {
+        this.rejectedFinishedBySection.set(data.key, rejectedFinishes - 1)
+        return
+      }
       if (!this.sectionsWaiting.has(data.key)) {
         console.debug(`sectionFinished for non-outstanding section ${data.key} (viewDistance=${this.viewDistance})`)
         return
@@ -755,6 +912,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       this.sectionsWaiting.set(data.key, this.sectionsWaiting.get(data.key)! - 1)
       if (this.sectionsWaiting.get(data.key) === 0) {
         this.sectionsWaiting.delete(data.key)
+        this.pendingCoveringBySection.delete(data.key)
         this.finishedSections[data.key] = true
       }
 
@@ -1172,6 +1330,17 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.cameraCollisionBlockCache.removeColumn(x, z)
     this.rendererLightCache.removeColumn(x, z)
     this.clientLightOwnerSession?.onUnload(x, z)
+    const columnKey = `${x},${z}`
+    this.columnIncarnationByColumn.set(columnKey, this.columnIncarnationFor(columnKey) + 1)
+    for (const key of [...this.topologyRevisionBySection.keys()]) {
+      if (key.startsWith(`${x},`) && key.endsWith(`,${z}`)) this.topologyRevisionBySection.delete(key)
+    }
+    for (const key of [...this.pendingCoveringBySection.keys()]) {
+      if (key.startsWith(`${x},`) && key.endsWith(`,${z}`)) this.pendingCoveringBySection.delete(key)
+    }
+    for (const key of [...this.rejectedFinishedBySection.keys()]) {
+      if (key.startsWith(`${x},`) && key.endsWith(`,${z}`)) this.rejectedFinishedBySection.delete(key)
+    }
     const heightmapKey = `${Math.floor(x / 16)},${Math.floor(z / 16)}`
     delete this.reactiveState.world.heightmaps[heightmapKey]
 
@@ -1449,6 +1618,16 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       this.cameraCollisionBlockCache.setBlockStateId(pos.x, pos.y, pos.z, stateId)
       this.clientLightOwnerSession?.onBlockChange(pos.x, pos.y, pos.z, stateId)
     }
+    this.bumpTopologyRevision(pos)
+    if (this.neighborChunkUpdates) {
+      const sectionHeight = this.getSectionHeight()
+      if ((pos.x & 15) === 0) this.bumpTopologyRevision(pos.offset(-CHUNK_SIZE, 0, 0))
+      if ((pos.x & 15) === 15) this.bumpTopologyRevision(pos.offset(CHUNK_SIZE, 0, 0))
+      if ((pos.y & (sectionHeight - 1)) === 0) this.bumpTopologyRevision(pos.offset(0, -sectionHeight, 0))
+      if ((pos.y & (sectionHeight - 1)) === sectionHeight - 1) this.bumpTopologyRevision(pos.offset(0, sectionHeight, 0))
+      if ((pos.z & 15) === 0) this.bumpTopologyRevision(pos.offset(0, 0, -CHUNK_SIZE))
+      if ((pos.z & 15) === 15) this.bumpTopologyRevision(pos.offset(0, 0, CHUNK_SIZE))
+    }
     if (isClientLightTraceEnabled()) {
       const sectionHeight = this.getSectionHeight()
       const CHUNK_SIZE = 16
@@ -1647,6 +1826,30 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     }
   }
 
+  private bumpTopologyRevision(pos: Vec3) {
+    const CHUNK_SIZE = 16
+    const sectionHeight = this.getSectionHeight()
+    const key = `${Math.floor(pos.x / CHUNK_SIZE) * CHUNK_SIZE},${Math.floor(pos.y / sectionHeight) * sectionHeight},${Math.floor(pos.z / CHUNK_SIZE) * CHUNK_SIZE}`
+    this.topologyRevisionBySection.set(key, nextTopologyRevision(this.topologyRevisionBySection.get(key)))
+  }
+
+  private snapshotNeighborTopology(key: string): Array<{ key: string; topologyRevision: number }> {
+    const [x, y, z] = key.split(',').map(Number)
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return []
+    const sectionHeight = this.getSectionHeight()
+    const out: Array<{ key: string; topologyRevision: number }> = []
+    for (let dx = -16; dx <= 16; dx += 16) {
+      for (let dy = -sectionHeight; dy <= sectionHeight; dy += sectionHeight) {
+        for (let dz = -16; dz <= 16; dz += 16) {
+          const neighborKey = `${x + dx},${y + dy},${z + dz}`
+          const topologyRevision = this.topologyRevisionBySection.get(neighborKey)
+          if (topologyRevision != null) out.push({ key: neighborKey, topologyRevision })
+        }
+      }
+    }
+    return out
+  }
+
   /** Dispatch dirty message to worker without throttle (original logic) */
   private _dispatchDirtyImmediate(pos: Vec3, value: boolean, useChangeWorker: boolean) {
     this.reactiveState.world.mesherWork = true
@@ -1663,9 +1866,20 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.sectionDirtyLightMeta ??= new Map()
     const lightMeta =
       this.nextDirtyLightMeta.lightPublicationVersion != null ? this.nextDirtyLightMeta : this.sectionDirtyLightMeta.get(key)
+    const ownerManaged = this.clientLightOwnerSession != null || this.clientLightOwnerFence.rejectStaleOwnerMeshes
+    const requestId = ownerManaged || isClientLightTraceEnabled() ? nextClientLightRequestId() : undefined
     const traceIds = isClientLightTraceEnabled()
-      ? { ...currentClientLightTraceIds(), requestId: nextClientLightRequestId() }
+      ? { ...currentClientLightTraceIds(), requestId }
       : undefined
+    const ownerVersions = ownerManaged
+      ? {
+          sessionEpoch: this.clientLightOwnerFence.sessionEpoch,
+          columnIncarnation: this.columnIncarnationFor(`${Math.floor(pos.x / CHUNK_SIZE) * CHUNK_SIZE},${Math.floor(pos.z / CHUNK_SIZE) * CHUNK_SIZE}`),
+          requestId,
+          topologyRevision: this.topologyRevisionBySection.get(key) ?? 1,
+          neighborTopologyRevisions: this.snapshotNeighborTopology(key)
+        }
+      : {}
     const dirtyMessage = {
       type: 'dirty' as const,
       x: pos.x,
@@ -1679,6 +1893,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
             worldGeneration: lightMeta.worldGeneration
           }
         : {}),
+      ...ownerVersions,
       ...(traceIds
         ? {
             clientLightRequestId: traceIds.requestId,

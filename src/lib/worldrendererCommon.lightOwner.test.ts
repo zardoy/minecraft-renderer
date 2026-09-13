@@ -308,7 +308,7 @@ describe('WorldRendererCommon client light owner spawn', () => {
     }
   })
 
-  test('rejected stale owner geometry gets a covering remesh and does not close the wait', () => {
+  test('rejected stale owner geometry does not add a remesh when covering is already outstanding', () => {
     const renderer = createRenderer(true, 1)
     renderer.initWorkers(1)
     renderer.forceCallFromMesherReplayer = true
@@ -334,14 +334,121 @@ describe('WorldRendererCommon client light owner spawn', () => {
       key: '0,64,0',
       worldGeneration: 1,
       lightPublicationVersion: 1,
+      sessionEpoch: 1,
+      columnIncarnation: 1,
+      requestId: 1,
+      topologyRevision: 1,
       workerIndex: 0,
       geometry: {}
     })
     const dirties = mesh.postMessage.mock.calls.map(call => call[0]).filter((message: { type?: string }) => message?.type === 'dirty')
-    expect(dirties.some((message: { x?: number; y?: number; z?: number; lightPublicationVersion?: number }) => message.x === 0 && message.y === 64 && message.z === 0 && message.lightPublicationVersion === 2)).toBe(true)
+    expect(dirties).toHaveLength(0)
 
     renderer.handleMessage({ type: 'sectionFinished', key: '0,64,0', workerIndex: 0, processTime: 0 })
     expect(renderer.sectionsWaiting.get('0,64,0') ?? 0).toBeGreaterThan(0)
+  })
+
+  test('fast A→B→C drops B and keeps a single covering remesh for C', () => {
+    const renderer = createRenderer(true, 1)
+    renderer.initWorkers(1)
+    renderer.forceCallFromMesherReplayer = true
+    renderer.loadedChunks['0,0'] = true
+    const owner = renderer.getClientLightOwnerWorker() as { onmessage: ((event: MessageEvent) => void) | null }
+    owner.onmessage?.({ data: { type: 'ready' } } as MessageEvent)
+    const publish = (version: number) => {
+      owner.onmessage?.({
+        data: {
+          type: 'publication',
+          publication: {
+            worldGeneration: 1,
+            publicationVersion: version,
+            sections: [{ sx: 0, sy: 4, sz: 0, blockLight: new Uint8Array(2048) }]
+          }
+        }
+      } as MessageEvent)
+    }
+    publish(1)
+    publish(2)
+    publish(3)
+    const mesh = renderer.workers[0] as { postMessage: ReturnType<typeof vi.fn> }
+    mesh.postMessage.mockClear()
+    renderer.sectionsWaiting.set('0,64,0', 1)
+    renderer.handleMessage({
+      type: 'geometry',
+      key: '0,64,0',
+      worldGeneration: 1,
+      lightPublicationVersion: 2,
+      sessionEpoch: 1,
+      columnIncarnation: 1,
+      requestId: 2,
+      topologyRevision: 1,
+      workerIndex: 0,
+      geometry: {}
+    })
+    expect(mesh.postMessage.mock.calls.filter(call => call[0]?.type === 'dirty')).toHaveLength(0)
+    const accepted = (renderer as any).evaluateOwnerGeometry({
+      type: 'geometry',
+      key: '0,64,0',
+      worldGeneration: 1,
+      lightPublicationVersion: 3,
+      sessionEpoch: 1,
+      columnIncarnation: 1,
+      requestId: 3,
+      topologyRevision: 1,
+      geometry: {}
+    })
+    expect(accepted.accepted).toBe(true)
+  })
+
+  test('owner failure posts a revert to mesh workers and rejects later owner publications', () => {
+    const renderer = createRenderer(true, 1)
+    renderer.initWorkers(1)
+    renderer.forceCallFromMesherReplayer = true
+    const owner = renderer.getClientLightOwnerWorker() as { onmessage: ((event: MessageEvent) => void) | null }
+    owner.onmessage?.({ data: { type: 'ready' } } as MessageEvent)
+    const mesh = renderer.workers[0] as { postMessage: ReturnType<typeof vi.fn> }
+    mesh.postMessage.mockClear()
+    owner.onmessage?.({ data: { type: 'error', error: 'owner wasm crashed' } } as MessageEvent)
+    expect(renderer.hasClientLightOwner()).toBe(false)
+    expect((renderer as any).getClientLightOwnerFailureReason()).toBe('owner wasm crashed')
+    expect(mesh.postMessage.mock.calls.some(call => call[0]?.type === 'revertOwnerLightToIncoming')).toBe(true)
+    const late = (renderer as any).evaluateOwnerGeometry({
+      type: 'geometry',
+      key: '0,64,0',
+      worldGeneration: 1,
+      lightPublicationVersion: 9,
+      sessionEpoch: 1,
+      meshMode: 'owner',
+      geometry: {}
+    })
+    expect(late.accepted).toBe(false)
+  })
+
+  test('reload of the same column increments incarnation so a late reply is dropped', () => {
+    const renderer = createRenderer(true, 1)
+    renderer.initWorkers(1)
+    renderer.forceCallFromMesherReplayer = true
+    renderer.loadedChunks['0,0'] = true
+    const owner = renderer.getClientLightOwnerWorker() as { onmessage: ((event: MessageEvent) => void) | null }
+    owner.onmessage?.({ data: { type: 'ready' } } as MessageEvent)
+    const first = (renderer as any).columnIncarnationFor('0,0')
+    renderer.removeColumn(0, 0)
+    renderer.loadedChunks['0,0'] = true
+    const second = (renderer as any).columnIncarnationFor('0,0')
+    expect(second).toBeGreaterThan(first ?? 0)
+    const late = (renderer as any).evaluateOwnerGeometry({
+      type: 'geometry',
+      key: '0,64,0',
+      worldGeneration: 1,
+      lightPublicationVersion: 4,
+      sessionEpoch: 1,
+      columnIncarnation: first ?? 1,
+      requestId: 4,
+      topologyRevision: 1,
+      meshMode: 'owner',
+      geometry: {}
+    })
+    expect(late.accepted).toBe(false)
   })
 
   test('flag-on ready owner does not fan-out raw update_light to mesh workers', () => {

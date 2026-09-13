@@ -21,6 +21,12 @@ import {
   isClientLightTraceMessage,
   recordClientLightTrace
 } from '../lib/clientLightTrace'
+import {
+  shouldAcceptVersionedMesh,
+  validateOwnerPublicationMessage,
+  type MeshGeometryMode,
+  type MeshSectionLightRequirement as VersionedMeshRequirement
+} from '../lib/clientLightVersions'
 
 export { packUnpackedLightSection, unpackPackedLightSection } from '../mesher-shared/lightNibblePack'
 export { eventsFromParsedUpdateLight } from '../wasm-mesher/worker/updateLightToOwnerEvents'
@@ -72,10 +78,7 @@ export function dirtyMeshSectionsFromChangedLight(
   return out
 }
 
-export type MeshSectionLightRequirement = {
-  requiredVersion: number
-  worldGeneration: number
-}
+export type MeshSectionLightRequirement = VersionedMeshRequirement
 
 export function meshSectionKey(sx: number, sy: number, sz: number): string {
   return `${sx},${sy},${sz}`
@@ -124,15 +127,24 @@ export function coveringReplacementForReject(opts: {
 }
 
 export function shouldAcceptMeshGeometry(
-  mesh: { worldGeneration?: number; lightPublicationVersion?: number },
+  mesh: {
+    worldGeneration?: number
+    lightPublicationVersion?: number
+    topologyRevision?: number
+    sessionEpoch?: number
+    columnIncarnation?: number
+    hadErrors?: boolean
+    meshMode?: MeshGeometryMode
+  },
   _gate: PublicationGate,
-  required?: MeshSectionLightRequirement | null
+  required?: MeshSectionLightRequirement | null,
+  opts?: { ownerManaged?: boolean; sessionEpoch?: number; columnIncarnation?: number }
 ): boolean {
-  if (mesh.worldGeneration == null && mesh.lightPublicationVersion == null) return true
-  if (required == null) return true
-  if (mesh.worldGeneration != null && mesh.worldGeneration !== required.worldGeneration) return false
-  if (mesh.lightPublicationVersion != null && mesh.lightPublicationVersion < required.requiredVersion) return false
-  return true
+  return shouldAcceptVersionedMesh(mesh, required, {
+    ownerManaged: opts?.ownerManaged === true,
+    sessionEpoch: opts?.sessionEpoch,
+    columnIncarnation: opts?.columnIncarnation
+  })
 }
 
 export function eventsFromColumnLoad(opts: {
@@ -235,6 +247,7 @@ export type OwnerWorkerLightMessage = {
   type: 'applyOwnerLightPublication'
   worldGeneration: number
   publicationVersion: number
+  sessionEpoch?: number
   sections: Array<{ sx: number; sy: number; sz: number; blockLight: Uint8Array; skyLight?: Uint8Array }>
 }
 
@@ -252,6 +265,16 @@ export function applyOwnerPublicationToRenderer(
   gate: PublicationGate,
   coords: 'world' | 'section-index' = 'section-index'
 ): OwnerPublicationApplyResult {
+  const checked = validateOwnerPublicationMessage(publication)
+  if (!checked.ok) {
+    return {
+      applied: false,
+      lastVersion: gate.lastVersion,
+      acceptedGeneration: gate.acceptedGeneration,
+      dirtyMeshSections: [],
+      workerMessage: null
+    }
+  }
   const result = applyLightPublication(cache, publication, gate, coords)
   if (!result.applied) {
     return {
@@ -298,6 +321,7 @@ export class ClientLightOwnerSession {
   private stepScheduled = false
   private lifecycle: ClientLightOwnerLifecycle = 'starting'
   private lastOwnerEnqueueAt = 0
+  private failureReason: string | null = null
 
   constructor(
     private readonly cache: RendererLightCache,
@@ -307,9 +331,11 @@ export class ClientLightOwnerSession {
       worldHeight: number
       skyLightEnabled: boolean
       onApplied: (result: OwnerPublicationApplyResult) => void
+      onFailed?: (reason: string) => void
     }
   ) {
     this.onApplied = opts.onApplied
+    this.onFailed = opts.onFailed
     this.worker = opts.createWorker(data => this.onMessage(data))
     this.worker.onerror = event => {
       this.fail(event?.message || 'light owner worker error')
@@ -328,7 +354,12 @@ export class ClientLightOwnerSession {
     return this.lifecycle === 'ready'
   }
 
+  get lastFailureReason(): string | null {
+    return this.failureReason
+  }
+
   private readonly onApplied: (result: OwnerPublicationApplyResult) => void
+  private readonly onFailed?: (reason: string) => void
 
   pushEvent(event: LightOwnerEvent) {
     if (this.lifecycle === 'failed') return
@@ -384,10 +415,12 @@ export class ClientLightOwnerSession {
     this.worker.terminate()
   }
 
-  private fail(_reason: string) {
+  private fail(reason: string) {
     if (this.lifecycle === 'failed') return
     this.lifecycle = 'failed'
+    this.failureReason = reason
     this.stepScheduled = false
+    this.onFailed?.(reason)
   }
 
   private scheduleStep() {

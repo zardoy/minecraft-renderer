@@ -171,7 +171,7 @@ export function mergeUpdateLight(cache: UpdateLightColumnCache | undefined, pars
   return next
 }
 
-function cloneLightCache(cache: UpdateLightColumnCache): UpdateLightColumnCache {
+export function cloneLightCache(cache: UpdateLightColumnCache): UpdateLightColumnCache {
   return {
     numSections: cache.numSections,
     trustEdges: cache.trustEdges,

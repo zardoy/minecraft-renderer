@@ -207,6 +207,11 @@ describe('versioned mesh drop', () => {
     expect(shouldAcceptMeshGeometry({}, gate)).toBe(true)
   })
 
+  it('owner-managed path rejects unversioned geometry as current', () => {
+    const required = { requiredVersion: 5, worldGeneration: 2 }
+    expect(shouldAcceptMeshGeometry({}, gate, required, { ownerManaged: true })).toBe(false)
+  })
+
   it('accepts a mesh of an independent section after an unrelated later publication', () => {
     expect(shouldAcceptMeshGeometry({ worldGeneration: 1, lightPublicationVersion: 1 }, { acceptedGeneration: 1, lastVersion: 2 })).toBe(true)
   })
@@ -354,6 +359,24 @@ describe('apply publication → cache + dirty mesh + worker fan-out', () => {
     expect(result.workerMessage?.type).toBe('applyOwnerLightPublication')
     expect(result.workerMessage?.publicationVersion).toBe(3)
     expect(result.workerMessage?.sections[0]?.blockLight).toHaveLength(2048)
+  })
+
+  it('rejects a foreign publication with the wrong packed length and does not write the cache', () => {
+    const cache = new RendererLightCache(VERSION)
+    cache.setWorldBounds(0, 256)
+    const result = applyOwnerPublicationToRenderer(
+      cache,
+      {
+        worldGeneration: 1,
+        publicationVersion: 4,
+        sections: [{ sx: 0, sy: 4, sz: 0, blockLight: new Uint8Array(8) }]
+      },
+      { acceptedGeneration: 1, lastVersion: 0 },
+      'section-index'
+    )
+    expect(result.applied).toBe(false)
+    expect(result.workerMessage).toBeNull()
+    expect(cache.getLight(0, 64, 0).block).toBe(0)
   })
 })
 

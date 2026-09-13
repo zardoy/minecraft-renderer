@@ -1,4 +1,12 @@
-import { createEmptyLightCache, maskBitSet, mergeUpdateLight, worldSectionMaskBit, type ParsedUpdateLight, type UpdateLightColumnCache } from './mesherWasmLightMerge'
+import {
+  cloneLightCache,
+  createEmptyLightCache,
+  maskBitSet,
+  mergeUpdateLight,
+  worldSectionMaskBit,
+  type ParsedUpdateLight,
+  type UpdateLightColumnCache
+} from './mesherWasmLightMerge'
 import { unpackPackedLightSection } from '../../mesher-shared/lightNibblePack'
 
 export type OwnerPackedSection = {
@@ -68,5 +76,48 @@ export function applyRawLightPacketToCaches(opts: {
     return { incoming, display: opts.display, dirtyDisplay: false }
   }
   return { incoming, display: incoming, dirtyDisplay: true }
+}
+
+/** First owner takeover: clone incoming onto display once. Later deltas write display in place. */
+export function detachDisplayOnOwnerTakeover(opts: {
+  incoming: UpdateLightColumnCache | undefined
+  display: UpdateLightColumnCache | undefined
+}): { incoming: UpdateLightColumnCache | undefined; display: UpdateLightColumnCache | undefined } {
+  if (!opts.incoming) return { incoming: undefined, display: opts.display }
+  if (opts.display == null || opts.display === opts.incoming) {
+    return { incoming: opts.incoming, display: cloneLightCache(opts.incoming) }
+  }
+  return { incoming: opts.incoming, display: opts.display }
+}
+
+export function applyOwnerPublicationToColumnCaches(opts: {
+  incoming: UpdateLightColumnCache | undefined
+  display: UpdateLightColumnCache | undefined
+  sections: OwnerPackedSection[]
+  worldMinY: number
+  columnWorldX: number
+  columnWorldZ: number
+  numSections: number
+}): { incoming: UpdateLightColumnCache | undefined; display: UpdateLightColumnCache } {
+  const detached = detachDisplayOnOwnerTakeover({ incoming: opts.incoming, display: opts.display })
+  return {
+    incoming: detached.incoming,
+    display: applyPackedOwnerSectionsToLightCache(
+      detached.display,
+      opts.sections,
+      opts.worldMinY,
+      opts.columnWorldX,
+      opts.columnWorldZ,
+      opts.numSections
+    )
+  }
+}
+
+export function revertDisplayToIncoming(opts: {
+  incoming: UpdateLightColumnCache | undefined
+  display: UpdateLightColumnCache | undefined
+}): { incoming: UpdateLightColumnCache | undefined; display: UpdateLightColumnCache | undefined } {
+  if (!opts.incoming) return { incoming: undefined, display: opts.display }
+  return { incoming: opts.incoming, display: cloneLightCache(opts.incoming) }
 }
 
