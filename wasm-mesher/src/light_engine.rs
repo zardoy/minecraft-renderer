@@ -167,8 +167,12 @@ pub struct LightEngine {
     waiting_this_batch: usize,
     pending_sky_xz: VecDeque<(i32, i32)>,
     pending_sky_xz_set: HashSet<(i32, i32)>,
+    /// Derived sky-source lowest Y per world (x,z). Not a cell map and not a mirror world.
+    sky_source_lowest: HashMap<(i32, i32), i32>,
     #[cfg(test)]
     sky_column_updates: u32,
+    #[cfg(test)]
+    sky_source_scan_rows: std::cell::Cell<u64>,
 }
 
 impl LightEngine {
@@ -197,8 +201,11 @@ impl LightEngine {
             waiting_this_batch: 0,
             pending_sky_xz: VecDeque::new(),
             pending_sky_xz_set: HashSet::new(),
+            sky_source_lowest: HashMap::new(),
             #[cfg(test)]
             sky_column_updates: 0,
+            #[cfg(test)]
+            sky_source_scan_rows: std::cell::Cell::new(0),
         }
     }
 
@@ -213,6 +220,9 @@ impl LightEngine {
 
     /// Dimensions without sky light (nether/end) leave the sky channel uncomputed.
     pub fn set_sky_light_enabled(&mut self, enabled: bool) {
+        if self.sky_light_enabled != enabled {
+            self.sky_source_lowest.clear();
+        }
         self.sky_light_enabled = enabled;
     }
 
@@ -371,6 +381,27 @@ impl LightEngine {
         self.waiting_this_batch = self.pending.len();
     }
 
+    fn invalidate_sky_source_xz(&mut self, x: i32, z: i32) {
+        self.sky_source_lowest.remove(&(x, z));
+    }
+
+    fn invalidate_sky_source_section(&mut self, sx: i32, sz: i32) {
+        for lz in 0..16 {
+            for lx in 0..16 {
+                self.invalidate_sky_source_xz(sx * 16 + lx as i32, sz * 16 + lz as i32);
+            }
+        }
+    }
+
+    fn sky_source_lowest_y(&mut self, x: i32, z: i32) -> i32 {
+        if let Some(&cached) = self.sky_source_lowest.get(&(x, z)) {
+            return cached;
+        }
+        let computed = self.lowest_source_y(x, z);
+        self.sky_source_lowest.insert((x, z), computed);
+        computed
+    }
+
     fn mark_sky_column_dirty(&mut self, x: i32, z: i32) {
         if !self.sky_light_enabled {
             return;
@@ -421,6 +452,7 @@ impl LightEngine {
                         }
                     }
                 }
+                self.invalidate_sky_source_section(sx, sz);
                 self.wake_section_face_contacts(sx, sy, sz);
                 if self.sky_light_enabled {
                     self.mark_sky_columns_in_section(sx, sz);
@@ -437,6 +469,7 @@ impl LightEngine {
                     self.unload_section(sx, sy, sz);
                     return;
                 }
+                self.invalidate_sky_source_section(sx, sz);
                 self.ensure_section(sx, sy, sz, availability).availability = availability;
                 self.mark_changed(sx, sy, sz);
             }
@@ -451,6 +484,7 @@ impl LightEngine {
                 self.apply_block_change(x, y, z, state_id);
             }
             LightEvent::UnloadColumn { sx, sz } => {
+                self.invalidate_sky_source_section(sx, sz);
                 let keys: Vec<SectionKey> = self
                     .sections
                     .keys()
@@ -482,6 +516,7 @@ impl LightEngine {
             states[block_index(x, y, z)] = state_id;
         }
         let emission = self.emission_of(state_id);
+        self.invalidate_sky_source_xz(x, z);
         self.mark_changed(sx, sy, sz);
 
         if emission < old_light {
@@ -536,6 +571,9 @@ impl LightEngine {
                 LightChannel::Block => section.accepted_block = Some(packed.to_vec()),
                 LightChannel::Sky => section.accepted_sky = Some(packed.to_vec()),
             }
+        }
+        if channel == LightChannel::Sky {
+            self.invalidate_sky_source_section(sx, sz);
         }
 
         let availability = self.section_availability(sx, sy, sz);
@@ -594,6 +632,7 @@ impl LightEngine {
         if !self.sections.contains_key(&(sx, sy, sz)) {
             return;
         }
+        self.invalidate_sky_source_section(sx, sz);
         self.reconcile_unloading_section(sx, sy, sz);
         self.remove_section_storage(sx, sy, sz);
     }
@@ -853,7 +892,7 @@ impl LightEngine {
         {
             self.sky_column_updates = self.sky_column_updates.saturating_add(1);
         }
-        let lowest = self.lowest_source_y(x, z);
+        let lowest = self.sky_source_lowest_y(x, z);
         let max_y = self.world_min_y + self.world_height;
         for y in (self.world_min_y..max_y).rev() {
             if self.section_availability_at(x, y, z) == SectionAvailability::Loaded {
@@ -900,7 +939,7 @@ impl LightEngine {
         max_level
     }
 
-    fn sky_emission_at(&self, x: i32, y: i32, z: i32) -> u8 {
+    fn sky_emission_at(&mut self, x: i32, y: i32, z: i32) -> u8 {
         if self.is_sky_source(x, y, z) {
             15
         } else {
@@ -908,7 +947,7 @@ impl LightEngine {
         }
     }
 
-    fn is_sky_source(&self, x: i32, y: i32, z: i32) -> bool {
+    fn is_sky_source(&mut self, x: i32, y: i32, z: i32) -> bool {
         if !self.sky_light_enabled || !self.in_world(x, y, z) {
             return false;
         }
@@ -918,7 +957,7 @@ impl LightEngine {
         if self.sky_occludes(x, y, z) {
             return false;
         }
-        y >= self.lowest_source_y(x, z)
+        y >= self.sky_source_lowest_y(x, z)
     }
 
     /// Vanilla sky *source* stops on true light-blocking: getLightBlock() != 0.
@@ -937,6 +976,11 @@ impl LightEngine {
         let mut connected = false;
         let mut lowest = i32::MAX;
         for y in (self.world_min_y..=max_y).rev() {
+            #[cfg(test)]
+            {
+                self.sky_source_scan_rows
+                    .set(self.sky_source_scan_rows.get().saturating_add(1));
+            }
             match self.section_availability_at(x, y, z) {
                 SectionAvailability::Unloaded => {
                     if connected {
@@ -2883,5 +2927,89 @@ mod tests {
         finish(&mut e);
         assert_eq!(e.get_block_light(15, 64, 8), 0);
         assert_eq!(e.get_block_light(16, 64, 8), 0);
+    }
+
+    /// BFS must reuse derived (x,z) source-meta. One air column is 256 sticks × H=256.
+    #[test]
+    fn sky_source_scan_is_memoized_across_bfs() {
+        let mut e = LightEngine::new(0, 256);
+        let (emission, light_block) = default_test_tables();
+        e.set_light_tables(&emission, &light_block);
+        for sy in 0..16 {
+            load_section(&mut e, 0, sy, 0, air_section());
+        }
+        finish(&mut e);
+        assert_eq!(e.get_sky_light(8, 64, 8), 15);
+        let rows = e.sky_source_scan_rows.get();
+        assert!(
+            rows <= 256 * 256,
+            "source scan must be O(C×H), not O(P×H); rows={rows}"
+        );
+    }
+
+    /// Changing a blocking cell must drop stale source-meta; sky below the roof darkens.
+    #[test]
+    fn sky_source_memo_invalidates_on_occluding_block() {
+        let mut e = engine();
+        for sy in 0..16 {
+            load_section(&mut e, 0, sy, 0, air_section());
+        }
+        finish(&mut e);
+        assert_eq!(e.get_sky_light(8, 64, 8), 15);
+        let rows_before = e.sky_source_scan_rows.get();
+
+        e.push_event(LightEvent::BlockChange {
+            x: 8,
+            y: 100,
+            z: 8,
+            state_id: STONE,
+        });
+        finish(&mut e);
+        assert!(
+            e.get_sky_light(8, 64, 8) < 15,
+            "occluding block must cut the sky source"
+        );
+        assert!(
+            e.sky_source_scan_rows.get() > rows_before,
+            "block/shape change must invalidate derived source-meta"
+        );
+    }
+
+    /// Availability + unload are source-scan dependencies; sliced must match continuous.
+    #[test]
+    fn sky_source_memo_invalidates_on_availability_unload_sliced() {
+        let setup = |e: &mut LightEngine| {
+            load_section(e, 0, 4, 0, x_air_tunnel());
+            e.push_event(LightEvent::SetAvailability {
+                sx: 1,
+                sy: 4,
+                sz: 0,
+                availability: SectionAvailability::LightOnly,
+            });
+            e.push_event(LightEvent::ServerLight {
+                sx: 1,
+                sy: 4,
+                sz: 0,
+                channel: LightChannel::Sky,
+                kind: ServerLightKind::Data(pack_uniform_section(15)),
+            });
+            finish(e);
+            e.push_event(LightEvent::UnloadColumn { sx: 1, sz: 0 });
+        };
+
+        let mut continuous = engine();
+        setup(&mut continuous);
+        finish(&mut continuous);
+        let want = continuous.get_sky_light(15, 64, 8);
+
+        let mut sliced = engine();
+        setup(&mut sliced);
+        sliced.step_nodes(2);
+        finish(&mut sliced);
+        assert_eq!(
+            sliced.get_sky_light(15, 64, 8),
+            want,
+            "sliced must match continuous after sky-boundary unload"
+        );
     }
 }
