@@ -378,7 +378,7 @@ impl LightEngine {
         }
         self.check_dedup.clear();
         self.sky_check_dedup.clear();
-        self.waiting_this_batch = self.pending.len();
+        self.waiting_this_batch = column_admission_len(&self.pending);
     }
 
     fn invalidate_sky_source_xz(&mut self, x: i32, z: i32) {
@@ -1367,6 +1367,28 @@ fn now_ms() -> f64 {
     }
 }
 
+fn event_column(event: &LightEvent) -> (i32, i32) {
+    match event {
+        LightEvent::IngestBlockSection { sx, sz, .. }
+        | LightEvent::SetAvailability { sx, sz, .. }
+        | LightEvent::ServerLight { sx, sz, .. }
+        | LightEvent::UnloadColumn { sx, sz } => (*sx, *sz),
+        LightEvent::BlockChange { x, z, .. } => (x.div_euclid(16), z.div_euclid(16)),
+    }
+}
+
+/// FIFO prefix of one column's connected load/availability/seed/edit events.
+fn column_admission_len(pending: &VecDeque<LightEvent>) -> usize {
+    let Some(first) = pending.front() else {
+        return 0;
+    };
+    let column = event_column(first);
+    pending
+        .iter()
+        .take_while(|event| event_column(event) == column)
+        .count()
+}
+
 fn section_key(x: i32, y: i32, z: i32) -> SectionKey {
     (x.div_euclid(16), y.div_euclid(16), z.div_euclid(16))
 }
@@ -1672,6 +1694,21 @@ mod tests {
             guard += 1;
         }
         e.poll_completed_publication()
+    }
+
+    fn drain_until_publication(e: &mut LightEngine) -> Option<LightPublication> {
+        let mut guard = 0;
+        while guard < 64 {
+            let remaining = e.step(1_000.0);
+            if let Some(publication) = e.poll_completed_publication() {
+                return Some(publication);
+            }
+            if !remaining {
+                break;
+            }
+            guard += 1;
+        }
+        None
     }
 
     fn sample(e: &LightEngine) -> [u8; 3] {
@@ -2927,6 +2964,72 @@ mod tests {
         finish(&mut e);
         assert_eq!(e.get_block_light(15, 64, 8), 0);
         assert_eq!(e.get_block_light(16, 64, 8), 0);
+    }
+
+    /// Two loaded columns must not form one view-distance-sized transaction.
+    #[test]
+    fn batch_admits_one_column_not_entire_pending_queue() {
+        let mut e = engine();
+        for sy in 0..16 {
+            load_section(&mut e, 0, sy, 0, air_section());
+        }
+        for sy in 0..16 {
+            load_section(&mut e, 1, sy, 0, air_section());
+        }
+        let first = drain_until_publication(&mut e).expect("first column must publish before later pending columns");
+        assert!(
+            first.sections.iter().all(|section| section.sx == 0 && section.sz == 0),
+            "first publication must stay inside the admitted column"
+        );
+        assert!(
+            e.step(0.0),
+            "second column must remain queued after the first publication"
+        );
+        let second = finish(&mut e).expect("second column publishes after the first unit");
+        assert!(
+            second.sections.iter().all(|section| section.sx == 1 && section.sz == 0),
+            "second publication must be the next FIFO column"
+        );
+        assert_eq!(e.get_sky_light(8, 64, 8), 15);
+        assert_eq!(e.get_sky_light(24, 64, 8), 15);
+    }
+
+    /// Load/availability/seed of one column stay one unit so sources are not reconciled 16 times.
+    #[test]
+    fn batch_keeps_same_column_events_together() {
+        let mut e = engine();
+        for sy in 0..16 {
+            load_section(&mut e, 0, sy, 0, air_section());
+        }
+        let first = drain_until_publication(&mut e).expect("column load must publish");
+        assert!(!e.step(0.0), "a single column is one admission unit");
+        assert_eq!(first.sections.len(), 16);
+        assert!(first.sections.iter().all(|section| section.sx == 0 && section.sz == 0));
+    }
+
+    /// FIFO inside the unit: a later edit cannot enter an earlier foreign-column batch.
+    #[test]
+    fn batch_fifo_keeps_later_edit_after_prior_columns() {
+        let mut e = engine();
+        for sy in 0..16 {
+            load_section(&mut e, 0, sy, 0, air_section());
+        }
+        for sy in 0..16 {
+            load_section(&mut e, 1, sy, 0, air_section());
+        }
+        e.push_event(LightEvent::BlockChange {
+            x: 8,
+            y: 64,
+            z: 8,
+            state_id: STONE,
+        });
+        let first = drain_until_publication(&mut e).unwrap();
+        assert!(first.sections.iter().all(|section| section.sx == 0));
+        assert_eq!(e.get_sky_light(8, 64, 8), 15, "edit must not apply inside column 0 batch");
+        let second = drain_until_publication(&mut e).unwrap();
+        assert!(second.sections.iter().all(|section| section.sx == 1));
+        finish(&mut e);
+        assert!(e.get_sky_light(8, 64, 8) < 15, "edit applies only after prior FIFO columns");
     }
 
     /// BFS must reuse derived (x,z) source-meta. One air column is 256 sticks × H=256.
