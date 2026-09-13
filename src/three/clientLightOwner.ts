@@ -55,21 +55,62 @@ export function dirtyMeshSectionsFromChangedLight(
   }
   for (const section of changed) {
     const origin = coords === 'section-index' ? sectionIndexToWorldOrigin(section.sx, section.sy, section.sz) : section
-    add(origin.sx, origin.sy, origin.sz)
-    add(origin.sx - 16, origin.sy, origin.sz)
-    add(origin.sx + 16, origin.sy, origin.sz)
-    add(origin.sx, origin.sy - 16, origin.sz)
-    add(origin.sx, origin.sy + 16, origin.sz)
-    add(origin.sx, origin.sy, origin.sz - 16)
-    add(origin.sx, origin.sy, origin.sz + 16)
+    for (let dx = -16; dx <= 16; dx += 16) {
+      for (let dy = -16; dy <= 16; dy += 16) {
+        for (let dz = -16; dz <= 16; dz += 16) {
+          add(origin.sx + dx, origin.sy + dy, origin.sz + dz)
+        }
+      }
+    }
   }
   return out
 }
 
-export function shouldAcceptMeshGeometry(mesh: { worldGeneration?: number; lightPublicationVersion?: number }, gate: PublicationGate): boolean {
+export type MeshSectionLightRequirement = {
+  requiredVersion: number
+  worldGeneration: number
+}
+
+export function meshSectionKey(sx: number, sy: number, sz: number): string {
+  return `${sx},${sy},${sz}`
+}
+
+export function raiseRequiredLightRevisions(
+  required: Map<string, MeshSectionLightRequirement>,
+  dirtyMeshSections: Array<{ sx: number; sy: number; sz: number }>,
+  publicationVersion: number,
+  worldGeneration: number
+): void {
+  for (const section of dirtyMeshSections) {
+    const key = meshSectionKey(section.sx, section.sy, section.sz)
+    const prev = required.get(key)
+    if (
+      !prev ||
+      worldGeneration > prev.worldGeneration ||
+      (worldGeneration === prev.worldGeneration && publicationVersion > prev.requiredVersion)
+    ) {
+      required.set(key, { requiredVersion: publicationVersion, worldGeneration })
+    }
+  }
+}
+
+export function coveringReplacementForReject(opts: {
+  accepted: boolean
+  required?: MeshSectionLightRequirement | null
+}): { lightPublicationVersion: number; worldGeneration: number } | null {
+  if (opts.accepted || opts.required == null) return null
+  return { lightPublicationVersion: opts.required.requiredVersion, worldGeneration: opts.required.worldGeneration }
+}
+
+export function shouldAcceptMeshGeometry(
+  mesh: { worldGeneration?: number; lightPublicationVersion?: number },
+  _gate: PublicationGate,
+  required?: MeshSectionLightRequirement | null
+): boolean {
   if (mesh.worldGeneration == null && mesh.lightPublicationVersion == null) return true
-  if (mesh.worldGeneration != null && mesh.worldGeneration !== gate.acceptedGeneration) return false
-  if (mesh.lightPublicationVersion != null && mesh.lightPublicationVersion < gate.lastVersion) return false
+  if (required == null) return true
+  if (mesh.worldGeneration != null && mesh.worldGeneration !== required.worldGeneration) return false
+  if (mesh.lightPublicationVersion != null && mesh.lightPublicationVersion < required.requiredVersion) return false
   return true
 }
 
@@ -188,6 +229,7 @@ export function loadDefaultOwnerLightTables(): { emission: Uint8Array; opacity: 
 export class ClientLightOwnerSession {
   readonly worker: Worker
   gate: PublicationGate = { acceptedGeneration: 1, lastVersion: 0 }
+  readonly requiredLightBySection = new Map<string, MeshSectionLightRequirement>()
   private stepScheduled = false
   private lifecycle: ClientLightOwnerLifecycle = 'starting'
 
@@ -248,8 +290,16 @@ export class ClientLightOwnerSession {
     this.pushEvent(blockChangeEvent(x, y, z, stateId))
   }
 
+  requiredLightForSection(key: string): MeshSectionLightRequirement | undefined {
+    return this.requiredLightBySection.get(key)
+  }
+
   onUnload(chunkX: number, chunkZ: number) {
     this.pushEvent(eventsFromColumnUnload(chunkX, chunkZ))
+    for (const key of [...this.requiredLightBySection.keys()]) {
+      const [sx, , sz] = key.split(',').map(Number)
+      if (sx === chunkX && sz === chunkZ) this.requiredLightBySection.delete(key)
+    }
   }
 
   terminate() {
@@ -294,6 +344,7 @@ export class ClientLightOwnerSession {
     const result = applyOwnerPublicationToRenderer(this.cache, publication, this.gate, 'section-index')
     if (!result.applied) return
     this.gate = { acceptedGeneration: result.acceptedGeneration, lastVersion: result.lastVersion }
+    raiseRequiredLightRevisions(this.requiredLightBySection, result.dirtyMeshSections, result.lastVersion, result.acceptedGeneration)
     this.onApplied(result)
   }
 }

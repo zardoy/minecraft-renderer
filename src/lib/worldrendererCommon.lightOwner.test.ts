@@ -228,4 +228,89 @@ describe('WorldRendererCommon client light owner spawn', () => {
     expect(renderer.hasClientLightOwner()).toBe(false)
     expect(renderer.workers).toHaveLength(0)
   })
+
+  test('trailing dirty after an owner publication keeps the target revision', () => {
+    vi.useFakeTimers()
+    try {
+      const renderer = createRenderer(true, 1)
+      renderer.initWorkers(1)
+      renderer.forceCallFromMesherReplayer = true
+      const mesh = renderer.workers[0] as { postMessage: ReturnType<typeof vi.fn> }
+      mesh.postMessage.mockClear()
+      renderer.setSectionDirty(new Vec3(0, 64, 0), true, true)
+      ;(renderer as any).onClientLightOwnerPublication({
+        applied: true,
+        lastVersion: 7,
+        acceptedGeneration: 1,
+        dirtyMeshSections: [{ sx: 0, sy: 64, sz: 0 }],
+        workerMessage: null
+      })
+      vi.advanceTimersByTime(WorldRendererCommon['GEOMETRY_THROTTLE_DELAY'])
+      const dirties = mesh.postMessage.mock.calls.map(call => call[0]).filter((message: { type?: string }) => message?.type === 'dirty')
+      const trailing = dirties.at(-1)
+      expect(trailing?.lightPublicationVersion).toBe(7)
+      expect(trailing?.worldGeneration).toBe(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('rejected stale owner geometry gets a covering remesh and does not close the wait', () => {
+    const renderer = createRenderer(true, 1)
+    renderer.initWorkers(1)
+    renderer.forceCallFromMesherReplayer = true
+    renderer.loadedChunks['0,0'] = true
+    const owner = renderer.getClientLightOwnerWorker() as { onmessage: ((event: MessageEvent) => void) | null }
+    owner.onmessage?.({ data: { type: 'ready' } } as MessageEvent)
+    owner.onmessage?.({
+      data: {
+        type: 'publication',
+        publication: {
+          worldGeneration: 1,
+          publicationVersion: 2,
+          sections: [{ sx: 0, sy: 4, sz: 0, blockLight: new Uint8Array(2048) }]
+        }
+      }
+    } as MessageEvent)
+
+    const mesh = renderer.workers[0] as { postMessage: ReturnType<typeof vi.fn> }
+    mesh.postMessage.mockClear()
+    renderer.sectionsWaiting.set('0,64,0', 1)
+    renderer.handleMessage({
+      type: 'geometry',
+      key: '0,64,0',
+      worldGeneration: 1,
+      lightPublicationVersion: 1,
+      workerIndex: 0,
+      geometry: {}
+    })
+    const dirties = mesh.postMessage.mock.calls.map(call => call[0]).filter((message: { type?: string }) => message?.type === 'dirty')
+    expect(dirties.some((message: { x?: number; y?: number; z?: number; lightPublicationVersion?: number }) => message.x === 0 && message.y === 64 && message.z === 0 && message.lightPublicationVersion === 2)).toBe(true)
+
+    renderer.handleMessage({ type: 'sectionFinished', key: '0,64,0', workerIndex: 0, processTime: 0 })
+    expect(renderer.sectionsWaiting.get('0,64,0') ?? 0).toBeGreaterThan(0)
+  })
+
+  test('flag-on ready owner does not fan-out raw update_light to mesh workers', () => {
+    const renderer = createRenderer(true, 2)
+    renderer.initWorkers(2)
+    const owner = renderer.getClientLightOwnerWorker() as { onmessage: ((event: MessageEvent) => void) | null; postMessage: ReturnType<typeof vi.fn> }
+    owner.onmessage?.({ data: { type: 'ready' } } as MessageEvent)
+    owner.postMessage.mockClear()
+    for (const worker of renderer.workers) {
+      ;(worker as { postMessage: ReturnType<typeof vi.fn> }).postMessage.mockClear()
+    }
+    renderer.feedChunkPacket({
+      kind: 'setUpdateLightV17',
+      protocol: 756,
+      numSections: 16,
+      rawPacket: new Uint8Array([1, 2, 3])
+    })
+    expect(owner.postMessage.mock.calls.some(call => call[0]?.type === 'setUpdateLightV17')).toBe(true)
+    expect(
+      renderer.workers.every(worker =>
+        (worker as { postMessage: ReturnType<typeof vi.fn> }).postMessage.mock.calls.every(call => call[0]?.type !== 'setUpdateLightV17')
+      )
+    ).toBe(true)
+  })
 })

@@ -1,4 +1,4 @@
-import { createEmptyLightCache, maskBitSet, worldSectionMaskBit, type UpdateLightColumnCache } from './mesherWasmLightMerge'
+import { createEmptyLightCache, maskBitSet, mergeUpdateLight, worldSectionMaskBit, type ParsedUpdateLight, type UpdateLightColumnCache } from './mesherWasmLightMerge'
 import { unpackPackedLightSection } from '../../mesher-shared/lightNibblePack'
 
 export type OwnerPackedSection = {
@@ -36,6 +36,19 @@ export function applyPackedOwnerSectionsToLightCache(
     }
   }
   return next
+}
+
+export function applyRawLightPacketToCaches(opts: {
+  ownerOwnsColumn: boolean
+  incoming: UpdateLightColumnCache | undefined
+  display: UpdateLightColumnCache | undefined
+  parsed: ParsedUpdateLight
+}): { incoming: UpdateLightColumnCache; display: UpdateLightColumnCache | undefined; dirtyDisplay: boolean } {
+  const incoming = mergeUpdateLight(opts.incoming, opts.parsed)
+  if (opts.ownerOwnsColumn) {
+    return { incoming, display: opts.display, dirtyDisplay: false }
+  }
+  return { incoming, display: incoming, dirtyDisplay: true }
 }
 
 function cloneForOwnerWrite(cache: UpdateLightColumnCache): UpdateLightColumnCache {

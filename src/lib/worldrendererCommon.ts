@@ -36,6 +36,7 @@ import { RendererLightCache } from '../three/rendererLightCache'
 import {
   ClientLightOwnerSession,
   LIGHT_OWNER_WORKER_SCRIPT,
+  coveringReplacementForReject,
   shouldAcceptMeshGeometry,
   shouldSpawnClientLightOwner,
   skyLightEnabledFromRendererState,
@@ -167,6 +168,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   private sectionDirtyCount = new Map<string, number>()
   private sectionDirtyTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private sectionDirtyPendingArgs = new Map<string, { pos: Vec3; value: boolean; useChangeWorker: boolean }>()
+  private sectionDirtyLightMeta = new Map<string, { lightPublicationVersion: number; worldGeneration?: number }>()
   private static readonly GEOMETRY_THROTTLE_THRESHOLD = 1
   private static readonly GEOMETRY_THROTTLE_DELAY = 100 // ms
 
@@ -419,11 +421,13 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   feedChunkPacket(payload: FeedChunkPacketPayload) {
     const { kind, ...rest } = payload
     const message = { type: kind, ...rest }
+    const isLightPacket = kind === 'setUpdateLightV17' || kind === 'setUpdateLightV16'
+    if (this.clientLightOwnerSession && isLightPacket) {
+      this.clientLightOwnerSession.pushRawUpdateLight(kind, rest as Record<string, unknown>)
+      if (this.clientLightOwnerSession.isReady) return
+    }
     for (const worker of this.workers) {
       worker.postMessage(message)
-    }
-    if (this.clientLightOwnerSession && (kind === 'setUpdateLightV17' || kind === 'setUpdateLightV16')) {
-      this.clientLightOwnerSession.pushRawUpdateLight(kind, rest as Record<string, unknown>)
     }
   }
 
@@ -472,6 +476,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.sectionDirtyTimers.clear()
     this.sectionDirtyCount.clear()
     this.sectionDirtyPendingArgs.clear()
+    this.sectionDirtyLightMeta.clear()
     this.reactiveState.world.mesherWork = false
   }
 
@@ -637,17 +642,34 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.isProcessingQueue = false
   }
 
+  private rejectStaleOwnerGeometry(data: MesherMainEvent & { worldGeneration?: number; lightPublicationVersion?: number }): boolean {
+    if (data.type !== 'geometry' || this.clientLightOwnerSession == null) return false
+    const required = this.clientLightOwnerSession.requiredLightForSection(data.key)
+    const accepted = shouldAcceptMeshGeometry(
+      { worldGeneration: data.worldGeneration, lightPublicationVersion: data.lightPublicationVersion },
+      this.clientLightOwnerSession.gate,
+      required
+    )
+    if (accepted) return false
+    const replacement = coveringReplacementForReject({ accepted: false, required })
+    const [x, y, z] = data.key.split(',').map(Number)
+    if (replacement && Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z) && this.loadedChunks[`${x},${z}`]) {
+      this.sectionDirtyLightMeta.set(data.key, replacement)
+      this.nextDirtyLightMeta = replacement
+      try {
+        this._dispatchDirtyImmediate(new Vec3(x, y, z), true, true)
+      } finally {
+        this.nextDirtyLightMeta = {}
+      }
+    }
+    return true
+  }
+
   handleMessage(rawData: any) {
     const data = rawData as MesherMainEvent & { worldGeneration?: number; lightPublicationVersion?: number }
     if (!this.active) return
     this.mesherLogReader?.workerMessageReceived(data.type, data)
-    const staleOwnerGeometry =
-      data.type === 'geometry' &&
-      this.clientLightOwnerSession != null &&
-      !shouldAcceptMeshGeometry(
-        { worldGeneration: data.worldGeneration, lightPublicationVersion: data.lightPublicationVersion },
-        this.clientLightOwnerSession.gate
-      )
+    const staleOwnerGeometry = this.rejectStaleOwnerGeometry(data)
     if ((data.type !== 'geometry' || !this.debugStopGeometryUpdate) && !staleOwnerGeometry) {
       const start = performance.now()
       this.handleWorkerMessage(data as WorkerReceive)
@@ -1056,6 +1078,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         this.sectionDirtyTimers.delete(key)
         this.sectionDirtyCount.delete(key)
         this.sectionDirtyPendingArgs.delete(key)
+        this.sectionDirtyLightMeta.delete(key)
       }
     }
     for (let i = 0; i < this.workers.length; i++) {
@@ -1490,6 +1513,18 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     const sectionHeight = this.getSectionHeight()
     const key = `${Math.floor(pos.x / CHUNK_SIZE) * CHUNK_SIZE},${Math.floor(pos.y / sectionHeight) * sectionHeight},${Math.floor(pos.z / CHUNK_SIZE) * CHUNK_SIZE}`
 
+    this.sectionDirtyLightMeta ??= new Map()
+    if (this.nextDirtyLightMeta.lightPublicationVersion != null) {
+      const prev = this.sectionDirtyLightMeta.get(key)
+      const incomingVersion = this.nextDirtyLightMeta.lightPublicationVersion
+      if (!prev || incomingVersion >= prev.lightPublicationVersion) {
+        this.sectionDirtyLightMeta.set(key, {
+          lightPublicationVersion: incomingVersion,
+          worldGeneration: this.nextDirtyLightMeta.worldGeneration
+        })
+      }
+    }
+
     const currentCount = (this.sectionDirtyCount.get(key) ?? 0) + 1
     this.sectionDirtyCount.set(key, currentCount)
 
@@ -1546,6 +1581,9 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     // is always dispatched to the same worker
     const hash = this.getWorkerNumber(pos, useChangeWorker && (this.mesherLogger.active || this.worldRendererConfig.dedicatedChangeWorker))
     this.sectionsWaiting.set(key, (this.sectionsWaiting.get(key) ?? 0) + 1)
+    this.sectionDirtyLightMeta ??= new Map()
+    const lightMeta =
+      this.nextDirtyLightMeta.lightPublicationVersion != null ? this.nextDirtyLightMeta : this.sectionDirtyLightMeta.get(key)
     const dirtyMessage = {
       type: 'dirty' as const,
       x: pos.x,
@@ -1553,10 +1591,10 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       z: pos.z,
       value,
       config: this.getMesherConfig(),
-      ...(this.nextDirtyLightMeta.lightPublicationVersion != null
+      ...(lightMeta?.lightPublicationVersion != null
         ? {
-            lightPublicationVersion: this.nextDirtyLightMeta.lightPublicationVersion,
-            worldGeneration: this.nextDirtyLightMeta.worldGeneration
+            lightPublicationVersion: lightMeta.lightPublicationVersion,
+            worldGeneration: lightMeta.worldGeneration
           }
         : {})
     }
@@ -1645,6 +1683,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.sectionDirtyTimers.clear()
     this.sectionDirtyCount.clear()
     this.sectionDirtyPendingArgs.clear()
+    this.sectionDirtyLightMeta.clear()
 
     // Stop all workers
     for (const worker of this.workers) {

@@ -11,11 +11,10 @@ import { handleGetHeightmap, EMPTY_COLUMN_HEIGHTMAP_SENTINEL } from '../../meshe
 import { collectBlockEntityMetadata, type SignMeta, type HeadMeta, type BannerMeta } from '../../mesher-shared/blockEntityMetadata'
 import { SectionRequestTracker } from './mesherWasmRequestTracker'
 import { dropRawMapChunkOnLightOnlyReload, sectionYsForLightColumnDirty } from './mesherWasmLightDirty'
-import { applyPackedOwnerSectionsToLightCache } from './mesherWasmOwnerLight'
+import { applyPackedOwnerSectionsToLightCache, applyRawLightPacketToCaches } from './mesherWasmOwnerLight'
 import {
   displayLightColumn,
   isLightSectionPresent,
-  mergeUpdateLight,
   parsedUpdateLightFromWasm,
   worldSectionMaskBit,
   type UpdateLightColumnCache
@@ -59,7 +58,15 @@ function processUpdateLightV17(rawPacket: Uint8Array, numSections: number): void
     const x = (parsed.x as number) * 16
     const z = (parsed.z as number) * 16
     const key = rawCacheKey(x, z)
-    updateLightV17Cache.set(key, mergeUpdateLight(updateLightV17Cache.get(key), parsedUpdateLightFromWasm(parsed, numSections)))
+    const result = applyRawLightPacketToCaches({
+      ownerOwnsColumn: ownerOwnedLightColumns.has(key),
+      incoming: incomingUpdateLightV17Cache.get(key),
+      display: updateLightV17Cache.get(key),
+      parsed: parsedUpdateLightFromWasm(parsed, numSections)
+    })
+    incomingUpdateLightV17Cache.set(key, result.incoming)
+    if (!result.dirtyDisplay || !result.display) return
+    updateLightV17Cache.set(key, result.display)
     invalidateConversion(x, z)
     dirtyColumnSectionsForLightUpdate(x, z)
     const hadColumn = !!world?.getColumn(x, z)
@@ -85,7 +92,15 @@ function processUpdateLightV16(rawPacket: Uint8Array): void {
     const x = (parsed.x as number) * 16
     const z = (parsed.z as number) * 16
     const key = rawCacheKey(x, z)
-    updateLightV16Cache.set(key, mergeUpdateLight(updateLightV16Cache.get(key), parsedUpdateLightFromWasm(parsed, 16)))
+    const result = applyRawLightPacketToCaches({
+      ownerOwnsColumn: ownerOwnedLightColumns.has(key),
+      incoming: incomingUpdateLightV16Cache.get(key),
+      display: updateLightV16Cache.get(key),
+      parsed: parsedUpdateLightFromWasm(parsed, 16)
+    })
+    incomingUpdateLightV16Cache.set(key, result.incoming)
+    if (!result.dirtyDisplay || !result.display) return
+    updateLightV16Cache.set(key, result.display)
     invalidateConversion(x, z)
     dirtyColumnSectionsForLightUpdate(x, z)
   } catch (err) {
@@ -264,6 +279,8 @@ const parsedV17Cache = new Map<string, ParsedV17Entry>()
 // chunk origin — the next mesh tick of that column merges them in instead
 // of the sky=15/block=0 fallback. May arrive before or after `map_chunk`.
 const updateLightV17Cache = new Map<string, UpdateLightColumnCache>()
+const incomingUpdateLightV17Cache = new Map<string, UpdateLightColumnCache>()
+const ownerOwnedLightColumns = new Set<string>()
 
 function displayCachedLight(entry: UpdateLightColumnCache | undefined): { skyLight: Uint8Array; blockLight: Uint8Array } | undefined {
   if (!entry) return undefined
@@ -412,6 +429,7 @@ function drainPendingChunks() {
 // WASM export). Separate map for the same isolation reasons as
 // `parsedV16Cache` above.
 const updateLightV16Cache = new Map<string, UpdateLightColumnCache>()
+const incomingUpdateLightV16Cache = new Map<string, UpdateLightColumnCache>()
 
 // Mirrors `convertChunkToWasm`'s output (same layout: x + z*16 + y*256,
 // y outer) so it can be dropped straight into `generate_geometry`.
@@ -1012,6 +1030,7 @@ const handleMessage = async (data: any) => {
           updateLightV17Cache.set(key, applyPackedOwnerSectionsToLightCache(v17, sections, worldMinY, cx, cz, v17?.numSections ?? numSections))
           syncV17LightToColumn(cx, cz)
         }
+        ownerOwnedLightColumns.add(key)
         invalidateConversion(cx, cz)
       }
       break
@@ -1025,9 +1044,12 @@ const handleMessage = async (data: any) => {
       rawMapChunkCache.clear()
       parsedV17Cache.clear()
       updateLightV17Cache.clear()
+      incomingUpdateLightV17Cache.clear()
+      ownerOwnedLightColumns.clear()
       pendingLightDirtyColumns.clear()
       parsedV16Cache.clear()
       updateLightV16Cache.clear()
+      incomingUpdateLightV16Cache.clear()
       pendingChunks.clear()
       pendingNeighborHeal.clear()
       blindMeshWarnCount = 0

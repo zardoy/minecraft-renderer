@@ -119,7 +119,7 @@ describe('nether/end sky detection', () => {
 })
 
 describe('dirtyMeshSections stencil', () => {
-  it('includes the changed light section and its 6 face neighbors, not only changedLightSections', () => {
+  it('covers the 3x3x3 sample neighborhood, including the diagonal section', () => {
     const dirty = dirtyMeshSectionsFromChangedLight([{ sx: 0, sy: 64, sz: 0 }], { coords: 'world' })
     const keys = new Set(dirty.map(s => `${s.sx},${s.sy},${s.sz}`))
     expect(keys.has('0,64,0')).toBe(true)
@@ -129,7 +129,13 @@ describe('dirtyMeshSections stencil', () => {
     expect(keys.has('0,80,0')).toBe(true)
     expect(keys.has('0,64,-16')).toBe(true)
     expect(keys.has('0,64,16')).toBe(true)
-    expect(keys.size).toBe(7)
+    expect(keys.has('16,80,16')).toBe(true)
+    expect(keys.size).toBe(27)
+  })
+
+  it('schedules geometry (16,16,16) when light (0,0,0) changes — west-face corner samples (15,15,15)', () => {
+    const dirty = dirtyMeshSectionsFromChangedLight([{ sx: 0, sy: 0, sz: 0 }], { coords: 'world' })
+    expect(dirty.some(s => s.sx === 16 && s.sy === 16 && s.sz === 16)).toBe(true)
   })
 
   it('converts engine section-index publications to world origins before expanding', () => {
@@ -146,13 +152,18 @@ describe('versioned mesh drop', () => {
     expect(shouldAcceptMeshGeometry({}, gate)).toBe(true)
   })
 
-  it('drops a stale publication version or world generation', () => {
-    expect(shouldAcceptMeshGeometry({ worldGeneration: 1, lightPublicationVersion: 9 }, gate)).toBe(false)
-    expect(shouldAcceptMeshGeometry({ worldGeneration: 2, lightPublicationVersion: 4 }, gate)).toBe(false)
+  it('accepts a mesh of an independent section after an unrelated later publication', () => {
+    expect(shouldAcceptMeshGeometry({ worldGeneration: 1, lightPublicationVersion: 1 }, { acceptedGeneration: 1, lastVersion: 2 })).toBe(true)
   })
 
-  it('accepts geometry stamped with the current publication', () => {
-    expect(shouldAcceptMeshGeometry({ worldGeneration: 2, lightPublicationVersion: 5 }, gate)).toBe(true)
+  it('drops a mesh below the required revision of its own section', () => {
+    const required = { requiredVersion: 5, worldGeneration: 2 }
+    expect(shouldAcceptMeshGeometry({ worldGeneration: 1, lightPublicationVersion: 9 }, gate, required)).toBe(false)
+    expect(shouldAcceptMeshGeometry({ worldGeneration: 2, lightPublicationVersion: 4 }, gate, required)).toBe(false)
+  })
+
+  it('accepts geometry stamped with the required publication of its section', () => {
+    expect(shouldAcceptMeshGeometry({ worldGeneration: 2, lightPublicationVersion: 5 }, gate, { requiredVersion: 5, worldGeneration: 2 })).toBe(true)
   })
 })
 
