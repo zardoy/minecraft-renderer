@@ -11,7 +11,7 @@ import { handleGetHeightmap, EMPTY_COLUMN_HEIGHTMAP_SENTINEL } from '../../meshe
 import { collectBlockEntityMetadata, type SignMeta, type HeadMeta, type BannerMeta } from '../../mesher-shared/blockEntityMetadata'
 import { SectionRequestTracker } from './mesherWasmRequestTracker'
 import { dropRawMapChunkOnLightOnlyReload, sectionYsForLightColumnDirty } from './mesherWasmLightDirty'
-import { applyPackedOwnerSectionsToLightCache, applyRawLightPacketToCaches } from './mesherWasmOwnerLight'
+import { applyPackedOwnerSectionsToLightCache, applyRawLightPacketToCaches, ownerDeltaSectionWorldYs } from './mesherWasmOwnerLight'
 import {
   displayLightColumn,
   isLightSectionPresent,
@@ -308,7 +308,7 @@ function resolveUpdateLightV17Entry(
 }
 
 /** Write cached 1.17 `update_light` arrays into the worker prismarine column. */
-function syncV17LightToColumn(x: number, z: number): boolean {
+function syncV17LightToColumn(x: number, z: number, onlySectionWorldYs?: number[]): boolean {
   if (!world) return false
   const col = world.getColumn(x, z)
   const entry = updateLightV17Cache.get(rawCacheKey(x, z))
@@ -318,8 +318,11 @@ function syncV17LightToColumn(x: number, z: number): boolean {
   const minY = config?.worldMinY ?? 0
   const maxY = config?.worldMaxY ?? 256
   const { blockLight, skyLight, blockPresent, skyPresent } = entry
+  const onlyYs = onlySectionWorldYs && onlySectionWorldYs.length ? new Set(onlySectionWorldYs) : null
 
   for (let y = minY; y < maxY; y++) {
+    const sectionOriginY = Math.floor((y - minY) / CHUNK_SIZE) * CHUNK_SIZE + minY
+    if (onlyYs && !onlyYs.has(sectionOriginY)) continue
     const sectionIndex = Math.floor((y - minY) / CHUNK_SIZE)
     const skyAuthoritative = isLightSectionPresent(skyPresent, worldSectionMaskBit(sectionIndex))
     const blockAuthoritative = isLightSectionPresent(blockPresent, worldSectionMaskBit(sectionIndex))
@@ -1028,7 +1031,7 @@ const handleMessage = async (data: any) => {
           updateLightV16Cache.set(key, applyPackedOwnerSectionsToLightCache(v16, sections, worldMinY, cx, cz, v16.numSections))
         } else {
           updateLightV17Cache.set(key, applyPackedOwnerSectionsToLightCache(v17, sections, worldMinY, cx, cz, v17?.numSections ?? numSections))
-          syncV17LightToColumn(cx, cz)
+          syncV17LightToColumn(cx, cz, ownerDeltaSectionWorldYs(sections, cx, cz))
         }
         ownerOwnedLightColumns.add(key)
         invalidateConversion(cx, cz)

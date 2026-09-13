@@ -75,6 +75,21 @@ export function meshSectionKey(sx: number, sy: number, sz: number): string {
   return `${sx},${sy},${sz}`
 }
 
+/** Workers that mesh any dirty section; empty means fall back to every worker. */
+export function meshWorkerIndexesForDirtySections(
+  dirty: Array<{ sx: number; sy: number; sz: number }>,
+  workerCount: number,
+  indexForSection: (sx: number, sy: number, sz: number) => number
+): number[] {
+  if (workerCount <= 0 || dirty.length === 0) return []
+  const indexes = new Set<number>()
+  for (const section of dirty) {
+    const index = indexForSection(section.sx, section.sy, section.sz)
+    if (index >= 0 && index < workerCount) indexes.add(index)
+  }
+  return [...indexes]
+}
+
 export function raiseRequiredLightRevisions(
   required: Map<string, MeshSectionLightRequirement>,
   dirtyMeshSections: Array<{ sx: number; sy: number; sz: number }>,
@@ -378,7 +393,6 @@ export class ClientLightOwnerSession {
     }
     if (data.type === 'stepped') {
       if (data.publication) this.applyPublication(data.publication)
-      if (data.remaining) this.scheduleStep()
     }
     if (data.type === 'publication' && data.publication) this.applyPublication(data.publication)
   }

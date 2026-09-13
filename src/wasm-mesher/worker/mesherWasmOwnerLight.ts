@@ -9,6 +9,25 @@ export type OwnerPackedSection = {
   skyLight?: Uint8Array
 }
 
+/** World-origin Y of published sections that belong to this column. */
+export function ownerDeltaSectionWorldYs(
+  sections: Array<{ sx: number; sy: number; sz: number }>,
+  columnWorldX: number,
+  columnWorldZ: number
+): number[] {
+  const colSx = Math.floor(columnWorldX / 16) * 16
+  const colSz = Math.floor(columnWorldZ / 16) * 16
+  const ys: number[] = []
+  const seen = new Set<number>()
+  for (const section of sections) {
+    if (section.sx !== colSx || section.sz !== colSz) continue
+    if (seen.has(section.sy)) continue
+    seen.add(section.sy)
+    ys.push(section.sy)
+  }
+  return ys
+}
+
 /** Write owner packed 2048-byte channels into the worker's unpacked column cache. */
 export function applyPackedOwnerSectionsToLightCache(
   cache: UpdateLightColumnCache | undefined,
@@ -18,7 +37,7 @@ export function applyPackedOwnerSectionsToLightCache(
   columnWorldZ: number,
   numSections: number
 ): UpdateLightColumnCache {
-  const next = cache ? cloneForOwnerWrite(cache) : createEmptyLightCache(numSections)
+  const next = cache ?? createEmptyLightCache(numSections)
   const colSx = Math.floor(columnWorldX / 16) * 16
   const colSz = Math.floor(columnWorldZ / 16) * 16
   for (const section of sections) {
@@ -51,17 +70,3 @@ export function applyRawLightPacketToCaches(opts: {
   return { incoming, display: incoming, dirtyDisplay: true }
 }
 
-function cloneForOwnerWrite(cache: UpdateLightColumnCache): UpdateLightColumnCache {
-  return {
-    numSections: cache.numSections,
-    trustEdges: cache.trustEdges,
-    skyLight: new Uint8Array(cache.skyLight),
-    blockLight: new Uint8Array(cache.blockLight),
-    skyPresent: new Uint32Array(cache.skyPresent),
-    blockPresent: new Uint32Array(cache.blockPresent),
-    skyBelow: cache.skyBelow ? new Uint8Array(cache.skyBelow) : undefined,
-    skyAbove: cache.skyAbove ? new Uint8Array(cache.skyAbove) : undefined,
-    blockBelow: cache.blockBelow ? new Uint8Array(cache.blockBelow) : undefined,
-    blockAbove: cache.blockAbove ? new Uint8Array(cache.blockAbove) : undefined
-  }
-}

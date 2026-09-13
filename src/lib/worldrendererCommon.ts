@@ -37,6 +37,7 @@ import {
   ClientLightOwnerSession,
   LIGHT_OWNER_WORKER_SCRIPT,
   coveringReplacementForReject,
+  meshWorkerIndexesForDirtySections,
   shouldAcceptMeshGeometry,
   shouldSpawnClientLightOwner,
   skyLightEnabledFromRendererState,
@@ -401,8 +402,14 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
   private onClientLightOwnerPublication(result: OwnerPublicationApplyResult) {
     if (result.workerMessage) {
-      for (const worker of this.workers) {
-        worker.postMessage(result.workerMessage)
+      const targets = meshWorkerIndexesForDirtySections(
+        result.dirtyMeshSections,
+        this.workers.length,
+        (sx, sy, sz) => this.getWorkerNumber(new Vec3(sx, sy, sz), true)
+      )
+      const indexes = targets.length ? targets : this.workers.map((_, index) => index)
+      for (const index of indexes) {
+        this.workers[index]?.postMessage(result.workerMessage)
       }
     }
     this.nextDirtyLightMeta = {
@@ -1523,6 +1530,12 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
           worldGeneration: this.nextDirtyLightMeta.worldGeneration
         })
       }
+    }
+
+    if (this.nextDirtyLightMeta.lightPublicationVersion != null) {
+      this._dispatchDirtyImmediate(pos, value, useChangeWorker)
+      this.sectionDirtyPendingArgs.delete(key)
+      return
     }
 
     const currentCount = (this.sectionDirtyCount.get(key) ?? 0) + 1

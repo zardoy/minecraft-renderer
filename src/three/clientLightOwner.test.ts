@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import Chunks from 'prismarine-chunk'
 import MinecraftData from 'minecraft-data'
 import { Vec3 } from 'vec3'
@@ -12,6 +12,7 @@ import {
   ClientLightOwnerSession,
   dirtyMeshSectionsFromChangedLight,
   eventsFromColumnLoad,
+  meshWorkerIndexesForDirtySections,
   eventsFromColumnUnload,
   eventsFromParsedUpdateLight,
   packUnpackedLightSection,
@@ -107,6 +108,60 @@ describe('client light owner lifecycle', () => {
     deliver({ type: 'error', error: 'init failed' })
     deliver({ type: 'ready' })
     expect(session.state).toBe('failed')
+  })
+})
+
+describe('owner step scheduling', () => {
+  it('does not bounce remaining slices through main setTimeout', () => {
+    vi.useFakeTimers()
+    try {
+      const posts: Array<{ type?: string }> = []
+      let onMessage: (data: any) => void = () => {}
+      const worker = {
+        postMessage: (message: { type?: string }) => {
+          posts.push(message)
+        },
+        terminate: () => {},
+        onerror: null as ((event: ErrorEvent) => void) | null
+      }
+      const cache = new RendererLightCache(VERSION)
+      cache.setWorldBounds(0, 256)
+      const session = new ClientLightOwnerSession(cache, {
+        createWorker: handler => {
+          onMessage = handler
+          return worker as unknown as Worker
+        },
+        worldMinY: 0,
+        worldHeight: 256,
+        skyLightEnabled: true,
+        onApplied: () => {}
+      })
+      onMessage({ type: 'ready' })
+      posts.length = 0
+      session.pushEvent(blockChangeEvent(8, 64, 8, 1))
+      vi.runAllTimers()
+      expect(posts.filter(message => message.type === 'step')).toHaveLength(1)
+      posts.length = 0
+      onMessage({ type: 'stepped', remaining: true, publication: null })
+      vi.runAllTimers()
+      expect(posts.filter(message => message.type === 'step')).toHaveLength(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('selects only mesh workers that own dirty sections', () => {
+    expect(
+      meshWorkerIndexesForDirtySections(
+        [
+          { sx: 0, sy: 64, sz: 0 },
+          { sx: 16, sy: 64, sz: 0 },
+          { sx: 0, sy: 80, sz: 0 }
+        ],
+        8,
+        (sx, _sy, sz) => ((sx / 16 + sz / 16) % 8 + 8) % 8
+      ).sort((a, b) => a - b)
+    ).toEqual([0, 1])
   })
 })
 

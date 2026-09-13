@@ -21,8 +21,21 @@ let engine: WasmEngine | null = null
 let wasm: any = null
 let worldMinY = 0
 const pending: any[] = []
+let localContinue: ReturnType<typeof setTimeout> | null = null
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope
+
+function runOwnerStepSlice(budgetMs: number) {
+  localContinue = null
+  const remaining = engine?.step(budgetMs) ?? false
+  const publication = engine?.pollCompletedPublication() ?? null
+  ctx.postMessage({ type: 'stepped', remaining, publication })
+  if (remaining) {
+    localContinue = setTimeout(() => {
+      runOwnerStepSlice(budgetMs)
+    }, 0)
+  }
+}
 
 async function handle(data: any) {
   if (!data || typeof data !== 'object') return
@@ -69,9 +82,8 @@ async function handle(data: any) {
       break
     }
     case 'step': {
-      const remaining = engine?.step(data.budgetMs ?? 5) ?? false
-      const publication = engine?.pollCompletedPublication() ?? null
-      ctx.postMessage({ type: 'stepped', remaining, publication })
+      if (localContinue) break
+      runOwnerStepSlice(data.budgetMs ?? 5)
       break
     }
     case 'poll': {

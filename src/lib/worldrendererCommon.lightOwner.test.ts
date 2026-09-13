@@ -229,6 +229,59 @@ describe('WorldRendererCommon client light owner spawn', () => {
     expect(renderer.workers).toHaveLength(0)
   })
 
+  test('owner publication remesh does not wait the 100ms trailing window', () => {
+    vi.useFakeTimers()
+    try {
+      const renderer = createRenderer(true, 1)
+      renderer.initWorkers(1)
+      renderer.forceCallFromMesherReplayer = true
+      const mesh = renderer.workers[0] as { postMessage: ReturnType<typeof vi.fn> }
+      renderer.setSectionDirty(new Vec3(0, 64, 0), true, true)
+      mesh.postMessage.mockClear()
+      ;(renderer as any).onClientLightOwnerPublication({
+        applied: true,
+        lastVersion: 7,
+        acceptedGeneration: 1,
+        dirtyMeshSections: [{ sx: 0, sy: 64, sz: 0 }],
+        workerMessage: null
+      })
+      const immediate = mesh.postMessage.mock.calls.map(call => call[0]).filter((message: { type?: string }) => message?.type === 'dirty')
+      expect(immediate.some((message: { lightPublicationVersion?: number }) => message.lightPublicationVersion === 7)).toBe(true)
+      mesh.postMessage.mockClear()
+      vi.advanceTimersByTime(WorldRendererCommon['GEOMETRY_THROTTLE_DELAY'])
+      const trailing = mesh.postMessage.mock.calls.map(call => call[0]).filter((message: { type?: string }) => message?.type === 'dirty')
+      expect(trailing).toHaveLength(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('owner publication is posted only to mesh workers that own dirty sections', () => {
+    const renderer = createRenderer(true, 8)
+    renderer.initWorkers(8)
+    for (const worker of renderer.workers) {
+      ;(worker as { postMessage: ReturnType<typeof vi.fn> }).postMessage.mockClear()
+    }
+    const workerMessage = {
+      type: 'applyOwnerLightPublication',
+      worldGeneration: 1,
+      publicationVersion: 4,
+      sections: [{ sx: 0, sy: 64, sz: 0, blockLight: new Uint8Array(2048) }]
+    }
+    ;(renderer as any).onClientLightOwnerPublication({
+      applied: true,
+      lastVersion: 4,
+      acceptedGeneration: 1,
+      dirtyMeshSections: [{ sx: 0, sy: 64, sz: 0 }],
+      workerMessage
+    })
+    const posted = renderer.workers.map(worker =>
+      (worker as { postMessage: ReturnType<typeof vi.fn> }).postMessage.mock.calls.some(call => call[0]?.type === 'applyOwnerLightPublication')
+    )
+    expect(posted.filter(Boolean).length).toBeGreaterThan(0)
+    expect(posted.filter(Boolean).length).toBeLessThan(renderer.workers.length)
+  })
+
   test('trailing dirty after an owner publication keeps the target revision', () => {
     vi.useFakeTimers()
     try {

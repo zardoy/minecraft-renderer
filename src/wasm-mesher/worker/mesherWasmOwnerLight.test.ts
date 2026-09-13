@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createEmptyLightCache, isLightSectionPresent, worldSectionMaskBit, type ParsedUpdateLight } from './mesherWasmLightMerge'
-import { applyPackedOwnerSectionsToLightCache, applyRawLightPacketToCaches } from './mesherWasmOwnerLight'
+import { applyPackedOwnerSectionsToLightCache, applyRawLightPacketToCaches, ownerDeltaSectionWorldYs } from './mesherWasmOwnerLight'
 import { packUnpackedLightSection } from '../../mesher-shared/lightNibblePack'
 
 describe('applyPackedOwnerSectionsToLightCache', () => {
@@ -22,6 +22,44 @@ describe('applyPackedOwnerSectionsToLightCache', () => {
     expect(isLightSectionPresent(next.blockPresent, worldSectionMaskBit(4))).toBe(true)
     expect(next.blockLight[0]).toBe(0)
     expect(isLightSectionPresent(next.blockPresent, worldSectionMaskBit(0))).toBe(false)
+  })
+
+  it('writes a section delta in place without cloning the full column arrays', () => {
+    const cache = createEmptyLightCache(16)
+    cache.blockLight[0] = 4
+    cache.skyLight[0] = 7
+    const blockRef = cache.blockLight
+    const skyRef = cache.skyLight
+    const unpacked = new Uint8Array(4096).fill(0)
+    unpacked[0] = 9
+    const packed = packUnpackedLightSection(unpacked)
+    const next = applyPackedOwnerSectionsToLightCache(
+      cache,
+      [{ sx: 0, sy: 64, sz: 0, blockLight: packed, skyLight: packed }],
+      0,
+      0,
+      0,
+      16
+    )
+    expect(next.blockLight).toBe(blockRef)
+    expect(next.skyLight).toBe(skyRef)
+    expect(next.blockLight[0]).toBe(4)
+    expect(next.skyLight[0]).toBe(7)
+    expect(next.blockLight[4 * 4096]).toBe(9)
+  })
+
+  it('lists only the published section Y origins for a column', () => {
+    expect(
+      ownerDeltaSectionWorldYs(
+        [
+          { sx: 0, sy: 64, sz: 0 },
+          { sx: 16, sy: 64, sz: 0 },
+          { sx: 0, sy: 80, sz: 0 }
+        ],
+        0,
+        0
+      )
+    ).toEqual([64, 80])
   })
 })
 
