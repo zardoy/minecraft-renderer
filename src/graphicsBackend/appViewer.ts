@@ -24,6 +24,7 @@ import type {
 import { WorldView, WorldProvider, WorldViewWorker } from '../worldView'
 import { getInitialPlayerState } from './playerState'
 import { defaultWorldRendererConfig, defaultGraphicsBackendConfig, getDefaultRendererState, WorldRendererConfig } from './config'
+import { maybeEnableClientLightTraceFromLocation } from '../lib/clientLightTrace'
 import { PlayerStateReactive } from '../playerState/playerState'
 import { ResourcesManager, ResourcesManagerTransferred } from '../resourcesManager'
 import { preloadMesherWorkerScript } from './preloadWorkers'
@@ -113,6 +114,7 @@ export class AppViewer {
         // ignore malformed URL in non-browser runtimes
       }
     }
+    maybeEnableClientLightTraceFromLocation()
 
     const defaultState = getDefaultRendererState()
     this.rendererState = defaultState.reactive

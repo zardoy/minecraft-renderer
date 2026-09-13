@@ -30,6 +30,7 @@ import {
   countWorldColumns3x3,
   type PacketCaches
 } from './mesherWasmNeighborhood'
+import { enableClientLightTrace, postClientLightTrace, recordClientLightTrace, CLIENT_LIGHT_TRACE_MESSAGE } from '../../lib/clientLightTrace'
 
 let wasm: typeof import('../runtime-build/wasm_mesher.js') | null = null
 let wasmInitialized = false
@@ -153,6 +154,10 @@ let version = '1.16.5'
 let world: World // chunkKey -> chunk data
 let dirtySections = new Map<string, number>()
 const dirtyLightMeta = new Map<string, { lightPublicationVersion?: number; worldGeneration?: number }>()
+const dirtyTraceMeta = new Map<
+  string,
+  { clientLightRequestId?: number; clientLightEditSeq?: number; clientLightSessionEpoch?: number }
+>()
 // Kept in sync with `dirtySections` so column mode can filter outgoing
 // geometry/sectionFinished events to only the section keys requested by the
 // main thread, even though a full-column WASM call may generate more data.
@@ -182,6 +187,14 @@ const postMessage = (data: any, transferList: any[] = []) => {
 
 function drainQueue(from: number, to: number) {
   const messages = queuedMessages.slice(from, to)
+  const remaining = queuedMessages.length - to
+  const event = recordClientLightTrace({
+    phase: 'mesherFlush',
+    queueDepth: remaining
+  })
+  if (event) {
+    messages.push({ data: { type: CLIENT_LIGHT_TRACE_MESSAGE, event }, transferList: [] })
+  }
   global.postMessage(
     messages.map(m => m.data),
     messages.flatMap(m => m.transferList) as unknown as string
@@ -886,6 +899,29 @@ const handleMessage = async (data: any) => {
           worldGeneration: data.worldGeneration
         })
       }
+      if (typeof data.clientLightRequestId === 'number' || typeof data.clientLightEditSeq === 'number') {
+        const sectionHeight = getSectionHeight()
+        const key = sectionKey(Math.floor(loc.x / 16) * 16, Math.floor(loc.y / sectionHeight) * sectionHeight, Math.floor(loc.z / 16) * 16)
+        dirtyTraceMeta.set(key, {
+          clientLightRequestId: data.clientLightRequestId,
+          clientLightEditSeq: data.clientLightEditSeq,
+          clientLightSessionEpoch: data.clientLightSessionEpoch
+        })
+        postClientLightTrace(postMessage, {
+          phase: 'mesherEnqueue',
+          sectionKey: key,
+          requestId: data.clientLightRequestId,
+          editSeq: data.clientLightEditSeq,
+          sessionEpoch: data.clientLightSessionEpoch,
+          lightVersion: data.lightPublicationVersion,
+          worldGeneration: data.worldGeneration,
+          workerIndex
+        })
+      }
+      break
+    }
+    case 'clientLightTraceConfig': {
+      enableClientLightTrace(Boolean(data.enabled))
       break
     }
     case 'chunk': {
@@ -925,6 +961,7 @@ const handleMessage = async (data: any) => {
         if (sx === data.x && sz === data.z) {
           dirtySections.delete(key)
           dirtyLightMeta.delete(key)
+          dirtyTraceMeta.delete(key)
         }
       }
       if (Object.keys(world.columns).length === 0) softCleanup()
@@ -1042,6 +1079,7 @@ const handleMessage = async (data: any) => {
       world = undefined as any
       dirtySections.clear()
       dirtyLightMeta.clear()
+      dirtyTraceMeta.clear()
       requestTracker.clear()
       clearConversionCache()
       rawMapChunkCache.clear()
@@ -1189,6 +1227,11 @@ function processColumnTick() {
     g.sections.push({ key, x: sx, y: sy, z: sz, count })
   }
   dirtySections.clear()
+  postClientLightTrace(postMessage, {
+    phase: 'mesherStart',
+    queueDepth: groups.size,
+    workerIndex
+  })
 
   for (const group of groups.values()) {
     const { x, z, sections } = group
@@ -1671,12 +1714,16 @@ function processColumnTick() {
         }
         const lightMeta = dirtyLightMeta.get(key)
         dirtyLightMeta.delete(key)
-        postMessage({ type: 'geometry', key, geometry, workerIndex, ...lightMeta }, transferable)
+        const traceMeta = dirtyTraceMeta.get(key)
+        dirtyTraceMeta.delete(key)
+        postMessage({ type: 'geometry', key, geometry, workerIndex, ...lightMeta, ...traceMeta }, transferable)
       } else if (hadError) {
         const errorGeometry = makeEmptyColumnGeometry(sx, sy, sz, sectionHeight, true)
         const lightMeta = dirtyLightMeta.get(key)
         dirtyLightMeta.delete(key)
-        postMessage({ type: 'geometry', key, geometry: errorGeometry, workerIndex, ...lightMeta })
+        const traceMeta = dirtyTraceMeta.get(key)
+        dirtyTraceMeta.delete(key)
+        postMessage({ type: 'geometry', key, geometry: errorGeometry, workerIndex, ...lightMeta, ...traceMeta })
       }
       // No targetChunk and no error: skip geometry message (mirrors
       // legacy behavior for sections whose chunk has been unloaded
@@ -1724,6 +1771,11 @@ function processColumnTick() {
       }
     }
   }
+  postClientLightTrace(postMessage, {
+    phase: 'mesherEnd',
+    queueDepth: 0,
+    workerIndex
+  })
 }
 
 setInterval(async () => {

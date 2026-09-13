@@ -34,6 +34,17 @@ import { WorldRendererConfig } from '../graphicsBackend/config'
 import { CameraCollisionBlockCache } from '../three/cameraCollisionBlockCache'
 import { RendererLightCache } from '../three/rendererLightCache'
 import {
+  bumpClientLightTraceSessionEpoch,
+  currentClientLightTraceIds,
+  ingestRemoteClientLightTrace,
+  isClientLightTraceEnabled,
+  isClientLightTraceMessage,
+  maybeEnableClientLightTraceFromLocation,
+  nextClientLightEditSeq,
+  nextClientLightRequestId,
+  recordClientLightTrace
+} from './clientLightTrace'
+import {
   ClientLightOwnerSession,
   LIGHT_OWNER_WORKER_SCRIPT,
   coveringReplacementForReject,
@@ -245,6 +256,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.playerStateReactive = displayOptions.playerStateReactive!
     this.playerStateUtils = getPlayerStateUtils(this.playerStateReactive)
     this.reactiveState = displayOptions.rendererState!
+    maybeEnableClientLightTraceFromLocation()
+    if (isClientLightTraceEnabled()) bumpClientLightTraceSessionEpoch()
     // this.mesherLogReader = new MesherLogReader(this)
     this.renderUpdateEmitter.on('update', () => {
       const loadedChunks = Object.keys(this.finishedChunks).length
@@ -372,10 +385,20 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       this.workers.push(this.createMesherWorker())
     }
     this.maybeSpawnClientLightOwner()
+    this.syncClientLightTraceConfig()
   }
 
   hasClientLightOwner(): boolean {
     return this.clientLightOwnerSession?.isReady === true
+  }
+
+  private syncClientLightTraceConfig() {
+    const enabled = isClientLightTraceEnabled()
+    const message = { type: 'clientLightTraceConfig' as const, enabled }
+    for (const worker of this.workers) {
+      worker.postMessage(message)
+    }
+    this.clientLightOwnerSession?.worker.postMessage(message)
   }
 
   getClientLightOwnerWorker(): Worker | null {
@@ -673,16 +696,49 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   }
 
   handleMessage(rawData: any) {
-    const data = rawData as MesherMainEvent & { worldGeneration?: number; lightPublicationVersion?: number }
+    const data = rawData as MesherMainEvent & {
+      worldGeneration?: number
+      lightPublicationVersion?: number
+      clientLightRequestId?: number
+      clientLightEditSeq?: number
+      clientLightSessionEpoch?: number
+    }
     if (!this.active) return
+    if (isClientLightTraceMessage(rawData)) {
+      ingestRemoteClientLightTrace(rawData.event)
+      return
+    }
     this.mesherLogReader?.workerMessageReceived(data.type, data)
     const staleOwnerGeometry = this.rejectStaleOwnerGeometry(data)
+    if (staleOwnerGeometry && data.type === 'geometry') {
+      recordClientLightTrace({
+        phase: 'reject',
+        sectionKey: data.key,
+        requestId: data.clientLightRequestId,
+        editSeq: data.clientLightEditSeq,
+        sessionEpoch: data.clientLightSessionEpoch,
+        lightVersion: data.lightPublicationVersion,
+        worldGeneration: data.worldGeneration
+      })
+    }
     if ((data.type !== 'geometry' || !this.debugStopGeometryUpdate) && !staleOwnerGeometry) {
       const start = performance.now()
       this.handleWorkerMessage(data as WorkerReceive)
       this.workerCustomHandleTime += performance.now() - start
     }
     if (data.type === 'geometry') {
+      if (!staleOwnerGeometry) {
+        recordClientLightTrace({
+          phase: 'receive',
+          sectionKey: data.key,
+          requestId: data.clientLightRequestId,
+          editSeq: data.clientLightEditSeq,
+          sessionEpoch: data.clientLightSessionEpoch,
+          lightVersion: data.lightPublicationVersion,
+          worldGeneration: data.worldGeneration,
+          workerIndex: data.workerIndex
+        })
+      }
       this.logWorkerWork(() => `-> ${data.workerIndex} geometry ${data.key} ${JSON.stringify({ dataSize: JSON.stringify(data).length })}`)
       this.geometryReceiveCount[data.workerIndex] ??= 0
       this.geometryReceiveCount[data.workerIndex]++
@@ -1393,6 +1449,16 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       this.cameraCollisionBlockCache.setBlockStateId(pos.x, pos.y, pos.z, stateId)
       this.clientLightOwnerSession?.onBlockChange(pos.x, pos.y, pos.z, stateId)
     }
+    if (isClientLightTraceEnabled()) {
+      const sectionHeight = this.getSectionHeight()
+      const CHUNK_SIZE = 16
+      recordClientLightTrace({
+        phase: 'blockChange',
+        editSeq: nextClientLightEditSeq(),
+        sectionKey: `${Math.floor(pos.x / CHUNK_SIZE) * CHUNK_SIZE},${Math.floor(pos.y / sectionHeight) * sectionHeight},${Math.floor(pos.z / CHUNK_SIZE) * CHUNK_SIZE}`,
+        blockVersion: stateId
+      })
+    }
     this.setSectionDirty(pos, true, true)
     if (this.neighborChunkUpdates) {
       const CHUNK_SIZE = 16
@@ -1597,6 +1663,9 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.sectionDirtyLightMeta ??= new Map()
     const lightMeta =
       this.nextDirtyLightMeta.lightPublicationVersion != null ? this.nextDirtyLightMeta : this.sectionDirtyLightMeta.get(key)
+    const traceIds = isClientLightTraceEnabled()
+      ? { ...currentClientLightTraceIds(), requestId: nextClientLightRequestId() }
+      : undefined
     const dirtyMessage = {
       type: 'dirty' as const,
       x: pos.x,
@@ -1609,7 +1678,25 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
             lightPublicationVersion: lightMeta.lightPublicationVersion,
             worldGeneration: lightMeta.worldGeneration
           }
+        : {}),
+      ...(traceIds
+        ? {
+            clientLightRequestId: traceIds.requestId,
+            clientLightEditSeq: traceIds.editSeq,
+            clientLightSessionEpoch: traceIds.sessionEpoch
+          }
         : {})
+    }
+    if (traceIds) {
+      recordClientLightTrace({
+        phase: 'mesherEnqueue',
+        sectionKey: key,
+        requestId: traceIds.requestId,
+        editSeq: traceIds.editSeq,
+        sessionEpoch: traceIds.sessionEpoch,
+        lightVersion: lightMeta?.lightPublicationVersion,
+        worldGeneration: lightMeta?.worldGeneration
+      })
     }
     if (this.forceCallFromMesherReplayer) {
       this.workers[hash].postMessage(dirtyMessage)

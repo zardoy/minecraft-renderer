@@ -63,14 +63,21 @@ export function pendingSectionGroups(pendingKeys: Iterable<string>, sectionHeigh
   return groups
 }
 
+export type PendingFlushReason = 'group-complete' | 'deadline'
+
+export type ReadySectionFlush = {
+  key: string
+  reason: PendingFlushReason
+}
+
 /**
  * Keys to install this frame. Either a group is complete (no member still
  * waiting on a visible neighbour) or its oldest member has run out of buffer
  * time — in both cases the whole group goes out together.
  */
-export function selectReadySectionUpdates(query: PendingFlushQuery): string[] {
+export function selectReadySectionFlushes(query: PendingFlushQuery): ReadySectionFlush[] {
   const { now, maxBufferMs, sectionHeight } = query
-  const ready: string[] = []
+  const ready: ReadySectionFlush[] = []
 
   for (const group of pendingSectionGroups(query.pendingKeys, sectionHeight)) {
     const members = new Set(group)
@@ -97,8 +104,13 @@ export function selectReadySectionUpdates(query: PendingFlushQuery): string[] {
     }
 
     if (waitingOnNeighbor) continue
-    ready.push(...group)
+    const reason: PendingFlushReason = expired ? 'deadline' : 'group-complete'
+    for (const key of group) ready.push({ key, reason })
   }
 
   return ready
+}
+
+export function selectReadySectionUpdates(query: PendingFlushQuery): string[] {
+  return selectReadySectionFlushes(query).map(item => item.key)
 }

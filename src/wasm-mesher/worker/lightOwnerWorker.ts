@@ -7,6 +7,7 @@
 
 import type { LightOwnerEvent, LightPublication } from '../../three/lightOwnerHost'
 import { eventsFromWasmUpdateLight } from './updateLightToOwnerEvents'
+import { enableClientLightTrace, postClientLightTrace } from '../../lib/clientLightTrace'
 
 type WasmEngine = {
   setLightTables(emission: Uint8Array, opacity: Uint8Array): void
@@ -30,6 +31,14 @@ function runOwnerStepSlice(budgetMs: number) {
   const remaining = engine?.step(budgetMs) ?? false
   const publication = engine?.pollCompletedPublication() ?? null
   ctx.postMessage({ type: 'stepped', remaining, publication })
+  if (publication) {
+    postClientLightTrace(message => ctx.postMessage(message), {
+      phase: 'ownerComplete',
+      lightVersion: publication.publicationVersion,
+      worldGeneration: publication.worldGeneration,
+      queueDepth: remaining ? 1 : 0
+    })
+  }
   if (remaining) {
     localContinue = setTimeout(() => {
       runOwnerStepSlice(budgetMs)
@@ -63,6 +72,22 @@ async function handle(data: any) {
     }
     case 'pushEvent': {
       engine?.pushEvent(data.event)
+      const event = data.event as LightOwnerEvent | undefined
+      const currentColumn =
+        event && 'x' in event && typeof event.x === 'number'
+          ? `${Math.floor(event.x / 16)},${Math.floor((event as { z: number }).z / 16)}`
+          : event && 'sx' in event && typeof event.sx === 'number'
+            ? `${event.sx},${(event as { sz: number }).sz}`
+            : undefined
+      postClientLightTrace(message => ctx.postMessage(message), {
+        phase: 'ownerAdmit',
+        currentColumn,
+        queueDepth: pending.length
+      })
+      break
+    }
+    case 'clientLightTraceConfig': {
+      enableClientLightTrace(Boolean(data.enabled))
       break
     }
     case 'setUpdateLightV17': {

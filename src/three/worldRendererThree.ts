@@ -39,7 +39,8 @@ import { FireworksManager } from './fireworks'
 import { SceneOrigin } from './sceneOrigin'
 import { downloadWorldGeometry } from './worldGeometryExport'
 import { ChunkMeshManager } from './chunkMeshManager'
-import { selectReadySectionUpdates } from './pendingSectionFlush'
+import { selectReadySectionFlushes } from './pendingSectionFlush'
+import { recordClientLightTrace } from '../lib/clientLightTrace'
 import { EntityLightController } from './entityLightController'
 import { raycastVoxelSolid } from './thirdPersonVoxelRaycast'
 import type { RendererModuleManifest, RegisteredModule, RendererModuleController } from './rendererModuleSystem'
@@ -573,6 +574,9 @@ export class WorldRendererThree extends WorldRendererCommon {
       this.cursorBlock.setHighlightCursorBlock(value ? new Vec3(value.x, value.y, value.z) : null, value?.shapes)
     })
     this.onReactivePlayerStateUpdated('diggingBlock', value => {
+      if (value && (value.stage == null || value.stage === 0)) {
+        recordClientLightTrace({ phase: 'inputClick', sectionKey: `${value.x},${value.y},${value.z}` })
+      }
       this.cursorBlock.updateBreakAnimation(value ? { x: value.x, y: value.y, z: value.z } : undefined, value?.stage ?? null, value?.mergedShape)
     })
     this.onReactivePlayerStateUpdated('perspective', value => {
@@ -904,7 +908,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     // Face-adjacent buffered sections are installed as one group: a lone
     // install would show the neighbour's faces still culled against the old
     // block state, i.e. a see-through hole (sky flash) on dig/place.
-    const ready = selectReadySectionUpdates({
+    const ready = selectReadySectionFlushes({
       pendingKeys: this.pendingSectionUpdates.keys(),
       startedAt: key => this.pendingSectionBufferStartTimes.get(key),
       now,
@@ -916,10 +920,15 @@ export class WorldRendererThree extends WorldRendererCommon {
 
     if (ready.length === 0) return
 
-    for (const key of ready) {
+    for (const { key, reason } of ready) {
       const update = this.pendingSectionUpdates.get(key)!
       this.pendingSectionUpdates.delete(key)
       this.pendingSectionBufferStartTimes.delete(key)
+      recordClientLightTrace({
+        phase: 'flush',
+        sectionKey: key,
+        flushReason: reason
+      })
 
       const chunkCoords = update.key.split(',')
       const chunkKey = `${chunkCoords[0]},${chunkCoords[2]}`
@@ -970,6 +979,11 @@ export class WorldRendererThree extends WorldRendererCommon {
         if (!this.pendingSectionBufferStartTimes.has(data.key)) {
           this.pendingSectionBufferStartTimes.set(data.key, performance.now())
         }
+        recordClientLightTrace({
+          phase: 'pending',
+          sectionKey: data.key,
+          queueDepth: this.pendingSectionUpdates.size
+        })
         return
       }
 

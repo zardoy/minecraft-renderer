@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { faceNeighborKeys, pendingSectionGroups, selectReadySectionUpdates } from '../pendingSectionFlush'
+import { faceNeighborKeys, pendingSectionGroups, selectReadySectionFlushes, selectReadySectionUpdates } from '../pendingSectionFlush'
 
 const SECTION_HEIGHT = 16
 const MAX_BUFFER_MS = 500
@@ -127,5 +127,42 @@ describe('selectReadySectionUpdates', () => {
       visible: new Set(['0,64,0', '16,64,0', '160,64,160'])
     }
     expect(select(scene, 1010)).toEqual(['160,64,160'])
+  })
+
+  it('labels complete groups vs deadline flushes', () => {
+    const complete: Scene = {
+      pending: new Map([['160,64,160', 1000]]),
+      outstanding: new Set(),
+      visible: new Set(['160,64,160'])
+    }
+    expect(selectReadySectionFlushes({
+      pendingKeys: complete.pending.keys(),
+      startedAt: key => complete.pending.get(key),
+      now: 1010,
+      maxBufferMs: MAX_BUFFER_MS,
+      sectionHeight: SECTION_HEIGHT,
+      isOutstanding: key => complete.outstanding.has(key),
+      hasSectionObject: key => complete.visible.has(key)
+    })).toEqual([{ key: '160,64,160', reason: 'group-complete' }])
+
+    const expired: Scene = {
+      pending: new Map([
+        ['0,64,0', 1000],
+        ['16,64,0', 1120]
+      ]),
+      outstanding: new Set(['32,64,0']),
+      visible: new Set(['0,64,0', '16,64,0', '32,64,0'])
+    }
+    expect(
+      selectReadySectionFlushes({
+        pendingKeys: expired.pending.keys(),
+        startedAt: key => expired.pending.get(key),
+        now: 1500,
+        maxBufferMs: MAX_BUFFER_MS,
+        sectionHeight: SECTION_HEIGHT,
+        isOutstanding: key => expired.outstanding.has(key),
+        hasSectionObject: key => expired.visible.has(key)
+      }).map(item => item.reason)
+    ).toEqual(['deadline', 'deadline'])
   })
 })

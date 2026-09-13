@@ -15,6 +15,12 @@ import { Vec3 } from 'vec3'
 import { RendererLightCache } from './rendererLightCache'
 import { applyLightPublication, sectionIndexToWorldOrigin, type LightOwnerEvent, type LightPublication, type PublicationGate } from './lightOwnerHost'
 import { buildLightTables1171 } from './lightTables1171'
+import {
+  comparableNow,
+  ingestRemoteClientLightTrace,
+  isClientLightTraceMessage,
+  recordClientLightTrace
+} from '../lib/clientLightTrace'
 
 export { packUnpackedLightSection, unpackPackedLightSection } from '../mesher-shared/lightNibblePack'
 export { eventsFromParsedUpdateLight } from '../wasm-mesher/worker/updateLightToOwnerEvents'
@@ -291,6 +297,7 @@ export class ClientLightOwnerSession {
   readonly requiredLightBySection = new Map<string, MeshSectionLightRequirement>()
   private stepScheduled = false
   private lifecycle: ClientLightOwnerLifecycle = 'starting'
+  private lastOwnerEnqueueAt = 0
 
   constructor(
     private readonly cache: RendererLightCache,
@@ -327,6 +334,18 @@ export class ClientLightOwnerSession {
     if (this.lifecycle === 'failed') return
     this.worker.postMessage({ type: 'pushEvent', event })
     this.scheduleStep()
+    this.lastOwnerEnqueueAt = comparableNow()
+    const currentColumn =
+      'x' in event && typeof event.x === 'number'
+        ? `${Math.floor(event.x / 16)},${Math.floor((event as { z: number }).z / 16)}`
+        : 'sx' in event && typeof event.sx === 'number'
+          ? `${event.sx},${(event as { sz: number }).sz}`
+          : undefined
+    recordClientLightTrace({
+      phase: 'ownerEnqueue',
+      currentColumn,
+      eventAgeMs: 0
+    })
   }
 
   pushRawUpdateLight(kind: 'setUpdateLightV17' | 'setUpdateLightV16', payload: Record<string, unknown>) {
@@ -383,6 +402,10 @@ export class ClientLightOwnerSession {
 
   private onMessage(data: any) {
     if (!data || typeof data !== 'object') return
+    if (isClientLightTraceMessage(data)) {
+      ingestRemoteClientLightTrace(data.event)
+      return
+    }
     if (data.type === 'error') {
       this.fail(typeof data.error === 'string' ? data.error : 'light owner worker error')
       return
@@ -404,5 +427,12 @@ export class ClientLightOwnerSession {
     this.gate = { acceptedGeneration: result.acceptedGeneration, lastVersion: result.lastVersion }
     raiseRequiredLightRevisions(this.requiredLightBySection, result.dirtyMeshSections, result.lastVersion, result.acceptedGeneration)
     this.onApplied(result)
+    recordClientLightTrace({
+      phase: 'ownerComplete',
+      lightVersion: result.lastVersion,
+      worldGeneration: result.acceptedGeneration,
+      queueDepth: result.dirtyMeshSections.length,
+      txnMs: this.lastOwnerEnqueueAt ? comparableNow() - this.lastOwnerEnqueueAt : undefined
+    })
   }
 }
