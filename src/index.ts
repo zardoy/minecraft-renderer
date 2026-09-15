@@ -55,6 +55,30 @@ export { ResourcesManager, LoadedResourcesTransferrable } from './resourcesManag
 export { createGraphicsBackendSingleThread } from './three/graphicsBackendSingleThread'
 export { createGraphicsBackendOffThread } from './three/graphicsBackendOffThread'
 
+// ============================================================================
+// WebGPU Backend (GPU-driven: compute culling + indirect draws)
+// ============================================================================
+// `createGraphicsBackendAuto` is the recommended default: it uses WebGPU where available
+// and falls back to three.js/WebGL otherwise.
+//
+//   import { AppViewer, createGraphicsBackendAuto } from 'minecraft-renderer'
+//   await viewer.loadBackend(createGraphicsBackendAuto)
+//
+// Opt-in geometry beyond full blocks, via `rendererSpecificSettings`:
+//   { enableLegacyGeometry: true }  // stairs, slabs, fences, models
+//   { enableTransparency: true }    // water, glass, ice
+export { createGraphicsBackendAuto, resolveAutoBackend, getAutoBackendChoice } from './webgpu/graphicsBackendAuto'
+export type { AutoBackendChoice } from './webgpu/graphicsBackendAuto'
+export { createGraphicsBackendWebGPU, WebGPUBackend } from './webgpu/graphicsBackendWebGPU'
+export { detectWebGpuSupport, maxFacesForLimits } from './webgpu/capabilities'
+export type { WebGpuSupport, WebGpuLimitsReport } from './webgpu/capabilities'
+export { DocumentRendererGPU } from './webgpu/documentRendererGPU'
+export type { FrameStats as WebGpuFrameStats } from './webgpu/documentRendererGPU'
+export { WorldRendererWebGPU } from './webgpu/worldRendererWebGPU'
+export { GlobalBlockBufferGPU } from './webgpu/globalBlockBufferGPU'
+export { GlobalLegacyBufferGPU } from './webgpu/globalLegacyBufferGPU'
+export { createGodRaysPostProcessing, godRaysNode, updateSunScreenPos } from './webgpu/effects/godRays'
+
 export { DocumentRenderer, addCanvasForWorker, isWebWorker } from './three/documentRenderer'
 export { MC_RENDERER_DEBUG_OVERLAY_CLASS } from './lib/ui/newStats'
 

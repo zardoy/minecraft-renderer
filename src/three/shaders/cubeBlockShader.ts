@@ -6,63 +6,35 @@ export type { BlockLightmapParams }
 // Face order: UP=0, DOWN=1, EAST=2, WEST=3, SOUTH=4, NORTH=5
 // matches WASM mesher face order (mesher.rs FACE_NAMES)
 
-/** Term of tile-local UV in quad-corner coordinates (u, v ∈ {0,1}). */
-type FaceUvTerm = 'u' | '1-u' | 'v' | '1-v'
+// Face geometry + UV tables now live in webgpu/shaders/faceTables.ts so the GLSL and TSL
+// cube shaders are generated from one source. Re-exported here to keep this module's
+// public API (bridge + parity tests import these from here).
+export {
+  FACE_UV_TERMS,
+  buildFaceUvGlsl,
+  shaderCubeFaceUv,
+  FACE_BASE,
+  FACE_DU,
+  FACE_DV,
+  FACE_NORMAL,
+  VI_NORMAL,
+  VI_FLIPPED,
+  type FaceUvTerm
+} from '../../webgpu/shaders/faceTables'
 
-/**
- * Canonical tile-local UV per face for su>0, sv>0. Matches legacy elemFaces
- * (+ implicit +180° on down; see render-from-wasm.ts `r += 180`).
- * Index = faceId: UP, DOWN, EAST, WEST, SOUTH, NORTH.
- * Single source of truth — GLSL and shaderCubeFaceUv() are generated from this.
- */
-export const FACE_UV_TERMS: ReadonlyArray<readonly [FaceUvTerm, FaceUvTerm]> = [
-  ['u', '1-v'], // UP
-  ['1-u', 'v'], // DOWN
-  ['v', 'u'], // EAST
-  ['v', 'u'], // WEST
-  ['u', 'v'], // SOUTH
-  ['1-u', 'v'] // NORTH
-]
+import {
+  buildFaceUvGlsl as buildFaceUvGlslImpl,
+  emitVec3ArrayGlsl,
+  emitIntArrayGlsl,
+  FACE_BASE as FACE_BASE_TABLE,
+  FACE_DU as FACE_DU_TABLE,
+  FACE_DV as FACE_DV_TABLE,
+  FACE_NORMAL as FACE_NORMAL_TABLE,
+  VI_NORMAL as VI_NORMAL_TABLE,
+  VI_FLIPPED as VI_FLIPPED_TABLE
+} from '../../webgpu/shaders/faceTables'
 
-const glslTerm = (t: FaceUvTerm) =>
-  ({
-    u: 'u',
-    v: 'v',
-    '1-u': '1.0 - u',
-    '1-v': '1.0 - v'
-  })[t]
-
-/** GLSL if/else-if chain for per-face UV — must stay in sync with FACE_UV_TERMS. */
-export function buildFaceUvGlsl(): string {
-  return FACE_UV_TERMS.map(([ut, vt], i) => `    ${i === 0 ? 'if' : 'else if'} (faceId == ${i}u) uv = vec2(${glslTerm(ut)}, ${glslTerm(vt)});`).join('\n')
-}
-
-function evalFaceUvTerm(t: FaceUvTerm, cu: number, cv: number): number {
-  switch (t) {
-    case 'u':
-      return cu
-    case '1-u':
-      return 1 - cu
-    case 'v':
-      return cv
-    case '1-v':
-      return 1 - cv
-  }
-}
-
-/** vi — quad corner in shader order (0..3): u = vi & 1, v = (vi >> 1) & 1. */
-export function shaderCubeFaceUv(faceId: number, vi: number, flipU: boolean, flipV: boolean): [number, number] {
-  const [ut, vt] = FACE_UV_TERMS[faceId] ?? FACE_UV_TERMS[0]
-  const cu = vi & 1
-  const cv = (vi >> 1) & 1
-  let uLocal = evalFaceUvTerm(ut, cu, cv)
-  let vLocal = evalFaceUvTerm(vt, cu, cv)
-  if (flipU) uLocal = 1 - uLocal
-  if (flipV) vLocal = 1 - vLocal
-  return [uLocal, vLocal]
-}
-
-const faceUvGlsl = buildFaceUvGlsl()
+const faceUvGlsl = buildFaceUvGlslImpl()
 
 const vertexShader = /* glsl */ `
 precision highp float;
@@ -113,37 +85,16 @@ out float vFogDepth;
 
 // BASE, DU, DV per face (UP=0, DOWN=1, EAST=2, WEST=3, SOUTH=4, NORTH=5)
 // position = BASE[faceId] + u * DU[faceId] + v * DV[faceId]
-const vec3 BASE[6] = vec3[6](
-    vec3(0.0, 1.0, 1.0),  // UP    (+Y)
-    vec3(1.0, 0.0, 1.0),  // DOWN  (-Y)
-    vec3(1.0, 1.0, 1.0),  // EAST  (+X)
-    vec3(0.0, 1.0, 0.0),  // WEST  (-X)
-    vec3(0.0, 1.0, 1.0),  // SOUTH (+Z)
-    vec3(1.0, 1.0, 0.0)   // NORTH (-Z)
-);
+${emitVec3ArrayGlsl('BASE', FACE_BASE_TABLE)}
 
-const vec3 DU[6] = vec3[6](
-    vec3( 1.0, 0.0,  0.0),  // UP
-    vec3(-1.0, 0.0,  0.0),  // DOWN
-    vec3( 0.0,-1.0,  0.0),  // EAST
-    vec3( 0.0,-1.0,  0.0),  // WEST
-    vec3( 1.0, 0.0,  0.0),  // SOUTH
-    vec3(-1.0, 0.0,  0.0)   // NORTH
-);
+${emitVec3ArrayGlsl('DU', FACE_DU_TABLE)}
 
-const vec3 DV[6] = vec3[6](
-    vec3(0.0, 0.0, -1.0),  // UP
-    vec3(0.0, 0.0, -1.0),  // DOWN
-    vec3(0.0, 0.0, -1.0),  // EAST
-    vec3(0.0, 0.0,  1.0),  // WEST
-    vec3(0.0,-1.0,  0.0),  // SOUTH
-    vec3(0.0,-1.0,  0.0)   // NORTH
-);
+${emitVec3ArrayGlsl('DV', FACE_DV_TABLE)}
 
 // Per-(triangle, corner) -> quad corner index (vi), one table per diagonal mode.
 // Normal: T0=[0,1,2], T1=[2,1,3]. Flipped: T0=[0,3,2], T1=[0,1,3].
-const int VI_NORMAL[6]  = int[6](0, 1, 2, 2, 1, 3);
-const int VI_FLIPPED[6] = int[6](0, 3, 2, 0, 1, 3);
+${emitIntArrayGlsl('VI_NORMAL', VI_NORMAL_TABLE)}
+${emitIntArrayGlsl('VI_FLIPPED', VI_FLIPPED_TABLE)}
 
 void main() {
     // Empty slot sentinel (freed section range in global buffer)
@@ -301,14 +252,7 @@ void applyFog() {
 
 ${APPLY_LIGHTMAP_GLSL}
 
-const vec3 FACE_NORMAL[6] = vec3[6](
-    vec3(0.0, 1.0, 0.0),  // UP
-    vec3(0.0,-1.0, 0.0),  // DOWN
-    vec3(1.0, 0.0, 0.0),  // EAST
-    vec3(-1.0,0.0, 0.0),  // WEST
-    vec3(0.0, 0.0, 1.0),  // SOUTH
-    vec3(0.0, 0.0,-1.0)   // NORTH
-);
+${emitVec3ArrayGlsl('FACE_NORMAL', FACE_NORMAL_TABLE)}
 
 float sideShadingFromFaceId(int faceId, float theme, float cardinal) {
     vec3 n = FACE_NORMAL[faceId];
