@@ -16,8 +16,10 @@ import { IndexedData } from 'minecraft-data'
 import { WorldRendererConfig } from '../graphicsBackend'
 import { computeCameraBob, type CameraBobInput } from '../lib/cameraBobbing'
 import { getFirstPersonItemSpecificProps, getHandItemRenderKey } from './holdingBlockItemIdentity'
+import { computeEatTransform, shouldApplyEatTransform, startEatItemUsedDip, type EatTransform } from './holdingBlockEatTransform'
 
 const _tempMat = new THREE.Matrix4()
+const _eatMat = new THREE.Matrix4()
 const wrapPi = (a: number) => {
   a = (a + Math.PI) % (Math.PI * 2)
   if (a < 0) a += Math.PI * 2
@@ -112,6 +114,9 @@ export default class HoldingBlock implements IHoldingBlock {
   lastBobUpdateTime = 0
   private lastBobWalkDist = 0
   private lastBobTickTime = 0
+  lastEatSessionId: number | undefined
+  lastElapsedTicks: number | undefined
+  lastElapsedChangeMs = 0
   playerHand: THREE.Object3D | undefined
   offHandDisplay = false
   offHandModeLegacy = false
@@ -422,12 +427,57 @@ export default class HoldingBlock implements IHoldingBlock {
 
     const type = this.currentDisplayType
     const swingProgress = this.swingAnimator?.getSwingProgress() ?? 0
+    const useSession = this.worldRenderer.playerStateReactive.itemUseSession
+    const sessionHand: 0 | 1 = this.offHand ? 1 : 0
+    let eatTransform: EatTransform | undefined
 
+    if (useSession && shouldApplyEatTransform(useSession, sessionHand)) {
+      const dip = startEatItemUsedDip({
+        sessionId: useSession.id,
+        lastEatSessionId: this.lastEatSessionId,
+        forceFinish: () => this.blockSwapAnimation?.switcher.forceFinish()
+      })
+      if (dip.started) {
+        this.equipProgress = dip.equipProgress
+        void this.playBlockSwapAnimation(dip.playState)
+        this.lastEatSessionId = dip.lastEatSessionId
+        this.lastElapsedTicks = useSession.elapsedTicks
+        this.lastElapsedChangeMs = now
+      } else if (this.lastElapsedTicks !== useSession.elapsedTicks) {
+        this.lastElapsedTicks = useSession.elapsedTicks
+        this.lastElapsedChangeMs = now
+      }
+
+      const remaining = useSession.durationTicks - useSession.elapsedTicks
+      const partial = Math.min(Math.max((now - this.lastElapsedChangeMs) / 50, 0), 1)
+      const g = remaining - partial + 1
+      const h = g / useSession.durationTicks
+      eatTransform = computeEatTransform(h, g)
+    }
+
+    // Eat/drink uses applyItemArmTransform only (swingProgress=0), not the attack swing.
+    const armSwingProgress = eatTransform ? 0 : swingProgress
     let matrix: THREE.Matrix4
     if (type === 'hand') {
-      matrix = buildBareHandMatrix(swingProgress, this.equipProgress)
+      matrix = buildBareHandMatrix(armSwingProgress, this.equipProgress)
     } else {
-      matrix = buildItemArmMatrix(swingProgress, this.equipProgress)
+      matrix = buildItemArmMatrix(armSwingProgress, this.equipProgress)
+    }
+
+    if (eatTransform) {
+      _eatMat.identity()
+      _eatMat.multiply(_tempMat.makeTranslation(0, eatTransform.jiggleY, 0))
+      _eatMat.multiply(_tempMat.makeTranslation(eatTransform.translation.x, eatTransform.translation.y, eatTransform.translation.z))
+      _eatMat.multiply(_tempMat.makeRotationY(THREE.MathUtils.degToRad(eatTransform.rotationDegrees.y)))
+      _eatMat.multiply(_tempMat.makeRotationX(THREE.MathUtils.degToRad(eatTransform.rotationDegrees.x)))
+      _eatMat.multiply(_tempMat.makeRotationZ(THREE.MathUtils.degToRad(eatTransform.rotationDegrees.z)))
+
+      // Vanilla applyEatTransform runs before applyItemArmTransform for EAT/DRINK
+      // (ItemInHandRenderer.java:460-464), so prepend it to our stable arm matrix.
+      // Vanilla's left-arm j=-1 (ItemInHandRenderer.java:274-279) is represented
+      // by cameraGroup.scale.x=-1 in render() for offhand rendering;
+      // j stays +1 in this local matrix to avoid mirroring the side twice.
+      matrix = _eatMat.multiply(matrix)
     }
 
     this.armTransformGroup.matrix.copy(matrix)
