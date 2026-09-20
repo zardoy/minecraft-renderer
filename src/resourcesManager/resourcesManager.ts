@@ -15,6 +15,7 @@ import { isWebWorker } from '../three/documentRenderer'
 import { ItemsRenderer } from 'mc-assets/dist/itemsRenderer'
 import { getLoadedItemDefinitionsStore } from 'mc-assets/dist/stores'
 import { sanitizeWorkerEventArgs } from '../lib/workerMessageSanitize'
+import { isCurrentResourceGeneration } from '../lib/guiAtlasGeneration'
 
 type ResourceManagerEvents = {
   assetsTexturesUpdated: () => void
@@ -232,6 +233,7 @@ export class ResourcesManager extends (EventEmitter as new () => TypedEmitter<Re
   readonly sourceItemsAtlases: any = itemsAtlases
 
   currentResources: LoadedResourcesTransferrable | undefined
+  resourcesGeneration = 0
   itemsAtlasParser!: AtlasParser
   blocksAtlasParser!: AtlasParser
   currentConfig: ResourcesCurrentConfig | undefined
@@ -249,15 +251,16 @@ export class ResourcesManager extends (EventEmitter as new () => TypedEmitter<Re
 
   resetResources() {
     this.currentResources = new LoadedResourcesTransferrable()
+    this.resourcesGeneration++
   }
 
   async updateAssetsData(request: UpdateAssetsRequest, unstableSkipEvent = false) {
     if (!this.currentConfig) throw new Error('No config loaded')
-    this._promiseAssetsReadyResolvers = Promise.withResolvers()
-    const abortController = new AbortController()
+    const resourcesReadyResolvers = Promise.withResolvers<void>()
+    this._promiseAssetsReadyResolvers = resourcesReadyResolvers
     await this.loadSourceData(this.currentConfig.version)
-    if (abortController.signal.aborted) return
 
+    const myGen = ++this.resourcesGeneration
     const resources = this.currentResources ?? new LoadedResourcesTransferrable()
     resources.version = this.currentConfig.version
     resources.texturesVersion = this.currentConfig.texturesVersion ?? resources.version
@@ -280,17 +283,24 @@ export class ResourcesManager extends (EventEmitter as new () => TypedEmitter<Re
       ...resources.customModels
     }
 
-    console.time('recreateAtlases')
+    const recreateAtlasesLabel = `recreateAtlases-${myGen}`
+    console.time(recreateAtlasesLabel)
     await Promise.all([this.recreateBlockAtlas(resources), this.recreateItemsAtlas(resources)])
-    console.timeEnd('recreateAtlases')
+    console.timeEnd(recreateAtlasesLabel)
 
-    if (abortController.signal.aborted) return
+    if (this.resourcesGeneration !== myGen) {
+      resourcesReadyResolvers.resolve()
+      return
+    }
 
     if (resources.version && resources.blockstatesModels && this.itemsAtlasParser && this.blocksAtlasParser) {
       resources.itemsRenderer = new ItemsRenderer(resources.version, resources.blockstatesModels, this.itemsAtlasParser, this.blocksAtlasParser)
     }
 
-    if (abortController.signal.aborted) return
+    if (this.resourcesGeneration !== myGen) {
+      resourcesReadyResolvers.resolve()
+      return
+    }
 
     this.currentResources = resources
     resources.allReady = true
@@ -300,16 +310,36 @@ export class ResourcesManager extends (EventEmitter as new () => TypedEmitter<Re
     }
 
     if (this.currentConfig.noInventoryGui) {
-      this._promiseAssetsReadyResolvers.resolve()
+      resourcesReadyResolvers.resolve()
     } else {
       this.emit('assetsInventoryStarted')
-      void this.generateGuiTextures().then(() => {
-        if (abortController.signal.aborted) return
-        if (!unstableSkipEvent) {
-          this.emit('assetsInventoryReady')
-        }
-        this._promiseAssetsReadyResolvers.resolve()
-      })
+      void this.generateGuiTextures()
+        .then(() => {
+          if (this.resourcesGeneration !== myGen) {
+            resourcesReadyResolvers.resolve()
+            return
+          }
+          if (!isCurrentResourceGeneration(this, resources, myGen)) {
+            resourcesReadyResolvers.resolve()
+            return
+          }
+          if (!unstableSkipEvent) {
+            this.emit('assetsInventoryReady')
+          }
+          resourcesReadyResolvers.resolve()
+        })
+        .catch(error => {
+          if (this.resourcesGeneration !== myGen) {
+            resourcesReadyResolvers.resolve()
+            return
+          }
+          if (!isCurrentResourceGeneration(this, resources, myGen)) {
+            resourcesReadyResolvers.resolve()
+            return
+          }
+          console.error('[ResourcesManager] Failed to generate GUI textures:', error)
+          resourcesReadyResolvers.reject(error)
+        })
     }
   }
 
