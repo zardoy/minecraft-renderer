@@ -222,7 +222,6 @@ export class BlockBreakParticlesModule implements RendererModuleController {
     }
   }
 
-
   private tickPhysics(): void {
     for (const p of this.particles) {
       if (!p.active) continue
@@ -506,7 +505,6 @@ export class BlockBreakParticlesModule implements RendererModuleController {
     return null
   }
 
-
   private extractUV(
     texInfo: { u: number; v: number; su?: number; sv?: number },
     atlasJson: { suSv: number }
@@ -556,7 +554,6 @@ export class BlockBreakParticlesModule implements RendererModuleController {
     })
     return true
   }
-
 }
 
 export const blockBreakParticlesManifest: RendererModuleManifest = {

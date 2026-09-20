@@ -467,13 +467,7 @@ export default class HoldingBlock implements IHoldingBlock {
     if (eatTransform) {
       _eatMat.identity()
       _eatMat.multiply(_tempMat.makeTranslation(0, eatTransform.jiggleY, 0))
-      _eatMat.multiply(
-        _tempMat.makeTranslation(
-          eatTransform.translation.x,
-          eatTransform.translation.y,
-          eatTransform.translation.z
-        )
-      )
+      _eatMat.multiply(_tempMat.makeTranslation(eatTransform.translation.x, eatTransform.translation.y, eatTransform.translation.z))
       _eatMat.multiply(_tempMat.makeRotationY(THREE.MathUtils.degToRad(eatTransform.rotationDegrees.y)))
       _eatMat.multiply(_tempMat.makeRotationX(THREE.MathUtils.degToRad(eatTransform.rotationDegrees.x)))
       _eatMat.multiply(_tempMat.makeRotationZ(THREE.MathUtils.degToRad(eatTransform.rotationDegrees.z)))

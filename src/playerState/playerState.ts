@@ -1,5 +1,15 @@
 import { proxy } from 'valtio'
-import type { GameMode, HandItemBlock, BlocksShapes, BlockShape, MovementState, CameraPerspective, Team, ItemSpecificContextProperties, UseItemSession } from './types'
+import type {
+  GameMode,
+  HandItemBlock,
+  BlocksShapes,
+  BlockShape,
+  MovementState,
+  CameraPerspective,
+  Team,
+  ItemSpecificContextProperties,
+  UseItemSession
+} from './types'
 
 // edit src/mineflayer/playerState.ts for implementation of player state from mineflayer
 export const getInitialPlayerState = () =>

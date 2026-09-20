@@ -1,9 +1,5 @@
 import { describe, expect, test, vi } from 'vitest'
-import {
-  EAT_ITEM_USED_HIDDEN_PROGRESS,
-  EAT_ITEM_USED_VISIBLE_PROGRESS,
-  startEatItemUsedDip
-} from './holdingBlockEatTransform'
+import { EAT_ITEM_USED_HIDDEN_PROGRESS, EAT_ITEM_USED_VISIBLE_PROGRESS, startEatItemUsedDip } from './holdingBlockEatTransform'
 
 describe('startEatItemUsedDip', () => {
   test('hides the item once then targets the appeared/visible progress', () => {
