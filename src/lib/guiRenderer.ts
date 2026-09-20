@@ -21,20 +21,18 @@ import { makeTextureAtlas } from 'mc-assets/dist/atlasCreator'
 import { proxy, ref } from 'valtio'
 import { getItemDefinition } from 'mc-assets/dist/itemDefinitions'
 import { AppViewer } from '../graphicsBackend/appViewer'
+import { isCurrentResourceGeneration, publishGuiAtlas } from './guiAtlasGeneration'
+import { loseWebGLContext } from './webglLifecycle'
 
-export const getNonFullBlocksModels = (appViewer: AppViewer) => {
-  let version = appViewer.resourcesManager.currentResources!.version ?? 'latest'
+export const getNonFullBlocksModels = (appViewer: AppViewer, resources = appViewer.resourcesManager.currentResources!) => {
+  let version = resources.version ?? 'latest'
   if (versionToNumber(version) < versionToNumber('1.13')) version = '1.13'
-  const itemsDefinitions = appViewer.resourcesManager.currentResources!.itemsDefinitionsStore.data.latest
+  const itemsDefinitions = resources.itemsDefinitionsStore.data.latest
   const blockModelsResolved = {} as Record<string, any>
   const itemsModelsResolved = {} as Record<string, any>
   const fullBlocksWithNonStandardDisplay = [] as string[]
   const handledItemsWithDefinitions = new Set()
-  const assetsParser = new AssetsParser(
-    version,
-    getLoadedBlockstatesStore(appViewer.resourcesManager.currentResources!.blockstatesModels),
-    getLoadedModelsStore(appViewer.resourcesManager.currentResources!.blockstatesModels)
-  )
+  const assetsParser = new AssetsParser(version, getLoadedBlockstatesStore(resources.blockstatesModels), getLoadedModelsStore(resources.blockstatesModels))
 
   const standardGuiDisplay = {
     rotation: [30, 225, 0],
@@ -56,7 +54,7 @@ export const getNonFullBlocksModels = (appViewer: AppViewer) => {
   }
 
   for (const [name, definition] of Object.entries(itemsDefinitions)) {
-    const item = getItemDefinition(appViewer.resourcesManager.currentResources!.itemsDefinitionsStore, {
+    const item = getItemDefinition(resources.itemsDefinitionsStore, {
       version,
       name,
       properties: {
@@ -98,7 +96,7 @@ export const getNonFullBlocksModels = (appViewer: AppViewer) => {
     }
   }
 
-  for (const [name, blockstate] of Object.entries(appViewer.resourcesManager.currentResources!.blockstatesModels.blockstates.latest)) {
+  for (const [name, blockstate] of Object.entries(resources.blockstatesModels.blockstates.latest)) {
     if (handledItemsWithDefinitions.has(name)) {
       continue
     }
@@ -120,8 +118,13 @@ export const getNonFullBlocksModels = (appViewer: AppViewer) => {
 
 const RENDER_SIZE = 64
 
-const generateItemsGui = async (appViewer: AppViewer, models: Record<string, BlockModelMcAssets>, isItems = false) => {
-  const { currentResources } = appViewer.resourcesManager
+const generateItemsGui = async (
+  appViewer: AppViewer,
+  models: Record<string, BlockModelMcAssets>,
+  isItems = false,
+  resourceSnapshot = appViewer.resourcesManager.currentResources!
+) => {
+  const currentResources = resourceSnapshot
   const imgBitmap = isItems ? currentResources!.itemsAtlasImage : currentResources!.blocksAtlasImage
   const canvasTemp = document.createElement('canvas')
   canvasTemp.width = imgBitmap.width
@@ -196,67 +199,72 @@ const generateItemsGui = async (appViewer: AppViewer, models: Record<string, Blo
     throw new Error('Cannot get WebGL2 context')
   }
 
-  function resetGLContext(gl) {
-    gl.clearColor(0, 0, 0, 0)
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT)
-  }
+  try {
+    function resetGLContext(gl) {
+      gl.clearColor(0, 0, 0, 0)
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT)
+    }
 
-  // const includeOnly = ['powered_repeater', 'wooden_door']
-  const includeOnly = [] as string[]
+    // const includeOnly = ['powered_repeater', 'wooden_door']
+    const includeOnly = [] as string[]
 
-  const images: Record<string, HTMLImageElement> = {}
-  const item = new ItemStack(
-    PREVIEW_ID,
-    1,
-    new Map(
-      Object.entries({
-        'minecraft:item_model': new NbtString(PREVIEW_ID.toString())
-      })
+    const images: Record<string, HTMLImageElement> = {}
+    const item = new ItemStack(
+      PREVIEW_ID,
+      1,
+      new Map(
+        Object.entries({
+          'minecraft:item_model': new NbtString(PREVIEW_ID.toString())
+        })
+      )
     )
-  )
-  const renderer = new ItemRenderer(gl, item, resources, { display_context: 'gui' })
-  const missingTextures = new Set()
-  for (const [modelName, model] of Object.entries(models)) {
-    textureWasRequested = false
-    if (includeOnly.length && !includeOnly.includes(modelName)) continue
+    const renderer = new ItemRenderer(gl, item, resources, { display_context: 'gui' })
+    const missingTextures = new Set()
+    for (const [modelName, model] of Object.entries(models)) {
+      textureWasRequested = false
+      if (includeOnly.length && !includeOnly.includes(modelName)) continue
 
-    const patchMissingTextures = () => {
-      for (const element of model.elements ?? []) {
-        for (const [faceName, face] of Object.entries(element.faces)) {
-          if (face.texture.startsWith('#')) {
-            missingTextures.add(`${modelName} ${faceName}: ${face.texture}`)
-            face.texture = 'block/unknown'
+      const patchMissingTextures = () => {
+        for (const element of model.elements ?? []) {
+          for (const [faceName, face] of Object.entries(element.faces)) {
+            if (face.texture.startsWith('#')) {
+              missingTextures.add(`${modelName} ${faceName}: ${face.texture}`)
+              face.texture = 'block/unknown'
+            }
           }
         }
       }
+      patchMissingTextures()
+      // TODO eggs
+
+      modelData = model
+      currentModelName = modelName
+      resetGLContext(gl)
+      if (!modelData) continue
+      renderer.setItem(item, { display_context: 'gui' })
+      renderer.drawItem()
+      if (!textureWasRequested) continue
+      const url = canvas.toDataURL()
+      // eslint-disable-next-line no-await-in-loop
+      const img = await getLoadedImage(url)
+      images[modelName] = img
     }
-    patchMissingTextures()
-    // TODO eggs
 
-    modelData = model
-    currentModelName = modelName
-    resetGLContext(gl)
-    if (!modelData) continue
-    renderer.setItem(item, { display_context: 'gui' })
-    renderer.drawItem()
-    if (!textureWasRequested) continue
-    const url = canvas.toDataURL()
-    // eslint-disable-next-line no-await-in-loop
-    const img = await getLoadedImage(url)
-    images[modelName] = img
+    if (missingTextures.size) {
+      console.warn(`[guiRenderer] Missing textures in ${[...missingTextures].join(', ')}`)
+    }
+
+    return images
+  } finally {
+    loseWebGLContext(gl)
+    canvas.remove()
   }
-
-  if (missingTextures.size) {
-    console.warn(`[guiRenderer] Missing textures in ${[...missingTextures].join(', ')}`)
-  }
-
-  return images
 }
 
 /**
  * @mainThread
  */
-const generateAtlas = async (appViewer: AppViewer, images: Record<string, HTMLImageElement>) => {
+const generateAtlas = async (images: Record<string, HTMLImageElement>) => {
   const atlas = makeTextureAtlas({
     input: Object.keys(images),
     tileSize: RENDER_SIZE,
@@ -273,25 +281,30 @@ const generateAtlas = async (appViewer: AppViewer, images: Record<string, HTMLIm
   // a.download = 'blocks_atlas.png'
   // a.click()
 
-  appViewer.resourcesManager.currentResources!.guiAtlas = {
+  return {
     json: atlas.json,
     image: await createImageBitmap(atlas.canvas)
   }
-
-  return atlas
 }
 
 export const generateGuiAtlas = async (appViewer: AppViewer) => {
-  const { blockModelsResolved, itemsModelsResolved } = getNonFullBlocksModels(appViewer)
+  const resourcesManager = appViewer.resourcesManager
+  const resources = resourcesManager.currentResources
+  if (!resources) throw new Error('No resources loaded')
+  const resourcesGeneration = resourcesManager.resourcesGeneration
+  const isCurrent = () => isCurrentResourceGeneration(resourcesManager, resources, resourcesGeneration)
+  const { blockModelsResolved, itemsModelsResolved } = getNonFullBlocksModels(appViewer, resources)
 
   // Generate blocks atlas
   console.time('generate blocks gui atlas')
-  const blockImages = await generateItemsGui(appViewer, blockModelsResolved, false)
+  const blockImages = await generateItemsGui(appViewer, blockModelsResolved, false, resources)
   console.timeEnd('generate blocks gui atlas')
+  if (!isCurrent()) return
   console.time('generate items gui atlas')
-  const itemImages = await generateItemsGui(appViewer, itemsModelsResolved, true)
+  const itemImages = await generateItemsGui(appViewer, itemsModelsResolved, true, resources)
   console.timeEnd('generate items gui atlas')
-  await generateAtlas(appViewer, { ...blockImages, ...itemImages })
-  appViewer.resourcesManager.currentResources!.guiAtlasVersion++
+  if (!isCurrent()) return
+  const guiAtlas = await generateAtlas({ ...blockImages, ...itemImages })
+  publishGuiAtlas(resourcesManager, resources, resourcesGeneration, guiAtlas)
   // await generateAtlas(blockImages)
 }

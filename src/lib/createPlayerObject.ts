@@ -71,14 +71,16 @@ export function createPlayerObject(options: { username?: string; uuid?: string; 
   return { playerObject, wrapper }
 }
 
-export const applySkinToPlayerObject = async (playerObject: PlayerObjectType, skinUrl: string) => {
-  return loadSkinImage(skinUrl || stevePngUrl)
-    .then(({ canvas }) => {
-      const skinTexture = new THREE.CanvasTexture(canvas)
-      skinTexture.magFilter = THREE.NearestFilter
-      skinTexture.minFilter = THREE.NearestFilter
-      skinTexture.needsUpdate = true
-      playerObject.skin.map = skinTexture as any
-    })
-    .catch(console.error)
+export const applySkinToPlayerObject = async (playerObject: PlayerObjectType, skinUrl: string): Promise<THREE.Texture | undefined> => {
+  try {
+    const { canvas } = await loadSkinImage(skinUrl || stevePngUrl)
+    const skinTexture = new THREE.CanvasTexture(canvas)
+    skinTexture.magFilter = THREE.NearestFilter
+    skinTexture.minFilter = THREE.NearestFilter
+    skinTexture.needsUpdate = true
+    return skinTexture
+  } catch (error) {
+    console.error('[createPlayerObject] Failed to load skin:', error)
+    return undefined
+  }
 }
