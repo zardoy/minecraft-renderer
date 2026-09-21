@@ -8,7 +8,10 @@ import { buildLightTables1171 } from './lightTables1171'
 
 const mcData = MinecraftData('1.17.1')
 
-function propsAt(block: { minStateId: number; states?: Array<{ name: string; type: string; num_values: number; values?: string[] }> }, stateId: number) {
+function propsAt(
+  block: { minStateId: number; states?: Array<{ name: string; type: string; num_values: number; values?: readonly unknown[] }> },
+  stateId: number
+) {
   let data = stateId - block.minStateId
   const out: Record<string, string | number | boolean> = {}
   const states = block.states ?? []
@@ -17,7 +20,7 @@ function propsAt(block: { minStateId: number; states?: Array<{ name: string; typ
     const idx = data % prop.num_values
     data = Math.floor(data / prop.num_values)
     if (prop.type === 'bool') out[prop.name] = idx === 0
-    else if (prop.values) out[prop.name] = prop.values[idx]!
+    else if (prop.values) out[prop.name] = prop.values[idx] as string
     else out[prop.name] = idx
   }
   return out

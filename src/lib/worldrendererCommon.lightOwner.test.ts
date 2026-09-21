@@ -72,7 +72,7 @@ function createRenderer(enableOwner = false, workerCount = 2, version = '1.17.1'
 
   const displayOptions: DisplayWorldOptions = {
     version,
-    worldView: Object.assign(new EventEmitter(), { reloadLoadedChunks: vi.fn(async () => {}) }) as DisplayWorldOptions['worldView'],
+    worldView: Object.assign(new EventEmitter(), { reloadLoadedChunks: vi.fn(async () => {}) }) as unknown as DisplayWorldOptions['worldView'],
     inWorldRenderingConfig: proxy({ ...defaultWorldRendererConfig, mesherWorkers: workerCount, enableClientLightOwner: enableOwner }),
     playerStateReactive: getInitialPlayerState(),
     rendererState,
@@ -336,7 +336,7 @@ describe('WorldRendererCommon client light owner spawn', () => {
   test('flag-on setBlock / addColumn / removeColumn / update_light forward to the owner', () => {
     const renderer = createRenderer(true, 2)
     renderer.initWorkers(2)
-    const owner = renderer.getClientLightOwnerWorker() as { postMessage: ReturnType<typeof vi.fn> }
+    const owner = renderer.getClientLightOwnerWorker() as unknown as { postMessage: ReturnType<typeof vi.fn> }
     expect(owner).toBeTruthy()
     owner.postMessage.mockClear()
 
@@ -362,7 +362,7 @@ describe('WorldRendererCommon client light owner spawn', () => {
   test('resetWorld terminates the owner worker when it was spawned', () => {
     const renderer = createRenderer(true, 1)
     renderer.initWorkers(1)
-    const owner = renderer.getClientLightOwnerWorker() as { terminate: ReturnType<typeof vi.fn> }
+    const owner = renderer.getClientLightOwnerWorker() as unknown as { terminate: ReturnType<typeof vi.fn> }
     expect(owner).toBeTruthy()
     renderer.resetWorld()
     expect(owner.terminate).toHaveBeenCalled()
@@ -599,7 +599,10 @@ describe('WorldRendererCommon client light owner spawn', () => {
   test('flag-on ready owner does not fan-out raw update_light to mesh workers', () => {
     const renderer = createRenderer(true, 2)
     renderer.initWorkers(2)
-    const owner = renderer.getClientLightOwnerWorker() as { onmessage: ((event: MessageEvent) => void) | null; postMessage: ReturnType<typeof vi.fn> }
+    const owner = renderer.getClientLightOwnerWorker() as unknown as {
+      onmessage: ((event: MessageEvent) => void) | null
+      postMessage: ReturnType<typeof vi.fn>
+    }
     owner.onmessage?.({ data: { type: 'ready' } } as MessageEvent)
     owner.postMessage.mockClear()
     for (const worker of renderer.workers) {
