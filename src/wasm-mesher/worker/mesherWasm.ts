@@ -17,7 +17,9 @@ import {
   ownerDeltaSectionWorldYs,
   revertDisplayToIncoming
 } from './mesherWasmOwnerLight'
-import { snapshotMeshVersions, validateOwnerPublicationMessage } from '../../lib/clientLightVersions'
+import { INITIAL_TOPOLOGY_REVISION, snapshotMeshVersions, validateOwnerPublicationMessage } from '../../lib/clientLightVersions'
+import { provenMeshLightVersion } from './mesherLightDependencies'
+import { BULK_MESH_INTERVAL_MS, createMeshTickScheduler } from './mesherWasmTickSchedule'
 import {
   displayLightColumn,
   isLightSectionPresent,
@@ -26,6 +28,9 @@ import {
   type UpdateLightColumnCache
 } from './mesherWasmLightMerge'
 import { CONVERSION_CACHE_LIMIT, clearConversionCache, getOrConvertColumn, invalidateConversion, setConversionCacheLimit } from './mesherWasmConversionCache'
+import { beginTickWasmParseCache, endTickWasmParseCache, getOrConvertTickWasmParse } from './mesherWasmTickParseCache'
+import { clearTopologyPostCache, clearTopologyPostCacheColumn, getOrComputeTopologyPost } from './mesherWasmTopologyPostCache'
+import { selectColumnGroupsForTick } from './mesherWasmColumnTickSelect'
 import { PendingChunkBuffer } from './mesherWasmChunkBuffer'
 import {
   PendingNeighborHealTracker,
@@ -36,7 +41,14 @@ import {
   countWorldColumns3x3,
   type PacketCaches
 } from './mesherWasmNeighborhood'
-import { enableClientLightTrace, postClientLightTrace, recordClientLightTrace, CLIENT_LIGHT_TRACE_MESSAGE } from '../../lib/clientLightTrace'
+import {
+  CLIENT_LIGHT_TRACE_MESSAGE,
+  armClientLightTrace,
+  enableClientLightTrace,
+  isClientLightTraceArmed,
+  isClientLightTraceEnabled,
+  postClientLightTrace
+} from '../../lib/clientLightTrace'
 
 let wasm: typeof import('../runtime-build/wasm_mesher.js') | null = null
 let wasmInitialized = false
@@ -159,6 +171,7 @@ let config = defaultMesherConfig
 let version = '1.16.5'
 let world: World // chunkKey -> chunk data
 let dirtySections = new Map<string, number>()
+const urgentSections = new Set<string>()
 const dirtyLightMeta = new Map<string, { lightPublicationVersion?: number; worldGeneration?: number }>()
 const dirtyTraceMeta = new Map<
   string,
@@ -205,15 +218,18 @@ const postMessage = (data: any, transferList: any[] = []) => {
   })
 }
 
+const postTrace = (message: { type: typeof CLIENT_LIGHT_TRACE_MESSAGE; events?: unknown; event?: unknown }) => {
+  global.postMessage(message)
+}
+
 function drainQueue(from: number, to: number) {
   const messages = queuedMessages.slice(from, to)
   const remaining = queuedMessages.length - to
-  const event = recordClientLightTrace({
-    phase: 'mesherFlush',
-    queueDepth: remaining
-  })
-  if (event) {
-    messages.push({ data: { type: CLIENT_LIGHT_TRACE_MESSAGE, event }, transferList: [] })
+  if (isClientLightTraceEnabled() && isClientLightTraceArmed()) {
+    postClientLightTrace(postTrace, {
+      phase: 'mesherFlush',
+      queueDepth: remaining
+    })
   }
   global.postMessage(
     messages.map(m => m.data),
@@ -315,7 +331,7 @@ const updateLightV17Cache = new Map<string, UpdateLightColumnCache>()
 const incomingUpdateLightV17Cache = new Map<string, UpdateLightColumnCache>()
 const ownerOwnedLightColumns = new Set<string>()
 
-function takeGeometryVersionMeta(key: string, sx: number, sz: number) {
+function takeGeometryVersionMeta(key: string, sx: number, sz: number, usedColumns: ReadonlySet<string>) {
   const lightMeta = dirtyLightMeta.get(key)
   dirtyLightMeta.delete(key)
   const traceMeta = dirtyTraceMeta.get(key)
@@ -324,16 +340,24 @@ function takeGeometryVersionMeta(key: string, sx: number, sz: number) {
   dirtyVersionMeta.delete(key)
   const columnKey = rawCacheKey(sx, sz)
   const owned = ownerOwnedLightColumns.has(columnKey)
-  if (!job && !owned && !lightMeta) return { ...traceMeta }
+  const lightPublicationVersion = provenMeshLightVersion({
+    sx,
+    sz,
+    usedColumns,
+    appliedVersionByColumn: appliedOwnerLightVersion
+  })
+  if (!job && !owned && !lightMeta && lightPublicationVersion === 0) return { ...traceMeta }
+  const appliedLightMeta = { ...(lightMeta ?? {}) }
+  delete appliedLightMeta.lightPublicationVersion
   return {
-    ...lightMeta,
+    ...appliedLightMeta,
     ...traceMeta,
     ...snapshotMeshVersions({
       sessionEpoch: job?.sessionEpoch ?? ownerSessionEpoch,
       columnIncarnation: columnIncarnation.get(columnKey) ?? job?.columnIncarnation ?? 1,
       requestId: job?.requestId ?? 0,
-      topologyRevision: job?.topologyRevision ?? 1,
-      lightPublicationVersion: appliedOwnerLightVersion.get(columnKey) ?? lightMeta?.lightPublicationVersion ?? 0,
+      topologyRevision: job?.topologyRevision ?? INITIAL_TOPOLOGY_REVISION,
+      lightPublicationVersion,
       worldGeneration: lightMeta?.worldGeneration ?? 0,
       neighborTopologyRevisions: job?.neighborTopologyRevisions ?? [],
       meshMode: owned ? 'owner' : 'legacyBootstrap'
@@ -937,6 +961,14 @@ const handleMessage = async (data: any) => {
     case 'dirty': {
       const loc = new Vec3(data.x, data.y, data.z)
       setSectionDirty(loc, data.value)
+      {
+        const sectionHeight = getSectionHeight()
+        const key = sectionKey(Math.floor(loc.x / 16) * 16, Math.floor(loc.y / sectionHeight) * sectionHeight, Math.floor(loc.z / 16) * 16)
+        if (data.urgent) {
+          urgentSections.add(key)
+          meshTickScheduler.kick()
+        } else if (!data.value) urgentSections.delete(key)
+      }
       if (typeof data.lightPublicationVersion === 'number') {
         const sectionHeight = getSectionHeight()
         const key = sectionKey(Math.floor(loc.x / 16) * 16, Math.floor(loc.y / sectionHeight) * sectionHeight, Math.floor(loc.z / 16) * 16)
@@ -968,22 +1000,25 @@ const handleMessage = async (data: any) => {
             clientLightEditSeq: data.clientLightEditSeq,
             clientLightSessionEpoch: data.clientLightSessionEpoch
           })
-          postClientLightTrace(postMessage, {
-            phase: 'mesherEnqueue',
-            sectionKey: key,
-            requestId: data.clientLightRequestId,
-            editSeq: data.clientLightEditSeq,
-            sessionEpoch: data.clientLightSessionEpoch,
-            lightVersion: data.lightPublicationVersion,
-            worldGeneration: data.worldGeneration,
-            workerIndex
-          })
+          if (isClientLightTraceEnabled() && isClientLightTraceArmed()) {
+            postClientLightTrace(postTrace, {
+              phase: 'mesherEnqueue',
+              sectionKey: key,
+              requestId: data.clientLightRequestId,
+              editSeq: data.clientLightEditSeq,
+              sessionEpoch: data.clientLightSessionEpoch,
+              lightVersion: data.lightPublicationVersion,
+              worldGeneration: data.worldGeneration,
+              workerIndex
+            })
+          }
         }
       }
       break
     }
     case 'clientLightTraceConfig': {
       enableClientLightTrace(Boolean(data.enabled))
+      armClientLightTrace(Boolean(data.armed))
       break
     }
     case 'chunk': {
@@ -1024,6 +1059,7 @@ const handleMessage = async (data: any) => {
       world.customBlockModels.delete(`${data.x},${data.z}`)
       pendingNeighborHeal.clearColumn(data.x, data.z)
       requestTracker.clearColumn(data.x, data.z)
+      clearTopologyPostCacheColumn(data.x, data.z)
       for (const key of [...dirtySections.keys()]) {
         const [sx, , sz] = key.split(',').map(Number)
         if (sx === data.x && sz === data.z) {
@@ -1031,6 +1067,7 @@ const handleMessage = async (data: any) => {
           dirtyLightMeta.delete(key)
           dirtyTraceMeta.delete(key)
           dirtyVersionMeta.delete(key)
+          urgentSections.delete(key)
         }
       }
       if (Object.keys(world.columns).length === 0) softCleanup()
@@ -1162,6 +1199,7 @@ const handleMessage = async (data: any) => {
       const numSections = Math.max(1, Math.floor((worldMaxY - worldMinY) / 16))
       const columns = new Set<string>()
       for (const section of sections) columns.add(`${section.sx},${section.sz}`)
+      const publicationVersion = typeof data.publicationVersion === 'number' ? data.publicationVersion : 0
       for (const col of columns) {
         const [cx, cz] = col.split(',').map(Number)
         const key = rawCacheKey(cx, cz)
@@ -1194,7 +1232,7 @@ const handleMessage = async (data: any) => {
           syncV17LightToColumn(cx, cz, ownerDeltaSectionWorldYs(sections, cx, cz))
         }
         ownerOwnedLightColumns.add(key)
-        appliedOwnerLightVersion.set(key, typeof data.publicationVersion === 'number' ? data.publicationVersion : 0)
+        appliedOwnerLightVersion.set(key, publicationVersion)
         if (typeof data.sessionEpoch === 'number') ownerSessionEpoch = data.sessionEpoch
         invalidateConversion(cx, cz)
       }
@@ -1206,12 +1244,14 @@ const handleMessage = async (data: any) => {
       dirtyLightMeta.clear()
       dirtyTraceMeta.clear()
       dirtyVersionMeta.clear()
+      urgentSections.clear()
       appliedOwnerLightVersion.clear()
       columnIncarnation.clear()
       ownerSessionEpoch = 0
       rejectOwnerPublications = false
       requestTracker.clear()
       clearConversionCache()
+      clearTopologyPostCache()
       rawMapChunkCache.clear()
       parsedV17Cache.clear()
       updateLightV17Cache.clear()
@@ -1335,7 +1375,41 @@ function makeEmptyColumnGeometry(sx: number, sy: number, sz: number, sectionHeig
 // It groups dirty section keys by chunk column, runs one WASM call per column
 // over the full Y range, then splits the column output back into per-section
 // geometries. Only requested section keys are emitted back to the main thread.
-function processColumnTick() {
+async function processColumnTick() {
+  beginTickWasmParseCache()
+  try {
+    await processColumnTickInner()
+  } finally {
+    endTickWasmParseCache()
+  }
+}
+
+function dirtyHasUrgent() {
+  for (const key of dirtySections.keys()) {
+    if (urgentSections.has(key)) return true
+  }
+  return false
+}
+
+function requeueColumnGroups(
+  pending: Array<{ sections: Array<{ key: string; count: number }> }>,
+  urgentKeys: Set<string>
+) {
+  for (const group of pending) {
+    for (const section of group.sections) {
+      dirtySections.set(section.key, (dirtySections.get(section.key) ?? 0) + section.count)
+      if (urgentKeys.has(section.key)) urgentSections.add(section.key)
+    }
+  }
+}
+
+function yieldToIncomingMessages() {
+  return new Promise<void>(resolve => {
+    setTimeout(resolve, 0)
+  })
+}
+
+async function processColumnTickInner() {
   const worldMinY = config?.worldMinY ?? 0
   const worldMaxY = config?.worldMaxY ?? 256
   const columnHeight = worldMaxY - worldMinY
@@ -1345,25 +1419,25 @@ function processColumnTick() {
   // coords — the same units used by section keys). This guarantees a
   // single WASM call per column per tick even when multiple section keys
   // of the same column are dirty.
-  const groups = new Map<string, { x: number; z: number; sections: Array<{ key: string; x: number; y: number; z: number; count: number }> }>()
-  for (const [key, count] of dirtySections) {
-    const [sx, sy, sz] = key.split(',').map(v => parseInt(v, 10))
-    const colKey = `${sx},${sz}`
-    let g = groups.get(colKey)
-    if (!g) {
-      g = { x: sx, z: sz, sections: [] }
-      groups.set(colKey, g)
-    }
-    g.sections.push({ key, x: sx, y: sy, z: sz, count })
-  }
+  const { selected: groups, remaining } = selectColumnGroupsForTick(dirtySections, urgentSections)
   dirtySections.clear()
-  postClientLightTrace(postMessage, {
-    phase: 'mesherStart',
-    queueDepth: groups.size,
-    workerIndex
-  })
+  for (const [key, count] of remaining) dirtySections.set(key, count)
+  const selectedUrgent = new Set<string>()
+  for (const group of groups) {
+    for (const section of group.sections) {
+      if (urgentSections.delete(section.key)) selectedUrgent.add(section.key)
+    }
+  }
+  if (isClientLightTraceEnabled() && isClientLightTraceArmed()) {
+    postClientLightTrace(postTrace, {
+      phase: 'mesherStart',
+      queueDepth: groups.length,
+      workerIndex
+    })
+  }
 
-  for (const group of groups.values()) {
+  for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
+    const group = groups[groupIndex]!
     const { x, z, sections } = group
     const targetChunk = world.getColumn(x, z)
 
@@ -1379,6 +1453,8 @@ function processColumnTick() {
     let preOther = 0
     let preCacheHits = 0
     let preCacheMisses = 0
+    let preWasmParseHits = 0
+    let preWasmParseMisses = 0
     let hadError = false
     let columnMeshPath = 'none'
     let chunkCount = 0
@@ -1391,6 +1467,7 @@ function processColumnTick() {
     // attributed to the column).
     let columnStart = 0
     let postStart = 0
+    let usedLightColumns = new Set<string>()
 
     if (targetChunk && wasm) {
       columnStart = performance.now()
@@ -1398,6 +1475,7 @@ function processColumnTick() {
       const t0 = start
       try {
         const chunksToUse = collectChunksForColumn(x, z)
+        usedLightColumns = new Set(chunksToUse.map(entry => rawCacheKey(entry.x, entry.z)))
         chunkCount = chunksToUse.length
         const caches = packetCaches()
         worldColumns3x3 = countWorldColumns3x3(x, z, (nx, nz) => world.getColumn(nx, nz))
@@ -1515,18 +1593,29 @@ function processColumnTick() {
             let conv: ChunkConversionResult | null = null
             let hit = false
 
-            // WASM fast paths — parse is already fast (2.19× over JS), no
-            // cache needed.  Bypass getOrConvertColumn so the conversion
-            // cache only holds JS-fallback results.  When a WASM helper
-            // returns null (unsupported protocol, parser error, …) we MUST
-            // fall through to the JS column walk — otherwise the column
-            // would render as empty geometry.
+            // WASM fast paths — parse is already fast (2.19× over JS). Cache
+            // for the rest of this tick so 9 dirty columns share neighbour
+            // parses. Bypass getOrConvertColumn so the conversion cache only
+            // holds JS-fallback results.  When a WASM helper returns null
+            // (unsupported protocol, parser error, …) we MUST fall through
+            // to the JS column walk — otherwise the column would render as
+            // empty geometry.
+            const tickKey = rawCacheKey(cx, cz)
             if (rawEntry) {
-              conv = convertRawMapChunkToWasm(rawEntry, version)
+              const cached = getOrConvertTickWasmParse(tickKey, () => convertRawMapChunkToWasm(rawEntry, version))
+              conv = cached.result
+              if (cached.hit) preWasmParseHits++
+              else preWasmParseMisses++
             } else if (v17Entry) {
-              conv = convertParsedV17ToWasm(v17Entry, v17Light, version)
+              const cached = getOrConvertTickWasmParse(tickKey, () => convertParsedV17ToWasm(v17Entry, v17Light, version))
+              conv = cached.result
+              if (cached.hit) preWasmParseHits++
+              else preWasmParseMisses++
             } else if (v16Entry) {
-              conv = convertParsedV16ToWasm(v16Entry, v16Light, version)
+              const cached = getOrConvertTickWasmParse(tickKey, () => convertParsedV16ToWasm(v16Entry, v16Light, version))
+              conv = cached.result
+              if (cached.hit) preWasmParseHits++
+              else preWasmParseMisses++
             }
 
             if (!conv) {
@@ -1561,6 +1650,7 @@ function processColumnTick() {
             conversions.push(conv)
             meshChunks.push({ x: cx, z: cz, chunk })
           }
+          usedLightColumns = new Set(meshChunks.map(entry => rawCacheKey(entry.x, entry.z)))
 
           const twoStepChunkCount = conversions.length
           if (twoStepChunkCount === 0) {
@@ -1715,27 +1805,39 @@ function processColumnTick() {
         const sectionBlocksCount = entry?.blocksCount ?? 0
         // Block entity metadata still needs a per-section world walk
         // (signs/heads/banners), matching the legacy per-section path.
-        const signs: Record<string, SignMeta> = {}
-        const heads: Record<string, HeadMeta> = {}
-        const banners: Record<string, BannerMeta> = {}
-        const beTarget = { signs, heads, banners }
-        const beOpts = { disableBlockEntityTextures: world.config.disableBlockEntityTextures }
-        const { occludingLookup } = getBlockMeta(version)
-        const visGraph = new VisGraph()
-        const cursor = new Vec3(0, 0, 0)
-        for (cursor.y = sy; cursor.y < sy + sectionHeight; cursor.y++) {
-          for (cursor.z = sz; cursor.z < sz + 16; cursor.z++) {
-            for (cursor.x = sx; cursor.x < sx + 16; cursor.x++) {
-              const b = world.getBlock(cursor)
-              if (!b) continue
-              if (occludingLookup[b.stateId]) {
-                visGraph.setOpaque(cursor.x - sx, cursor.y - sy, cursor.z - sz)
+        const topologyRevision = dirtyVersionMeta.get(key)?.topologyRevision
+        const post = getOrComputeTopologyPost(key, topologyRevision, () => {
+          const signs: Record<string, SignMeta> = {}
+          const heads: Record<string, HeadMeta> = {}
+          const banners: Record<string, BannerMeta> = {}
+          const beTarget = { signs, heads, banners }
+          const beOpts = { disableBlockEntityTextures: world.config.disableBlockEntityTextures }
+          const { occludingLookup } = getBlockMeta(version)
+          const visGraph = new VisGraph()
+          const cursor = new Vec3(0, 0, 0)
+          for (cursor.y = sy; cursor.y < sy + sectionHeight; cursor.y++) {
+            for (cursor.z = sz; cursor.z < sz + 16; cursor.z++) {
+              for (cursor.x = sx; cursor.x < sx + 16; cursor.x++) {
+                const b = world.getBlock(cursor)
+                if (!b) continue
+                if (occludingLookup[b.stateId]) {
+                  visGraph.setOpaque(cursor.x - sx, cursor.y - sy, cursor.z - sz)
+                }
+                collectBlockEntityMetadata(b, cursor.x, cursor.y, cursor.z, beTarget, beOpts, world)
               }
-              collectBlockEntityMetadata(b, cursor.x, cursor.y, cursor.z, beTarget, beOpts, world)
             }
           }
-        }
-        const sectionVisibilitySet = packVisibilitySet(visGraph.resolve())
+          return {
+            visibilitySet: packVisibilitySet(visGraph.resolve()),
+            signs,
+            heads,
+            banners
+          }
+        })
+        const signs = post.payload.signs as Record<string, SignMeta>
+        const heads = post.payload.heads as Record<string, HeadMeta>
+        const banners = post.payload.banners as Record<string, BannerMeta>
+        const sectionVisibilitySet = post.payload.visibilitySet as ReturnType<typeof packVisibilitySet>
 
         let geometry: MesherGeometryOutput
         let transferable: any[] = []
@@ -1842,11 +1944,11 @@ function processColumnTick() {
           geometry.heads = heads
           geometry.banners = banners
         }
-        const versionMeta = takeGeometryVersionMeta(key, sx, sz)
+        const versionMeta = takeGeometryVersionMeta(key, sx, sz, usedLightColumns)
         postMessage({ type: 'geometry', key, geometry, workerIndex, ...versionMeta }, transferable)
       } else if (hadError) {
         const errorGeometry = makeEmptyColumnGeometry(sx, sy, sz, sectionHeight, true)
-        const versionMeta = takeGeometryVersionMeta(key, sx, sz)
+        const versionMeta = takeGeometryVersionMeta(key, sx, sz, usedLightColumns)
         postMessage({ type: 'geometry', key, geometry: errorGeometry, workerIndex, ...versionMeta })
       }
       // No targetChunk and no error: skip geometry message (mirrors
@@ -1886,6 +1988,8 @@ function processColumnTick() {
           preOther: !attributed ? preOther : 0,
           preCacheHits: !attributed ? preCacheHits : 0,
           preCacheMisses: !attributed ? preCacheMisses : 0,
+          preWasmParseHits: !attributed ? preWasmParseHits : 0,
+          preWasmParseMisses: !attributed ? preWasmParseMisses : 0,
           chunkCount: !attributed ? chunkCount : 0,
           worldColumns3x3: !attributed ? worldColumns3x3 : 0,
           parsedCache3x3: !attributed ? parsedCache3x3 : 0,
@@ -1894,30 +1998,37 @@ function processColumnTick() {
         attributed = true
       }
     }
+    if (groupIndex < groups.length - 1) {
+      await yieldToIncomingMessages()
+      if (dirtyHasUrgent()) {
+        requeueColumnGroups(groups.slice(groupIndex + 1), selectedUrgent)
+        break
+      }
+    }
   }
-  postClientLightTrace(postMessage, {
-    phase: 'mesherEnd',
-    queueDepth: 0,
-    workerIndex
-  })
+  if (isClientLightTraceEnabled() && isClientLightTraceArmed()) {
+    postClientLightTrace(postTrace, {
+      phase: 'mesherEnd',
+      queueDepth: 0,
+      workerIndex
+    })
+  }
 }
 
-setInterval(async () => {
+const meshTickScheduler = createMeshTickScheduler(async () => {
   if (!allDataReady) return
-
-  // Ensure WASM is initialized
   if (!wasmInitialized) {
     await initWasm()
-    if (!wasmInitialized) return // Still not initialized, skip this cycle
+    if (!wasmInitialized) return
   }
-
   if (dirtySections.size === 0) return
-
   try {
-    processColumnTick()
+    await processColumnTick()
   } catch (err) {
     console.error('[WASM Mesher] processColumnTick failed:', err)
-    // Swallow to avoid breaking the setInterval; individual columns
-    // already have their own try/catch.
   }
-}, 50)
+})
+
+setInterval(() => {
+  meshTickScheduler.kick()
+}, BULK_MESH_INTERVAL_MS)

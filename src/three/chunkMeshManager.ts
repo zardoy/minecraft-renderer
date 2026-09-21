@@ -34,7 +34,7 @@ import { disposeObject } from './threeJsUtils'
 import { getBannerTexture, createBannerMesh, releaseBannerTexture } from './bannerRenderer'
 import { getSignTexture, releaseSignTexture, disposeAllSignTextures } from './signTextureCache'
 import { BlockEntityLightRegistry } from '../lib/blockEntityLightRegistry'
-import { isClientLightTraceEnabled, recordClientLightTrace } from '../lib/clientLightTrace'
+import { isClientLightTraceEnabled, recordClientLightTraceGpuSample } from '../lib/clientLightTrace'
 import { SectionOcclusionCull, hsvToRgb } from './occlusion/sectionOcclusionCull'
 
 export interface ChunkMeshPool {
@@ -604,9 +604,10 @@ export class ChunkMeshManager {
     if (isClientLightTraceEnabled()) {
       const cubeFaces = gb?.getVisibleFaceCount() ?? 0
       const legacyQuads = (opaqueBuf?.getVisibleQuadCount() ?? 0) + (blendBuf?.getVisibleQuadCount() ?? 0)
-      recordClientLightTrace({
+      const drawableFaces = cubeFaces + legacyQuads
+      recordClientLightTraceGpuSample('gpuDrawn', drawableFaces, () => ({
         phase: 'gpuDrawn',
-        drawableFaces: cubeFaces + legacyQuads,
+        drawableFaces,
         pendingReplace: !!(gb?.hasPendingReplace() || opaqueBuf?.hasPendingReplace() || blendBuf?.hasPendingReplace()),
         pendingMove: !!(gb?.getPendingMove() || opaqueBuf?.getPendingMove() || blendBuf?.getPendingMove()),
         unuploadedRanges:
@@ -614,7 +615,7 @@ export class ChunkMeshManager {
           (opaqueBuf?.getPendingDirtyRanges().length ?? 0) +
           (blendBuf?.getPendingDirtyRanges().length ?? 0),
         cullReason: smartCull ? 'frustum+occlusion' : 'frustum'
-      })
+      }))
     }
 
     this.lastBufferStateKey = this.bufferStateKey()

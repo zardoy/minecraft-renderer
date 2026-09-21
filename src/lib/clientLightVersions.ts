@@ -51,10 +51,14 @@ export function shouldAcceptVersionedMesh(
 ): boolean {
   if (mesh.hadErrors) return false
   if (opts.ownerManaged) {
-    if (mesh.meshMode === 'legacyBootstrap') return required == null
-    if (isUnversionedMesh(mesh)) return false
     if (opts.sessionEpoch != null && mesh.sessionEpoch != null && mesh.sessionEpoch !== opts.sessionEpoch) return false
     if (opts.columnIncarnation != null && mesh.columnIncarnation != null && mesh.columnIncarnation !== opts.columnIncarnation) {
+      return false
+    }
+    if (mesh.meshMode === 'legacyBootstrap') {
+      if (required == null) return true
+      if (mesh.lightPublicationVersion == null) return false
+    } else if (isUnversionedMesh(mesh)) {
       return false
     }
   } else if (isUnversionedMesh(mesh)) {
@@ -62,21 +66,22 @@ export function shouldAcceptVersionedMesh(
   }
   if (required == null) return true
   if (mesh.worldGeneration != null && mesh.worldGeneration !== required.worldGeneration) return false
-  if (mesh.lightPublicationVersion != null && mesh.lightPublicationVersion < required.requiredVersion) return false
   if (required.topologyRevision != null && mesh.topologyRevision != null && mesh.topologyRevision < required.topologyRevision) {
+    return false
+  }
+  const topologyFresh =
+    required.topologyRevision != null && mesh.topologyRevision != null && mesh.topologyRevision >= required.topologyRevision
+  if (!topologyFresh && mesh.lightPublicationVersion != null && mesh.lightPublicationVersion < required.requiredVersion) {
     return false
   }
   return true
 }
 
-export function shouldCommitPendingGeometry(
-  mesh: Parameters<typeof shouldAcceptVersionedMesh>[0] & { hadErrors?: boolean },
-  required: MeshSectionLightRequirement | null | undefined,
-  opts: { ownerManaged: boolean; sessionEpoch?: number; columnIncarnation?: number }
-): 'commit' | 'keep-displayed' | 'commit-empty' {
-  if (mesh.hadErrors) return 'keep-displayed'
-  if (!shouldAcceptVersionedMesh(mesh, required, opts)) return 'keep-displayed'
-  return 'commit'
+export function isOwnerGeometryLightStale(
+  mesh: { lightPublicationVersion?: number },
+  required: MeshSectionLightRequirement | null | undefined
+): boolean {
+  return required != null && mesh.lightPublicationVersion != null && mesh.lightPublicationVersion < required.requiredVersion
 }
 
 export function shouldDispatchCoveringRemesh(opts: {
@@ -91,8 +96,11 @@ export function shouldDispatchCoveringRemesh(opts: {
   return false
 }
 
+/** Stamped on a section that has not been edited. The first edit is always greater. */
+export const INITIAL_TOPOLOGY_REVISION = 0
+
 export function nextTopologyRevision(current: number | undefined): number {
-  return (current ?? 0) + 1
+  return (current ?? INITIAL_TOPOLOGY_REVISION) + 1
 }
 
 export function snapshotMeshVersions(input: {

@@ -378,6 +378,9 @@ impl LightEngine {
         }
         self.check_dedup.clear();
         self.sky_check_dedup.clear();
+        let known_columns: HashSet<(i32, i32)> =
+            self.sections.keys().map(|&(sx, _, sz)| (sx, sz)).collect();
+        promote_edit_column(&mut self.pending, |sx, sz| known_columns.contains(&(sx, sz)));
         self.waiting_this_batch = column_admission_len(&self.pending);
     }
 
@@ -510,9 +513,12 @@ impl LightEngine {
         let (sx, sy, sz) = section_key(x, y, z);
         let old_light = self.get_block_light(x, y, z);
         {
-            let section = self.ensure_section(sx, sy, sz, SectionAvailability::Loaded);
-            section.availability = SectionAvailability::Loaded;
-            let states = section.states.get_or_insert_with(|| vec![AIR; BLOCK_SECTION_VOLUME]);
+            let Some(section) = self.sections.get_mut(&(sx, sy, sz)) else {
+                return;
+            };
+            let Some(states) = section.states.as_mut() else {
+                return;
+            };
             states[block_index(x, y, z)] = state_id;
         }
         let emission = self.emission_of(state_id);
@@ -1387,6 +1393,53 @@ fn column_admission_len(pending: &VecDeque<LightEvent>) -> usize {
         .iter()
         .take_while(|event| event_column(event) == column)
         .count()
+}
+
+/// Promote the earliest edit column, then its queued 3x3 neighborhood.
+/// Block light (level <= 15, decay >= 1) cannot reach beyond these columns.
+/// Preserve each column's event order and unrelated bulk order. Admission
+/// remains one column at a time; missing neighbors are never invented.
+fn promote_edit_column(pending: &mut VecDeque<LightEvent>, column_known: impl Fn(i32, i32) -> bool) {
+    if pending.is_empty() {
+        return;
+    }
+    let head_column = event_column(pending.front().unwrap());
+    // A bounded prefix scan turns startup bulk depth into interactive latency:
+    // edits beyond that prefix cannot be promoted until the bulk drains.
+    let Some(edit_idx) = pending
+        .iter()
+        .position(|event| matches!(event, LightEvent::BlockChange { .. }))
+    else {
+        return;
+    };
+    let edit_column = event_column(&pending[edit_idx]);
+    if edit_column == head_column && edit_idx >= column_admission_len(pending) {
+        // Keep the initial head prefix as its own transaction. The trailing
+        // edit and its dependencies can jump bulk at the next boundary.
+        return;
+    }
+    let original: Vec<LightEvent> = pending.drain(..).collect();
+    let has_ingest = original.iter().any(|event| {
+        event_column(event) == edit_column && matches!(event, LightEvent::IngestBlockSection { .. })
+    });
+    if !has_ingest && !column_known(edit_column.0, edit_column.1) {
+        pending.extend(original);
+        return;
+    }
+    let (extracted, rest): (Vec<LightEvent>, Vec<LightEvent>) = original
+        .into_iter()
+        .partition(|event| event_column(event) == edit_column);
+    let (neighbors, bulk): (Vec<LightEvent>, Vec<LightEvent>) = rest
+        .into_iter()
+        .partition(|event| {
+            let (sx, sz) = event_column(event);
+            sx.abs_diff(edit_column.0) <= 1 && sz.abs_diff(edit_column.1) <= 1
+        });
+    pending.extend(extracted);
+    // Retain dependencies after the edit leaves the queue. Ingest's face
+    // contact wake-up propagates the light as each neighbor becomes known.
+    pending.extend(neighbors);
+    pending.extend(bulk);
 }
 
 fn section_key(x: i32, y: i32, z: i32) -> SectionKey {
@@ -3008,6 +3061,7 @@ mod tests {
     }
 
     /// FIFO inside the unit: a later edit cannot enter an earlier foreign-column batch.
+    /// After that unit publishes, the leftover edit jumps remaining bulk.
     #[test]
     fn batch_fifo_keeps_later_edit_after_prior_columns() {
         let mut e = engine();
@@ -3027,9 +3081,267 @@ mod tests {
         assert!(first.sections.iter().all(|section| section.sx == 0));
         assert_eq!(e.get_sky_light(8, 64, 8), 15, "edit must not apply inside column 0 batch");
         let second = drain_until_publication(&mut e).unwrap();
-        assert!(second.sections.iter().all(|section| section.sx == 1));
+        assert!(
+            second.sections.iter().all(|section| section.sx == 0),
+            "leftover edit of the already-loaded column jumps remaining bulk"
+        );
+        assert!(e.get_sky_light(8, 64, 8) < 15, "edit applies once its leftover unit is admitted");
+        let third = drain_until_publication(&mut e).unwrap();
+        assert!(third.sections.iter().all(|section| section.sx == 1));
+    }
+
+    /// A later edit of a different column jumps the whole column unit ahead of the convoy.
+    #[test]
+    fn batch_edit_jumps_foreign_column_convoy() {
+        let mut e = engine();
+        for sy in 0..16 {
+            load_section(&mut e, 0, sy, 0, air_section());
+        }
+        for sy in 0..16 {
+            load_section(&mut e, 1, sy, 0, air_section());
+        }
+        e.push_event(LightEvent::BlockChange {
+            x: 24,
+            y: 64,
+            z: 8,
+            state_id: STONE,
+        });
+        let first = drain_until_publication(&mut e).unwrap();
+        assert!(
+            first.sections.iter().all(|section| section.sx == 1 && section.sz == 0),
+            "edit column unit must be admitted first"
+        );
+        assert!(e.get_sky_light(24, 64, 8) < 15, "jumped edit applies in its own unit");
+        let second = drain_until_publication(&mut e).unwrap();
+        assert!(second.sections.iter().all(|section| section.sx == 0 && section.sz == 0));
+    }
+
+    /// Interactive edits must not disappear beyond a bounded bulk scan window.
+    #[test]
+    fn batch_edit_jumps_long_convoy() {
+        for already_loaded in [false, true] {
+            let mut e = engine();
+            e.set_sky_light_enabled(false);
+            load_section(&mut e, -1, 4, 0, air_section());
+            if already_loaded {
+                finish(&mut e);
+            }
+            // Cheap bulk events isolate admission from solver cost. More than
+            // 1024 events, with the edited column initially at the FIFO head.
+            for sx in 1..4097 {
+                e.push_event(LightEvent::SetAvailability {
+                    sx,
+                    sy: 4,
+                    sz: 0,
+                    availability: SectionAvailability::Loaded,
+                });
+            }
+            e.push_event(LightEvent::BlockChange {
+                x: -8,
+                y: 64,
+                z: 8,
+                state_id: TORCH,
+            });
+            // If ingest is at the head it is still its own transaction. The
+            // edit must be admitted at the very next boundary, not after bulk.
+            if !already_loaded {
+                e.step_nodes(usize::MAX);
+                e.poll_completed_publication();
+                assert_eq!(e.get_block_light(-8, 64, 8), 0);
+            }
+            e.step_nodes(usize::MAX);
+            assert_eq!(e.get_block_light(-8, 64, 8), 14,
+                "edit must jump long convoy (already_loaded={already_loaded})");
+            assert!(e.poll_completed_publication().is_some());
+            assert_eq!(e.pending.len(), 4096);
+            for (index, event) in e.pending.iter().enumerate() {
+                assert_eq!(event_column(event), (index as i32 + 1, 0));
+            }
+        }
+    }
+
+    /// Startup bulk must not delay the other side of an edited X/Z boundary.
+    #[test]
+    fn batch_edit_promotes_pending_light_neighbors() {
+        for edit_at_head in [false, true] {
+            for (x, z, neighbors, target) in [
+                (15, 8, vec![(1, 0)], (16, 8)),
+                (8, 15, vec![(0, 1)], (8, 16)),
+                (0, 0, vec![(-1, 0), (0, -1), (-1, -1)], (-1, -1)),
+            ] {
+                let mut e = engine();
+                e.set_sky_light_enabled(false);
+                load_section(&mut e, 0, 4, 0, air_section());
+                finish(&mut e);
+                let edit = LightEvent::BlockChange { x, y: 72, z, state_id: TORCH };
+                if edit_at_head { e.push_event(edit.clone()); }
+                for sx in 100..164 {
+                    load_section(&mut e, sx, 4, 0, air_section());
+                }
+                for &(sx, sz) in &neighbors {
+                    load_section(&mut e, sx, 4, sz, air_section());
+                }
+                if !edit_at_head { e.push_event(edit); }
+                // One transaction for the edit and one per pending neighbor.
+                for _ in 0..=neighbors.len() {
+                    e.step_nodes(usize::MAX);
+                    e.poll_completed_publication();
+                }
+                let distance = (target.0 - x).abs() + (target.1 - z).abs();
+                assert_eq!(e.get_block_light(target.0, 72, target.1), 14 - distance as u8,
+                    "neighbor must light before bulk: head={edit_at_head}, x={x}, z={z}");
+                assert_eq!(e.section_availability(100, 4, 0), SectionAvailability::Unloaded);
+                assert_eq!(e.pending.len(), 128, "unrelated bulk remains queued");
+                let early = e.get_block_light(target.0, 72, target.1);
+                finish(&mut e);
+                assert_eq!(e.get_block_light(target.0, 72, target.1), early);
+            }
+        }
+    }
+
+    #[test]
+    fn batch_neighbor_promotion_preserves_lifecycle_and_bulk_order() {
+        let edit = LightEvent::BlockChange { x: 15, y: 72, z: 8, state_id: TORCH };
+        let neighbor = vec![
+            LightEvent::UnloadColumn { sx: 1, sz: 0 },
+            LightEvent::IngestBlockSection { sx: 1, sy: 4, sz: 0, states: air_section() },
+            LightEvent::SetAvailability { sx: 1, sy: 4, sz: 0, availability: SectionAvailability::Loaded },
+            LightEvent::ServerLight { sx: 1, sy: 4, sz: 0, channel: LightChannel::Block, kind: ServerLightKind::Empty },
+        ];
+        let bulk: Vec<_> = (100..104).map(|sx| LightEvent::UnloadColumn { sx, sz: 0 }).collect();
+        let mut pending = VecDeque::new();
+        for (a, b) in bulk.iter().zip(&neighbor) {
+            pending.push_back(a.clone());
+            pending.push_back(b.clone());
+        }
+        pending.push_back(edit.clone());
+        promote_edit_column(&mut pending, |sx, sz| (sx, sz) == (0, 0));
+        let expected: VecDeque<_> = std::iter::once(edit)
+            .chain(neighbor).chain(bulk).collect();
+        assert_eq!(format!("{pending:?}"), format!("{expected:?}"));
+    }
+
+    /// Bulk columns keep their relative order around a jumped edit unit.
+    #[test]
+    fn batch_edit_jump_preserves_remaining_bulk_order() {
+        let mut e = engine();
+        for sx in 0..3 {
+            for sy in 0..16 {
+                load_section(&mut e, sx, sy, 0, air_section());
+            }
+        }
+        e.push_event(LightEvent::BlockChange {
+            x: 24,
+            y: 64,
+            z: 8,
+            state_id: STONE,
+        });
+        let first = drain_until_publication(&mut e).unwrap();
+        assert!(first.sections.iter().all(|section| section.sx == 1));
+        let second = drain_until_publication(&mut e).unwrap();
+        assert!(second.sections.iter().all(|section| section.sx == 0));
+        let third = drain_until_publication(&mut e).unwrap();
+        assert!(third.sections.iter().all(|section| section.sx == 2));
+    }
+
+    /// A naked BlockChange for an unknown column must not jump or become AIR.
+    #[test]
+    fn batch_edit_does_not_jump_unknown_column() {
+        let mut e = engine();
+        for sy in 0..16 {
+            load_section(&mut e, 0, sy, 0, air_section());
+        }
+        e.push_event(LightEvent::BlockChange {
+            x: 80,
+            y: 64,
+            z: 8,
+            state_id: STONE,
+        });
+        let first = drain_until_publication(&mut e).unwrap();
+        assert!(first.sections.iter().all(|section| section.sx == 0 && section.sz == 0));
+        assert!(
+            finish(&mut e).is_none(),
+            "unknown edit must not publish a phantom AIR column"
+        );
+        assert!(
+            e.packed_block_light(5, 4, 0).is_none(),
+            "unknown column must stay unknown, not a Loaded AIR fill"
+        );
+        assert!(!e.step(0.0));
+    }
+
+    /// Column (sx,sz) known via another sy still leaves a missing sy unknown.
+    /// AIR-filling that sy would materialize unknown as Loaded air.
+    #[test]
+    fn batch_edit_known_column_missing_sy_does_not_materialize_air() {
+        let mut e = engine();
+        load_section(&mut e, 0, 4, 0, air_section());
         finish(&mut e);
-        assert!(e.get_sky_light(8, 64, 8) < 15, "edit applies only after prior FIFO columns");
+        assert!(e.packed_block_light(0, 4, 0).is_some());
+        assert_eq!(e.section_availability(0, 5, 0), SectionAvailability::Unloaded);
+
+        for sy in 0..16 {
+            load_section(&mut e, 1, sy, 0, air_section());
+        }
+        e.push_event(LightEvent::BlockChange {
+            x: 8,
+            y: 80,
+            z: 8,
+            state_id: STONE,
+        });
+
+        let mut saw_publication = false;
+        while let Some(publication) = drain_until_publication(&mut e) {
+            saw_publication = true;
+            assert!(
+                publication
+                    .sections
+                    .iter()
+                    .all(|section| !(section.sx == 0 && section.sy == 5 && section.sz == 0)),
+                "must not publish a phantom AIR section at the missing sy"
+            );
+        }
+        assert!(saw_publication, "bulk column must still publish");
+        assert!(
+            e.packed_block_light(0, 5, 0).is_none(),
+            "missing sy must stay unknown, not a Loaded AIR fill"
+        );
+        assert_eq!(e.section_availability(0, 5, 0), SectionAvailability::Unloaded);
+        assert!(e.packed_block_light(0, 4, 0).is_some(), "known sy stays present");
+        assert!(!e.step(0.0));
+    }
+
+    /// An edit of an already-loaded column jumps ahead of later bulk ingest.
+    #[test]
+    fn batch_edit_jumps_loaded_column_ahead_of_new_bulk() {
+        let mut e = engine();
+        for sy in 0..16 {
+            load_section(&mut e, 0, sy, 0, air_section());
+        }
+        finish(&mut e);
+        assert_eq!(e.get_sky_light(8, 64, 8), 15);
+        for sy in 0..16 {
+            load_section(&mut e, 1, sy, 0, air_section());
+        }
+        for sy in 0..16 {
+            load_section(&mut e, 2, sy, 0, air_section());
+        }
+        e.push_event(LightEvent::BlockChange {
+            x: 8,
+            y: 64,
+            z: 8,
+            state_id: STONE,
+        });
+        let first = drain_until_publication(&mut e).unwrap();
+        assert!(
+            first.sections.iter().all(|section| section.sx == 0 && section.sz == 0),
+            "loaded edit column must jump ahead of new bulk"
+        );
+        assert!(e.get_sky_light(8, 64, 8) < 15);
+        let second = drain_until_publication(&mut e).unwrap();
+        assert!(second.sections.iter().all(|section| section.sx == 1 && section.sz == 0));
+        let third = drain_until_publication(&mut e).unwrap();
+        assert!(third.sections.iter().all(|section| section.sx == 2 && section.sz == 0));
     }
 
     /// BFS must reuse derived (x,z) source-meta. One air column is 256 sticks × H=256.

@@ -7,7 +7,14 @@
 
 import type { LightOwnerEvent, LightPublication } from '../../three/lightOwnerHost'
 import { eventsFromWasmUpdateLight } from './updateLightToOwnerEvents'
-import { enableClientLightTrace, postClientLightTrace } from '../../lib/clientLightTrace'
+import {
+  CLIENT_LIGHT_TRACE_MESSAGE,
+  armClientLightTrace,
+  enableClientLightTrace,
+  isClientLightTraceArmed,
+  isClientLightTraceEnabled,
+  postClientLightTrace
+} from '../../lib/clientLightTrace'
 
 type WasmEngine = {
   setLightTables(emission: Uint8Array, opacity: Uint8Array): void
@@ -23,16 +30,20 @@ let wasm: any = null
 let worldMinY = 0
 const pending: any[] = []
 let localContinue: ReturnType<typeof setTimeout> | null = null
+let stepGeneration = 0
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope
+const postTrace = (message: { type: typeof CLIENT_LIGHT_TRACE_MESSAGE; events?: unknown; event?: unknown }) => {
+  ctx.postMessage(message)
+}
 
 function runOwnerStepSlice(budgetMs: number) {
   localContinue = null
   const remaining = engine?.step(budgetMs) ?? false
   const publication = engine?.pollCompletedPublication() ?? null
-  ctx.postMessage({ type: 'stepped', remaining, publication })
-  if (publication) {
-    postClientLightTrace(message => ctx.postMessage(message), {
+  ctx.postMessage({ type: 'stepped', remaining, publication, stepGeneration })
+  if (publication && isClientLightTraceEnabled() && isClientLightTraceArmed()) {
+    postClientLightTrace(postTrace, {
       phase: 'ownerComplete',
       lightVersion: publication.publicationVersion,
       worldGeneration: publication.worldGeneration,
@@ -79,15 +90,18 @@ async function handle(data: any) {
           : event && 'sx' in event && typeof event.sx === 'number'
             ? `${event.sx},${(event as { sz: number }).sz}`
             : undefined
-      postClientLightTrace(message => ctx.postMessage(message), {
-        phase: 'ownerAdmit',
-        currentColumn,
-        queueDepth: pending.length
-      })
+      if (isClientLightTraceEnabled() && isClientLightTraceArmed()) {
+        postClientLightTrace(postTrace, {
+          phase: 'ownerAdmit',
+          currentColumn,
+          queueDepth: pending.length
+        })
+      }
       break
     }
     case 'clientLightTraceConfig': {
       enableClientLightTrace(Boolean(data.enabled))
+      armClientLightTrace(Boolean(data.armed))
       break
     }
     case 'setUpdateLightV17': {
@@ -107,6 +121,7 @@ async function handle(data: any) {
       break
     }
     case 'step': {
+      if (typeof data.stepGeneration === 'number') stepGeneration = data.stepGeneration
       if (localContinue) break
       runOwnerStepSlice(data.budgetMs ?? 5)
       break

@@ -1,23 +1,36 @@
-import { afterEach, describe, expect, test } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
+  CLIENT_LIGHT_TRACE_BATCH_MS,
+  CLIENT_LIGHT_TRACE_BATCH_SIZE,
   CLIENT_LIGHT_TRACE_CAPACITY,
+  armClientLightTrace,
   bumpClientLightTraceSessionEpoch,
   clearClientLightTrace,
   comparableNow,
+  dumpClientLightTrace,
   enableClientLightTrace,
+  flushClientLightTracePosts,
   getClientLightTraceAggregates,
   getClientLightTraceEvents,
   ingestRemoteClientLightTrace,
+  ingestRemoteClientLightTraceMessage,
+  isClientLightTraceArmed,
   isClientLightTraceEnabled,
+  isClientLightTraceMessage,
   maybeEnableClientLightTraceFromLocation,
   nextClientLightEditSeq,
   nextClientLightRequestId,
-  recordClientLightTrace
+  postClientLightTrace,
+  recordClientLightTrace,
+  recordClientLightTraceGpuSample,
+  requestClientLightTraceSample
 } from './clientLightTrace'
 
 afterEach(() => {
+  flushClientLightTracePosts()
   enableClientLightTrace(false)
   clearClientLightTrace()
+  vi.useRealTimers()
 })
 
 test('clientLightTrace is disabled by default and drops records', () => {
@@ -137,5 +150,122 @@ describe('clientLightTrace enable from location search', () => {
   test('maybeEnableClientLightTraceFromLocation turns on with clientLightTrace=1', () => {
     maybeEnableClientLightTraceFromLocation({ search: '?clientLight=1&clientLightTrace=1' })
     expect(isClientLightTraceEnabled()).toBe(true)
+    expect(isClientLightTraceArmed()).toBe(false)
   })
 })
+
+describe('clientLightTrace arm window', () => {
+  test('stays disarmed when enabled', () => {
+    enableClientLightTrace(true)
+    expect(isClientLightTraceEnabled()).toBe(true)
+    expect(isClientLightTraceArmed()).toBe(false)
+  })
+
+  test('exposes arm and dump on the window host when enabled', () => {
+    enableClientLightTrace(true)
+    const host = globalThis as typeof globalThis & {
+      clientLightTraceArm?: (on?: boolean) => void
+      clientLightTraceDump?: () => unknown
+    }
+    expect(typeof host.clientLightTraceArm).toBe('function')
+    expect(typeof host.clientLightTraceDump).toBe('function')
+    host.clientLightTraceArm?.()
+    expect(isClientLightTraceArmed()).toBe(true)
+    recordClientLightTrace({ phase: 'blockChange', sectionKey: '0,64,0' })
+    const dumped = host.clientLightTraceDump?.() as { events: unknown[]; aggregates: { count: number } }
+    expect(dumped.events).toHaveLength(1)
+    expect(dumped.aggregates.count).toBe(1)
+  })
+
+  test('disabling also disarms', () => {
+    enableClientLightTrace(true)
+    armClientLightTrace(true)
+    enableClientLightTrace(false)
+    expect(isClientLightTraceArmed()).toBe(false)
+  })
+})
+
+describe('clientLightTrace worker post batching', () => {
+  test('bulk events without arm send zero inter-thread messages', () => {
+    enableClientLightTrace(true)
+    const posts: unknown[] = []
+    for (let i = 0; i < 50; i++) {
+      postClientLightTrace(message => posts.push(message), { phase: 'mesherEnqueue', requestId: i })
+    }
+    flushClientLightTracePosts()
+    expect(posts).toEqual([])
+    expect(getClientLightTraceEvents()).toHaveLength(50)
+  })
+
+  test('armed posts batch so messages are far fewer than events and every event is delivered', () => {
+    vi.useFakeTimers()
+    enableClientLightTrace(true)
+    armClientLightTrace(true)
+    const posts: Array<{ type?: string; events?: Array<{ requestId?: number }> }> = []
+    const eventCount = 50
+    for (let i = 0; i < eventCount; i++) {
+      postClientLightTrace(message => posts.push(message), { phase: 'mesherEnqueue', requestId: i })
+    }
+    expect(posts).toEqual([])
+    vi.advanceTimersByTime(CLIENT_LIGHT_TRACE_BATCH_MS)
+    expect(posts).toHaveLength(1)
+    expect(posts[0]!.events).toHaveLength(eventCount)
+    expect(posts[0]!.events!.map(event => event.requestId)).toEqual([...Array(eventCount).keys()])
+    expect(isClientLightTraceMessage(posts[0])).toBe(true)
+
+    enableClientLightTrace(false)
+    clearClientLightTrace()
+    enableClientLightTrace(true)
+    for (const post of posts) ingestRemoteClientLightTraceMessage(post)
+    expect(getClientLightTraceEvents()).toHaveLength(eventCount)
+  })
+
+  test('armed posts flush immediately at the batch size', () => {
+    enableClientLightTrace(true)
+    armClientLightTrace(true)
+    const posts: Array<{ events?: unknown[] }> = []
+    for (let i = 0; i < CLIENT_LIGHT_TRACE_BATCH_SIZE + 3; i++) {
+      postClientLightTrace(message => posts.push(message), { phase: 'ownerAdmit', requestId: i })
+    }
+    expect(posts).toHaveLength(1)
+    expect(posts[0]!.events).toHaveLength(CLIENT_LIGHT_TRACE_BATCH_SIZE)
+    flushClientLightTracePosts()
+    expect(posts).toHaveLength(2)
+    expect(posts[1]!.events).toHaveLength(3)
+  })
+})
+
+describe('clientLightTrace gpu sampling', () => {
+  test('1000 unchanged gpuDrawn frames record at most one event until a sample is requested', () => {
+    enableClientLightTrace(true)
+    for (let i = 0; i < 1000; i++) {
+      recordClientLightTraceGpuSample('gpuDrawn', 8000, { phase: 'gpuDrawn', drawableFaces: 8000 })
+    }
+    expect(getClientLightTraceEvents().filter(event => event.phase === 'gpuDrawn')).toHaveLength(1)
+    requestClientLightTraceSample()
+    recordClientLightTraceGpuSample('gpuDrawn', 8000, { phase: 'gpuDrawn', drawableFaces: 8000 })
+    expect(getClientLightTraceEvents().filter(event => event.phase === 'gpuDrawn')).toHaveLength(2)
+    recordClientLightTraceGpuSample('gpuDrawn', 9000, { phase: 'gpuDrawn', drawableFaces: 9000 })
+    expect(getClientLightTraceEvents().filter(event => event.phase === 'gpuDrawn')).toHaveLength(3)
+  })
+
+  test('gpuUploaded records only when the sampled metric changes', () => {
+    enableClientLightTrace(true)
+    recordClientLightTraceGpuSample('gpuUploaded', 128, { phase: 'gpuUploaded', unuploadedRanges: 4, drawableFaces: 128 })
+    recordClientLightTraceGpuSample('gpuUploaded', 128, { phase: 'gpuUploaded', unuploadedRanges: 3, drawableFaces: 128 })
+    recordClientLightTraceGpuSample('gpuUploaded', 256, { phase: 'gpuUploaded', unuploadedRanges: 2, drawableFaces: 256 })
+    const uploaded = getClientLightTraceEvents().filter(event => event.phase === 'gpuUploaded')
+    expect(uploaded).toHaveLength(2)
+    expect(uploaded[0]!.drawableFaces).toBe(128)
+    expect(uploaded[1]!.drawableFaces).toBe(256)
+  })
+})
+
+test('dumpClientLightTrace requests a gpu sample for the next draw', () => {
+  enableClientLightTrace(true)
+  recordClientLightTraceGpuSample('gpuDrawn', 10, { phase: 'gpuDrawn', drawableFaces: 10 })
+  dumpClientLightTrace()
+  recordClientLightTraceGpuSample('gpuDrawn', 10, { phase: 'gpuDrawn', drawableFaces: 10 })
+  expect(getClientLightTraceEvents().filter(event => event.phase === 'gpuDrawn')).toHaveLength(2)
+})
+

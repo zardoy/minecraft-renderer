@@ -152,6 +152,8 @@ export interface MesherMainEvents {
     // Per-event counts for the column-mode conversion cache.
     preCacheHits?: number
     preCacheMisses?: number
+    preWasmParseHits?: number
+    preWasmParseMisses?: number
     chunkCount?: number
     worldColumns3x3?: number
     parsedCache3x3?: number

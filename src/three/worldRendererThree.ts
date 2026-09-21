@@ -40,7 +40,7 @@ import { SceneOrigin } from './sceneOrigin'
 import { downloadWorldGeometry } from './worldGeometryExport'
 import { ChunkMeshManager } from './chunkMeshManager'
 import { selectReadySectionFlushes } from './pendingSectionFlush'
-import { recordClientLightTrace } from '../lib/clientLightTrace'
+import { isClientLightTraceEnabled, recordClientLightTrace } from '../lib/clientLightTrace'
 import { EntityLightController } from './entityLightController'
 import { raycastVoxelSolid } from './thirdPersonVoxelRaycast'
 import type { RendererModuleManifest, RegisteredModule, RendererModuleController } from './rendererModuleSystem'
@@ -574,7 +574,7 @@ export class WorldRendererThree extends WorldRendererCommon {
       this.cursorBlock.setHighlightCursorBlock(value ? new Vec3(value.x, value.y, value.z) : null, value?.shapes)
     })
     this.onReactivePlayerStateUpdated('diggingBlock', value => {
-      if (value && (value.stage == null || value.stage === 0)) {
+      if (value && (value.stage == null || value.stage === 0) && isClientLightTraceEnabled()) {
         recordClientLightTrace({ phase: 'inputClick', sectionKey: `${value.x},${value.y},${value.z}` })
       }
       this.cursorBlock.updateBreakAnimation(value ? { x: value.x, y: value.y, z: value.z } : undefined, value?.stage ?? null, value?.mergedShape)
@@ -915,6 +915,11 @@ export class WorldRendererThree extends WorldRendererCommon {
       maxBufferMs: WorldRendererThree.MAX_SECTION_UPDATE_BUFFER_MS,
       sectionHeight: this.getSectionHeight(),
       isOutstanding: key => this.sectionsWaiting.has(key) && !this.pendingSectionUpdates.has(key),
+      ...(this.isClientLightOwnerSessionLive()
+        ? {
+            isTopologyOutstanding: (key: string) => this.pendingTopologyBySection.has(key) && !this.pendingSectionUpdates.has(key)
+          }
+        : {}),
       hasSectionObject: key => !!this.sectionObjects[key]
     })
 
@@ -924,11 +929,13 @@ export class WorldRendererThree extends WorldRendererCommon {
       const update = this.pendingSectionUpdates.get(key)!
       this.pendingSectionUpdates.delete(key)
       this.pendingSectionBufferStartTimes.delete(key)
-      recordClientLightTrace({
-        phase: 'flush',
-        sectionKey: key,
-        flushReason: reason
-      })
+      if (isClientLightTraceEnabled()) {
+        recordClientLightTrace({
+          phase: 'flush',
+          sectionKey: key,
+          flushReason: reason
+        })
+      }
 
       const chunkCoords = update.key.split(',')
       const chunkKey = `${chunkCoords[0]},${chunkCoords[2]}`
@@ -938,11 +945,13 @@ export class WorldRendererThree extends WorldRendererCommon {
         continue
       }
 
-      const commit = this.evaluateOwnerGeometry(update).accepted
-      if (!commit || update.geometry?.hadErrors) {
+      const decision = this.evaluateOwnerGeometry(update)
+      if (!decision.accepted || update.geometry?.hadErrors) {
         this.noteRejectedOwnerGeometry(update.key, undefined, { expectLaterFinished: false })
         continue
       }
+      this.acknowledgeAcceptedOwnerTopology(update)
+      if (decision.keepCovering) this.maybeDispatchCoveringRemesh(update.key)
 
       if (!this.chunkMeshManager.sectionHasRenderableContent(update.geometry)) {
         this.chunkMeshManager.releaseSection(update.key)
@@ -978,10 +987,13 @@ export class WorldRendererThree extends WorldRendererCommon {
         return
       }
 
-      if (!this.evaluateOwnerGeometry(data).accepted || data.geometry?.hadErrors) {
+      const decision = this.evaluateOwnerGeometry(data)
+      if (!decision.accepted || data.geometry?.hadErrors) {
         this.noteRejectedOwnerGeometry(data.key, undefined, { expectLaterFinished: true })
         return
       }
+      this.acknowledgeAcceptedOwnerTopology(data)
+      if (decision.keepCovering) this.maybeDispatchCoveringRemesh(data.key)
 
       if (this.sectionObjects[data.key]) {
         this.pendingSectionUpdates.set(data.key, data)
@@ -990,11 +1002,13 @@ export class WorldRendererThree extends WorldRendererCommon {
         if (!this.pendingSectionBufferStartTimes.has(data.key)) {
           this.pendingSectionBufferStartTimes.set(data.key, performance.now())
         }
-        recordClientLightTrace({
-          phase: 'pending',
-          sectionKey: data.key,
-          queueDepth: this.pendingSectionUpdates.size
-        })
+        if (isClientLightTraceEnabled()) {
+          recordClientLightTrace({
+            phase: 'pending',
+            sectionKey: data.key,
+            queueDepth: this.pendingSectionUpdates.size
+          })
+        }
         return
       }
 

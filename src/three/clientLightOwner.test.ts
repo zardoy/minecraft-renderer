@@ -16,6 +16,7 @@ import {
   eventsFromColumnUnload,
   eventsFromParsedUpdateLight,
   packUnpackedLightSection,
+  raiseRequiredLightRevisions,
   shouldAcceptMeshGeometry,
   shouldSpawnClientLightOwner,
   skyLightEnabledFromRendererState,
@@ -224,6 +225,23 @@ describe('versioned mesh drop', () => {
 
   it('accepts geometry stamped with the required publication of its section', () => {
     expect(shouldAcceptMeshGeometry({ worldGeneration: 2, lightPublicationVersion: 5 }, gate, { requiredVersion: 5, worldGeneration: 2 })).toBe(true)
+  })
+})
+
+describe('raiseRequiredLightRevisions', () => {
+  it('keeps the higher topology revision when a later publication raises light version', () => {
+    const required = new Map()
+    raiseRequiredLightRevisions(required, [{ sx: 0, sy: 64, sz: 0 }], 2, 1)
+    required.set('0,64,0', { ...required.get('0,64,0')!, topologyRevision: 4 })
+    raiseRequiredLightRevisions(required, [{ sx: 0, sy: 64, sz: 0 }], 5, 1)
+    expect(required.get('0,64,0')).toEqual({ requiredVersion: 5, worldGeneration: 1, topologyRevision: 4 })
+  })
+
+  it('does not roll topology back when merging a lower live snapshot after a higher one', () => {
+    const required = new Map()
+    raiseRequiredLightRevisions(required, [{ sx: 0, sy: 64, sz: 0 }], 2, 1, new Map([['0,64,0', 7]]))
+    raiseRequiredLightRevisions(required, [{ sx: 0, sy: 64, sz: 0 }], 3, 1, new Map([['0,64,0', 5]]))
+    expect(required.get('0,64,0')).toEqual({ requiredVersion: 3, worldGeneration: 1, topologyRevision: 7 })
   })
 })
 

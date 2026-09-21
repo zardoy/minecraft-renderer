@@ -33,7 +33,7 @@ import { releaseVehiclePassengerPosition } from './entity/vehiclePassengerRender
 import { updateVehiclePassengerPositions as applyVehiclePassengerPositions } from './entity/vehiclePassengerUpdate'
 import { applyNetworkHeadPitch, storeNetworkHeadPitch, storeNetworkHeadYaw } from './entity/networkHeadPitchRendering'
 import { processRemoteBoatPassengerRotations, type RemoteBoatPassengerEntity } from './entity/remoteBoatPassengerRotation'
-import { recordClientLightTrace } from '../lib/clientLightTrace'
+import { isClientLightTraceEnabled, recordClientLightTrace } from '../lib/clientLightTrace'
 import {
   ENTITY_TWEEN_DURATION_MS,
   applyLocalHorseCameraYawLock,
@@ -928,7 +928,7 @@ export class Entities {
     if (!playerObject || !playerObject.playerObject?.animation) return
     const anim = playerObject.playerObject.animation as any
     if (anim.swingArm) {
-      recordClientLightTrace({ phase: 'inputHand' })
+      if (isClientLightTraceEnabled()) recordClientLightTrace({ phase: 'inputHand' })
       anim.swingArm()
     }
   }
@@ -941,7 +941,7 @@ export class Entities {
     if (!anim) return
 
     if (animation === 'oneSwing') {
-      recordClientLightTrace({ phase: 'inputHand' })
+      if (isClientLightTraceEnabled()) recordClientLightTrace({ phase: 'inputHand' })
       anim.swingArm()
       return
     }

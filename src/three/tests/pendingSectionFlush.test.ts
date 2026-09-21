@@ -166,3 +166,46 @@ describe('selectReadySectionUpdates', () => {
     ).toEqual(['deadline', 'deadline'])
   })
 })
+
+describe('selectReadySectionFlushes topology vs covering', () => {
+  const flushQuery = (scene: Scene, now: number, topologyOutstanding?: Set<string>) =>
+    selectReadySectionFlushes({
+      pendingKeys: scene.pending.keys(),
+      startedAt: key => scene.pending.get(key),
+      now,
+      maxBufferMs: MAX_BUFFER_MS,
+      sectionHeight: SECTION_HEIGHT,
+      isOutstanding: key => scene.outstanding.has(key),
+      isTopologyOutstanding: topologyOutstanding ? key => topologyOutstanding.has(key) : undefined,
+      hasSectionObject: key => scene.visible.has(key)
+    })
+
+  it('holds a group while a visible neighbour is topology-outstanding', () => {
+    const scene: Scene = {
+      pending: new Map([['0,64,0', 1000]]),
+      outstanding: new Set(),
+      visible: new Set(['0,64,0', '16,64,0'])
+    }
+    expect(flushQuery(scene, 1050, new Set(['16,64,0'])).map(item => item.key)).toEqual([])
+  })
+
+  it('does not hold a group for covering-only outstanding neighbours', () => {
+    const scene: Scene = {
+      pending: new Map([['0,64,0', 1000]]),
+      outstanding: new Set(['16,64,0']),
+      visible: new Set(['0,64,0', '16,64,0'])
+    }
+    expect(flushQuery(scene, 1050, new Set()).map(item => item.key)).toEqual(['0,64,0'])
+    expect(flushQuery(scene, 1050, new Set())[0]?.reason).toBe('group-complete')
+  })
+
+  it('holds a singleton with a topology-outstanding neighbour until the deadline', () => {
+    const scene: Scene = {
+      pending: new Map([['0,64,0', 1000]]),
+      outstanding: new Set(['16,64,0']),
+      visible: new Set(['0,64,0', '16,64,0'])
+    }
+    expect(flushQuery(scene, 1499, new Set(['16,64,0']))).toEqual([])
+    expect(flushQuery(scene, 1500, new Set(['16,64,0']))).toEqual([{ key: '0,64,0', reason: 'deadline' }])
+  })
+})

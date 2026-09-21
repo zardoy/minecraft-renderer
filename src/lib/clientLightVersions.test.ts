@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'vitest'
 import {
+  INITIAL_TOPOLOGY_REVISION,
   nextTopologyRevision,
   shouldAcceptVersionedMesh,
-  shouldCommitPendingGeometry,
   shouldDispatchCoveringRemesh,
   snapshotMeshVersions,
   validateMeshResultVersions,
@@ -50,14 +50,99 @@ describe('shouldAcceptVersionedMesh', () => {
   })
 
   test('hadErrors is never a successful empty commit', () => {
-    expect(shouldCommitPendingGeometry({ hadErrors: true, worldGeneration: 1, lightPublicationVersion: 3 }, required, { ownerManaged: true })).toBe(
-      'keep-displayed'
+    expect(shouldAcceptVersionedMesh({ hadErrors: true, worldGeneration: 1, lightPublicationVersion: 3, topologyRevision: 5 }, required, { ownerManaged: true })).toBe(
+      false
     )
     expect(
-      shouldCommitPendingGeometry({ hadErrors: false, worldGeneration: 1, lightPublicationVersion: 3, topologyRevision: 5 }, required, {
+      shouldAcceptVersionedMesh({ hadErrors: false, worldGeneration: 1, lightPublicationVersion: 3, topologyRevision: 5 }, required, {
         ownerManaged: true
       })
-    ).toBe('commit')
+    ).toBe(true)
+  })
+
+  test('stale topology with fresh light is rejected', () => {
+    expect(
+      shouldAcceptVersionedMesh(
+        { worldGeneration: 1, lightPublicationVersion: 3, topologyRevision: 4, sessionEpoch: 1 },
+        required,
+        { ownerManaged: true, sessionEpoch: 1 }
+      )
+    ).toBe(false)
+  })
+
+  test('fresh topology with stale light is accepted so the block can install this frame', () => {
+    expect(
+      shouldAcceptVersionedMesh(
+        { worldGeneration: 1, lightPublicationVersion: 2, topologyRevision: 5, sessionEpoch: 1 },
+        required,
+        { ownerManaged: true, sessionEpoch: 1 }
+      )
+    ).toBe(true)
+  })
+
+  test('required == null accepts versioned geometry', () => {
+    expect(
+      shouldAcceptVersionedMesh(
+        { worldGeneration: 1, lightPublicationVersion: 1, topologyRevision: 1, sessionEpoch: 1 },
+        null,
+        { ownerManaged: true, sessionEpoch: 1 }
+      )
+    ).toBe(true)
+  })
+
+  test('legacyBootstrap with a required revision is still rejected', () => {
+    expect(shouldAcceptVersionedMesh({ meshMode: 'legacyBootstrap', topologyRevision: 5 }, required, { ownerManaged: true })).toBe(false)
+  })
+
+  test('legacyBootstrap without required is accepted', () => {
+    expect(shouldAcceptVersionedMesh({ meshMode: 'legacyBootstrap' }, null, { ownerManaged: true })).toBe(true)
+  })
+
+  test('legacyBootstrap still has to match the column life', () => {
+    expect(
+      shouldAcceptVersionedMesh(
+        { meshMode: 'legacyBootstrap', sessionEpoch: 1, columnIncarnation: 1 },
+        null,
+        { ownerManaged: true, sessionEpoch: 2, columnIncarnation: 2 }
+      )
+    ).toBe(false)
+  })
+
+  test('legacyBootstrap with a proven neighbor light version covers the requirement', () => {
+    expect(
+      shouldAcceptVersionedMesh(
+        { meshMode: 'legacyBootstrap', worldGeneration: 1, lightPublicationVersion: 10, sessionEpoch: 1, columnIncarnation: 1 },
+        { requiredVersion: 10, worldGeneration: 1 },
+        { ownerManaged: true, sessionEpoch: 1, columnIncarnation: 1 }
+      )
+    ).toBe(true)
+    expect(
+      shouldAcceptVersionedMesh(
+        { meshMode: 'legacyBootstrap', worldGeneration: 1, sessionEpoch: 1, columnIncarnation: 1 },
+        { requiredVersion: 10, worldGeneration: 1 },
+        { ownerManaged: true, sessionEpoch: 1, columnIncarnation: 1 }
+      )
+    ).toBe(false)
+  })
+
+  test('owner mesh with an older own-column light version stays rejected', () => {
+    expect(
+      shouldAcceptVersionedMesh(
+        { meshMode: 'owner', worldGeneration: 1, lightPublicationVersion: 9, sessionEpoch: 1, columnIncarnation: 1 },
+        { requiredVersion: 10, worldGeneration: 1 },
+        { ownerManaged: true, sessionEpoch: 1, columnIncarnation: 1 }
+      )
+    ).toBe(false)
+  })
+
+  test('without topology on the requirement, stale light still rejects (old gate)', () => {
+    expect(
+      shouldAcceptVersionedMesh(
+        { worldGeneration: 1, lightPublicationVersion: 2, topologyRevision: 5, sessionEpoch: 1 },
+        { requiredVersion: 3, worldGeneration: 1 },
+        { ownerManaged: true, sessionEpoch: 1 }
+      )
+    ).toBe(false)
   })
 })
 
@@ -113,6 +198,12 @@ describe('nextTopologyRevision', () => {
   test('increments from zero', () => {
     expect(nextTopologyRevision(undefined)).toBe(1)
     expect(nextTopologyRevision(1)).toBe(2)
+  })
+
+  test('the initial revision is not the first edit', () => {
+    expect(INITIAL_TOPOLOGY_REVISION).toBe(0)
+    expect(nextTopologyRevision(undefined)).not.toBe(INITIAL_TOPOLOGY_REVISION)
+    expect(nextTopologyRevision(INITIAL_TOPOLOGY_REVISION)).toBe(1)
   })
 })
 

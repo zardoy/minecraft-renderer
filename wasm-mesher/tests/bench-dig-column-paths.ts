@@ -173,6 +173,52 @@ export async function benchDigColumnPaths(wasm: typeof import('../pkg/wasm_meshe
   const tFused = time('multi_fused  generateGeometryFrom...Multi', fusedMulti)
   const tTwoStep = time('two_step_multi (8 parses+build+mesh)', twoStepMulti)
 
+  const twoStepTickCachedDig = () => {
+    const parseCache = new Map<string, ReturnType<typeof wasmParseOne>>()
+    let parses = 0
+    for (let t = 0; t < TARGETS; t++) {
+      const conversions: any[] = []
+      for (let i = 0; i < COLUMNS - 1; i++) {
+        const key = `${OFFSETS[i][0]},${OFFSETS[i][1]}`
+        let parsed = parseCache.get(key)
+        if (!parsed) {
+          parsed = wasmParseOne()
+          parseCache.set(key, parsed)
+          parses++
+        }
+        conversions.push({
+          blockStates: parsed.blockStates,
+          blockLight: new Uint8Array(parsed.blockStates.length),
+          skyLight: new Uint8Array(parsed.blockStates.length).fill(15),
+          biomesArray: parsed.biomes
+        })
+      }
+      conversions.push(editedConversion)
+      const perChunkLen = conversions[0].blockStates.length
+      const xs = new Int32Array(COLUMNS)
+      const zs = new Int32Array(COLUMNS)
+      const blockStatesAll = new Uint16Array(perChunkLen * COLUMNS)
+      const blockLightAll = new Uint8Array(perChunkLen * COLUMNS)
+      const skyLightAll = new Uint8Array(perChunkLen * COLUMNS)
+      const biomesAll = new Uint8Array(perChunkLen * COLUMNS)
+      for (let i = 0; i < COLUMNS; i++) {
+        xs[i] = OFFSETS[i][0]
+        zs[i] = OFFSETS[i][1]
+        blockStatesAll.set(conversions[i].blockStates, perChunkLen * i)
+        blockLightAll.set(conversions[i].blockLight, perChunkLen * i)
+        skyLightAll.set(conversions[i].skyLight, perChunkLen * i)
+        biomesAll.set(conversions[i].biomesArray, perChunkLen * i)
+      }
+      ;(wasm as any).generate_geometry_multi(
+        0, WORLD_MIN_Y, 0, WORLD_HEIGHT, WORLD_MIN_Y, WORLD_MIN_Y + WORLD_HEIGHT, WORLD_MIN_Y,
+        xs, zs, blockStatesAll, blockLightAll, skyLightAll, biomesAll,
+        meta.invisibleBlocks, meta.transparentBlocks, meta.noAoBlocks, meta.cullIdenticalBlocks, meta.occludingBlocks,
+        true, false, 15
+      )
+    }
+    return parses
+  }
+
   console.log(`\n=== mesh Y-window (same 9-column neighbourhood, prebuilt arrays) ===`)
   const tFullY = time('full column   Y=0..256 (what the tick does)', () => meshYRange(WORLD_MIN_Y, WORLD_HEIGHT))
   const tY48 = time('3 sections    Y=48..96  (stencil window)', () => meshYRange(48, 48))
@@ -182,10 +228,12 @@ export async function benchDigColumnPaths(wasm: typeof import('../pkg/wasm_meshe
   const bytesPerBuild = perChunkLen * COLUMNS * (2 + 1 + 1 + 1)
 
   console.log(`\n=== ONE DIG (3x3x3 stencil -> ${TARGETS} dirty columns) ===`)
+  const tTickCached = time('two_step tick-cached (9 unique parses)', twoStepTickCachedDig)
   console.log(`  multi_fused everywhere            ${(tFused * TARGETS).toFixed(0)}ms`)
   console.log(`  two_step_multi everywhere         ${(tTwoStep * TARGETS + tJsWalk).toFixed(0)}ms`)
+  console.log(`  two_step tick-cached (this change) ${tTickCached.toFixed(0)}ms`)
   console.log(`  slowdown factor                   ${((tTwoStep * TARGETS + tJsWalk) / (tFused * TARGETS)).toFixed(1)}x`)
-  console.log(`  redundant WASM parses per dig     ${(COLUMNS - 1) * TARGETS} (${(tParse * (COLUMNS - 1) * TARGETS).toFixed(0)}ms)`)
+  console.log(`  redundant WASM parses per dig     ${(COLUMNS - 1) * TARGETS} → ${COLUMNS - 1} unique (${(tParse * (COLUMNS - 1)).toFixed(0)}ms after tick cache)`)
   console.log(`  typed-array copies per dig        ${((bytesPerBuild * TARGETS) / 1024 / 1024).toFixed(1)}MB`)
   console.log(`  blocks visited by the mesher      ${((perChunkLen * COLUMNS * TARGETS) / 1e6).toFixed(1)}M`)
   console.log(`  full-Y mesh x ${TARGETS} columns          ${(tFullY * TARGETS).toFixed(0)}ms`)

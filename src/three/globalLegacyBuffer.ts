@@ -9,7 +9,7 @@ import {
   type LegacyMultiDrawScratch
 } from './legacyMultiDraw'
 import { computeCameraRelativeUniforms, type RenderOrigin } from './shaders/legacyBlockShader'
-import { isClientLightTraceEnabled, recordClientLightTrace } from '../lib/clientLightTrace'
+import { isClientLightTraceEnabled, recordClientLightTrace, recordClientLightTraceGpuSample } from '../lib/clientLightTrace'
 
 const VERTS_PER_QUAD = 4
 const INDICES_PER_QUAD = 6
@@ -747,10 +747,11 @@ export class GlobalLegacyBuffer {
     }
     this.uploadEpoch++
     if (isClientLightTraceEnabled()) {
-      recordClientLightTrace({
+      recordClientLightTraceGpuSample('gpuUploaded', this.highWatermark, () => ({
         phase: 'gpuUploaded',
-        unuploadedRanges: this.pendingRanges.length
-      })
+        unuploadedRanges: this.pendingRanges.length,
+        drawableFaces: this.highWatermark
+      }))
     }
   }
 

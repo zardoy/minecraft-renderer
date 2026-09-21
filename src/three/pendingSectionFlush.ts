@@ -23,6 +23,11 @@ export type PendingFlushQuery = {
   sectionHeight: number
   /** Section is dirty on a worker and its geometry has not arrived yet. */
   isOutstanding: (key: string) => boolean
+  /**
+   * When set, neighbour waits use topology outstanding instead of covering/light
+   * outstanding. Omit for bit-for-bit legacy flush behavior.
+   */
+  isTopologyOutstanding?: (key: string) => boolean
   /** Section currently has geometry on screen (an air section has none). */
   hasSectionObject: (key: string) => boolean
 }
@@ -94,7 +99,10 @@ export function selectReadySectionFlushes(query: PendingFlushQuery): ReadySectio
       for (const key of group) {
         for (const neighbor of faceNeighborKeys(key, sectionHeight)) {
           if (members.has(neighbor)) continue
-          if (query.isOutstanding(neighbor) && query.hasSectionObject(neighbor)) {
+          const neighborOutstanding = query.isTopologyOutstanding
+            ? query.isTopologyOutstanding(neighbor)
+            : query.isOutstanding(neighbor)
+          if (neighborOutstanding && query.hasSectionObject(neighbor)) {
             waitingOnNeighbor = true
             break
           }

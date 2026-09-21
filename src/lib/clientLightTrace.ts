@@ -5,6 +5,8 @@
 
 export const CLIENT_LIGHT_TRACE_CAPACITY = 2048
 export const CLIENT_LIGHT_TRACE_MESSAGE = '__clientLightTrace' as const
+export const CLIENT_LIGHT_TRACE_BATCH_MS = 250
+export const CLIENT_LIGHT_TRACE_BATCH_SIZE = 200
 
 export type ClientLightTracePhase =
   | 'inputClick'
@@ -58,27 +60,63 @@ export type ClientLightTraceEvent = {
 export type ClientLightTracePartial = Omit<ClientLightTraceEvent, 't' | 'tLocal' | 'timeOrigin'> &
   Partial<Pick<ClientLightTraceEvent, 't' | 'tLocal' | 'timeOrigin'>>
 
-type ClientLightTraceMessage = {
+export type ClientLightTraceMessage = {
   type: typeof CLIENT_LIGHT_TRACE_MESSAGE
-  event: ClientLightTraceEvent
+  event?: ClientLightTraceEvent
+  events?: ClientLightTraceEvent[]
 }
 
+export type ClientLightTraceConfig = {
+  enabled: boolean
+  armed: boolean
+}
+
+type ClientLightTraceConfigListener = (config: ClientLightTraceConfig) => void
+
 let enabled = false
+let armed = false
 let sessionEpoch = 0
 let editSeq = 0
 let requestId = 0
 let dropped = 0
 let start = 0
 let count = 0
+let sampleRequested = false
+let lastGpuDrawnMetric: number | undefined
+let lastGpuUploadedMetric: number | undefined
+let pendingPost: ((message: ClientLightTraceMessage) => void) | null = null
+let pendingEvents: ClientLightTraceEvent[] = []
+let pendingTimer: ReturnType<typeof setTimeout> | null = null
+let configListener: ClientLightTraceConfigListener | undefined
 const ring: Array<ClientLightTraceEvent | undefined> = new Array(CLIENT_LIGHT_TRACE_CAPACITY)
 
 export function isClientLightTraceEnabled(): boolean {
   return enabled
 }
 
+export function isClientLightTraceArmed(): boolean {
+  return armed
+}
+
 export function enableClientLightTrace(on: boolean): void {
   enabled = on
+  if (!on) {
+    armed = false
+    dropPendingPosts()
+    resetGpuSampleState()
+  }
   attachDebugDump(on)
+  notifyConfig()
+}
+
+export function armClientLightTrace(on = true): void {
+  armed = on
+  if (!armed) dropPendingPosts()
+  notifyConfig()
+}
+
+export function setClientLightTraceConfigListener(listener: ClientLightTraceConfigListener | undefined): void {
+  configListener = listener
 }
 
 export function maybeEnableClientLightTraceFromLocation(loc: { search?: string } | undefined = typeof location === 'undefined' ? undefined : location): void {
@@ -124,6 +162,7 @@ export function clearClientLightTrace(): void {
   count = 0
   dropped = 0
   ring.fill(undefined)
+  resetGpuSampleState()
 }
 
 export function recordClientLightTrace(partial: ClientLightTracePartial): ClientLightTraceEvent | undefined {
@@ -141,21 +180,75 @@ export function recordClientLightTrace(partial: ClientLightTracePartial): Client
   return event
 }
 
+export function requestClientLightTraceSample(): void {
+  sampleRequested = true
+}
+
+export function recordClientLightTraceGpuSample(
+  phase: 'gpuDrawn' | 'gpuUploaded',
+  metric: number,
+  partial: ClientLightTracePartial | (() => ClientLightTracePartial)
+): ClientLightTraceEvent | undefined {
+  if (!enabled) return undefined
+  const last = phase === 'gpuDrawn' ? lastGpuDrawnMetric : lastGpuUploadedMetric
+  if (last === metric && !sampleRequested) return undefined
+  if (phase === 'gpuDrawn') lastGpuDrawnMetric = metric
+  else lastGpuUploadedMetric = metric
+  sampleRequested = false
+  return recordClientLightTrace(typeof partial === 'function' ? partial() : partial)
+}
+
 export function ingestRemoteClientLightTrace(event: ClientLightTraceEvent | undefined): void {
   if (!enabled || !event || typeof event.t !== 'number' || !event.phase) return
   pushEvent(event)
 }
 
+export function ingestRemoteClientLightTraceMessage(message: ClientLightTraceMessage | { type?: unknown; event?: unknown; events?: unknown }): void {
+  if (!isClientLightTraceMessage(message)) return
+  const events = message.events ?? (message.event ? [message.event] : [])
+  for (const event of events) ingestRemoteClientLightTrace(event)
+}
+
 export function postClientLightTrace(post: (message: ClientLightTraceMessage) => void, partial: ClientLightTracePartial): void {
   const event = recordClientLightTrace(partial)
-  if (!event) return
-  post({ type: CLIENT_LIGHT_TRACE_MESSAGE, event })
+  if (!event || !armed) return
+  pendingPost = post
+  pendingEvents.push(event)
+  if (pendingEvents.length >= CLIENT_LIGHT_TRACE_BATCH_SIZE) {
+    flushClientLightTracePosts()
+    return
+  }
+  if (pendingTimer == null) {
+    pendingTimer = setTimeout(() => {
+      pendingTimer = null
+      flushClientLightTracePosts()
+    }, CLIENT_LIGHT_TRACE_BATCH_MS)
+  }
+}
+
+export function flushClientLightTracePosts(): void {
+  if (pendingTimer != null) {
+    clearTimeout(pendingTimer)
+    pendingTimer = null
+  }
+  if (!pendingPost || pendingEvents.length === 0) {
+    pendingEvents = []
+    pendingPost = null
+    return
+  }
+  const events = pendingEvents
+  const post = pendingPost
+  pendingEvents = []
+  pendingPost = null
+  post({ type: CLIENT_LIGHT_TRACE_MESSAGE, events })
 }
 
 export function isClientLightTraceMessage(data: unknown): data is ClientLightTraceMessage {
   if (!data || typeof data !== 'object') return false
-  const message = data as { type?: unknown; event?: unknown }
-  return message.type === CLIENT_LIGHT_TRACE_MESSAGE && !!message.event && typeof message.event === 'object'
+  const message = data as { type?: unknown; event?: unknown; events?: unknown }
+  if (message.type !== CLIENT_LIGHT_TRACE_MESSAGE) return false
+  if (Array.isArray(message.events)) return true
+  return !!message.event && typeof message.event === 'object'
 }
 
 export function getClientLightTraceEvents(): ClientLightTraceEvent[] {
@@ -175,6 +268,36 @@ export function getClientLightTraceAggregates(): { count: number; dropped: numbe
   return { count: count, dropped, byPhase }
 }
 
+export function dumpClientLightTrace(): {
+  events: ClientLightTraceEvent[]
+  aggregates: ReturnType<typeof getClientLightTraceAggregates>
+} {
+  requestClientLightTraceSample()
+  return {
+    events: getClientLightTraceEvents(),
+    aggregates: getClientLightTraceAggregates()
+  }
+}
+
+function dropPendingPosts(): void {
+  if (pendingTimer != null) {
+    clearTimeout(pendingTimer)
+    pendingTimer = null
+  }
+  pendingEvents = []
+  pendingPost = null
+}
+
+function resetGpuSampleState(): void {
+  sampleRequested = false
+  lastGpuDrawnMetric = undefined
+  lastGpuUploadedMetric = undefined
+}
+
+function notifyConfig(): void {
+  configListener?.({ enabled, armed })
+}
+
 function pushEvent(event: ClientLightTraceEvent): void {
   if (count === CLIENT_LIGHT_TRACE_CAPACITY) {
     ring[start] = event
@@ -191,12 +314,20 @@ function attachDebugDump(on: boolean): void {
   const host = globalThis as typeof globalThis & {
     getClientLightTrace?: typeof getClientLightTraceEvents
     getClientLightTraceAggregates?: typeof getClientLightTraceAggregates
+    clientLightTraceArm?: (on?: boolean) => void
+    clientLightTraceDump?: typeof dumpClientLightTrace
   }
   if (on) {
     host.getClientLightTrace = getClientLightTraceEvents
     host.getClientLightTraceAggregates = getClientLightTraceAggregates
+    host.clientLightTraceArm = (next = true) => {
+      armClientLightTrace(next !== false)
+    }
+    host.clientLightTraceDump = dumpClientLightTrace
   } else {
     delete host.getClientLightTrace
     delete host.getClientLightTraceAggregates
+    delete host.clientLightTraceArm
+    delete host.clientLightTraceDump
   }
 }

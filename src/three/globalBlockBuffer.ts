@@ -11,7 +11,7 @@ import {
 import { VERTICES_PER_FACE, computeSectionOriginRel } from './shaders/cubeBlockShader'
 import { computeCameraRelativeUniforms, type RenderOrigin } from './shaders/legacyBlockShader'
 import { packWord2Empty } from '../wasm-mesher/bridge/shaderCubeBridge'
-import { isClientLightTraceEnabled, recordClientLightTrace } from '../lib/clientLightTrace'
+import { isClientLightTraceEnabled, recordClientLightTrace, recordClientLightTraceGpuSample } from '../lib/clientLightTrace'
 
 type WebGLRendererInternals = THREE.WebGLRenderer & {
   properties: {
@@ -462,10 +462,11 @@ export class GlobalBlockBuffer {
     }
     this.uploadEpoch++
     if (isClientLightTraceEnabled()) {
-      recordClientLightTrace({
+      recordClientLightTraceGpuSample('gpuUploaded', this.highWatermark, () => ({
         phase: 'gpuUploaded',
-        unuploadedRanges: this.pendingRanges.length
-      })
+        unuploadedRanges: this.pendingRanges.length,
+        drawableFaces: this.highWatermark
+      }))
     }
   }
 

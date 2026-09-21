@@ -17,7 +17,8 @@ import { applyLightPublication, sectionIndexToWorldOrigin, type LightOwnerEvent,
 import { buildLightTables1171 } from './lightTables1171'
 import {
   comparableNow,
-  ingestRemoteClientLightTrace,
+  ingestRemoteClientLightTraceMessage,
+  isClientLightTraceEnabled,
   isClientLightTraceMessage,
   recordClientLightTrace
 } from '../lib/clientLightTrace'
@@ -103,17 +104,32 @@ export function raiseRequiredLightRevisions(
   required: Map<string, MeshSectionLightRequirement>,
   dirtyMeshSections: Array<{ sx: number; sy: number; sz: number }>,
   publicationVersion: number,
-  worldGeneration: number
+  worldGeneration: number,
+  topologyBySection?: Map<string, number>
 ): void {
   for (const section of dirtyMeshSections) {
     const key = meshSectionKey(section.sx, section.sy, section.sz)
     const prev = required.get(key)
+    const liveTopology = topologyBySection?.get(key)
+    const topologyRevision = Math.max(prev?.topologyRevision ?? 0, liveTopology ?? 0) || undefined
+    const next: MeshSectionLightRequirement = {
+      requiredVersion: prev?.requiredVersion ?? publicationVersion,
+      worldGeneration: prev?.worldGeneration ?? worldGeneration,
+      ...(topologyRevision != null ? { topologyRevision } : {})
+    }
+    if (!prev || worldGeneration > prev.worldGeneration) {
+      next.requiredVersion = publicationVersion
+      next.worldGeneration = worldGeneration
+    } else if (worldGeneration === prev.worldGeneration && publicationVersion > prev.requiredVersion) {
+      next.requiredVersion = publicationVersion
+    }
     if (
       !prev ||
-      worldGeneration > prev.worldGeneration ||
-      (worldGeneration === prev.worldGeneration && publicationVersion > prev.requiredVersion)
+      next.requiredVersion !== prev.requiredVersion ||
+      next.worldGeneration !== prev.worldGeneration ||
+      next.topologyRevision !== prev.topologyRevision
     ) {
-      required.set(key, { requiredVersion: publicationVersion, worldGeneration })
+      required.set(key, next)
     }
   }
 }
@@ -319,6 +335,7 @@ export class ClientLightOwnerSession {
   gate: PublicationGate = { acceptedGeneration: 1, lastVersion: 0 }
   readonly requiredLightBySection = new Map<string, MeshSectionLightRequirement>()
   private stepScheduled = false
+  private latestEditGeneration = 0
   private lifecycle: ClientLightOwnerLifecycle = 'starting'
   private lastOwnerEnqueueAt = 0
   private failureReason: string | null = null
@@ -332,10 +349,12 @@ export class ClientLightOwnerSession {
       skyLightEnabled: boolean
       onApplied: (result: OwnerPublicationApplyResult) => void
       onFailed?: (reason: string) => void
+      onOwnerIdle?: (settledEditGeneration: number) => void
     }
   ) {
     this.onApplied = opts.onApplied
     this.onFailed = opts.onFailed
+    this.onOwnerIdle = opts.onOwnerIdle
     this.worker = opts.createWorker(data => this.onMessage(data))
     this.worker.onerror = event => {
       this.fail(event?.message || 'light owner worker error')
@@ -360,23 +379,31 @@ export class ClientLightOwnerSession {
 
   private readonly onApplied: (result: OwnerPublicationApplyResult) => void
   private readonly onFailed?: (reason: string) => void
+  private readonly onOwnerIdle?: (settledEditGeneration: number) => void
+
+  notePlayerEdit(): number {
+    this.latestEditGeneration += 1
+    return this.latestEditGeneration
+  }
 
   pushEvent(event: LightOwnerEvent) {
     if (this.lifecycle === 'failed') return
     this.worker.postMessage({ type: 'pushEvent', event })
     this.scheduleStep()
     this.lastOwnerEnqueueAt = comparableNow()
-    const currentColumn =
-      'x' in event && typeof event.x === 'number'
-        ? `${Math.floor(event.x / 16)},${Math.floor((event as { z: number }).z / 16)}`
-        : 'sx' in event && typeof event.sx === 'number'
-          ? `${event.sx},${(event as { sz: number }).sz}`
-          : undefined
-    recordClientLightTrace({
-      phase: 'ownerEnqueue',
-      currentColumn,
-      eventAgeMs: 0
-    })
+    if (isClientLightTraceEnabled()) {
+      const currentColumn =
+        'x' in event && typeof event.x === 'number'
+          ? `${Math.floor(event.x / 16)},${Math.floor((event as { z: number }).z / 16)}`
+          : 'sx' in event && typeof event.sx === 'number'
+            ? `${event.sx},${(event as { sz: number }).sz}`
+            : undefined
+      recordClientLightTrace({
+        phase: 'ownerEnqueue',
+        currentColumn,
+        eventAgeMs: 0
+      })
+    }
   }
 
   pushRawUpdateLight(kind: 'setUpdateLightV17' | 'setUpdateLightV16', payload: Record<string, unknown>) {
@@ -429,14 +456,14 @@ export class ClientLightOwnerSession {
     setTimeout(() => {
       this.stepScheduled = false
       if (this.lifecycle === 'failed') return
-      this.worker.postMessage({ type: 'step', budgetMs: 5 })
+      this.worker.postMessage({ type: 'step', budgetMs: 5, stepGeneration: this.latestEditGeneration })
     }, 0)
   }
 
   private onMessage(data: any) {
     if (!data || typeof data !== 'object') return
     if (isClientLightTraceMessage(data)) {
-      ingestRemoteClientLightTrace(data.event)
+      ingestRemoteClientLightTraceMessage(data)
       return
     }
     if (data.type === 'error') {
@@ -449,6 +476,7 @@ export class ClientLightOwnerSession {
     }
     if (data.type === 'stepped') {
       if (data.publication) this.applyPublication(data.publication)
+      if (data.remaining !== true && typeof data.stepGeneration === 'number') this.onOwnerIdle?.(data.stepGeneration)
     }
     if (data.type === 'publication' && data.publication) this.applyPublication(data.publication)
   }
@@ -460,12 +488,14 @@ export class ClientLightOwnerSession {
     this.gate = { acceptedGeneration: result.acceptedGeneration, lastVersion: result.lastVersion }
     raiseRequiredLightRevisions(this.requiredLightBySection, result.dirtyMeshSections, result.lastVersion, result.acceptedGeneration)
     this.onApplied(result)
-    recordClientLightTrace({
-      phase: 'ownerComplete',
-      lightVersion: result.lastVersion,
-      worldGeneration: result.acceptedGeneration,
-      queueDepth: result.dirtyMeshSections.length,
-      txnMs: this.lastOwnerEnqueueAt ? comparableNow() - this.lastOwnerEnqueueAt : undefined
-    })
+    if (isClientLightTraceEnabled()) {
+      recordClientLightTrace({
+        phase: 'ownerComplete',
+        lightVersion: result.lastVersion,
+        worldGeneration: result.acceptedGeneration,
+        queueDepth: result.dirtyMeshSections.length,
+        txnMs: this.lastOwnerEnqueueAt ? comparableNow() - this.lastOwnerEnqueueAt : undefined
+      })
+    }
   }
 }
