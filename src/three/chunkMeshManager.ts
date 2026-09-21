@@ -611,9 +611,7 @@ export class ChunkMeshManager {
         pendingReplace: !!(gb?.hasPendingReplace() || opaqueBuf?.hasPendingReplace() || blendBuf?.hasPendingReplace()),
         pendingMove: !!(gb?.getPendingMove() || opaqueBuf?.getPendingMove() || blendBuf?.getPendingMove()),
         unuploadedRanges:
-          (gb?.getPendingDirtyRanges().length ?? 0) +
-          (opaqueBuf?.getPendingDirtyRanges().length ?? 0) +
-          (blendBuf?.getPendingDirtyRanges().length ?? 0),
+          (gb?.getPendingDirtyRanges().length ?? 0) + (opaqueBuf?.getPendingDirtyRanges().length ?? 0) + (blendBuf?.getPendingDirtyRanges().length ?? 0),
         cullReason: smartCull ? 'frustum+occlusion' : 'frustum'
       }))
     }

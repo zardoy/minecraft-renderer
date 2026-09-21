@@ -53,6 +53,7 @@ import {
   meshWorkerIndexesForDirtySections,
   raiseRequiredLightRevisions,
   shouldAcceptMeshGeometry,
+  clientLightOwnerVersionBlockReason,
   shouldSpawnClientLightOwner,
   skyLightEnabledFromRendererState,
   type OwnerPublicationApplyResult
@@ -439,8 +440,13 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   }
 
   private maybeSpawnClientLightOwner() {
-    if (!shouldSpawnClientLightOwner(this.worldRendererConfig)) return
     if (this.clientLightOwnerSession) return
+    if (!shouldSpawnClientLightOwner(this.worldRendererConfig, this.version)) {
+      if (this.worldRendererConfig.enableClientLightOwner === true) {
+        this.clientLightOwnerFailureReason = clientLightOwnerVersionBlockReason(this.version)
+      }
+      return
+    }
     this.clientLightOwnerFence = { sessionEpoch: this.clientLightOwnerFence.sessionEpoch, rejectStaleOwnerMeshes: false }
     this.clientLightOwnerFailureReason = null
     this.clientLightOwnerSession = new ClientLightOwnerSession(this.rendererLightCache, {
@@ -517,10 +523,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         ...result.workerMessage,
         sessionEpoch: this.clientLightOwnerFence.sessionEpoch
       }
-      const targets = meshWorkerIndexesForDirtySections(
-        result.dirtyMeshSections,
-        this.workers.length,
-        (sx, sy, sz) => this.getWorkerNumber(new Vec3(sx, sy, sz), true)
+      const targets = meshWorkerIndexesForDirtySections(result.dirtyMeshSections, this.workers.length, (sx, sy, sz) =>
+        this.getWorkerNumber(new Vec3(sx, sy, sz), true)
       )
       const indexes = targets.length ? targets : this.workers.map((_, index) => index)
       for (const index of indexes) {
@@ -888,11 +892,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     }
   }
 
-  protected noteRejectedOwnerGeometry(
-    key: string,
-    required: MeshSectionLightRequirement | null | undefined,
-    opts?: { expectLaterFinished?: boolean }
-  ) {
+  protected noteRejectedOwnerGeometry(key: string, required: MeshSectionLightRequirement | null | undefined, opts?: { expectLaterFinished?: boolean }) {
     if (opts?.expectLaterFinished !== false) {
       this.rejectedFinishedBySection.set(key, (this.rejectedFinishedBySection.get(key) ?? 0) + 1)
       return
@@ -2042,13 +2042,10 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     const hash = this.getWorkerNumber(pos, useChangeWorker && (this.mesherLogger.active || this.worldRendererConfig.dedicatedChangeWorker))
     this.sectionsWaiting.set(key, (this.sectionsWaiting.get(key) ?? 0) + 1)
     this.sectionDirtyLightMeta ??= new Map()
-    const lightMeta =
-      this.nextDirtyLightMeta.lightPublicationVersion != null ? this.nextDirtyLightMeta : this.sectionDirtyLightMeta.get(key)
+    const lightMeta = this.nextDirtyLightMeta.lightPublicationVersion != null ? this.nextDirtyLightMeta : this.sectionDirtyLightMeta.get(key)
     const ownerManaged = this.clientLightOwnerSession != null || this.clientLightOwnerFence.rejectStaleOwnerMeshes
     const requestId = ownerManaged || isClientLightTraceEnabled() ? nextClientLightRequestId() : undefined
-    const traceIds = isClientLightTraceEnabled()
-      ? { ...currentClientLightTraceIds(), requestId }
-      : undefined
+    const traceIds = isClientLightTraceEnabled() ? { ...currentClientLightTraceIds(), requestId } : undefined
     const ownerVersions = ownerManaged
       ? {
           sessionEpoch: this.clientLightOwnerFence.sessionEpoch,

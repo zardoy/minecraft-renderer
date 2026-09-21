@@ -24,35 +24,33 @@ describe('shouldAcceptVersionedMesh', () => {
 
   test('fast A→B→C drops B when C is required', () => {
     expect(
-      shouldAcceptVersionedMesh(
-        { worldGeneration: 1, lightPublicationVersion: 2, topologyRevision: 4, sessionEpoch: 1 },
-        required,
-        { ownerManaged: true, sessionEpoch: 1 }
-      )
+      shouldAcceptVersionedMesh({ worldGeneration: 1, lightPublicationVersion: 2, topologyRevision: 4, sessionEpoch: 1 }, required, {
+        ownerManaged: true,
+        sessionEpoch: 1
+      })
     ).toBe(false)
     expect(
-      shouldAcceptVersionedMesh(
-        { worldGeneration: 1, lightPublicationVersion: 3, topologyRevision: 5, sessionEpoch: 1 },
-        required,
-        { ownerManaged: true, sessionEpoch: 1 }
-      )
+      shouldAcceptVersionedMesh({ worldGeneration: 1, lightPublicationVersion: 3, topologyRevision: 5, sessionEpoch: 1 }, required, {
+        ownerManaged: true,
+        sessionEpoch: 1
+      })
     ).toBe(true)
   })
 
   test('late reply from a previous incarnation is dropped', () => {
     expect(
-      shouldAcceptVersionedMesh(
-        { worldGeneration: 1, lightPublicationVersion: 3, topologyRevision: 5, sessionEpoch: 1, columnIncarnation: 1 },
-        required,
-        { ownerManaged: true, sessionEpoch: 1, columnIncarnation: 2 }
-      )
+      shouldAcceptVersionedMesh({ worldGeneration: 1, lightPublicationVersion: 3, topologyRevision: 5, sessionEpoch: 1, columnIncarnation: 1 }, required, {
+        ownerManaged: true,
+        sessionEpoch: 1,
+        columnIncarnation: 2
+      })
     ).toBe(false)
   })
 
   test('hadErrors is never a successful empty commit', () => {
-    expect(shouldAcceptVersionedMesh({ hadErrors: true, worldGeneration: 1, lightPublicationVersion: 3, topologyRevision: 5 }, required, { ownerManaged: true })).toBe(
-      false
-    )
+    expect(
+      shouldAcceptVersionedMesh({ hadErrors: true, worldGeneration: 1, lightPublicationVersion: 3, topologyRevision: 5 }, required, { ownerManaged: true })
+    ).toBe(false)
     expect(
       shouldAcceptVersionedMesh({ hadErrors: false, worldGeneration: 1, lightPublicationVersion: 3, topologyRevision: 5 }, required, {
         ownerManaged: true
@@ -62,31 +60,28 @@ describe('shouldAcceptVersionedMesh', () => {
 
   test('stale topology with fresh light is rejected', () => {
     expect(
-      shouldAcceptVersionedMesh(
-        { worldGeneration: 1, lightPublicationVersion: 3, topologyRevision: 4, sessionEpoch: 1 },
-        required,
-        { ownerManaged: true, sessionEpoch: 1 }
-      )
+      shouldAcceptVersionedMesh({ worldGeneration: 1, lightPublicationVersion: 3, topologyRevision: 4, sessionEpoch: 1 }, required, {
+        ownerManaged: true,
+        sessionEpoch: 1
+      })
     ).toBe(false)
   })
 
   test('fresh topology with stale light is accepted so the block can install this frame', () => {
     expect(
-      shouldAcceptVersionedMesh(
-        { worldGeneration: 1, lightPublicationVersion: 2, topologyRevision: 5, sessionEpoch: 1 },
-        required,
-        { ownerManaged: true, sessionEpoch: 1 }
-      )
+      shouldAcceptVersionedMesh({ worldGeneration: 1, lightPublicationVersion: 2, topologyRevision: 5, sessionEpoch: 1 }, required, {
+        ownerManaged: true,
+        sessionEpoch: 1
+      })
     ).toBe(true)
   })
 
   test('required == null accepts versioned geometry', () => {
     expect(
-      shouldAcceptVersionedMesh(
-        { worldGeneration: 1, lightPublicationVersion: 1, topologyRevision: 1, sessionEpoch: 1 },
-        null,
-        { ownerManaged: true, sessionEpoch: 1 }
-      )
+      shouldAcceptVersionedMesh({ worldGeneration: 1, lightPublicationVersion: 1, topologyRevision: 1, sessionEpoch: 1 }, null, {
+        ownerManaged: true,
+        sessionEpoch: 1
+      })
     ).toBe(true)
   })
 
@@ -100,11 +95,11 @@ describe('shouldAcceptVersionedMesh', () => {
 
   test('legacyBootstrap still has to match the column life', () => {
     expect(
-      shouldAcceptVersionedMesh(
-        { meshMode: 'legacyBootstrap', sessionEpoch: 1, columnIncarnation: 1 },
-        null,
-        { ownerManaged: true, sessionEpoch: 2, columnIncarnation: 2 }
-      )
+      shouldAcceptVersionedMesh({ meshMode: 'legacyBootstrap', sessionEpoch: 1, columnIncarnation: 1 }, null, {
+        ownerManaged: true,
+        sessionEpoch: 2,
+        columnIncarnation: 2
+      })
     ).toBe(false)
   })
 

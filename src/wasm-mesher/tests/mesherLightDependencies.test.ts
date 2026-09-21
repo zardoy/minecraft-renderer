@@ -26,19 +26,44 @@ describe('provenMeshLightVersion', () => {
 
   test('an older own-column version does not hide a newer neighbor publication that was meshed', () => {
     expect(
-      prove(16, 0, ['0,0', '16,0'], [
-        ['16,0', 4],
-        ['0,0', 10]
-      ])
+      prove(
+        16,
+        0,
+        ['0,0', '16,0'],
+        [
+          ['16,0', 4],
+          ['0,0', 10]
+        ]
+      )
     ).toBe(10)
   })
 
   test('a later own publication does not cover an earlier neighbor that was left out of the mesh', () => {
-    expect(prove(16, 0, ['16,0'], [['0,0', 10], ['16,0', 12]])).toBe(0)
+    expect(
+      prove(
+        16,
+        0,
+        ['16,0'],
+        [
+          ['0,0', 10],
+          ['16,0', 12]
+        ]
+      )
+    ).toBe(0)
   })
 
   test('a used column older than the missing neighbor still counts', () => {
-    expect(prove(16, 0, ['16,0'], [['0,0', 10], ['16,0', 4]])).toBe(4)
+    expect(
+      prove(
+        16,
+        0,
+        ['16,0'],
+        [
+          ['0,0', 10],
+          ['16,0', 4]
+        ]
+      )
+    ).toBe(4)
   })
 
   test('a far column publication does not raise the stamp', () => {

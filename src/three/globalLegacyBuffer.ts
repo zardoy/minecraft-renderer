@@ -398,15 +398,17 @@ export class GlobalLegacyBuffer {
     return slot.count
   }
 
-  getGpuSlotTrace(sectionKey: string): {
-    displayedStart?: number
-    displayedCount?: number
-    candidateStart: number
-    candidateCount: number
-    pendingReplace: boolean
-    pendingMove: boolean
-    unuploadedRanges: number
-  } | undefined {
+  getGpuSlotTrace(sectionKey: string):
+    | {
+        displayedStart?: number
+        displayedCount?: number
+        candidateStart: number
+        candidateCount: number
+        pendingReplace: boolean
+        pendingMove: boolean
+        unuploadedRanges: number
+      }
+    | undefined {
     const slot = this.sectionSlots.get(sectionKey)
     if (!slot) return undefined
     return {

@@ -42,7 +42,9 @@ export function parseEmissionRules(blocksJava) {
       const lightAt = inner.indexOf('.lightLevel(')
       let kind = { type: 'zero' }
       if (lightAt >= 0) {
-        const arg = matchParens(inner, lightAt + '.lightLevel'.length).replace(/\s+/g, ' ').trim()
+        const arg = matchParens(inner, lightAt + '.lightLevel'.length)
+          .replace(/\s+/g, ' ')
+          .trim()
         kind = classifyLightArg(arg)
       }
       rules.set(nameMatch[1], kind)

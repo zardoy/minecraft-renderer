@@ -11,22 +11,11 @@ import { handleGetHeightmap, EMPTY_COLUMN_HEIGHTMAP_SENTINEL } from '../../meshe
 import { collectBlockEntityMetadata, type SignMeta, type HeadMeta, type BannerMeta } from '../../mesher-shared/blockEntityMetadata'
 import { SectionRequestTracker } from './mesherWasmRequestTracker'
 import { dropRawMapChunkOnLightOnlyReload, sectionYsForLightColumnDirty } from './mesherWasmLightDirty'
-import {
-  applyOwnerPublicationToColumnCaches,
-  applyRawLightPacketToCaches,
-  ownerDeltaSectionWorldYs,
-  revertDisplayToIncoming
-} from './mesherWasmOwnerLight'
+import { applyOwnerPublicationToColumnCaches, applyRawLightPacketToCaches, ownerDeltaSectionWorldYs, revertDisplayToIncoming } from './mesherWasmOwnerLight'
 import { INITIAL_TOPOLOGY_REVISION, snapshotMeshVersions, validateOwnerPublicationMessage } from '../../lib/clientLightVersions'
 import { provenMeshLightVersion } from './mesherLightDependencies'
 import { BULK_MESH_INTERVAL_MS, createMeshTickScheduler } from './mesherWasmTickSchedule'
-import {
-  displayLightColumn,
-  isLightSectionPresent,
-  parsedUpdateLightFromWasm,
-  worldSectionMaskBit,
-  type UpdateLightColumnCache
-} from './mesherWasmLightMerge'
+import { displayLightColumn, isLightSectionPresent, parsedUpdateLightFromWasm, worldSectionMaskBit, type UpdateLightColumnCache } from './mesherWasmLightMerge'
 import { CONVERSION_CACHE_LIMIT, clearConversionCache, getOrConvertColumn, invalidateConversion, setConversionCacheLimit } from './mesherWasmConversionCache'
 import { beginTickWasmParseCache, endTickWasmParseCache, getOrConvertTickWasmParse } from './mesherWasmTickParseCache'
 import { clearTopologyPostCache, clearTopologyPostCacheColumn, getOrComputeTopologyPost } from './mesherWasmTopologyPostCache'
@@ -173,10 +162,7 @@ let world: World // chunkKey -> chunk data
 let dirtySections = new Map<string, number>()
 const urgentSections = new Set<string>()
 const dirtyLightMeta = new Map<string, { lightPublicationVersion?: number; worldGeneration?: number }>()
-const dirtyTraceMeta = new Map<
-  string,
-  { clientLightRequestId?: number; clientLightEditSeq?: number; clientLightSessionEpoch?: number }
->()
+const dirtyTraceMeta = new Map<string, { clientLightRequestId?: number; clientLightEditSeq?: number; clientLightSessionEpoch?: number }>()
 const dirtyVersionMeta = new Map<
   string,
   {
@@ -1391,10 +1377,7 @@ function dirtyHasUrgent() {
   return false
 }
 
-function requeueColumnGroups(
-  pending: Array<{ sections: Array<{ key: string; count: number }> }>,
-  urgentKeys: Set<string>
-) {
+function requeueColumnGroups(pending: Array<{ sections: Array<{ key: string; count: number }> }>, urgentKeys: Set<string>) {
   for (const group of pending) {
     for (const section of group.sections) {
       dirtySections.set(section.key, (dirtySections.get(section.key) ?? 0) + section.count)

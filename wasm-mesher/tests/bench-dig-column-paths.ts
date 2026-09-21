@@ -60,15 +60,34 @@ export async function benchDigColumnPaths(wasm: typeof import('../pkg/wasm_meshe
 
   const fusedMulti = () =>
     (wasm as any).generateGeometryFromParsedV16V17Multi(
-      chunkDataList, bitMapLoHiAll, numSectionsList, MAX_BITS_PER_BLOCK, biomesList, DEFAULT_BIOME,
-      skyLightList, blockLightList, chunkXs, chunkZs,
-      0, WORLD_MIN_Y, 0, WORLD_HEIGHT, WORLD_MIN_Y, WORLD_MIN_Y + WORLD_HEIGHT, WORLD_MIN_Y,
-      meta.invisibleBlocks, meta.transparentBlocks, meta.noAoBlocks, meta.cullIdenticalBlocks, meta.occludingBlocks,
-      true, false, 15
+      chunkDataList,
+      bitMapLoHiAll,
+      numSectionsList,
+      MAX_BITS_PER_BLOCK,
+      biomesList,
+      DEFAULT_BIOME,
+      skyLightList,
+      blockLightList,
+      chunkXs,
+      chunkZs,
+      0,
+      WORLD_MIN_Y,
+      0,
+      WORLD_HEIGHT,
+      WORLD_MIN_Y,
+      WORLD_MIN_Y + WORLD_HEIGHT,
+      WORLD_MIN_Y,
+      meta.invisibleBlocks,
+      meta.transparentBlocks,
+      meta.noAoBlocks,
+      meta.cullIdenticalBlocks,
+      meta.occludingBlocks,
+      true,
+      false,
+      15
     )
 
-  const wasmParseOne = () =>
-    (wasm as any).parseChunkSectionsV16V17(chunkBytes, bitMapLoHi1, NUM_SECTIONS, MAX_BITS_PER_BLOCK, biomesCells, DEFAULT_BIOME)
+  const wasmParseOne = () => (wasm as any).parseChunkSectionsV16V17(chunkBytes, bitMapLoHi1, NUM_SECTIONS, MAX_BITS_PER_BLOCK, biomesCells, DEFAULT_BIOME)
 
   // --- two-step: 8 neighbour WASM parses + 1 cached edited column + build + mesh
   const jsWalk = () => convertChunkToWasm(chunk, VERSION, 0, 0, WORLD_MIN_Y, WORLD_HEIGHT)
@@ -103,10 +122,27 @@ export async function benchDigColumnPaths(wasm: typeof import('../pkg/wasm_meshe
       biomesAll.set(conversions[i].biomesArray, perChunkLen * i)
     }
     return (wasm as any).generate_geometry_multi(
-      0, WORLD_MIN_Y, 0, WORLD_HEIGHT, WORLD_MIN_Y, WORLD_MIN_Y + WORLD_HEIGHT, WORLD_MIN_Y,
-      xs, zs, blockStatesAll, blockLightAll, skyLightAll, biomesAll,
-      meta.invisibleBlocks, meta.transparentBlocks, meta.noAoBlocks, meta.cullIdenticalBlocks, meta.occludingBlocks,
-      true, false, 15
+      0,
+      WORLD_MIN_Y,
+      0,
+      WORLD_HEIGHT,
+      WORLD_MIN_Y,
+      WORLD_MIN_Y + WORLD_HEIGHT,
+      WORLD_MIN_Y,
+      xs,
+      zs,
+      blockStatesAll,
+      blockLightAll,
+      skyLightAll,
+      biomesAll,
+      meta.invisibleBlocks,
+      meta.transparentBlocks,
+      meta.noAoBlocks,
+      meta.cullIdenticalBlocks,
+      meta.occludingBlocks,
+      true,
+      false,
+      15
     )
   }
 
@@ -146,10 +182,27 @@ export async function benchDigColumnPaths(wasm: typeof import('../pkg/wasm_meshe
 
   const meshYRange = (sectionY: number, height: number) =>
     (wasm as any).generate_geometry_multi(
-      0, sectionY, 0, height, WORLD_MIN_Y, WORLD_MIN_Y + WORLD_HEIGHT, WORLD_MIN_Y,
-      prebuilt.xs, prebuilt.zs, prebuilt.blockStatesAll, prebuilt.blockLightAll, prebuilt.skyLightAll, prebuilt.biomesAll,
-      meta.invisibleBlocks, meta.transparentBlocks, meta.noAoBlocks, meta.cullIdenticalBlocks, meta.occludingBlocks,
-      true, false, 15
+      0,
+      sectionY,
+      0,
+      height,
+      WORLD_MIN_Y,
+      WORLD_MIN_Y + WORLD_HEIGHT,
+      WORLD_MIN_Y,
+      prebuilt.xs,
+      prebuilt.zs,
+      prebuilt.blockStatesAll,
+      prebuilt.blockLightAll,
+      prebuilt.skyLightAll,
+      prebuilt.biomesAll,
+      meta.invisibleBlocks,
+      meta.transparentBlocks,
+      meta.noAoBlocks,
+      meta.cullIdenticalBlocks,
+      meta.occludingBlocks,
+      true,
+      false,
+      15
     )
 
   const time = (label: string, fn: () => unknown, runs = 5) => {
@@ -210,10 +263,27 @@ export async function benchDigColumnPaths(wasm: typeof import('../pkg/wasm_meshe
         biomesAll.set(conversions[i].biomesArray, perChunkLen * i)
       }
       ;(wasm as any).generate_geometry_multi(
-        0, WORLD_MIN_Y, 0, WORLD_HEIGHT, WORLD_MIN_Y, WORLD_MIN_Y + WORLD_HEIGHT, WORLD_MIN_Y,
-        xs, zs, blockStatesAll, blockLightAll, skyLightAll, biomesAll,
-        meta.invisibleBlocks, meta.transparentBlocks, meta.noAoBlocks, meta.cullIdenticalBlocks, meta.occludingBlocks,
-        true, false, 15
+        0,
+        WORLD_MIN_Y,
+        0,
+        WORLD_HEIGHT,
+        WORLD_MIN_Y,
+        WORLD_MIN_Y + WORLD_HEIGHT,
+        WORLD_MIN_Y,
+        xs,
+        zs,
+        blockStatesAll,
+        blockLightAll,
+        skyLightAll,
+        biomesAll,
+        meta.invisibleBlocks,
+        meta.transparentBlocks,
+        meta.noAoBlocks,
+        meta.cullIdenticalBlocks,
+        meta.occludingBlocks,
+        true,
+        false,
+        15
       )
     }
     return parses
@@ -233,7 +303,9 @@ export async function benchDigColumnPaths(wasm: typeof import('../pkg/wasm_meshe
   console.log(`  two_step_multi everywhere         ${(tTwoStep * TARGETS + tJsWalk).toFixed(0)}ms`)
   console.log(`  two_step tick-cached (this change) ${tTickCached.toFixed(0)}ms`)
   console.log(`  slowdown factor                   ${((tTwoStep * TARGETS + tJsWalk) / (tFused * TARGETS)).toFixed(1)}x`)
-  console.log(`  redundant WASM parses per dig     ${(COLUMNS - 1) * TARGETS} → ${COLUMNS - 1} unique (${(tParse * (COLUMNS - 1)).toFixed(0)}ms after tick cache)`)
+  console.log(
+    `  redundant WASM parses per dig     ${(COLUMNS - 1) * TARGETS} → ${COLUMNS - 1} unique (${(tParse * (COLUMNS - 1)).toFixed(0)}ms after tick cache)`
+  )
   console.log(`  typed-array copies per dig        ${((bytesPerBuild * TARGETS) / 1024 / 1024).toFixed(1)}MB`)
   console.log(`  blocks visited by the mesher      ${((perChunkLen * COLUMNS * TARGETS) / 1e6).toFixed(1)}M`)
   console.log(`  full-Y mesh x ${TARGETS} columns          ${(tFullY * TARGETS).toFixed(0)}ms`)

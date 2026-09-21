@@ -14,7 +14,7 @@ import Chunks from 'prismarine-chunk'
 import { Vec3 } from 'vec3'
 import { RendererLightCache } from './rendererLightCache'
 import { applyLightPublication, sectionIndexToWorldOrigin, type LightOwnerEvent, type LightPublication, type PublicationGate } from './lightOwnerHost'
-import { buildLightTables1171 } from './lightTables1171'
+import { buildLightTables1171, LIGHT_TABLES_MC_VERSION } from './lightTables1171'
 import {
   comparableNow,
   ingestRemoteClientLightTraceMessage,
@@ -36,8 +36,14 @@ export const LIGHT_OWNER_WORKER_SCRIPT = 'lightOwnerWorker.js'
 
 export type ClientLightOwnerLifecycle = 'starting' | 'ready' | 'failed'
 
-export function shouldSpawnClientLightOwner(config: { enableClientLightOwner?: boolean }): boolean {
-  return config.enableClientLightOwner === true
+/** Owner tables are the 1.17.1 registry. Another session version must not start the worker. */
+export function shouldSpawnClientLightOwner(config: { enableClientLightOwner?: boolean }, version: string): boolean {
+  return config.enableClientLightOwner === true && version === LIGHT_TABLES_MC_VERSION
+}
+
+export function clientLightOwnerVersionBlockReason(version: string): string | null {
+  if (version === LIGHT_TABLES_MC_VERSION) return null
+  return `client light owner supports ${LIGHT_TABLES_MC_VERSION} only (session ${version})`
 }
 
 /** Sky engine on unless the dimension already reported no skylight (nether/end). */
@@ -360,6 +366,7 @@ export class ClientLightOwnerSession {
       this.fail(event?.message || 'light owner worker error')
     }
     this.worker.postMessage({ type: 'init', worldMinY: opts.worldMinY, worldHeight: opts.worldHeight })
+    // 1.17.1 state ids. `shouldSpawnClientLightOwner` refuses every other session version before this runs.
     const tables = loadDefaultOwnerLightTables()
     this.worker.postMessage({ type: 'setLightTables', emission: tables.emission, opacity: tables.opacity, occupancy: tables.occupancy })
     this.worker.postMessage({ type: 'setSkyLightEnabled', enabled: opts.skyLightEnabled })

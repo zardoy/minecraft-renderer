@@ -268,4 +268,3 @@ test('dumpClientLightTrace requests a gpu sample for the next draw', () => {
   recordClientLightTraceGpuSample('gpuDrawn', 10, { phase: 'gpuDrawn', drawableFaces: 10 })
   expect(getClientLightTraceEvents().filter(event => event.phase === 'gpuDrawn')).toHaveLength(2)
 })
-

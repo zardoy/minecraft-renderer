@@ -135,15 +135,17 @@ describe('selectReadySectionUpdates', () => {
       outstanding: new Set(),
       visible: new Set(['160,64,160'])
     }
-    expect(selectReadySectionFlushes({
-      pendingKeys: complete.pending.keys(),
-      startedAt: key => complete.pending.get(key),
-      now: 1010,
-      maxBufferMs: MAX_BUFFER_MS,
-      sectionHeight: SECTION_HEIGHT,
-      isOutstanding: key => complete.outstanding.has(key),
-      hasSectionObject: key => complete.visible.has(key)
-    })).toEqual([{ key: '160,64,160', reason: 'group-complete' }])
+    expect(
+      selectReadySectionFlushes({
+        pendingKeys: complete.pending.keys(),
+        startedAt: key => complete.pending.get(key),
+        now: 1010,
+        maxBufferMs: MAX_BUFFER_MS,
+        sectionHeight: SECTION_HEIGHT,
+        isOutstanding: key => complete.outstanding.has(key),
+        hasSectionObject: key => complete.visible.has(key)
+      })
+    ).toEqual([{ key: '160,64,160', reason: 'group-complete' }])
 
     const expired: Scene = {
       pending: new Map([

@@ -18,6 +18,7 @@ import {
   packUnpackedLightSection,
   raiseRequiredLightRevisions,
   shouldAcceptMeshGeometry,
+  clientLightOwnerVersionBlockReason,
   shouldSpawnClientLightOwner,
   skyLightEnabledFromRendererState,
   unpackPackedLightSection
@@ -65,13 +66,17 @@ function makeSession() {
 describe('client light owner flag', () => {
   it('stays default-off so production does not spawn the owner', () => {
     expect(defaultWorldRendererConfig.enableClientLightOwner).toBe(false)
-    expect(shouldSpawnClientLightOwner(defaultWorldRendererConfig)).toBe(false)
+    expect(shouldSpawnClientLightOwner(defaultWorldRendererConfig, '1.17.1')).toBe(false)
   })
 
-  it('spawns only when the flag is explicitly true', () => {
-    expect(shouldSpawnClientLightOwner({ enableClientLightOwner: true })).toBe(true)
-    expect(shouldSpawnClientLightOwner({ enableClientLightOwner: false })).toBe(false)
-    expect(shouldSpawnClientLightOwner({})).toBe(false)
+  it('spawns only when the flag is true and the session is 1.17.1', () => {
+    expect(shouldSpawnClientLightOwner({ enableClientLightOwner: true }, '1.17.1')).toBe(true)
+    expect(shouldSpawnClientLightOwner({ enableClientLightOwner: false }, '1.17.1')).toBe(false)
+    expect(shouldSpawnClientLightOwner({}, '1.17.1')).toBe(false)
+    expect(shouldSpawnClientLightOwner({ enableClientLightOwner: true }, '1.16.5')).toBe(false)
+    expect(shouldSpawnClientLightOwner({ enableClientLightOwner: true }, '1.18.2')).toBe(false)
+    expect(clientLightOwnerVersionBlockReason('1.17.1')).toBeNull()
+    expect(clientLightOwnerVersionBlockReason('1.16.5')).toMatch(/1\.17\.1/)
   })
 })
 
@@ -160,7 +165,7 @@ describe('owner step scheduling', () => {
           { sx: 0, sy: 80, sz: 0 }
         ],
         8,
-        (sx, _sy, sz) => ((sx / 16 + sz / 16) % 8 + 8) % 8
+        (sx, _sy, sz) => (((sx / 16 + sz / 16) % 8) + 8) % 8
       ).sort((a, b) => a - b)
     ).toEqual([0, 1])
   })

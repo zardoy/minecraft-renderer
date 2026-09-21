@@ -31,9 +31,7 @@ export function isUnversionedMesh(mesh: {
   topologyRevision?: number
   sessionEpoch?: number
 }): boolean {
-  return (
-    mesh.worldGeneration == null && mesh.lightPublicationVersion == null && mesh.topologyRevision == null && mesh.sessionEpoch == null
-  )
+  return mesh.worldGeneration == null && mesh.lightPublicationVersion == null && mesh.topologyRevision == null && mesh.sessionEpoch == null
 }
 
 export function shouldAcceptVersionedMesh(
@@ -69,18 +67,14 @@ export function shouldAcceptVersionedMesh(
   if (required.topologyRevision != null && mesh.topologyRevision != null && mesh.topologyRevision < required.topologyRevision) {
     return false
   }
-  const topologyFresh =
-    required.topologyRevision != null && mesh.topologyRevision != null && mesh.topologyRevision >= required.topologyRevision
+  const topologyFresh = required.topologyRevision != null && mesh.topologyRevision != null && mesh.topologyRevision >= required.topologyRevision
   if (!topologyFresh && mesh.lightPublicationVersion != null && mesh.lightPublicationVersion < required.requiredVersion) {
     return false
   }
   return true
 }
 
-export function isOwnerGeometryLightStale(
-  mesh: { lightPublicationVersion?: number },
-  required: MeshSectionLightRequirement | null | undefined
-): boolean {
+export function isOwnerGeometryLightStale(mesh: { lightPublicationVersion?: number }, required: MeshSectionLightRequirement | null | undefined): boolean {
   return required != null && mesh.lightPublicationVersion != null && mesh.lightPublicationVersion < required.requiredVersion
 }
 

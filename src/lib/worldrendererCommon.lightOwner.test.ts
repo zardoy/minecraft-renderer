@@ -56,7 +56,7 @@ class TestWorldRenderer extends WorldRendererCommon {
 
 const constructedScripts: string[] = []
 
-function createRenderer(enableOwner = false, workerCount = 2) {
+function createRenderer(enableOwner = false, workerCount = 2, version = '1.17.1') {
   const rendererState = proxy({
     world: {
       chunksLoaded: {} as Record<string, true>,
@@ -71,7 +71,7 @@ function createRenderer(enableOwner = false, workerCount = 2) {
   })
 
   const displayOptions: DisplayWorldOptions = {
-    version: '1.17.1',
+    version,
     worldView: Object.assign(new EventEmitter(), { reloadLoadedChunks: vi.fn(async () => {}) }) as DisplayWorldOptions['worldView'],
     inWorldRenderingConfig: proxy({ ...defaultWorldRendererConfig, mesherWorkers: workerCount, enableClientLightOwner: enableOwner }),
     playerStateReactive: getInitialPlayerState(),
@@ -150,6 +150,16 @@ describe('WorldRendererCommon client light owner spawn', () => {
     expect(constructedScripts.every(script => script !== LIGHT_OWNER_WORKER_SCRIPT)).toBe(true)
     expect(renderer.hasClientLightOwner()).toBe(false)
     expect(defaultWorldRendererConfig.enableClientLightOwner).toBe(false)
+  })
+
+  test('flag-on on a non-1.17.1 session does not load the 1.17.1 tables', () => {
+    const renderer = createRenderer(true, 1, '1.16.5')
+    renderer.initWorkers(1)
+    expect(renderer.workers).toHaveLength(1)
+    expect(constructedScripts.every(script => script !== LIGHT_OWNER_WORKER_SCRIPT)).toBe(true)
+    expect(renderer.getClientLightOwnerWorker()).toBeNull()
+    expect(renderer.hasClientLightOwner()).toBe(false)
+    expect(renderer.getClientLightOwnerFailureReason()).toMatch(/1\.17\.1/)
   })
 
   test('flag-on initWorkers spawns a dedicated owner, not a mesh worker', () => {
@@ -647,16 +657,18 @@ describe('WorldRendererCommon client light owner spawn', () => {
       workerIndex: 0,
       geometry: {}
     })
-    expect((renderer as any).evaluateOwnerGeometry({
-      type: 'geometry',
-      key: '0,64,0',
-      worldGeneration: 1,
-      lightPublicationVersion: 4,
-      sessionEpoch: 1,
-      columnIncarnation: 1,
-      topologyRevision: topology - 1,
-      geometry: {}
-    }).accepted).toBe(false)
+    expect(
+      (renderer as any).evaluateOwnerGeometry({
+        type: 'geometry',
+        key: '0,64,0',
+        worldGeneration: 1,
+        lightPublicationVersion: 4,
+        sessionEpoch: 1,
+        columnIncarnation: 1,
+        topologyRevision: topology - 1,
+        geometry: {}
+      }).accepted
+    ).toBe(false)
     expect(mesh.postMessage.mock.calls.filter(call => call[0]?.type === 'dirty')).toHaveLength(0)
     expect((renderer as any).pendingTopologyBySection.get('0,64,0')).toBe(topology)
     renderer.handleMessage({ type: 'sectionFinished', key: '0,64,0', workerIndex: 0, processTime: 0 })
@@ -841,7 +853,10 @@ describe('WorldRendererCommon client light owner spawn', () => {
       const mesh = renderer.workers[0] as { postMessage: ReturnType<typeof vi.fn> }
       mesh.postMessage.mockClear()
       renderer.setSectionDirty(new Vec3(1, 64, 1), true, true)
-      const initial = mesh.postMessage.mock.calls.map(call => call[0]).filter((message: { type?: string }) => message?.type === 'dirty').at(-1)
+      const initial = mesh.postMessage.mock.calls
+        .map(call => call[0])
+        .filter((message: { type?: string }) => message?.type === 'dirty')
+        .at(-1)
       expect(initial?.topologyRevision).toBe(INITIAL_TOPOLOGY_REVISION)
 
       let walks = 0

@@ -99,9 +99,7 @@ export function selectReadySectionFlushes(query: PendingFlushQuery): ReadySectio
       for (const key of group) {
         for (const neighbor of faceNeighborKeys(key, sectionHeight)) {
           if (members.has(neighbor)) continue
-          const neighborOutstanding = query.isTopologyOutstanding
-            ? query.isTopologyOutstanding(neighbor)
-            : query.isOutstanding(neighbor)
+          const neighborOutstanding = query.isTopologyOutstanding ? query.isTopologyOutstanding(neighbor) : query.isOutstanding(neighbor)
           if (neighborOutstanding && query.hasSectionObject(neighbor)) {
             waitingOnNeighbor = true
             break

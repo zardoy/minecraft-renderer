@@ -18,11 +18,7 @@ export type OwnerPackedSection = {
 }
 
 /** World-origin Y of published sections that belong to this column. */
-export function ownerDeltaSectionWorldYs(
-  sections: Array<{ sx: number; sy: number; sz: number }>,
-  columnWorldX: number,
-  columnWorldZ: number
-): number[] {
+export function ownerDeltaSectionWorldYs(sections: Array<{ sx: number; sy: number; sz: number }>, columnWorldX: number, columnWorldZ: number): number[] {
   const colSx = Math.floor(columnWorldX / 16) * 16
   const colSz = Math.floor(columnWorldZ / 16) * 16
   const ys: number[] = []
@@ -79,10 +75,10 @@ export function applyRawLightPacketToCaches(opts: {
 }
 
 /** First owner takeover: clone incoming onto display once. Later deltas write display in place. */
-export function detachDisplayOnOwnerTakeover(opts: {
+export function detachDisplayOnOwnerTakeover(opts: { incoming: UpdateLightColumnCache | undefined; display: UpdateLightColumnCache | undefined }): {
   incoming: UpdateLightColumnCache | undefined
   display: UpdateLightColumnCache | undefined
-}): { incoming: UpdateLightColumnCache | undefined; display: UpdateLightColumnCache | undefined } {
+} {
   if (!opts.incoming) return { incoming: undefined, display: opts.display }
   if (opts.display == null || opts.display === opts.incoming) {
     return { incoming: opts.incoming, display: cloneLightCache(opts.incoming) }
@@ -102,22 +98,14 @@ export function applyOwnerPublicationToColumnCaches(opts: {
   const detached = detachDisplayOnOwnerTakeover({ incoming: opts.incoming, display: opts.display })
   return {
     incoming: detached.incoming,
-    display: applyPackedOwnerSectionsToLightCache(
-      detached.display,
-      opts.sections,
-      opts.worldMinY,
-      opts.columnWorldX,
-      opts.columnWorldZ,
-      opts.numSections
-    )
+    display: applyPackedOwnerSectionsToLightCache(detached.display, opts.sections, opts.worldMinY, opts.columnWorldX, opts.columnWorldZ, opts.numSections)
   }
 }
 
-export function revertDisplayToIncoming(opts: {
+export function revertDisplayToIncoming(opts: { incoming: UpdateLightColumnCache | undefined; display: UpdateLightColumnCache | undefined }): {
   incoming: UpdateLightColumnCache | undefined
   display: UpdateLightColumnCache | undefined
-}): { incoming: UpdateLightColumnCache | undefined; display: UpdateLightColumnCache | undefined } {
+} {
   if (!opts.incoming) return { incoming: undefined, display: opts.display }
   return { incoming: opts.incoming, display: cloneLightCache(opts.incoming) }
 }
-

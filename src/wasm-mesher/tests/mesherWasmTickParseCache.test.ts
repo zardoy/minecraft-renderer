@@ -1,10 +1,5 @@
 import { afterEach, describe, expect, test } from 'vitest'
-import {
-  beginTickWasmParseCache,
-  endTickWasmParseCache,
-  getOrConvertTickWasmParse,
-  getTickWasmParseStats
-} from '../worker/mesherWasmTickParseCache'
+import { beginTickWasmParseCache, endTickWasmParseCache, getOrConvertTickWasmParse, getTickWasmParseStats } from '../worker/mesherWasmTickParseCache'
 
 afterEach(() => {
   endTickWasmParseCache()
