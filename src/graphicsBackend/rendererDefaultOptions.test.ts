@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { migrateRendererOptions, resolveEnableLighting, upgradeStoredNewVersionsLightingDefault } from './rendererDefaultOptions'
+import { migrateRendererOptions, RENDERER_DEFAULT_OPTIONS, resolveEnableLighting } from './rendererDefaultOptions'
 
 describe('migrateRendererOptions', () => {
   it('drops the leaked migration flag so it is not a user option', () => {
@@ -13,22 +13,21 @@ describe('migrateRendererOptions', () => {
   })
 })
 
-describe('upgradeStoredNewVersionsLightingDefault', () => {
-  it('drops a stored false from the old default on first upgrade', () => {
-    const saved: Record<string, unknown> = { newVersionsLighting: false }
-    expect(upgradeStoredNewVersionsLightingDefault(saved, false)).toBe(true)
-    expect(saved).not.toHaveProperty('newVersionsLighting')
+describe('newer-version lighting defaults', () => {
+  it('keeps lighting opt-in on 1.13+', () => {
+    expect(RENDERER_DEFAULT_OPTIONS.newVersionsLighting).toBe(false)
+    expect(resolveEnableLighting(RENDERER_DEFAULT_OPTIONS.newVersionsLighting, true)).toBe(false)
   })
 
-  it('keeps an explicit false after the upgrade has already run', () => {
-    const saved: Record<string, unknown> = { newVersionsLighting: false }
-    expect(upgradeStoredNewVersionsLightingDefault(saved, true)).toBe(true)
-    expect(saved.newVersionsLighting).toBe(false)
+  it.each([false, true])('preserves a saved lighting preference (%s)', value => {
+    const saved: Record<string, unknown> = { newVersionsLighting: value }
+    migrateRendererOptions(saved)
+    expect(saved.newVersionsLighting).toBe(value)
   })
 
   it('does not invent a stored value when the key was never saved', () => {
     const saved: Record<string, unknown> = {}
-    expect(upgradeStoredNewVersionsLightingDefault(saved, false)).toBe(true)
+    migrateRendererOptions(saved)
     expect(saved).not.toHaveProperty('newVersionsLighting')
   })
 })
