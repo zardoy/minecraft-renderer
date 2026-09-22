@@ -65,7 +65,7 @@ export const RENDERER_DEFAULT_OPTIONS = {
   backgroundRendering: '20fps' as 'full' | '20fps' | '5fps',
   vanillaLook: false as boolean,
   smoothLighting: true as boolean,
-  newVersionsLighting: true as boolean,
+  newVersionsLighting: false as boolean,
   vrSupport: true as boolean,
   vrPageGameRendering: false as boolean,
   clipWorldBelowY: undefined as number | undefined,
@@ -124,18 +124,6 @@ export function migrateRendererOptions(saved: Record<string, unknown>): void {
 
   // Internal one-shot flag from an earlier lighting-default migration. Never a user option.
   delete saved.migratedNewVersionsLightingDefault
-}
-
-/**
- * One-shot upgrade of the old default (`false`) to the current default (`true`).
- * `alreadyMigrated` must live outside user-visible options (e.g. a dedicated localStorage key).
- * Returns true so the caller can persist that the upgrade has run.
- */
-export function upgradeStoredNewVersionsLightingDefault(saved: Record<string, unknown>, alreadyMigrated: boolean): boolean {
-  if (!alreadyMigrated && saved.newVersionsLighting === false) {
-    delete saved.newVersionsLighting
-  }
-  return true
 }
 
 /**
