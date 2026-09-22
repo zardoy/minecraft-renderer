@@ -5,6 +5,7 @@ mod chunk;
 mod chunk_parser_common;
 mod dump_parser;
 mod geometry;
+mod light_engine;
 mod lighting;
 mod mesher;
 mod parser_v18plus;
@@ -1135,11 +1136,11 @@ fn add_wireframe_edge(
 /// `raw_packet` includes the leading packet-id varint (we skip it).
 /// `num_sections` should match the column the light is for (16 in 1.17).
 ///
-/// Returns `{ x, z, skyLight: Uint8Array(num_sections * 4096),
-///            blockLight: Uint8Array(num_sections * 4096), bytesRead }`.
-/// Layout matches the existing 1.18+ light arrays
-/// (`x + z*16 + y_abs*256`); the JS-side worker reorders into per-section
-/// stack via the same path used for 1.18+ raw map_chunk parsing.
+/// Returns `{ x, z, trustEdges, skyLight, blockLight, skyLightMask,
+///            emptySkyLightMask, blockLightMask, emptyBlockLightMask,
+///            skyBelow?, skyAbove?, blockBelow?, blockAbove?, bytesRead }`.
+/// World arrays are `num_sections * 4096` (`x + z*16 + y_abs*256`).
+/// Omitted sections are left 0 and are not authoritative — use the masks.
 #[wasm_bindgen(js_name = parseUpdateLightV17)]
 pub fn parse_update_light_v17_js(
     raw_packet: &[u8],
@@ -1157,11 +1158,34 @@ pub fn parse_update_light_v17_js(
     block_view.copy_from(&result.block_light);
     js_sys::Reflect::set(&obj, &JsValue::from_str("x"), &JsValue::from_f64(result.x as f64)).unwrap();
     js_sys::Reflect::set(&obj, &JsValue::from_str("z"), &JsValue::from_f64(result.z as f64)).unwrap();
+    js_sys::Reflect::set(&obj, &JsValue::from_str("trustEdges"), &JsValue::from_bool(result.trust_edges)).unwrap();
     js_sys::Reflect::set(&obj, &JsValue::from_str("skyLight"), &sky_view).unwrap();
     js_sys::Reflect::set(&obj, &JsValue::from_str("blockLight"), &block_view).unwrap();
+    set_u32_array(&obj, "skyLightMask", &result.sky_light_mask);
+    set_u32_array(&obj, "emptySkyLightMask", &result.empty_sky_light_mask);
+    set_u32_array(&obj, "blockLightMask", &result.block_light_mask);
+    set_u32_array(&obj, "emptyBlockLightMask", &result.empty_block_light_mask);
+    set_optional_u8_array(&obj, "skyBelow", result.sky_below.as_deref());
+    set_optional_u8_array(&obj, "skyAbove", result.sky_above.as_deref());
+    set_optional_u8_array(&obj, "blockBelow", result.block_below.as_deref());
+    set_optional_u8_array(&obj, "blockAbove", result.block_above.as_deref());
     js_sys::Reflect::set(&obj, &JsValue::from_str("bytesRead"),
         &JsValue::from_f64(result.bytes_read as f64)).unwrap();
     obj.into()
+}
+
+fn set_u32_array(obj: &js_sys::Object, key: &str, values: &[u32]) {
+    let view = js_sys::Uint32Array::new_with_length(values.len() as u32);
+    view.copy_from(values);
+    js_sys::Reflect::set(obj, &JsValue::from_str(key), &view).unwrap();
+}
+
+fn set_optional_u8_array(obj: &js_sys::Object, key: &str, values: Option<&[u8]>) {
+    if let Some(values) = values {
+        let view = js_sys::Uint8Array::new_with_length(values.len() as u32);
+        view.copy_from(values);
+        js_sys::Reflect::set(obj, &JsValue::from_str(key), &view).unwrap();
+    }
 }
 
 // ---------------------------------------------------------------------------

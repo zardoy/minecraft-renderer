@@ -34,6 +34,7 @@ import { disposeObject } from './threeJsUtils'
 import { getBannerTexture, createBannerMesh, releaseBannerTexture } from './bannerRenderer'
 import { getSignTexture, releaseSignTexture, disposeAllSignTextures } from './signTextureCache'
 import { BlockEntityLightRegistry } from '../lib/blockEntityLightRegistry'
+import { isClientLightTraceEnabled, recordClientLightTraceGpuSample } from '../lib/clientLightTrace'
 import { SectionOcclusionCull, hsvToRgb } from './occlusion/sectionOcclusionCull'
 
 export interface ChunkMeshPool {
@@ -284,6 +285,15 @@ export class ChunkMeshManager {
     if (this.globalLegacyShaderMaterial) setLegacySkyLevel(this.globalLegacyShaderMaterial, value)
     if (this.globalLegacyBlendShaderMaterial) setLegacySkyLevel(this.globalLegacyBlendShaderMaterial, value)
     this.blockEntityLightRegistry.setSkyLevel(value)
+    this.worldRenderer.entityLightController?.setSkyLevel(value)
+  }
+
+  getSkyLevel(): number {
+    return this.blockEntityLightRegistry.getSkyLevel()
+  }
+
+  getLightmapParams(): BlockLightmapParams {
+    return this.blockEntityLightRegistry.getLightmapParams()
   }
 
   setShadingTheme(theme: 'vanilla' | 'high-contrast', cardinalLight: string): void {
@@ -299,6 +309,7 @@ export class ChunkMeshManager {
     if (this.globalLegacyShaderMaterial) setLegacyLightmapParams(this.globalLegacyShaderMaterial, params)
     if (this.globalLegacyBlendShaderMaterial) setLegacyLightmapParams(this.globalLegacyBlendShaderMaterial, params)
     this.blockEntityLightRegistry.setLightmapParams(params)
+    this.worldRenderer.entityLightController?.setLightmapParams(params)
   }
 
   private getLegacyShaderMaterial(): THREE.ShaderMaterial {
@@ -588,6 +599,21 @@ export class ChunkMeshManager {
         gb.getPendingDirtyRanges()
       )
       gb.setVisibleSpans(spans)
+    }
+
+    if (isClientLightTraceEnabled()) {
+      const cubeFaces = gb?.getVisibleFaceCount() ?? 0
+      const legacyQuads = (opaqueBuf?.getVisibleQuadCount() ?? 0) + (blendBuf?.getVisibleQuadCount() ?? 0)
+      const drawableFaces = cubeFaces + legacyQuads
+      recordClientLightTraceGpuSample('gpuDrawn', drawableFaces, () => ({
+        phase: 'gpuDrawn',
+        drawableFaces,
+        pendingReplace: !!(gb?.hasPendingReplace() || opaqueBuf?.hasPendingReplace() || blendBuf?.hasPendingReplace()),
+        pendingMove: !!(gb?.getPendingMove() || opaqueBuf?.getPendingMove() || blendBuf?.getPendingMove()),
+        unuploadedRanges:
+          (gb?.getPendingDirtyRanges().length ?? 0) + (opaqueBuf?.getPendingDirtyRanges().length ?? 0) + (blendBuf?.getPendingDirtyRanges().length ?? 0),
+        cullReason: smartCull ? 'frustum+occlusion' : 'frustum'
+      }))
     }
 
     this.lastBufferStateKey = this.bufferStateKey()

@@ -10,8 +10,16 @@ import { worldColumnKey, World } from '../../mesher-shared/world'
 import { handleGetHeightmap, EMPTY_COLUMN_HEIGHTMAP_SENTINEL } from '../../mesher-shared/computeHeightmap'
 import { collectBlockEntityMetadata, type SignMeta, type HeadMeta, type BannerMeta } from '../../mesher-shared/blockEntityMetadata'
 import { SectionRequestTracker } from './mesherWasmRequestTracker'
-import { sectionYsForLightColumnDirty } from './mesherWasmLightDirty'
+import { dropRawMapChunkOnLightOnlyReload, sectionYsForLightColumnDirty } from './mesherWasmLightDirty'
+import { applyOwnerPublicationToColumnCaches, applyRawLightPacketToCaches, ownerDeltaSectionWorldYs, revertDisplayToIncoming } from './mesherWasmOwnerLight'
+import { INITIAL_TOPOLOGY_REVISION, snapshotMeshVersions, validateOwnerPublicationMessage } from '../../lib/clientLightVersions'
+import { provenMeshLightVersion } from './mesherLightDependencies'
+import { BULK_MESH_INTERVAL_MS, createMeshTickScheduler } from './mesherWasmTickSchedule'
+import { displayLightColumn, isLightSectionPresent, parsedUpdateLightFromWasm, worldSectionMaskBit, type UpdateLightColumnCache } from './mesherWasmLightMerge'
 import { CONVERSION_CACHE_LIMIT, clearConversionCache, getOrConvertColumn, invalidateConversion, setConversionCacheLimit } from './mesherWasmConversionCache'
+import { beginTickWasmParseCache, endTickWasmParseCache, getOrConvertTickWasmParse } from './mesherWasmTickParseCache'
+import { clearTopologyPostCache, clearTopologyPostCacheColumn, getOrComputeTopologyPost } from './mesherWasmTopologyPostCache'
+import { selectColumnGroupsForTick } from './mesherWasmColumnTickSelect'
 import { PendingChunkBuffer } from './mesherWasmChunkBuffer'
 import {
   PendingNeighborHealTracker,
@@ -22,6 +30,14 @@ import {
   countWorldColumns3x3,
   type PacketCaches
 } from './mesherWasmNeighborhood'
+import {
+  CLIENT_LIGHT_TRACE_MESSAGE,
+  armClientLightTrace,
+  enableClientLightTrace,
+  isClientLightTraceArmed,
+  isClientLightTraceEnabled,
+  postClientLightTrace
+} from '../../lib/clientLightTrace'
 
 let wasm: typeof import('../runtime-build/wasm_mesher.js') | null = null
 let wasmInitialized = false
@@ -49,11 +65,16 @@ function processUpdateLightV17(rawPacket: Uint8Array, numSections: number): void
     const parsed: any = (wasm as any).parseUpdateLightV17(rawPacket, numSections)
     const x = (parsed.x as number) * 16
     const z = (parsed.z as number) * 16
-    const skyLight = parsed.skyLight as Uint8Array
-    updateLightV17Cache.set(rawCacheKey(x, z), {
-      skyLight,
-      blockLight: parsed.blockLight as Uint8Array
+    const key = rawCacheKey(x, z)
+    const result = applyRawLightPacketToCaches({
+      ownerOwnsColumn: ownerOwnedLightColumns.has(key),
+      incoming: incomingUpdateLightV17Cache.get(key),
+      display: updateLightV17Cache.get(key),
+      parsed: parsedUpdateLightFromWasm(parsed, numSections)
     })
+    incomingUpdateLightV17Cache.set(key, result.incoming)
+    if (!result.dirtyDisplay || !result.display) return
+    updateLightV17Cache.set(key, result.display)
     invalidateConversion(x, z)
     dirtyColumnSectionsForLightUpdate(x, z)
     const hadColumn = !!world?.getColumn(x, z)
@@ -78,10 +99,16 @@ function processUpdateLightV16(rawPacket: Uint8Array): void {
     const parsed: any = (wasm as any).parseUpdateLightV17(rawPacket, 16)
     const x = (parsed.x as number) * 16
     const z = (parsed.z as number) * 16
-    updateLightV16Cache.set(rawCacheKey(x, z), {
-      skyLight: parsed.skyLight as Uint8Array,
-      blockLight: parsed.blockLight as Uint8Array
+    const key = rawCacheKey(x, z)
+    const result = applyRawLightPacketToCaches({
+      ownerOwnsColumn: ownerOwnedLightColumns.has(key),
+      incoming: incomingUpdateLightV16Cache.get(key),
+      display: updateLightV16Cache.get(key),
+      parsed: parsedUpdateLightFromWasm(parsed, 16)
     })
+    incomingUpdateLightV16Cache.set(key, result.incoming)
+    if (!result.dirtyDisplay || !result.display) return
+    updateLightV16Cache.set(key, result.display)
     invalidateConversion(x, z)
     dirtyColumnSectionsForLightUpdate(x, z)
   } catch (err) {
@@ -133,6 +160,23 @@ let config = defaultMesherConfig
 let version = '1.16.5'
 let world: World // chunkKey -> chunk data
 let dirtySections = new Map<string, number>()
+const urgentSections = new Set<string>()
+const dirtyLightMeta = new Map<string, { lightPublicationVersion?: number; worldGeneration?: number }>()
+const dirtyTraceMeta = new Map<string, { clientLightRequestId?: number; clientLightEditSeq?: number; clientLightSessionEpoch?: number }>()
+const dirtyVersionMeta = new Map<
+  string,
+  {
+    sessionEpoch?: number
+    columnIncarnation?: number
+    requestId?: number
+    topologyRevision?: number
+    neighborTopologyRevisions?: Array<{ key: string; topologyRevision: number }>
+  }
+>()
+const appliedOwnerLightVersion = new Map<string, number>()
+const columnIncarnation = new Map<string, number>()
+let ownerSessionEpoch = 0
+let rejectOwnerPublications = false
 // Kept in sync with `dirtySections` so column mode can filter outgoing
 // geometry/sectionFinished events to only the section keys requested by the
 // main thread, even though a full-column WASM call may generate more data.
@@ -160,8 +204,19 @@ const postMessage = (data: any, transferList: any[] = []) => {
   })
 }
 
+const postTrace = (message: { type: typeof CLIENT_LIGHT_TRACE_MESSAGE; events?: unknown; event?: unknown }) => {
+  global.postMessage(message)
+}
+
 function drainQueue(from: number, to: number) {
   const messages = queuedMessages.slice(from, to)
+  const remaining = queuedMessages.length - to
+  if (isClientLightTraceEnabled() && isClientLightTraceArmed()) {
+    postClientLightTrace(postTrace, {
+      phase: 'mesherFlush',
+      queueDepth: remaining
+    })
+  }
   global.postMessage(
     messages.map(m => m.data),
     messages.flatMap(m => m.transferList) as unknown as string
@@ -258,25 +313,71 @@ const parsedV17Cache = new Map<string, ParsedV17Entry>()
 // WASM (`parseUpdateLightV17`) and cache per-block arrays keyed by the
 // chunk origin — the next mesh tick of that column merges them in instead
 // of the sky=15/block=0 fallback. May arrive before or after `map_chunk`.
-interface UpdateLightV17Entry {
-  skyLight: Uint8Array
-  blockLight: Uint8Array
+const updateLightV17Cache = new Map<string, UpdateLightColumnCache>()
+const incomingUpdateLightV17Cache = new Map<string, UpdateLightColumnCache>()
+const ownerOwnedLightColumns = new Set<string>()
+
+function takeGeometryVersionMeta(key: string, sx: number, sz: number, usedColumns: ReadonlySet<string>) {
+  const lightMeta = dirtyLightMeta.get(key)
+  dirtyLightMeta.delete(key)
+  const traceMeta = dirtyTraceMeta.get(key)
+  dirtyTraceMeta.delete(key)
+  const job = dirtyVersionMeta.get(key)
+  dirtyVersionMeta.delete(key)
+  const columnKey = rawCacheKey(sx, sz)
+  const owned = ownerOwnedLightColumns.has(columnKey)
+  const lightPublicationVersion = provenMeshLightVersion({
+    sx,
+    sz,
+    usedColumns,
+    appliedVersionByColumn: appliedOwnerLightVersion
+  })
+  if (!job && !owned && !lightMeta && lightPublicationVersion === 0) return { ...traceMeta }
+  const appliedLightMeta = { ...(lightMeta ?? {}) }
+  delete appliedLightMeta.lightPublicationVersion
+  return {
+    ...appliedLightMeta,
+    ...traceMeta,
+    ...snapshotMeshVersions({
+      sessionEpoch: job?.sessionEpoch ?? ownerSessionEpoch,
+      columnIncarnation: columnIncarnation.get(columnKey) ?? job?.columnIncarnation ?? 1,
+      requestId: job?.requestId ?? 0,
+      topologyRevision: job?.topologyRevision ?? INITIAL_TOPOLOGY_REVISION,
+      lightPublicationVersion,
+      worldGeneration: lightMeta?.worldGeneration ?? 0,
+      neighborTopologyRevisions: job?.neighborTopologyRevisions ?? [],
+      meshMode: owned ? 'owner' : 'legacyBootstrap'
+    })
+  }
 }
-const updateLightV17Cache = new Map<string, UpdateLightV17Entry>()
+
+function displayCachedLight(entry: UpdateLightColumnCache | undefined): { skyLight: Uint8Array; blockLight: Uint8Array } | undefined {
+  if (!entry) return undefined
+  return {
+    skyLight: displayLightColumn(entry, 'sky', config?.skyLight ?? 15),
+    blockLight: displayLightColumn(entry, 'block', 0)
+  }
+}
 /** Columns that received `update_light` before the worker column existed. */
 const pendingLightDirtyColumns = new Set<string>()
 const _syncLightPos = new Vec3(0, 0, 0)
 
-function resolveUpdateLightV17Entry(x: number, z: number, chunk: any | undefined, worldMinY: number, worldMaxY: number): UpdateLightV17Entry | undefined {
-  const cached = updateLightV17Cache.get(rawCacheKey(x, z))
-  if (cached?.blockLight?.length) return cached
-  if (!chunk) return cached
+function resolveUpdateLightV17Entry(
+  x: number,
+  z: number,
+  chunk: any | undefined,
+  worldMinY: number,
+  worldMaxY: number
+): { skyLight: Uint8Array; blockLight: Uint8Array } | undefined {
+  const displayed = displayCachedLight(updateLightV17Cache.get(rawCacheKey(x, z)))
+  if (displayed) return displayed
+  if (!chunk) return undefined
   const { result } = getOrConvertColumn(x, z, chunk, version, worldMinY, worldMaxY, () => convertChunkToWasm(chunk, version, x, z, worldMinY, worldMaxY), chunk)
   return { blockLight: result.blockLight, skyLight: result.skyLight }
 }
 
 /** Write cached 1.17 `update_light` arrays into the worker prismarine column. */
-function syncV17LightToColumn(x: number, z: number): boolean {
+function syncV17LightToColumn(x: number, z: number, onlySectionWorldYs?: number[]): boolean {
   if (!world) return false
   const col = world.getColumn(x, z)
   const entry = updateLightV17Cache.get(rawCacheKey(x, z))
@@ -285,16 +386,23 @@ function syncV17LightToColumn(x: number, z: number): boolean {
   const CHUNK_SIZE = 16
   const minY = config?.worldMinY ?? 0
   const maxY = config?.worldMaxY ?? 256
-  const { blockLight, skyLight } = entry
+  const { blockLight, skyLight, blockPresent, skyPresent } = entry
+  const onlyYs = onlySectionWorldYs && onlySectionWorldYs.length ? new Set(onlySectionWorldYs) : null
 
   for (let y = minY; y < maxY; y++) {
+    const sectionOriginY = Math.floor((y - minY) / CHUNK_SIZE) * CHUNK_SIZE + minY
+    if (onlyYs && !onlyYs.has(sectionOriginY)) continue
+    const sectionIndex = Math.floor((y - minY) / CHUNK_SIZE)
+    const skyAuthoritative = isLightSectionPresent(skyPresent, worldSectionMaskBit(sectionIndex))
+    const blockAuthoritative = isLightSectionPresent(blockPresent, worldSectionMaskBit(sectionIndex))
+    if (!skyAuthoritative && !blockAuthoritative) continue
     for (let lz = 0; lz < CHUNK_SIZE; lz++) {
       for (let lx = 0; lx < CHUNK_SIZE; lx++) {
         const idx = lx + lz * CHUNK_SIZE + (y - minY) * CHUNK_SIZE * CHUNK_SIZE
-        if (idx >= blockLight.length) continue
+        if (idx >= blockLight.length && idx >= skyLight.length) continue
         _syncLightPos.set(lx, y, lz)
-        col.setBlockLight(_syncLightPos, blockLight[idx]!)
-        col.setSkyLight(_syncLightPos, skyLight[idx]!)
+        if (blockAuthoritative && idx < blockLight.length) col.setBlockLight(_syncLightPos, blockLight[idx]!)
+        if (skyAuthoritative && idx < skyLight.length) col.setSkyLight(_syncLightPos, skyLight[idx]!)
       }
     }
   }
@@ -382,6 +490,7 @@ function processChunkMessage(data: { x: number; z: number; chunk: any; customBlo
 function drainPendingChunks() {
   if (!world) return
   pendingChunks.drain(msg => {
+    dropRawMapChunkOnLightOnlyReload(msg.isLightUpdate, rawMapChunkCache, rawCacheKey(msg.x, msg.z))
     processChunkMessage(msg)
     onColumnDataArrived(msg.x, msg.z)
   })
@@ -391,7 +500,8 @@ function drainPendingChunks() {
 // `processUpdateLightV16` (which calls the shared `parseUpdateLightV17`
 // WASM export). Separate map for the same isolation reasons as
 // `parsedV16Cache` above.
-const updateLightV16Cache = new Map<string, UpdateLightV17Entry>()
+const updateLightV16Cache = new Map<string, UpdateLightColumnCache>()
+const incomingUpdateLightV16Cache = new Map<string, UpdateLightColumnCache>()
 
 // Mirrors `convertChunkToWasm`'s output (same layout: x + z*16 + y*256,
 // y outer) so it can be dropped straight into `generate_geometry`.
@@ -435,7 +545,7 @@ const convertRawMapChunkToWasm = (raw: RawMapChunkEntry, version: string): Chunk
 // (expanded from the 4×4×4 cell layout). Light comes from the paired
 // `update_light` cache when available; otherwise we fall back to full
 // daylight (sky=15) and no block light so geometry stays visible.
-const convertParsedV17ToWasm = (entry: ParsedV17Entry, lightEntry: UpdateLightV17Entry | undefined, version: string): ChunkConversionResult | null => {
+const convertParsedV17ToWasm = (entry: ParsedV17Entry, lightEntry: UpdateLightColumnCache | undefined, version: string): ChunkConversionResult | null => {
   if (!wasm || !(wasm as any).parseChunkSectionsV16V17) return null
   // Empty `Int32Array` signals "no biomes captured" — WASM falls back to
   // `default_biome` for every block. Plains (id 1) matches the JS path.
@@ -452,9 +562,9 @@ const convertParsedV17ToWasm = (entry: ParsedV17Entry, lightEntry: UpdateLightV1
   const totalBlocks = blockStates.length
   let blockLight: Uint8Array
   let skyLight: Uint8Array
-  if (lightEntry && lightEntry.skyLight.length === totalBlocks) {
-    skyLight = lightEntry.skyLight
-    blockLight = lightEntry.blockLight
+  if (lightEntry) {
+    skyLight = displayLightColumn(lightEntry, 'sky', config?.skyLight ?? 15)
+    blockLight = displayLightColumn(lightEntry, 'block', 0)
   } else {
     blockLight = new Uint8Array(totalBlocks)
     skyLight = new Uint8Array(totalBlocks)
@@ -486,7 +596,7 @@ const convertParsedV17ToWasm = (entry: ParsedV17Entry, lightEntry: UpdateLightV1
 // defaults — anything else means a non-vanilla server we don't support
 // on the fast path, in which case we return null and fall back to the
 // JS column-walk via `convertChunkToWasm`.
-const convertParsedV16ToWasm = (entry: ParsedV16Entry, lightEntry: UpdateLightV17Entry | undefined, version: string): ChunkConversionResult | null => {
+const convertParsedV16ToWasm = (entry: ParsedV16Entry, lightEntry: UpdateLightColumnCache | undefined, version: string): ChunkConversionResult | null => {
   if (!wasm || !(wasm as any).parseChunkSectionsV16V17) return null
   const NUM_SECTIONS = 16
   const MAX_BITS_PER_BLOCK = 15
@@ -507,9 +617,9 @@ const convertParsedV16ToWasm = (entry: ParsedV16Entry, lightEntry: UpdateLightV1
   const totalBlocks = blockStates.length
   let blockLight: Uint8Array
   let skyLight: Uint8Array
-  if (lightEntry && lightEntry.skyLight.length === totalBlocks) {
-    skyLight = lightEntry.skyLight
-    blockLight = lightEntry.blockLight
+  if (lightEntry) {
+    skyLight = displayLightColumn(lightEntry, 'sky', config?.skyLight ?? 15)
+    blockLight = displayLightColumn(lightEntry, 'block', 0)
   } else {
     blockLight = new Uint8Array(totalBlocks)
     skyLight = new Uint8Array(totalBlocks)
@@ -760,7 +870,7 @@ const meshMultiColumnsFromParsedV16V17 = (
       const bm = entry.bitMap >>> 0
       bitMapLoHi[i * 2] = bm
       bitMapLoHi[i * 2 + 1] = 0
-      const light = updateLightV16Cache.get(key)
+      const light = displayCachedLight(updateLightV16Cache.get(key))
       skyLightList.push(light?.skyLight ?? new Uint8Array(0))
       blockLightList.push(light?.blockLight ?? new Uint8Array(0))
     }
@@ -837,18 +947,78 @@ const handleMessage = async (data: any) => {
     case 'dirty': {
       const loc = new Vec3(data.x, data.y, data.z)
       setSectionDirty(loc, data.value)
+      {
+        const sectionHeight = getSectionHeight()
+        const key = sectionKey(Math.floor(loc.x / 16) * 16, Math.floor(loc.y / sectionHeight) * sectionHeight, Math.floor(loc.z / 16) * 16)
+        if (data.urgent) {
+          urgentSections.add(key)
+          meshTickScheduler.kick()
+        } else if (!data.value) urgentSections.delete(key)
+      }
+      if (typeof data.lightPublicationVersion === 'number') {
+        const sectionHeight = getSectionHeight()
+        const key = sectionKey(Math.floor(loc.x / 16) * 16, Math.floor(loc.y / sectionHeight) * sectionHeight, Math.floor(loc.z / 16) * 16)
+        dirtyLightMeta.set(key, {
+          lightPublicationVersion: data.lightPublicationVersion,
+          worldGeneration: data.worldGeneration
+        })
+      }
+      {
+        const sectionHeight = getSectionHeight()
+        const key = sectionKey(Math.floor(loc.x / 16) * 16, Math.floor(loc.y / sectionHeight) * sectionHeight, Math.floor(loc.z / 16) * 16)
+        if (
+          typeof data.sessionEpoch === 'number' ||
+          typeof data.columnIncarnation === 'number' ||
+          typeof data.requestId === 'number' ||
+          typeof data.topologyRevision === 'number'
+        ) {
+          dirtyVersionMeta.set(key, {
+            sessionEpoch: data.sessionEpoch,
+            columnIncarnation: data.columnIncarnation,
+            requestId: data.requestId,
+            topologyRevision: data.topologyRevision,
+            neighborTopologyRevisions: data.neighborTopologyRevisions
+          })
+        }
+        if (typeof data.clientLightRequestId === 'number' || typeof data.clientLightEditSeq === 'number') {
+          dirtyTraceMeta.set(key, {
+            clientLightRequestId: data.clientLightRequestId,
+            clientLightEditSeq: data.clientLightEditSeq,
+            clientLightSessionEpoch: data.clientLightSessionEpoch
+          })
+          if (isClientLightTraceEnabled() && isClientLightTraceArmed()) {
+            postClientLightTrace(postTrace, {
+              phase: 'mesherEnqueue',
+              sectionKey: key,
+              requestId: data.clientLightRequestId,
+              editSeq: data.clientLightEditSeq,
+              sessionEpoch: data.clientLightSessionEpoch,
+              lightVersion: data.lightPublicationVersion,
+              worldGeneration: data.worldGeneration,
+              workerIndex
+            })
+          }
+        }
+      }
+      break
+    }
+    case 'clientLightTraceConfig': {
+      enableClientLightTrace(Boolean(data.enabled))
+      armClientLightTrace(Boolean(data.armed))
       break
     }
     case 'chunk': {
       // Invalidate BEFORE replacing the column reference so a stale entry
       // can never outlive the old chunk object.
       invalidateConversion(data.x, data.z)
+      dropRawMapChunkOnLightOnlyReload(data.isLightUpdate, rawMapChunkCache, rawCacheKey(data.x, data.z))
       if (!world) {
         pendingChunks.enqueue({
           x: data.x,
           z: data.z,
           chunk: data.chunk,
-          customBlockModels: data.customBlockModels
+          customBlockModels: data.customBlockModels,
+          isLightUpdate: data.isLightUpdate
         })
         break
       }
@@ -858,21 +1028,32 @@ const handleMessage = async (data: any) => {
     }
     case 'unloadChunk': {
       invalidateConversion(data.x, data.z)
-      rawMapChunkCache.delete(rawCacheKey(data.x, data.z))
-      parsedV17Cache.delete(rawCacheKey(data.x, data.z))
-      updateLightV17Cache.delete(rawCacheKey(data.x, data.z))
-      parsedV16Cache.delete(rawCacheKey(data.x, data.z))
-      updateLightV16Cache.delete(rawCacheKey(data.x, data.z))
-      pendingLightDirtyColumns.delete(rawCacheKey(data.x, data.z))
+      const unloadKey = rawCacheKey(data.x, data.z)
+      rawMapChunkCache.delete(unloadKey)
+      parsedV17Cache.delete(unloadKey)
+      updateLightV17Cache.delete(unloadKey)
+      incomingUpdateLightV17Cache.delete(unloadKey)
+      parsedV16Cache.delete(unloadKey)
+      updateLightV16Cache.delete(unloadKey)
+      incomingUpdateLightV16Cache.delete(unloadKey)
+      ownerOwnedLightColumns.delete(unloadKey)
+      appliedOwnerLightVersion.delete(unloadKey)
+      columnIncarnation.set(unloadKey, (columnIncarnation.get(unloadKey) ?? 1) + 1)
+      pendingLightDirtyColumns.delete(unloadKey)
       if (!world) break
       world.removeColumn(data.x, data.z)
       world.customBlockModels.delete(`${data.x},${data.z}`)
       pendingNeighborHeal.clearColumn(data.x, data.z)
       requestTracker.clearColumn(data.x, data.z)
+      clearTopologyPostCacheColumn(data.x, data.z)
       for (const key of [...dirtySections.keys()]) {
         const [sx, , sz] = key.split(',').map(Number)
         if (sx === data.x && sz === data.z) {
           dirtySections.delete(key)
+          dirtyLightMeta.delete(key)
+          dirtyTraceMeta.delete(key)
+          dirtyVersionMeta.delete(key)
+          urgentSections.delete(key)
         }
       }
       if (Object.keys(world.columns).length === 0) softCleanup()
@@ -963,17 +1144,109 @@ const handleMessage = async (data: any) => {
       processUpdateLightV16(data.rawPacket as Uint8Array)
       break
     }
+    case 'setOwnerAcceptFence': {
+      if (typeof data.sessionEpoch === 'number') ownerSessionEpoch = data.sessionEpoch
+      rejectOwnerPublications = data.rejectOwnerPublications === true
+      break
+    }
+    case 'revertOwnerLightToIncoming': {
+      if (typeof data.sessionEpoch === 'number') ownerSessionEpoch = data.sessionEpoch
+      rejectOwnerPublications = true
+      for (const key of [...ownerOwnedLightColumns]) {
+        const [cx, cz] = key.split(',').map(Number)
+        const v16In = incomingUpdateLightV16Cache.get(key)
+        const v17In = incomingUpdateLightV17Cache.get(key)
+        const v16 = updateLightV16Cache.get(key)
+        const v17 = updateLightV17Cache.get(key)
+        if (v16 && !v17) {
+          const reverted = revertDisplayToIncoming({ incoming: v16In, display: v16 })
+          if (reverted.display) updateLightV16Cache.set(key, reverted.display)
+        } else {
+          const reverted = revertDisplayToIncoming({ incoming: v17In, display: v17 })
+          if (reverted.display) {
+            updateLightV17Cache.set(key, reverted.display)
+            syncV17LightToColumn(cx, cz)
+          }
+        }
+        ownerOwnedLightColumns.delete(key)
+        appliedOwnerLightVersion.delete(key)
+        invalidateConversion(cx, cz)
+      }
+      break
+    }
+    case 'applyOwnerLightPublication': {
+      if (rejectOwnerPublications) break
+      if (typeof data.sessionEpoch === 'number' && ownerSessionEpoch !== 0 && data.sessionEpoch !== ownerSessionEpoch) break
+      const checked = validateOwnerPublicationMessage(data)
+      if (!checked.ok) break
+      const sections = (data.sections ?? []) as Array<{ sx: number; sy: number; sz: number; blockLight: Uint8Array; skyLight?: Uint8Array }>
+      const worldMinY = config?.worldMinY ?? 0
+      const worldMaxY = config?.worldMaxY ?? 256
+      const numSections = Math.max(1, Math.floor((worldMaxY - worldMinY) / 16))
+      const columns = new Set<string>()
+      for (const section of sections) columns.add(`${section.sx},${section.sz}`)
+      const publicationVersion = typeof data.publicationVersion === 'number' ? data.publicationVersion : 0
+      for (const col of columns) {
+        const [cx, cz] = col.split(',').map(Number)
+        const key = rawCacheKey(cx, cz)
+        const v16 = updateLightV16Cache.get(key)
+        const v17 = updateLightV17Cache.get(key)
+        if (v16 && !v17) {
+          const applied = applyOwnerPublicationToColumnCaches({
+            incoming: incomingUpdateLightV16Cache.get(key),
+            display: v16,
+            sections,
+            worldMinY,
+            columnWorldX: cx,
+            columnWorldZ: cz,
+            numSections: v16.numSections
+          })
+          if (applied.incoming) incomingUpdateLightV16Cache.set(key, applied.incoming)
+          updateLightV16Cache.set(key, applied.display)
+        } else {
+          const applied = applyOwnerPublicationToColumnCaches({
+            incoming: incomingUpdateLightV17Cache.get(key),
+            display: v17,
+            sections,
+            worldMinY,
+            columnWorldX: cx,
+            columnWorldZ: cz,
+            numSections: v17?.numSections ?? numSections
+          })
+          if (applied.incoming) incomingUpdateLightV17Cache.set(key, applied.incoming)
+          updateLightV17Cache.set(key, applied.display)
+          syncV17LightToColumn(cx, cz, ownerDeltaSectionWorldYs(sections, cx, cz))
+        }
+        ownerOwnedLightColumns.add(key)
+        appliedOwnerLightVersion.set(key, publicationVersion)
+        if (typeof data.sessionEpoch === 'number') ownerSessionEpoch = data.sessionEpoch
+        invalidateConversion(cx, cz)
+      }
+      break
+    }
     case 'reset': {
       world = undefined as any
       dirtySections.clear()
+      dirtyLightMeta.clear()
+      dirtyTraceMeta.clear()
+      dirtyVersionMeta.clear()
+      urgentSections.clear()
+      appliedOwnerLightVersion.clear()
+      columnIncarnation.clear()
+      ownerSessionEpoch = 0
+      rejectOwnerPublications = false
       requestTracker.clear()
       clearConversionCache()
+      clearTopologyPostCache()
       rawMapChunkCache.clear()
       parsedV17Cache.clear()
       updateLightV17Cache.clear()
+      incomingUpdateLightV17Cache.clear()
+      ownerOwnedLightColumns.clear()
       pendingLightDirtyColumns.clear()
       parsedV16Cache.clear()
       updateLightV16Cache.clear()
+      incomingUpdateLightV16Cache.clear()
       pendingChunks.clear()
       pendingNeighborHeal.clear()
       blindMeshWarnCount = 0
@@ -1088,7 +1361,38 @@ function makeEmptyColumnGeometry(sx: number, sy: number, sz: number, sectionHeig
 // It groups dirty section keys by chunk column, runs one WASM call per column
 // over the full Y range, then splits the column output back into per-section
 // geometries. Only requested section keys are emitted back to the main thread.
-function processColumnTick() {
+async function processColumnTick() {
+  beginTickWasmParseCache()
+  try {
+    await processColumnTickInner()
+  } finally {
+    endTickWasmParseCache()
+  }
+}
+
+function dirtyHasUrgent() {
+  for (const key of dirtySections.keys()) {
+    if (urgentSections.has(key)) return true
+  }
+  return false
+}
+
+function requeueColumnGroups(pending: Array<{ sections: Array<{ key: string; count: number }> }>, urgentKeys: Set<string>) {
+  for (const group of pending) {
+    for (const section of group.sections) {
+      dirtySections.set(section.key, (dirtySections.get(section.key) ?? 0) + section.count)
+      if (urgentKeys.has(section.key)) urgentSections.add(section.key)
+    }
+  }
+}
+
+function yieldToIncomingMessages() {
+  return new Promise<void>(resolve => {
+    setTimeout(resolve, 0)
+  })
+}
+
+async function processColumnTickInner() {
   const worldMinY = config?.worldMinY ?? 0
   const worldMaxY = config?.worldMaxY ?? 256
   const columnHeight = worldMaxY - worldMinY
@@ -1098,20 +1402,25 @@ function processColumnTick() {
   // coords — the same units used by section keys). This guarantees a
   // single WASM call per column per tick even when multiple section keys
   // of the same column are dirty.
-  const groups = new Map<string, { x: number; z: number; sections: Array<{ key: string; x: number; y: number; z: number; count: number }> }>()
-  for (const [key, count] of dirtySections) {
-    const [sx, sy, sz] = key.split(',').map(v => parseInt(v, 10))
-    const colKey = `${sx},${sz}`
-    let g = groups.get(colKey)
-    if (!g) {
-      g = { x: sx, z: sz, sections: [] }
-      groups.set(colKey, g)
-    }
-    g.sections.push({ key, x: sx, y: sy, z: sz, count })
-  }
+  const { selected: groups, remaining } = selectColumnGroupsForTick(dirtySections, urgentSections)
   dirtySections.clear()
+  for (const [key, count] of remaining) dirtySections.set(key, count)
+  const selectedUrgent = new Set<string>()
+  for (const group of groups) {
+    for (const section of group.sections) {
+      if (urgentSections.delete(section.key)) selectedUrgent.add(section.key)
+    }
+  }
+  if (isClientLightTraceEnabled() && isClientLightTraceArmed()) {
+    postClientLightTrace(postTrace, {
+      phase: 'mesherStart',
+      queueDepth: groups.length,
+      workerIndex
+    })
+  }
 
-  for (const group of groups.values()) {
+  for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
+    const group = groups[groupIndex]!
     const { x, z, sections } = group
     const targetChunk = world.getColumn(x, z)
 
@@ -1127,6 +1436,8 @@ function processColumnTick() {
     let preOther = 0
     let preCacheHits = 0
     let preCacheMisses = 0
+    let preWasmParseHits = 0
+    let preWasmParseMisses = 0
     let hadError = false
     let columnMeshPath = 'none'
     let chunkCount = 0
@@ -1139,6 +1450,7 @@ function processColumnTick() {
     // attributed to the column).
     let columnStart = 0
     let postStart = 0
+    let usedLightColumns = new Set<string>()
 
     if (targetChunk && wasm) {
       columnStart = performance.now()
@@ -1146,6 +1458,7 @@ function processColumnTick() {
       const t0 = start
       try {
         const chunksToUse = collectChunksForColumn(x, z)
+        usedLightColumns = new Set(chunksToUse.map(entry => rawCacheKey(entry.x, entry.z)))
         chunkCount = chunksToUse.length
         const caches = packetCaches()
         worldColumns3x3 = countWorldColumns3x3(x, z, (nx, nz) => world.getColumn(nx, nz))
@@ -1201,7 +1514,7 @@ function processColumnTick() {
             )
             if (wasmResult) columnMeshPath = 'v17_fused'
           } else if (v16Entry) {
-            const v16Light = updateLightV16Cache.get(rawCacheKey(x, z))
+            const v16Light = displayCachedLight(updateLightV16Cache.get(rawCacheKey(x, z)))
             const bitMapLoHi = new Uint32Array([v16Entry.bitMap >>> 0, 0])
             wasmResult = meshColumnFromParsedV16V17(
               v16Entry.chunkData,
@@ -1256,25 +1569,36 @@ function processColumnTick() {
             const cs = performance.now()
             const rawEntry = rawMapChunkCache.get(rawCacheKey(cx, cz))
             const v17Entry = parsedV17Cache.get(rawCacheKey(cx, cz))
-            const v17Light = resolveUpdateLightV17Entry(cx, cz, chunk, worldMinY, worldMaxY)
+            const v17Light = updateLightV17Cache.get(rawCacheKey(cx, cz))
             const v16Entry = parsedV16Cache.get(rawCacheKey(cx, cz))
             const v16Light = updateLightV16Cache.get(rawCacheKey(cx, cz))
 
             let conv: ChunkConversionResult | null = null
             let hit = false
 
-            // WASM fast paths — parse is already fast (2.19× over JS), no
-            // cache needed.  Bypass getOrConvertColumn so the conversion
-            // cache only holds JS-fallback results.  When a WASM helper
-            // returns null (unsupported protocol, parser error, …) we MUST
-            // fall through to the JS column walk — otherwise the column
-            // would render as empty geometry.
+            // WASM fast paths — parse is already fast (2.19× over JS). Cache
+            // for the rest of this tick so 9 dirty columns share neighbour
+            // parses. Bypass getOrConvertColumn so the conversion cache only
+            // holds JS-fallback results.  When a WASM helper returns null
+            // (unsupported protocol, parser error, …) we MUST fall through
+            // to the JS column walk — otherwise the column would render as
+            // empty geometry.
+            const tickKey = rawCacheKey(cx, cz)
             if (rawEntry) {
-              conv = convertRawMapChunkToWasm(rawEntry, version)
+              const cached = getOrConvertTickWasmParse(tickKey, () => convertRawMapChunkToWasm(rawEntry, version))
+              conv = cached.result
+              if (cached.hit) preWasmParseHits++
+              else preWasmParseMisses++
             } else if (v17Entry) {
-              conv = convertParsedV17ToWasm(v17Entry, v17Light, version)
+              const cached = getOrConvertTickWasmParse(tickKey, () => convertParsedV17ToWasm(v17Entry, v17Light, version))
+              conv = cached.result
+              if (cached.hit) preWasmParseHits++
+              else preWasmParseMisses++
             } else if (v16Entry) {
-              conv = convertParsedV16ToWasm(v16Entry, v16Light, version)
+              const cached = getOrConvertTickWasmParse(tickKey, () => convertParsedV16ToWasm(v16Entry, v16Light, version))
+              conv = cached.result
+              if (cached.hit) preWasmParseHits++
+              else preWasmParseMisses++
             }
 
             if (!conv) {
@@ -1309,6 +1633,7 @@ function processColumnTick() {
             conversions.push(conv)
             meshChunks.push({ x: cx, z: cz, chunk })
           }
+          usedLightColumns = new Set(meshChunks.map(entry => rawCacheKey(entry.x, entry.z)))
 
           const twoStepChunkCount = conversions.length
           if (twoStepChunkCount === 0) {
@@ -1463,27 +1788,39 @@ function processColumnTick() {
         const sectionBlocksCount = entry?.blocksCount ?? 0
         // Block entity metadata still needs a per-section world walk
         // (signs/heads/banners), matching the legacy per-section path.
-        const signs: Record<string, SignMeta> = {}
-        const heads: Record<string, HeadMeta> = {}
-        const banners: Record<string, BannerMeta> = {}
-        const beTarget = { signs, heads, banners }
-        const beOpts = { disableBlockEntityTextures: world.config.disableBlockEntityTextures }
-        const { occludingLookup } = getBlockMeta(version)
-        const visGraph = new VisGraph()
-        const cursor = new Vec3(0, 0, 0)
-        for (cursor.y = sy; cursor.y < sy + sectionHeight; cursor.y++) {
-          for (cursor.z = sz; cursor.z < sz + 16; cursor.z++) {
-            for (cursor.x = sx; cursor.x < sx + 16; cursor.x++) {
-              const b = world.getBlock(cursor)
-              if (!b) continue
-              if (occludingLookup[b.stateId]) {
-                visGraph.setOpaque(cursor.x - sx, cursor.y - sy, cursor.z - sz)
+        const topologyRevision = dirtyVersionMeta.get(key)?.topologyRevision
+        const post = getOrComputeTopologyPost(key, topologyRevision, () => {
+          const signs: Record<string, SignMeta> = {}
+          const heads: Record<string, HeadMeta> = {}
+          const banners: Record<string, BannerMeta> = {}
+          const beTarget = { signs, heads, banners }
+          const beOpts = { disableBlockEntityTextures: world.config.disableBlockEntityTextures }
+          const { occludingLookup } = getBlockMeta(version)
+          const visGraph = new VisGraph()
+          const cursor = new Vec3(0, 0, 0)
+          for (cursor.y = sy; cursor.y < sy + sectionHeight; cursor.y++) {
+            for (cursor.z = sz; cursor.z < sz + 16; cursor.z++) {
+              for (cursor.x = sx; cursor.x < sx + 16; cursor.x++) {
+                const b = world.getBlock(cursor)
+                if (!b) continue
+                if (occludingLookup[b.stateId]) {
+                  visGraph.setOpaque(cursor.x - sx, cursor.y - sy, cursor.z - sz)
+                }
+                collectBlockEntityMetadata(b, cursor.x, cursor.y, cursor.z, beTarget, beOpts, world)
               }
-              collectBlockEntityMetadata(b, cursor.x, cursor.y, cursor.z, beTarget, beOpts, world)
             }
           }
-        }
-        const sectionVisibilitySet = packVisibilitySet(visGraph.resolve())
+          return {
+            visibilitySet: packVisibilitySet(visGraph.resolve()),
+            signs,
+            heads,
+            banners
+          }
+        })
+        const signs = post.payload.signs as Record<string, SignMeta>
+        const heads = post.payload.heads as Record<string, HeadMeta>
+        const banners = post.payload.banners as Record<string, BannerMeta>
+        const sectionVisibilitySet = post.payload.visibilitySet as ReturnType<typeof packVisibilitySet>
 
         let geometry: MesherGeometryOutput
         let transferable: any[] = []
@@ -1590,10 +1927,12 @@ function processColumnTick() {
           geometry.heads = heads
           geometry.banners = banners
         }
-        postMessage({ type: 'geometry', key, geometry, workerIndex }, transferable)
+        const versionMeta = takeGeometryVersionMeta(key, sx, sz, usedLightColumns)
+        postMessage({ type: 'geometry', key, geometry, workerIndex, ...versionMeta }, transferable)
       } else if (hadError) {
         const errorGeometry = makeEmptyColumnGeometry(sx, sy, sz, sectionHeight, true)
-        postMessage({ type: 'geometry', key, geometry: errorGeometry, workerIndex })
+        const versionMeta = takeGeometryVersionMeta(key, sx, sz, usedLightColumns)
+        postMessage({ type: 'geometry', key, geometry: errorGeometry, workerIndex, ...versionMeta })
       }
       // No targetChunk and no error: skip geometry message (mirrors
       // legacy behavior for sections whose chunk has been unloaded
@@ -1632,6 +1971,8 @@ function processColumnTick() {
           preOther: !attributed ? preOther : 0,
           preCacheHits: !attributed ? preCacheHits : 0,
           preCacheMisses: !attributed ? preCacheMisses : 0,
+          preWasmParseHits: !attributed ? preWasmParseHits : 0,
+          preWasmParseMisses: !attributed ? preWasmParseMisses : 0,
           chunkCount: !attributed ? chunkCount : 0,
           worldColumns3x3: !attributed ? worldColumns3x3 : 0,
           parsedCache3x3: !attributed ? parsedCache3x3 : 0,
@@ -1640,25 +1981,37 @@ function processColumnTick() {
         attributed = true
       }
     }
+    if (groupIndex < groups.length - 1) {
+      await yieldToIncomingMessages()
+      if (dirtyHasUrgent()) {
+        requeueColumnGroups(groups.slice(groupIndex + 1), selectedUrgent)
+        break
+      }
+    }
+  }
+  if (isClientLightTraceEnabled() && isClientLightTraceArmed()) {
+    postClientLightTrace(postTrace, {
+      phase: 'mesherEnd',
+      queueDepth: 0,
+      workerIndex
+    })
   }
 }
 
-setInterval(async () => {
+const meshTickScheduler = createMeshTickScheduler(async () => {
   if (!allDataReady) return
-
-  // Ensure WASM is initialized
   if (!wasmInitialized) {
     await initWasm()
-    if (!wasmInitialized) return // Still not initialized, skip this cycle
+    if (!wasmInitialized) return
   }
-
   if (dirtySections.size === 0) return
-
   try {
-    processColumnTick()
+    await processColumnTick()
   } catch (err) {
     console.error('[WASM Mesher] processColumnTick failed:', err)
-    // Swallow to avoid breaking the setInterval; individual columns
-    // already have their own try/catch.
   }
-}, 50)
+})
+
+setInterval(() => {
+  meshTickScheduler.kick()
+}, BULK_MESH_INTERVAL_MS)

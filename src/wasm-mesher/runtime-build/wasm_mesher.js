@@ -86,6 +86,11 @@ function getArrayU16FromWasm0(ptr, len) {
     return getUint16ArrayMemory0().subarray(ptr / 2, ptr / 2 + len);
 }
 
+function getArrayU32FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getUint32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
+}
+
 function getArrayU8FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return getUint8ArrayMemory0().subarray(ptr / 1, ptr / 1 + len);
@@ -151,6 +156,10 @@ function handleError(f, args) {
         const idx = addToExternrefTable0(e);
         wasm.__wbindgen_exn_store(idx);
     }
+}
+
+function isLikeNone(x) {
+    return x === undefined || x === null;
 }
 
 function passArray16ToWasm0(arg, malloc) {
@@ -246,6 +255,100 @@ if (!('encodeInto' in cachedTextEncoder)) {
 }
 
 let WASM_VECTOR_LEN = 0;
+
+const JsLightEngineFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_jslightengine_free(ptr >>> 0, 1));
+
+export class JsLightEngine {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        JsLightEngineFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_jslightengine_free(ptr, 0);
+    }
+    /**
+     * @param {number} world_min_y
+     * @param {number} world_height
+     */
+    constructor(world_min_y, world_height) {
+        const ret = wasm.jslightengine_js_new(world_min_y, world_height);
+        this.__wbg_ptr = ret >>> 0;
+        JsLightEngineFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {Uint8Array} emission
+     * @param {Uint8Array} opacity
+     */
+    setLightTables(emission, opacity) {
+        const ptr0 = passArray8ToWasm0(emission, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(opacity, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.jslightengine_setLightTables(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+    }
+    /**
+     * @param {Uint8Array} occupancy
+     */
+    setOcclusionTable(occupancy) {
+        const ptr0 = passArray8ToWasm0(occupancy, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.jslightengine_setOcclusionTable(this.__wbg_ptr, ptr0, len0);
+    }
+    /**
+     * @param {any} event
+     */
+    pushEvent(event) {
+        wasm.jslightengine_pushEvent(this.__wbg_ptr, event);
+    }
+    /**
+     * @param {number} budget_ms
+     * @returns {boolean}
+     */
+    step(budget_ms) {
+        const ret = wasm.jslightengine_step(this.__wbg_ptr, budget_ms);
+        return ret !== 0;
+    }
+    /**
+     * @returns {any}
+     */
+    pollCompletedPublication() {
+        const ret = wasm.jslightengine_pollCompletedPublication(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @param {number} x
+     * @param {number} y
+     * @param {number} z
+     * @returns {number}
+     */
+    getBlockLight(x, y, z) {
+        const ret = wasm.jslightengine_getBlockLight(this.__wbg_ptr, x, y, z);
+        return ret;
+    }
+    /**
+     * @param {number} x
+     * @param {number} y
+     * @param {number} z
+     * @returns {number}
+     */
+    getSkyLight(x, y, z) {
+        const ret = wasm.jslightengine_getSkyLight(this.__wbg_ptr, x, y, z);
+        return ret;
+    }
+    /**
+     * @param {boolean} enabled
+     */
+    setSkyLightEnabled(enabled) {
+        wasm.jslightengine_setSkyLightEnabled(this.__wbg_ptr, enabled);
+    }
+}
+if (Symbol.dispose) JsLightEngine.prototype[Symbol.dispose] = JsLightEngine.prototype.free;
 
 /**
  * Compute wireframe edge positions from a triangle mesh.
@@ -879,11 +982,11 @@ export function parseMapChunkV18Plus(raw_packet, num_sections, max_bits_per_bloc
  * `raw_packet` includes the leading packet-id varint (we skip it).
  * `num_sections` should match the column the light is for (16 in 1.17).
  *
- * Returns `{ x, z, skyLight: Uint8Array(num_sections * 4096),
- *            blockLight: Uint8Array(num_sections * 4096), bytesRead }`.
- * Layout matches the existing 1.18+ light arrays
- * (`x + z*16 + y_abs*256`); the JS-side worker reorders into per-section
- * stack via the same path used for 1.18+ raw map_chunk parsing.
+ * Returns `{ x, z, trustEdges, skyLight, blockLight, skyLightMask,
+ *            emptySkyLightMask, blockLightMask, emptyBlockLightMask,
+ *            skyBelow?, skyAbove?, blockBelow?, blockAbove?, bytesRead }`.
+ * World arrays are `num_sections * 4096` (`x + z*16 + y_abs*256`).
+ * Omitted sections are left 0 and are not authoritative — use the masks.
  * @param {Uint8Array} raw_packet
  * @param {number} num_sections
  * @returns {any}
@@ -955,6 +1058,28 @@ function __wbg_get_imports() {
         getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
         getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
     };
+    imports.wbg.__wbg___wbindgen_is_null_dfda7d66506c95b5 = function(arg0) {
+        const ret = arg0 === null;
+        return ret;
+    };
+    imports.wbg.__wbg___wbindgen_is_undefined_f6b95eab589e0269 = function(arg0) {
+        const ret = arg0 === undefined;
+        return ret;
+    };
+    imports.wbg.__wbg___wbindgen_number_get_9619185a74197f95 = function(arg0, arg1) {
+        const obj = arg1;
+        const ret = typeof(obj) === 'number' ? obj : undefined;
+        getDataViewMemory0().setFloat64(arg0 + 8 * 1, isLikeNone(ret) ? 0 : ret, true);
+        getDataViewMemory0().setInt32(arg0 + 4 * 0, !isLikeNone(ret), true);
+    };
+    imports.wbg.__wbg___wbindgen_string_get_a2a31e16edf96e42 = function(arg0, arg1) {
+        const obj = arg1;
+        const ret = typeof(obj) === 'string' ? obj : undefined;
+        var ptr1 = isLikeNone(ret) ? 0 : passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len1 = WASM_VECTOR_LEN;
+        getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
+        getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
+    };
     imports.wbg.__wbg___wbindgen_throw_dd24417ed36fc46e = function(arg0, arg1) {
         throw new Error(getStringFromWasm0(arg0, arg1));
     };
@@ -962,6 +1087,10 @@ function __wbg_get_imports() {
         const ret = arg0[arg1 >>> 0];
         return ret;
     };
+    imports.wbg.__wbg_get_af9dab7e9603ea93 = function() { return handleError(function (arg0, arg1) {
+        const ret = Reflect.get(arg0, arg1);
+        return ret;
+    }, arguments) };
     imports.wbg.__wbg_instanceof_Int32Array_b6281022039fba32 = function(arg0) {
         let result;
         try {
@@ -990,6 +1119,10 @@ function __wbg_get_imports() {
         const ret = arg0.length;
         return ret;
     };
+    imports.wbg.__wbg_length_89c3414ed7f0594d = function(arg0) {
+        const ret = arg0.length;
+        return ret;
+    };
     imports.wbg.__wbg_length_ab53989976907f11 = function(arg0) {
         const ret = arg0.length;
         return ret;
@@ -1002,8 +1135,20 @@ function __wbg_get_imports() {
         const ret = new Array();
         return ret;
     };
+    imports.wbg.__wbg_new_6421f6084cc5bc5a = function(arg0) {
+        const ret = new Uint8Array(arg0);
+        return ret;
+    };
+    imports.wbg.__wbg_new_9f7fd5c3a6ba7298 = function(arg0) {
+        const ret = new Uint16Array(arg0);
+        return ret;
+    };
     imports.wbg.__wbg_new_with_length_1e8603a5c71d4e06 = function(arg0) {
         const ret = new Int32Array(arg0 >>> 0);
+        return ret;
+    };
+    imports.wbg.__wbg_new_with_length_202b3db94ba5fc86 = function(arg0) {
+        const ret = new Uint32Array(arg0 >>> 0);
         return ret;
     };
     imports.wbg.__wbg_new_with_length_aa5eaf41d35235e5 = function(arg0) {
@@ -1014,11 +1159,22 @@ function __wbg_get_imports() {
         const ret = new Uint16Array(arg0 >>> 0);
         return ret;
     };
+    imports.wbg.__wbg_now_69d776cd24f5215b = function() {
+        const ret = Date.now();
+        return ret;
+    };
+    imports.wbg.__wbg_prototypesetcall_b0bea5f39077cfd3 = function(arg0, arg1, arg2) {
+        Uint16Array.prototype.set.call(getArrayU16FromWasm0(arg0, arg1), arg2);
+    };
     imports.wbg.__wbg_prototypesetcall_dd07c344a74d4bfd = function(arg0, arg1, arg2) {
         Int32Array.prototype.set.call(getArrayI32FromWasm0(arg0, arg1), arg2);
     };
     imports.wbg.__wbg_prototypesetcall_dfe9b766cdc1f1fd = function(arg0, arg1, arg2) {
         Uint8Array.prototype.set.call(getArrayU8FromWasm0(arg0, arg1), arg2);
+    };
+    imports.wbg.__wbg_push_7d9be8f38fc13975 = function(arg0, arg1) {
+        const ret = arg0.push(arg1);
+        return ret;
     };
     imports.wbg.__wbg_set_169e13b608078b7b = function(arg0, arg1, arg2) {
         arg0.set(getArrayU8FromWasm0(arg1, arg2));
@@ -1035,6 +1191,9 @@ function __wbg_get_imports() {
     };
     imports.wbg.__wbg_set_bb0c6a7fe60d81b5 = function(arg0, arg1, arg2) {
         arg0.set(getArrayU16FromWasm0(arg1, arg2));
+    };
+    imports.wbg.__wbg_set_e7cd108182596b7f = function(arg0, arg1, arg2) {
+        arg0.set(getArrayU32FromWasm0(arg1, arg2));
     };
     imports.wbg.__wbindgen_cast_2241b6af4c4b2941 = function(arg0, arg1) {
         // Cast intrinsic for `Ref(String) -> Externref`.
