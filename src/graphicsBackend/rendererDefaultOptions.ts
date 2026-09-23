@@ -66,6 +66,7 @@ export const RENDERER_DEFAULT_OPTIONS = {
   vanillaLook: false as boolean,
   smoothLighting: true as boolean,
   newVersionsLighting: false as boolean,
+  entityLighting: false as boolean,
   vrSupport: true as boolean,
   vrPageGameRendering: false as boolean,
   clipWorldBelowY: undefined as number | undefined,
@@ -247,7 +248,11 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
   smoothLighting: {},
   newVersionsLighting: {
     text: 'Lighting in newer versions',
-    tooltip: 'Block, sky, and entity lighting for 1.13+. Off renders the world fullbright.'
+    tooltip: 'Block and sky lighting for 1.13+. Off renders the world fullbright.'
+  },
+  entityLighting: {
+    text: 'Entity lighting',
+    tooltip: 'Light entities from block and sky light. Requires world lighting to be enabled; off keeps entities fullbright.'
   },
   vrSupport: {
     text: 'VR support',
@@ -316,6 +321,7 @@ export const RENDERER_RENDER_GUI_SECTIONS: ReadonlyArray<{
       'smoothLighting',
       'vanillaLook',
       'newVersionsLighting',
+      'entityLighting',
       'dayCycleAndLighting',
       'loadPlayerSkins',
       'renderEars',

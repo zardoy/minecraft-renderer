@@ -110,6 +110,35 @@ describe('EntityLightController', () => {
     expect(debugMat.color.getHex()).toBe(0x00_ff_00)
   })
 
+  it('updates existing entities across entity/world lighting toggles without tint accumulation', () => {
+    const { controller, setLightingEnabled } = makeController(() => ({ block: 0, sky: 0 }))
+    const material = new THREE.MeshBasicMaterial({ color: 0xb5_6d_51 })
+    const base = material.color.clone()
+    const root = new THREE.Group()
+    root.add(new THREE.Mesh(new THREE.BoxGeometry(), material))
+    controller.register(root, { eyeHeight: 0 })
+
+    // Entity lighting is independently disabled initially.
+    setLightingEnabled(false)
+    controller.update(root, { x: 8, y: 64, z: 8 })
+    expect(material.color.r).toBeCloseTo(base.r, 5)
+    expect(material.color.g).toBeCloseTo(base.g, 5)
+    expect(material.color.b).toBeCloseTo(base.b, 5)
+
+    setLightingEnabled(true)
+    controller.update(root, { x: 8, y: 64, z: 8 })
+    const dim = blockEntityBrightness(0, 0, 1)
+    expect(material.color.r).toBeCloseTo(base.r * dim, 5)
+    expect(material.color.g).toBeCloseTo(base.g * dim, 5)
+    expect(material.color.b).toBeCloseTo(base.b * dim, 5)
+
+    setLightingEnabled(false)
+    controller.update(root, { x: 8, y: 64, z: 8 })
+    expect(material.color.r).toBeCloseTo(base.r, 5)
+    expect(material.color.g).toBeCloseTo(base.g, 5)
+    expect(material.color.b).toBeCloseTo(base.b, 5)
+  })
+
   it('refreshes on sky change and stays fullbright when lighting is disabled', () => {
     const { controller, setSkyLevel, setLightingEnabled } = makeController(() => ({ block: 0, sky: 1 }))
     const material = new THREE.MeshBasicMaterial({ color: 0xff_ff_ff })
