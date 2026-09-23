@@ -10,7 +10,7 @@ import { worldColumnKey, World } from '../../mesher-shared/world'
 import { handleGetHeightmap, EMPTY_COLUMN_HEIGHTMAP_SENTINEL } from '../../mesher-shared/computeHeightmap'
 import { collectBlockEntityMetadata, type SignMeta, type HeadMeta, type BannerMeta } from '../../mesher-shared/blockEntityMetadata'
 import { SectionRequestTracker } from './mesherWasmRequestTracker'
-import { sectionYsForLightColumnDirty } from './mesherWasmLightDirty'
+import { dropRawMapChunkOnLightOnlyReload, sectionYsForLightColumnDirty } from './mesherWasmLightDirty'
 import { CONVERSION_CACHE_LIMIT, clearConversionCache, getOrConvertColumn, invalidateConversion, setConversionCacheLimit } from './mesherWasmConversionCache'
 import { PendingChunkBuffer } from './mesherWasmChunkBuffer'
 import {
@@ -382,6 +382,7 @@ function processChunkMessage(data: { x: number; z: number; chunk: any; customBlo
 function drainPendingChunks() {
   if (!world) return
   pendingChunks.drain(msg => {
+    dropRawMapChunkOnLightOnlyReload(msg.isLightUpdate, rawMapChunkCache, rawCacheKey(msg.x, msg.z))
     processChunkMessage(msg)
     onColumnDataArrived(msg.x, msg.z)
   })
@@ -843,12 +844,14 @@ const handleMessage = async (data: any) => {
       // Invalidate BEFORE replacing the column reference so a stale entry
       // can never outlive the old chunk object.
       invalidateConversion(data.x, data.z)
+      dropRawMapChunkOnLightOnlyReload(data.isLightUpdate, rawMapChunkCache, rawCacheKey(data.x, data.z))
       if (!world) {
         pendingChunks.enqueue({
           x: data.x,
           z: data.z,
           chunk: data.chunk,
-          customBlockModels: data.customBlockModels
+          customBlockModels: data.customBlockModels,
+          isLightUpdate: data.isLightUpdate
         })
         break
       }
