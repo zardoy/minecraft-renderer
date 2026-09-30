@@ -9,11 +9,7 @@ export function createGeometryIndexArray(indices: readonly number[]): Uint16Arra
   return using32Array ? new Uint32Array(indices) : new Uint16Array(indices)
 }
 
-export function appendGeometryIndices(
-  target: number[],
-  source: readonly number[],
-  vertexOffset: number
-): void {
+export function appendGeometryIndices(target: number[], source: readonly number[], vertexOffset: number): void {
   for (let index = 0; index < source.length; index++) {
     target.push(source[index] + vertexOffset)
   }
