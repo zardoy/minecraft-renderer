@@ -284,6 +284,15 @@ export class ChunkMeshManager {
     if (this.globalLegacyShaderMaterial) setLegacySkyLevel(this.globalLegacyShaderMaterial, value)
     if (this.globalLegacyBlendShaderMaterial) setLegacySkyLevel(this.globalLegacyBlendShaderMaterial, value)
     this.blockEntityLightRegistry.setSkyLevel(value)
+    this.worldRenderer.entityLightController?.setSkyLevel(value)
+  }
+
+  getSkyLevel(): number {
+    return this.blockEntityLightRegistry.getSkyLevel()
+  }
+
+  getLightmapParams(): BlockLightmapParams {
+    return this.blockEntityLightRegistry.getLightmapParams()
   }
 
   setShadingTheme(theme: 'vanilla' | 'high-contrast', cardinalLight: string): void {
@@ -299,6 +308,7 @@ export class ChunkMeshManager {
     if (this.globalLegacyShaderMaterial) setLegacyLightmapParams(this.globalLegacyShaderMaterial, params)
     if (this.globalLegacyBlendShaderMaterial) setLegacyLightmapParams(this.globalLegacyBlendShaderMaterial, params)
     this.blockEntityLightRegistry.setLightmapParams(params)
+    this.worldRenderer.entityLightController?.setLightmapParams(params)
   }
 
   private getLegacyShaderMaterial(): THREE.ShaderMaterial {
