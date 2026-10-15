@@ -28,3 +28,25 @@ export type CameraPerspective = 'first_person' | 'third_person_back' | 'third_pe
 
 export type BlockShape = { position: { x: number; y: number; z: number }; width: number; height: number; depth: number }
 export type BlocksShapes = BlockShape[]
+export type UseItemAction = 'EAT' | 'DRINK' | 'BOW' | 'CROSSBOW' | 'SHIELD' | 'NONE'
+
+export type UseItemParticleEffect = 'food' | 'drink' | 'none'
+
+export type UseItemStatus = 'active' | 'awaitingCompletion' | 'completed' | 'cancelled'
+
+export interface UseItemSnapshot {
+  name: string
+  durationTicks: number
+  action: UseItemAction
+  particleEffect: UseItemParticleEffect
+}
+
+export interface UseItemSession {
+  id: number
+  itemSnapshot: UseItemSnapshot
+  hand: 0 | 1
+  action: UseItemAction
+  durationTicks: number
+  elapsedTicks: number
+  status: UseItemStatus
+}
