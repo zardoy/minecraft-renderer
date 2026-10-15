@@ -1,6 +1,7 @@
 import { Vec3 } from 'vec3'
 import { convertChunkToWasm, getBlockMeta, type ChunkConversionResult } from '../bridge/convertChunk'
 import { extractColumnHeightmap, splitColumnWasmOutputToSections } from '../bridge/render-from-wasm'
+import { createGeometryIndexArray } from '../bridge/geometryIndices'
 import { setBlockStatesData as setMesherData } from '../../mesher-shared/models'
 import { defaultMesherConfig, type MesherGeometryOutput, SECTION_HEIGHT } from '../../mesher-shared/shared'
 import { SHADER_CUBES_FORMAT_VERSION } from '../../mesher-shared/shaderCubeFormat'
@@ -1492,8 +1493,8 @@ function processColumnTick() {
         const hasLegacyMesh = hasOpaqueMesh || hasBlendMesh
         const hasShaderCubes = (exported?.shaderCubes?.count ?? 0) > 0
         if (exported && (hasLegacyMesh || hasShaderCubes)) {
-          const maxIndex = exported.geometry.indices.length > 0 ? Math.max(...exported.geometry.indices) : 0
-          const using32Array = maxIndex > 65535
+          const indices = createGeometryIndexArray(exported.geometry.indices)
+          const using32Array = indices instanceof Uint32Array
           geometry = {
             sectionYNumber: (sy - (config?.worldMinY || 0)) >> 4,
             chunkKey: worldColumnKey(sx, sz),
@@ -1512,7 +1513,7 @@ function processColumnTick() {
             skyLights: new Float32Array(exported.geometry.skyLights),
             blockLights: new Float32Array(exported.geometry.blockLights),
             uvs: new Float32Array(exported.geometry.uvs),
-            indices: using32Array ? new Uint32Array(exported.geometry.indices) : new Uint16Array(exported.geometry.indices),
+            indices,
             indicesCount: exported.geometry.indices.length,
             using32Array,
             tiles: {},
@@ -1536,7 +1537,6 @@ function processColumnTick() {
             }
           }
           if (exported.blendGeometry && hasBlendMesh) {
-            const blendMax = Math.max(...exported.blendGeometry.indices)
             geometry.blend = {
               positions: new Float32Array(exported.blendGeometry.positions),
               normals: new Float32Array(exported.blendGeometry.normals),
@@ -1544,7 +1544,7 @@ function processColumnTick() {
               skyLights: new Float32Array(exported.blendGeometry.skyLights),
               blockLights: new Float32Array(exported.blendGeometry.blockLights),
               uvs: new Float32Array(exported.blendGeometry.uvs),
-              indices: blendMax > 65535 ? new Uint32Array(exported.blendGeometry.indices) : new Uint16Array(exported.blendGeometry.indices)
+              indices: createGeometryIndexArray(exported.blendGeometry.indices)
             }
           }
           transferable = [

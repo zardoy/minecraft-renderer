@@ -18,6 +18,7 @@ import { resolveBlockPropertiesForMeshing } from '../../mesher-shared/blockPrope
 import { isSemiTransparentBlockName } from '../../mesher-shared/models'
 import { faceIsCulled } from '../../mesher-shared/faceOcclusion'
 import { buildShaderCubesFromWords, getShaderCubeResources, tryBuildShaderCubeInstances } from './shaderCubeBridge'
+import { appendGeometryIndices } from './geometryIndices'
 import { getSideShading, vertexLightFromAo } from '../../mesher-shared/vertexShading'
 import tintsJson from 'minecraft-data/minecraft-data/data/pc/1.16.2/tints.json'
 
@@ -985,10 +986,8 @@ export function renderWasmOutputToGeometry(
     blendSkyLights = liquidSkyLights.concat(blockBlendSkyLights)
     blendBlockLights = liquidBlockLights.concat(blockBlendBlockLights)
     blendUvs = liquidUvs.concat(blockBlendUvs)
-    blendIndices.push(...liquidIndices)
-    for (const idx of blockBlendIndices) {
-      blendIndices.push(idx + liquidVertexCount)
-    }
+    appendGeometryIndices(blendIndices, liquidIndices, 0)
+    appendGeometryIndices(blendIndices, blockBlendIndices, liquidVertexCount)
   }
 
   const shaderCubes = buildShaderCubesFromWords(shaderWordBuffer)
