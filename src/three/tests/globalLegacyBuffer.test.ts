@@ -891,3 +891,111 @@ test('GlobalLegacyBuffer: blend reorder metadata survives compaction', () => {
   buffer.dispose()
   mat.dispose()
 })
+
+function quadGeometry(quadCount: number): ReturnType<typeof makeQuadGeometry> {
+  const indices = new Uint32Array(quadCount * 6)
+  for (let i = 0; i < quadCount; i++) {
+    const v = i * 4
+    indices.set([v, v + 1, v + 2, v, v + 2, v + 3], i * 6)
+  }
+  return {
+    positions: new Float32Array(quadCount * 12),
+    colors: new Float32Array(quadCount * 12),
+    skyLights: new Float32Array(quadCount * 4),
+    blockLights: new Float32Array(quadCount * 4),
+    uvs: new Float32Array(quadCount * 8),
+    indices
+  }
+}
+
+function drawableLegacyIndices(buffer: GlobalLegacyBuffer, key: string): number {
+  buffer.updateDrawSpans([{ key, distSq: 0 }], 'opaque')
+  return buffer.getVisibleIndexSpans().reduce((sum, span) => sum + span.indexCount, 0)
+}
+
+test('GlobalLegacyBuffer: compaction must not hide pending-replace displayed indices', () => {
+  const scene = new THREE.Scene()
+  const mat = createGlobalLegacyBlockMaterial()
+  const buffer = new GlobalLegacyBuffer(mat, scene)
+
+  buffer.addSection('H', quadGeometry(8000), 0, 0, 0)
+  buffer.addSection('A', quadGeometry(3000), 0, 0, 0)
+  buffer.addSection('B', quadGeometry(500), 0, 0, 0)
+  drainUploads(buffer)
+  const original = buffer.getSectionDrawStart('A')
+
+  buffer.addSection('A', quadGeometry(3000), 0, 0, 0)
+  buffer.removeSection('H')
+  buffer.compactStep()
+  buffer.uploadDirtyRange()
+  buffer.updateDrawSpans([{ key: 'A', distSq: 0 }], 'opaque')
+
+  expect(drawableLegacyIndices(buffer, 'A')).toBe(18_000)
+  expect(buffer.getSectionDrawStart('A')).toBe(original)
+  expect(buffer.getPendingMove()?.key === 'A').toBe(false)
+
+  buffer.dispose()
+  mat.dispose()
+})
+
+test('GlobalLegacyBuffer: 27 simultaneous remeshes keep displayed quads on every frame', () => {
+  const scene = new THREE.Scene()
+  const mat = createGlobalLegacyBlockMaterial()
+  const buffer = new GlobalLegacyBuffer(mat, scene)
+  const n = 27
+  const quads = 1000
+  const expectedIndices = quads * 6
+
+  for (let i = 0; i < n; i++) buffer.addSection(String(i), quadGeometry(quads), 0, 0, 0)
+  drainUploads(buffer)
+  for (let i = 0; i < n; i++) buffer.addSection(String(i), quadGeometry(quads), 0, 0, 0)
+
+  for (let frame = 1; frame <= 160; frame++) {
+    buffer.compactStep()
+    buffer.uploadDirtyRange()
+    for (let i = 0; i < n; i++) {
+      expect(drawableLegacyIndices(buffer, String(i)), `section ${i} on frame ${frame}`).toBe(expectedIndices)
+    }
+    if (!buffer.hasPendingUploads() && !buffer.hasPendingReplace() && !buffer.getPendingMove()) break
+  }
+
+  buffer.dispose()
+  mat.dispose()
+})
+
+test('GlobalLegacyBuffer: remesh during move keeps original displayed slot', () => {
+  const scene = new THREE.Scene()
+  const mat = createGlobalLegacyBlockMaterial()
+  const buffer = new GlobalLegacyBuffer(mat, scene)
+
+  buffer.addSection('H', quadGeometry(8000), 0, 0, 0)
+  buffer.addSection('B', quadGeometry(500), 0, 0, 0)
+  buffer.addSection('A', quadGeometry(3000), 0, 0, 0)
+  drainUploads(buffer)
+  buffer.removeSection('H')
+  drainUploads(buffer)
+  buffer.compactStep()
+  expect(buffer.getPendingMove()?.key).toBe('A')
+  const displayed = buffer.getSectionDrawStart('A')
+  expect(displayed).toBeDefined()
+
+  buffer.addSection('A', quadGeometry(3000), 0, 0, 0)
+  expect(buffer.getSectionDrawStart('A')).toBe(displayed)
+  expect(buffer.getPendingMove()).toBeNull()
+  expect(buffer.hasPendingReplace()).toBe(true)
+  expect(drawableLegacyIndices(buffer, 'A')).toBe(18_000)
+
+  buffer.compactStep()
+  buffer.uploadDirtyRange()
+  expect(buffer.getSectionDrawStart('A')).toBe(displayed)
+  expect(buffer.getPendingMove()?.key === 'A').toBe(false)
+  expect(drawableLegacyIndices(buffer, 'A')).toBe(18_000)
+
+  drainUploads(buffer)
+  buffer.compactStep()
+  finishCurrentMove(buffer)
+  expect(drawableLegacyIndices(buffer, 'A')).toBe(18_000)
+
+  buffer.dispose()
+  mat.dispose()
+})

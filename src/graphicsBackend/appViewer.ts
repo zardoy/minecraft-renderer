@@ -24,6 +24,7 @@ import type {
 import { WorldView, WorldProvider, WorldViewWorker } from '../worldView'
 import { getInitialPlayerState } from './playerState'
 import { defaultWorldRendererConfig, defaultGraphicsBackendConfig, getDefaultRendererState, WorldRendererConfig } from './config'
+import { maybeEnableClientLightTraceFromLocation } from '../lib/clientLightTrace'
 import { PlayerStateReactive } from '../playerState/playerState'
 import { ResourcesManager, ResourcesManagerTransferred } from '../resourcesManager'
 import { preloadMesherWorkerScript } from './preloadWorkers'
@@ -101,6 +102,20 @@ export class AppViewer {
       ...defaultWorldRendererConfig,
       ...options.rendererConfig
     })
+    // Manual live-test hatch: `?clientLight=1` sets `enableClientLightOwner`. Spawn still
+    // requires session version 1.17.1 (`shouldSpawnClientLightOwner`); other versions keep
+    // server light. An explicit code override always wins; without a browser location this
+    // is a no-op (unit tests keep testing the default).
+    if (options.rendererConfig?.enableClientLightOwner === undefined && typeof location !== 'undefined') {
+      try {
+        if (new URLSearchParams(location.search).get('clientLight') === '1') {
+          this.inWorldRenderingConfig.enableClientLightOwner = true
+        }
+      } catch {
+        // ignore malformed URL in non-browser runtimes
+      }
+    }
+    maybeEnableClientLightTraceFromLocation()
 
     const defaultState = getDefaultRendererState()
     this.rendererState = defaultState.reactive

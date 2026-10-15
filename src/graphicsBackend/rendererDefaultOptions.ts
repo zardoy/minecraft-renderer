@@ -121,6 +121,17 @@ export function migrateRendererOptions(saved: Record<string, unknown>): void {
     }
     delete saved[oldKey]
   }
+
+  // Internal one-shot flag from an earlier lighting-default migration. Never a user option.
+  delete saved.migratedNewVersionsLightingDefault
+}
+
+/**
+ * Runtime `enableLighting` from the stored option and protocol.
+ * Pre-1.13 (no blockStateId) always lights. Missing protocol (menu, no bot) must not throw.
+ */
+export function resolveEnableLighting(newVersionsLighting: boolean, blockStateIdSupported: boolean | undefined): boolean {
+  return blockStateIdSupported !== true || newVersionsLighting
 }
 
 /** Settings UI metadata for {@link RENDERER_DEFAULT_OPTIONS} keys. */
@@ -235,7 +246,8 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
   },
   smoothLighting: {},
   newVersionsLighting: {
-    text: 'Lighting in newer versions'
+    text: 'Lighting in newer versions',
+    tooltip: 'Block, sky, and entity lighting for 1.13+. Off renders the world fullbright.'
   },
   vrSupport: {
     text: 'VR support',

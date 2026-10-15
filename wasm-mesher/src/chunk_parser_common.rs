@@ -337,37 +337,94 @@ pub fn assemble_light_full_column(
         if !in_chunk { continue; }
         let s = section_idx_in_chunk as usize;
         let base = s * 16 * 256;
-        // BitArrayNoSpan stores 16 nibbles per i64. For 1.18+ map_chunk and
-        // for 1.16 the wire writes those longs as 8 big-endian bytes — so
-        // within each 8-byte run, byte offset 0 holds nibble positions 14-15
-        // and byte offset 7 holds positions 0-1 (long_encoded = true). For
-        // 1.17 update_light the wire payload is the BitArrayNoSpan internal
-        // byte buffer in *natural* order: byte i holds blocks 2i (low nibble)
-        // and 2i+1 (high nibble) directly (long_encoded = false). Mismatching
-        // this produces X-mirrored light bands inside every Z-row, which the
-        // user sees as very dark shadows under trees / on slopes.
-        for byte_idx in 0..LIGHT_SECTION_BUFFER_BYTES {
-            let byte = section[byte_idx];
-            let v0 = byte & 0x0F;
-            let v1 = (byte >> 4) & 0x0F;
-            let block0 = if long_encoded {
-                let long_idx = byte_idx >> 3;
-                let off_in_long = byte_idx & 0x7;
-                let pair_pos = 7 - off_in_long; // BE byte → nibble-pair position inside long
-                long_idx * 16 + pair_pos * 2
-            } else {
-                byte_idx * 2
-            };
-            let block1 = block0 + 1;
-            for (block_local, value) in [(block0, v0), (block1, v1)] {
-                let y_in = block_local >> 8;
-                let z = (block_local >> 4) & 0xF;
-                let x = block_local & 0xF;
-                out[base + y_in * 256 + z * 16 + x] = value;
-            }
-        }
+        unpack_light_section_into(section, &mut out[base..base + BLOCK_SECTION_VOLUME], long_encoded);
     }
     Ok(out)
+}
+
+/// One unpacked 16³ light section plus optional ±1 padding sections.
+/// Omitted (no data bit, no empty bit) world bytes stay 0 and are not authoritative —
+/// callers must keep the masks to distinguish absence from a real zero.
+#[derive(Debug)]
+pub struct AssembledLightWithPadding {
+    pub world: Vec<u8>,
+    pub below: Option<Vec<u8>>,
+    pub above: Option<Vec<u8>>,
+}
+
+/// Assemble `update_light` arrays without baking a display default into omitted sections.
+pub fn assemble_light_with_padding(
+    sections_concat: &[u8],
+    mask: &[u32],
+    empty_mask: &[u32],
+    num_sections: usize,
+    long_encoded: bool,
+) -> io::Result<AssembledLightWithPadding> {
+    let mut world = vec![0u8; num_sections * BLOCK_SECTION_VOLUME];
+    let mut below = None;
+    let mut above = None;
+    let mut data_cursor = 0usize;
+    let total_bits = num_sections + 2;
+
+    for mask_bit in 0..total_bits {
+        let is_present = mask_bit_get(mask, mask_bit);
+        let is_empty = mask_bit_get(empty_mask, mask_bit);
+        if !is_present && !is_empty {
+            continue;
+        }
+
+        let unpacked = if is_empty {
+            vec![0u8; BLOCK_SECTION_VOLUME]
+        } else {
+            if data_cursor + LIGHT_SECTION_BUFFER_BYTES > sections_concat.len() {
+                return Err(io::Error::new(io::ErrorKind::InvalidData,
+                    format!("light data underflow at mask_bit={} cursor={} len={}",
+                        mask_bit, data_cursor, sections_concat.len())));
+            }
+            let section = &sections_concat[data_cursor..data_cursor + LIGHT_SECTION_BUFFER_BYTES];
+            data_cursor += LIGHT_SECTION_BUFFER_BYTES;
+            let mut dest = vec![0u8; BLOCK_SECTION_VOLUME];
+            unpack_light_section_into(section, &mut dest, long_encoded);
+            dest
+        };
+
+        if mask_bit == 0 {
+            below = Some(unpacked);
+            continue;
+        }
+        if mask_bit == num_sections + 1 {
+            above = Some(unpacked);
+            continue;
+        }
+        let s = mask_bit - 1;
+        let base = s * BLOCK_SECTION_VOLUME;
+        world[base..base + BLOCK_SECTION_VOLUME].copy_from_slice(&unpacked);
+    }
+
+    Ok(AssembledLightWithPadding { world, below, above })
+}
+
+fn unpack_light_section_into(section: &[u8], dest: &mut [u8], long_encoded: bool) {
+    for byte_idx in 0..LIGHT_SECTION_BUFFER_BYTES {
+        let byte = section[byte_idx];
+        let v0 = byte & 0x0F;
+        let v1 = (byte >> 4) & 0x0F;
+        let block0 = if long_encoded {
+            let long_idx = byte_idx >> 3;
+            let off_in_long = byte_idx & 0x7;
+            let pair_pos = 7 - off_in_long;
+            long_idx * 16 + pair_pos * 2
+        } else {
+            byte_idx * 2
+        };
+        let block1 = block0 + 1;
+        for (block_local, value) in [(block0, v0), (block1, v1)] {
+            let y_in = block_local >> 8;
+            let z = (block_local >> 4) & 0xF;
+            let x = block_local & 0xF;
+            dest[y_in * 256 + z * 16 + x] = value;
+        }
+    }
 }
 
 /// Unpack a single light section (2048 bytes = BitArrayNoSpan bpv=4 capacity=4096).
@@ -604,6 +661,29 @@ pub fn build_full_column_light(
     }
 
     assemble_light_full_column(&concat, &mask_pairs, &empty_pairs, num_sections, default_value, long_encoded)
+}
+
+/// Like `build_full_column_light`, but omitted sections stay 0 and padding is kept.
+pub fn build_light_with_padding(
+    section_buffers: &[Vec<u8>],
+    mask: &[i64],
+    empty_mask: &[i64],
+    num_sections: usize,
+    long_encoded: bool,
+) -> io::Result<AssembledLightWithPadding> {
+    let mask_pairs = i64_mask_to_u32_pairs(mask);
+    let empty_pairs = i64_mask_to_u32_pairs(empty_mask);
+
+    let mut concat = Vec::with_capacity(section_buffers.len() * LIGHT_SECTION_BUFFER_BYTES);
+    for buf in section_buffers {
+        if buf.len() != LIGHT_SECTION_BUFFER_BYTES {
+            return Err(io::Error::new(io::ErrorKind::InvalidData,
+                format!("light buffer size {} != {}", buf.len(), LIGHT_SECTION_BUFFER_BYTES)));
+        }
+        concat.extend_from_slice(buf);
+    }
+
+    assemble_light_with_padding(&concat, &mask_pairs, &empty_pairs, num_sections, long_encoded)
 }
 
 #[cfg(test)]

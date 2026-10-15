@@ -214,3 +214,101 @@ test('GlobalBlockBuffer: uploadEpoch increments when dirty range drains', () => 
   buffer.dispose()
   mat.dispose()
 })
+
+function faceWords(faceCount: number): Uint32Array {
+  return new Uint32Array(faceCount * 4)
+}
+
+function drawableCubeFaces(buffer: GlobalBlockBuffer, key: string): number {
+  const start = buffer.getSectionDrawStart(key)
+  const count = buffer.getSectionDrawCount(key)
+  if (start === undefined || count === undefined) return 0
+  const spans = buildVisibleCubeSpans([{ start, count }], buffer.getHighWatermark(), false, undefined, buffer.getPendingDirtyRanges())
+  return spans.reduce((sum, span) => sum + span.count, 0)
+}
+
+test('GlobalBlockBuffer: compaction must not hide pending-replace displayed faces', () => {
+  const scene = new THREE.Scene()
+  const mat = createCubeBlockMaterial()
+  const buffer = new GlobalBlockBuffer(mat, scene)
+
+  buffer.addSection('H', faceWords(20_000), 20_000)
+  buffer.addSection('A', faceWords(8000), 8000)
+  buffer.addSection('B', faceWords(1000), 1000)
+  drainUploads(buffer)
+  const original = buffer.getSectionDrawStart('A')
+
+  buffer.addSection('A', faceWords(8000), 8000)
+  buffer.removeSection('H')
+  buffer.compactStep()
+  buffer.uploadDirtyRange()
+
+  expect(drawableCubeFaces(buffer, 'A')).toBe(8000)
+  expect(buffer.getSectionDrawStart('A')).toBe(original)
+  const move = buffer.getPendingMove()
+  expect(move?.key === 'A').toBe(false)
+
+  buffer.dispose()
+  mat.dispose()
+})
+
+test('GlobalBlockBuffer: 27 simultaneous remeshes keep 8000 faces on every frame', () => {
+  const scene = new THREE.Scene()
+  const mat = createCubeBlockMaterial()
+  const buffer = new GlobalBlockBuffer(mat, scene)
+  const n = 27
+  const faces = 8000
+
+  for (let i = 0; i < n; i++) buffer.addSection(String(i), faceWords(faces), faces)
+  drainUploads(buffer)
+  for (let i = 0; i < n; i++) buffer.addSection(String(i), faceWords(faces), faces)
+
+  for (let frame = 1; frame <= 120; frame++) {
+    buffer.compactStep()
+    buffer.uploadDirtyRange()
+    for (let i = 0; i < n; i++) {
+      expect(drawableCubeFaces(buffer, String(i)), `section ${i} on frame ${frame}`).toBe(faces)
+    }
+    if (!buffer.hasPendingUploads() && !buffer.hasPendingReplace() && !buffer.getPendingMove()) break
+  }
+
+  buffer.dispose()
+  mat.dispose()
+})
+
+test('GlobalBlockBuffer: remesh during move keeps original displayed slot', () => {
+  const scene = new THREE.Scene()
+  const mat = createCubeBlockMaterial()
+  const buffer = new GlobalBlockBuffer(mat, scene)
+
+  buffer.addSection('H', faceWords(20_000), 20_000)
+  buffer.addSection('B', faceWords(1000), 1000)
+  buffer.addSection('A', faceWords(8000), 8000)
+  drainUploads(buffer)
+  buffer.removeSection('H')
+  drainUploads(buffer)
+  buffer.compactStep()
+  expect(buffer.getPendingMove()?.key).toBe('A')
+  const displayed = buffer.getSectionDrawStart('A')
+  expect(displayed).toBeDefined()
+
+  buffer.addSection('A', faceWords(8000), 8000)
+  expect(buffer.getSectionDrawStart('A')).toBe(displayed)
+  expect(buffer.getPendingMove()).toBeNull()
+  expect(buffer.hasPendingReplace()).toBe(true)
+  expect(drawableCubeFaces(buffer, 'A')).toBe(8000)
+
+  buffer.compactStep()
+  buffer.uploadDirtyRange()
+  expect(buffer.getSectionDrawStart('A')).toBe(displayed)
+  expect(buffer.getPendingMove()?.key === 'A').toBe(false)
+  expect(drawableCubeFaces(buffer, 'A')).toBe(8000)
+
+  drainUploads(buffer)
+  buffer.compactStep()
+  finishCurrentMove(buffer)
+  expect(drawableCubeFaces(buffer, 'A')).toBe(8000)
+
+  buffer.dispose()
+  mat.dispose()
+})
