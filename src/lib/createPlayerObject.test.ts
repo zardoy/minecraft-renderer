@@ -5,8 +5,10 @@ vi.mock('./utils/skins', () => ({
   loadSkinImage: vi.fn()
 }))
 
+import * as THREE from 'three'
 import { PlayerObject } from 'skinview3d'
-import { configurePlayerSkinMaterials } from './createPlayerObject'
+import { applySkinToPlayerObject, configurePlayerSkinMaterials } from './createPlayerObject'
+import { loadSkinImage } from './utils/skins'
 
 describe('configurePlayerSkinMaterials', () => {
   it('configures cutout materials and log-depth bias on arm/leg mats only', () => {
@@ -36,5 +38,18 @@ describe('configurePlayerSkinMaterials', () => {
     const firstCompile = skin.layer1MaterialBiased.onBeforeCompile
     configurePlayerSkinMaterials(playerObject)
     expect(skin.layer1MaterialBiased.onBeforeCompile).toBe(firstCompile)
+  })
+
+  it('returns the loaded texture without replacing the current skin map', async () => {
+    const playerObject = new PlayerObject()
+    const previousTexture = new THREE.Texture()
+    const canvas = { width: 64, height: 64 } as OffscreenCanvas
+    vi.mocked(loadSkinImage).mockResolvedValueOnce({ canvas, image: {} as ImageBitmap })
+    playerObject.skin.map = previousTexture as any
+
+    const texture = await applySkinToPlayerObject(playerObject as any, 'skin-a')
+
+    expect(texture).toBeInstanceOf(THREE.CanvasTexture)
+    expect(playerObject.skin.map).toBe(previousTexture)
   })
 })
