@@ -44,6 +44,15 @@ pub struct McVersionFlags {
     pub anonymous_heightmaps: bool,
     /// true for 1.21.5+: chunkBlockEntity uses anonymousNbt for its `data` field.
     pub anonymous_block_entity_nbt: bool,
+    /// true for 1.21.5+ (protocol 770+). Heightmaps are an array of
+    /// { type: VarInt, data: VarInt-counted i64[] } instead of NBT.
+    pub heightmaps_as_arrays: bool,
+    /// true for 1.21.5+ (protocol 770+). Palette containers carry no data array length.
+    pub unprefixed_containers: bool,
+    /// true for 26.1+ (protocol 775+). Each section has a fluid count after its block count.
+    pub has_fluid_count: bool,
+    /// true for 26.3+ (protocol 777+). The four light masks are byte arrays, not long arrays.
+    pub byte_array_light_masks: bool,
 }
 
 impl McVersionFlags {
@@ -55,6 +64,10 @@ impl McVersionFlags {
             has_trust_edges: (757..=762).contains(&protocol), // 1.18.x and 1.19.x
             anonymous_heightmaps: protocol >= 764,             // 1.20.2+
             anonymous_block_entity_nbt: protocol >= 764,        // 1.20.2+
+            heightmaps_as_arrays: protocol >= 770,              // 1.21.5+
+            unprefixed_containers: protocol >= 770,             // 1.21.5+
+            has_fluid_count: protocol >= 775,                   // 26.1+
+            byte_array_light_masks: protocol >= 777,            // 26.3+
         }
     }
 }
@@ -77,6 +90,9 @@ pub struct MapChunkResult {
     pub bytes_read: usize,
 }
 
+/// `max_bits_per_block` and `max_bits_per_biome` are the global palette bits,
+/// ceillog2 of the block state and biome registry sizes; direct containers are
+/// stored with them.
 pub fn parse_map_chunk_v18plus(
     packet: &[u8],
     num_sections: usize,
@@ -93,7 +109,13 @@ pub fn parse_map_chunk_v18plus(
     let x = r.read_i32_be()?;
     let z = r.read_i32_be()?;
 
-    if flags.anonymous_heightmaps {
+    if flags.heightmaps_as_arrays {
+        let heightmaps = r.read_varint()?;
+        for _ in 0..heightmaps {
+            let _type = r.read_varint()?;
+            common::read_i64_array(&mut r)?;
+        }
+    } else if flags.anonymous_heightmaps {
         common::skip_anonymous_nbt(&mut r)?;
     } else {
         common::skip_nbt(&mut r)?;
@@ -110,6 +132,7 @@ pub fn parse_map_chunk_v18plus(
         num_sections,
         max_bits_per_block,
         max_bits_per_biome,
+        flags,
     )?;
 
     // blockEntities: VarInt count + array of {packedXZ:u8, y:i16, type:VarInt, data:nbt}
@@ -129,23 +152,30 @@ pub fn parse_map_chunk_v18plus(
         let _trust_edges = r.read_u8()?;
     }
 
-    let sky_light_mask = common::read_i64_array(&mut r)?;
-    let block_light_mask = common::read_i64_array(&mut r)?;
-    let empty_sky_light_mask = common::read_i64_array(&mut r)?;
-    let empty_block_light_mask = common::read_i64_array(&mut r)?;
+    let read_light_mask = if flags.byte_array_light_masks {
+        common::read_byte_array_bitset
+    } else {
+        common::read_i64_array
+    };
+    let sky_light_mask = read_light_mask(&mut r)?;
+    let block_light_mask = read_light_mask(&mut r)?;
+    let empty_sky_light_mask = read_light_mask(&mut r)?;
+    let empty_block_light_mask = read_light_mask(&mut r)?;
 
     let sky_light = common::read_light_arrays(&mut r)?;
     let block_light = common::read_light_arrays(&mut r)?;
 
     let bytes_read = r.position();
 
+    // The light sections are vanilla DataLayer byte arrays: byte i holds blocks
+    // 2i (low nibble) and 2i + 1 (high nibble), so they are not long encoded.
     let sky_full = common::build_full_column_light(
         &sky_light,
         &sky_light_mask,
         &empty_sky_light_mask,
         num_sections,
         0, // sections the server omitted entirely stay 0 (matches prismarine-chunk loadParsedLight)
-        true,
+        false,
     )?;
     let block_full = common::build_full_column_light(
         &block_light,
@@ -153,7 +183,7 @@ pub fn parse_map_chunk_v18plus(
         &empty_block_light_mask,
         num_sections,
         0, // no skylight = no light
-        true,
+        false,
     )?;
 
     Ok(MapChunkResult {
@@ -172,15 +202,21 @@ fn parse_chunk_sections(
     num_sections: usize,
     max_bits_per_block: u8,
     max_bits_per_biome: u8,
+    flags: McVersionFlags,
 ) -> io::Result<(Vec<u16>, Vec<u8>)> {
     let mut r = common::PacketReader::new(chunk_data);
+    let block_layout = common::WireContainer::blocks(max_bits_per_block, flags.unprefixed_containers);
+    let biome_layout = common::WireContainer::biomes(max_bits_per_biome, flags.unprefixed_containers);
     let total = num_sections * common::BLOCK_SECTION_VOLUME;
     let mut block_states = vec![0u16; total];
     let mut biomes = vec![0u8; total];
 
     for s in 0..num_sections {
         let _solid_count = r.read_i16_be()?;
-        let blocks = common::parse_container(&mut r, common::MAX_BITS_PER_BLOCK, max_bits_per_block)?;
+        if flags.has_fluid_count {
+            let _fluid_count = r.read_i16_be()?;
+        }
+        let blocks = common::parse_wire_container(&mut r, block_layout)?;
         let base_y_blocks = s * 16 * 256;
         for y_in in 0..16usize {
             let row_y = base_y_blocks + y_in * 256;
@@ -194,7 +230,7 @@ fn parse_chunk_sections(
             }
         }
 
-        let bio = common::parse_container(&mut r, common::MAX_BITS_PER_BIOME, max_bits_per_biome)?;
+        let bio = common::parse_wire_container(&mut r, biome_layout)?;
         for y_in in 0..16usize {
             let y4 = y_in >> 2;
             let row_y = base_y_blocks + y_in * 256;
@@ -217,6 +253,39 @@ mod tests {
     use super::*;
     use std::fs;
     use std::path::{Path, PathBuf};
+
+    /// A 1.21 (protocol 767) map_chunk with one all-air section and one sky light
+    /// section whose first byte is `first_light_byte` and eighth byte `eighth_light_byte`.
+    fn one_section_map_chunk(first_light_byte: u8, eighth_light_byte: u8) -> Vec<u8> {
+        let mut p = vec![0x27]; // packet id
+        p.extend_from_slice(&0i32.to_be_bytes()); // x
+        p.extend_from_slice(&0i32.to_be_bytes()); // z
+        p.extend_from_slice(&[0x0a, 0x00]); // heightmaps: empty anonymous compound
+        let section = [0, 0, /* blocks */ 0, 0, 0, /* biomes */ 0, 0, 0];
+        p.push(section.len() as u8);
+        p.extend_from_slice(&section);
+        p.push(0); // block entities
+        p.push(1); // sky light mask: bit 1 = the first section
+        p.extend_from_slice(&2i64.to_be_bytes());
+        p.extend_from_slice(&[0, 0, 0]); // block light mask, empty sky and block light masks
+        p.extend_from_slice(&[1, 0x80, 0x10]); // one sky light array of 2048 bytes
+        let mut light = vec![0u8; 2048];
+        light[0] = first_light_byte;
+        light[7] = eighth_light_byte;
+        p.extend_from_slice(&light);
+        p.push(0); // block light arrays
+        p
+    }
+
+    #[test]
+    fn light_is_read_in_vanilla_nibble_order() {
+        let packet = one_section_map_chunk(0x21, 0x43);
+        let result = parse_map_chunk_v18plus(&packet, 1, 8, 3, McVersionFlags::for_protocol(767)).unwrap();
+        assert_eq!(result.bytes_read, packet.len());
+        // byte 0 holds x = 0 (low nibble) and x = 1, byte 7 holds x = 14 and x = 15
+        assert_eq!(&result.sky_light[0..2], &[1, 2]);
+        assert_eq!(&result.sky_light[14..16], &[3, 4]);
+    }
 
     fn fixtures_dir() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../chunk-packet-fixtures/fixtures/map_chunk")
@@ -260,6 +329,10 @@ mod tests {
     #[test] fn smoke_v119_4() { smoke_for_version("1.19.4", 762, 24); }
     #[test] fn smoke_v120_4() { smoke_for_version("1.20.4", 765, 24); }
     #[test] fn smoke_v121()   { smoke_for_version("1.21",   767, 24); }
+    #[test] fn smoke_v121_5() { smoke_for_version("1.21.5", 770, 24); }
+    #[test] fn smoke_v121_11() { smoke_for_version("1.21.11", 774, 24); }
+    #[test] fn smoke_v26_1()  { smoke_for_version("26.1",   775, 24); }
+    #[test] fn smoke_v26_3()  { smoke_for_version("26.3",   777, 24); }
 
     // ---- Byte-perfect parity tests against mineflayer/prismarine-chunk reference ----
 
@@ -343,4 +416,11 @@ mod tests {
     #[test] fn parity_v119_4() { parity_for_version("1.19.4", 762); }
     #[test] fn parity_v120_4() { parity_for_version("1.20.4", 765); }
     #[test] fn parity_v121()   { parity_for_version("1.21",   767); }
+    // 1.21.5+: palette containers without a data array length
+    #[test] fn parity_v121_5() { parity_for_version("1.21.5", 770); }
+    #[test] fn parity_v121_11() { parity_for_version("1.21.11", 774); }
+    // 26.1+: sections with a fluid count
+    #[test] fn parity_v26_1()  { parity_for_version("26.1",   775); }
+    // 26.3+: light masks as byte arrays
+    #[test] fn parity_v26_3()  { parity_for_version("26.3",   777); }
 }
