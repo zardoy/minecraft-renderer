@@ -95,6 +95,9 @@ importers:
       '@types/three':
         specifier: 0.184.0
         version: 0.184.0
+      '@webgpu/types':
+        specifier: ^0.1.71
+        version: 0.1.71
       '@zardoy/react-util':
         specifier: ^0.2.7
         version: 0.2.7(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -858,6 +861,9 @@ packages:
 
   '@vitest/utils@4.0.14':
     resolution: {integrity: sha512-hLqXZKAWNg8pI+SQXyXxWCTOpA3MvsqcbVeNgSi8x/CSN2wi26dSzn1wrOhmCmFjEvN9p8/kLFRHa6PI8jHazw==}
+
+  '@webgpu/types@0.1.71':
+    resolution: {integrity: sha512-mMy8/ODcKhab808co15eW+yN+HgXoQxRQHTiBV9Mrvl1r0ufnid7YOcI+gi4eUWSWl9ezD6TW2KXccrL8HCh2A==}
 
   '@xboxreplay/errors@0.1.0':
     resolution: {integrity: sha512-Tgz1d/OIPDWPeyOvuL5+aai5VCcqObhPnlI3skQuf80GVF3k1I0lPCnGC+8Cm5PV9aLBT5m8qPcJoIUQ2U4y9g==}
@@ -2994,6 +3000,8 @@ snapshots:
     dependencies:
       '@vitest/pretty-format': 4.0.14
       tinyrainbow: 3.0.3
+
+  '@webgpu/types@0.1.71': {}
 
   '@xboxreplay/errors@0.1.0': {}
 
