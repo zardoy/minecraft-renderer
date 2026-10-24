@@ -57,7 +57,7 @@ describe('mesher worker minecraft-data shim', () => {
     const { mcData } = supplyFor('1.21.8')
     const newest = mcData.protocolVersions[0]
     // a version from the future: only the main thread knows it
-    const future = { ...mcData.version, minecraftVersion: '99.9', majorVersion: '99', dataVersion: newest.dataVersion + 1000, version: 9999 }
+    const future = { ...mcData.version, minecraftVersion: '99.9', majorVersion: '99', dataVersion: (newest.dataVersion ?? 0) + 1000, version: 9999 }
     ;(globalThis as any).mcData = {
       ...mcData,
       version: future,

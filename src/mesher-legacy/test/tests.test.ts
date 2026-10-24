@@ -1,9 +1,13 @@
 import { test, expect } from 'vitest'
-import { versions } from 'minecraft-data'
+import minecraftData, { versions } from 'minecraft-data'
 import { INVISIBLE_BLOCKS } from '../../mesher-shared/worldConstants'
 import { setup } from './mesherTester'
 
-const lastVersion = versions.pc.map(x => x.minecraftVersion).filter(version => !version.includes('w'))[0]
+// newest release that minecraft-data has data for (its protocol versions list can run ahead of the data, e.g. 26.2 / 26.3)
+const lastVersion = versions.pc
+  .map(x => x.minecraftVersion)
+  .filter(version => !/w|-pre|-rc|-snapshot/.test(version))
+  .find(version => minecraftData(version))!
 
 const addPositions = [
   // [[0, 0, 0], 'diamond_block'],
@@ -47,9 +51,28 @@ test('Known blocks are not rendered', () => {
   console.log('Average time', time / times)
   // should be fixed, but to avoid regressions & for visibility
   // TODO resolve creaking_heart issue (1.21.3)
+  // TODO 26.x: copper chests / copper golem statues (block entity models) and golden_dandelion have no block model yet
   expect(missingBlocks).toMatchInlineSnapshot(`
     {
+      "copper_chest": true,
+      "copper_golem_statue": true,
+      "exposed_copper_chest": true,
+      "exposed_copper_golem_statue": true,
+      "golden_dandelion": true,
+      "oxidized_copper_chest": true,
+      "oxidized_copper_golem_statue": true,
+      "potted_golden_dandelion": true,
       "structure_void": true,
+      "waxed_copper_chest": true,
+      "waxed_copper_golem_statue": true,
+      "waxed_exposed_copper_chest": true,
+      "waxed_exposed_copper_golem_statue": true,
+      "waxed_oxidized_copper_chest": true,
+      "waxed_oxidized_copper_golem_statue": true,
+      "waxed_weathered_copper_chest": true,
+      "waxed_weathered_copper_golem_statue": true,
+      "weathered_copper_chest": true,
+      "weathered_copper_golem_statue": true,
     }
   `)
   expect(erroredBlocks).toMatchInlineSnapshot('{}')
