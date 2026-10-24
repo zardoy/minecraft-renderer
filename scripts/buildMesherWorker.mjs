@@ -70,6 +70,7 @@ let wasmPlugin = {
 const buildOptions = createWorkerBuildOptions({
   entryPoint: path.join(rootDir, './src/wasm-mesher/worker/mesherWasm.ts'),
   bundleMcData: mesherMcData,
+  versionAgnosticMcData: true,
   watch,
   esbuildOptions: {
     outfile: undefined,
