@@ -18,6 +18,7 @@ import { GlobalBlockBuffer } from '../../three/globalBlockBuffer'
 import { buildVisibleCubeSpans } from '../../three/cubeDrawSpans'
 import { createCubeBlockMaterial, computeSectionOriginRel, setCubeShadingTheme } from '../../three/shaders/cubeBlockShader'
 import * as THREE from 'three'
+import blocksAtlasesJson from 'mc-assets/dist/blocksAtlases.json'
 import { renderWasmOutputToGeometry } from '../bridge/render-from-wasm'
 
 const VERSION = '1.16.5'
@@ -28,8 +29,8 @@ function requireShaderCubeResources() {
   if (!resources) throw new Error('shader cube resources unavailable in test')
   return resources
 }
-/** mc-assets blocksAtlases.json → stone */
-const STONE_ATLAS_TILE_INDEX = 552
+/** mc-assets blocksAtlases.json → stone (looked up, tile positions change whenever the atlas gets new textures) */
+const STONE_ATLAS_TILE_INDEX = blocksAtlasesJson.latest.textures.stone.tileIndex
 
 beforeEach(() => {
   resetShaderCubeResources()
