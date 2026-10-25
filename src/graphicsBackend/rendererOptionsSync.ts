@@ -6,7 +6,7 @@
 import { subscribe } from 'valtio/vanilla'
 import type { AppViewer } from './appViewer'
 import type { RendererStorageOptions } from './rendererDefaultOptions'
-import { rendererShaderCubeDebugModeToValue } from './rendererDefaultOptions'
+import { rendererShaderCubeDebugModeToValue, resolveEnableLighting } from './rendererDefaultOptions'
 import type { MenuBackgroundOptions } from '../three/menuBackground/types'
 import type { MenuBackgroundRenderer } from '../three/menuBackground/renderer'
 import { menuBackgroundSpeedToMultiplier } from '../three/menuBackground/config'
@@ -132,6 +132,7 @@ export function applyRendererOptions(appViewer: AppViewer, o: RendererStorageOpt
   cfg.futuristicReveal = o.rendererFuturisticReveal
   applyMesherWorkersPreset(appViewer, o, wasmActive)
   cfg.renderEntities = o.renderEntities
+  cfg.enableEntityLighting = o.entityLighting
   applyStatsVisible(appViewer, o, ctx)
   applyFpsLimit(appViewer, o, ctx.windowFocused !== false)
 
@@ -215,6 +216,6 @@ export function subscribeRendererOptions<T extends RendererStorageOptions>(
 }
 
 /** Call when mineflayer bot is created (lighting depends on protocol features). */
-export function applyRendererEnableLighting(appViewer: AppViewer, newVersionsLighting: boolean, blockStateIdSupported: boolean): void {
-  appViewer.inWorldRenderingConfig.enableLighting = !blockStateIdSupported || newVersionsLighting
+export function applyRendererEnableLighting(appViewer: AppViewer, newVersionsLighting: boolean, blockStateIdSupported: boolean | undefined): void {
+  appViewer.inWorldRenderingConfig.enableLighting = resolveEnableLighting(newVersionsLighting, blockStateIdSupported)
 }

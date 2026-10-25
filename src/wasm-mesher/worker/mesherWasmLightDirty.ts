@@ -8,3 +8,13 @@ export function sectionYsForLightColumnDirty(worldMinY: number, worldMaxY: numbe
   }
   return ys
 }
+
+/**
+ * 1.18+ fused meshing prefers the original raw map_chunk. A later light-only
+ * column reload must drop that entry so the JSON column walk is used.
+ * Normal chunk loads must keep it (`setRawMapChunk` arrives first).
+ */
+export function dropRawMapChunkOnLightOnlyReload(isLightUpdate: boolean | undefined, rawCache: { delete: (key: string) => boolean }, key: string): boolean {
+  if (!isLightUpdate) return false
+  return rawCache.delete(key)
+}

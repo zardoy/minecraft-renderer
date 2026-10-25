@@ -51,6 +51,8 @@ export const defaultWorldRendererConfig = {
   dayCycle: true,
   smoothLighting: true,
   enableLighting: true,
+  /** Entity shading is independently opt-in; block lighting remains controlled by enableLighting. */
+  enableEntityLighting: false,
   starfield: true,
   defaultSkybox: true,
   renderEntities: true,
