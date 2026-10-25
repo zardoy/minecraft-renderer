@@ -15,6 +15,7 @@ import * as tween from '@tweenjs/tween.js'
 import type { GraphicsBackendConfig, GraphicsInitOptions } from '../graphicsBackend/types'
 import { gpuPreferenceToWebGLPowerPreference } from '../three/menuBackground/gpuPreference'
 import { WorldRendererConfig } from '../graphicsBackend'
+import { releaseWebGLRenderer } from '../lib/webglLifecycle'
 
 // ============================================================================
 // Types (co-located with implementation)
@@ -410,12 +411,9 @@ export class DocumentRenderer {
     if (this.timeoutId) {
       clearTimeout(this.timeoutId)
     }
-    if (this.canvas instanceof HTMLCanvasElement) {
-      this.canvas.remove()
-    }
     clearInterval(this.fpsInterval)
     this.stats?.dispose()
-    this.renderer.dispose()
+    releaseWebGLRenderer(this.renderer)
   }
 }
 
