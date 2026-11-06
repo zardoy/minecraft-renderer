@@ -127,7 +127,7 @@ export function getConversionCacheLimit(): number {
 export function patchConversionBlock(x: number, z: number, chunkRef: any, blockX: number, blockY: number, blockZ: number, stateId: number): boolean {
   const e = cache.get(keyOf(x, z))
   if (!e || e.chunkRef !== chunkRef || blockY < e.worldMinY || blockY >= e.worldMaxY) return false
-  const index = (blockX - x) + (blockZ - z) * 16 + (blockY - e.worldMinY) * 256
+  const index = blockX - x + (blockZ - z) * 16 + (blockY - e.worldMinY) * 256
   const old = e.result.blockStates[index]!
   e.result.blockStates[index] = stateId
   e.result.blockCount += Number(stateId !== 0) - Number(old !== 0)

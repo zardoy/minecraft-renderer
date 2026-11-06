@@ -3,7 +3,10 @@ import { setClientLightProbePositions, isClientLightProbeBlock, isClientLightPro
 
 describe('client light probe selection', () => {
   it('maps negative and boundary coordinates to section origins', () => {
-    setClientLightProbePositions([[-1, 63, 16], [16, 64, 0]])
+    setClientLightProbePositions([
+      [-1, 63, 16],
+      [16, 64, 0]
+    ])
     expect(isClientLightProbeBlock(-1, 63, 16)).toBe(true)
     expect(isClientLightProbeSection('-16,48,16')).toBe(true)
     expect(isClientLightProbeSection('16,64,0')).toBe(true)

@@ -39,7 +39,20 @@ describe('mesherWasmConversionCache', () => {
     expect(patchConversionBlock(-16, 0, {}, -1, -49, 15, 0)).toBe(false)
     patchConversionBlock(-16, 0, ref, -1, -49, 15, 0)
     expect(result.blockCount).toBe(0)
-    expect(getOrConvertColumn(-16, 0, ref, 'v', -64, -48, () => { throw new Error('unexpected conversion') }, ref).result).toBe(result)
+    expect(
+      getOrConvertColumn(
+        -16,
+        0,
+        ref,
+        'v',
+        -64,
+        -48,
+        () => {
+          throw new Error('unexpected conversion')
+        },
+        ref
+      ).result
+    ).toBe(result)
   })
 
   test('miss then hit on same chunk ref returns cached result', () => {

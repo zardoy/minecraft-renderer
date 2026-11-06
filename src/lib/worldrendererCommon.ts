@@ -926,9 +926,12 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     const decision = this.evaluateOwnerGeometry(data)
     if (isClientLightProbeSection(data.key)) {
       console.log('[lightProbe:mesh]', {
-        time: Date.now(), key: data.key, lightPublicationVersion: data.lightPublicationVersion,
+        time: Date.now(),
+        key: data.key,
+        lightPublicationVersion: data.lightPublicationVersion,
         required: this.clientLightOwnerSession?.requiredLightForSection(data.key),
-        accepted: decision.accepted, keepCovering: decision.keepCovering
+        accepted: decision.accepted,
+        keepCovering: decision.keepCovering
       })
     }
     if (!decision.accepted) {

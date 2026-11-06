@@ -26,7 +26,9 @@ describe('geometry-only column reload', () => {
 
   it('does not resurrect a column unloaded during an asynchronous fetch', async () => {
     let resolve!: (value: ReturnType<typeof column>) => void
-    const pending = new Promise<ReturnType<typeof column>>(r => { resolve = r })
+    const pending = new Promise<ReturnType<typeof column>>(r => {
+      resolve = r
+    })
     const { view } = setup(vi.fn(() => pending))
     view.loadedChunks = { '0,0': true }
     const load = vi.fn()

@@ -38,7 +38,10 @@ const INCOMING = {
 
 type WorkerSelf = { onmessage: (event: { data: unknown }) => void }
 type WorldLike = {
-  getColumn: (x: number, z: number) => {
+  getColumn: (
+    x: number,
+    z: number
+  ) => {
     setSkyLight: (pos: Vec3, light: number) => void
     setBlockLight: (pos: Vec3, light: number) => void
     skyLightSections: Array<unknown | null>
@@ -149,7 +152,9 @@ describe('mesher worker JS column light with the client light owner', () => {
   it('allocates only the authoritative channel and leaves omitted sections null', () => {
     const sectionY = 96
     send({
-      type: 'applyOwnerLightPublication', worldGeneration: 1, publicationVersion: 1,
+      type: 'applyOwnerLightPublication',
+      worldGeneration: 1,
+      publicationVersion: 1,
       sections: [{ sx: COLUMN_X, sy: sectionY, sz: COLUMN_Z, blockLight: new Uint8Array(2048) }]
     })
     const column = world().getColumn(COLUMN_X, COLUMN_Z)

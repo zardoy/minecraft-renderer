@@ -321,13 +321,14 @@ export function applyOwnerPublicationToRenderer(
     applied: true,
     lastVersion: result.lastVersion,
     acceptedGeneration: result.acceptedGeneration,
-    dirtyMeshSections: publication.dirtyMeshSections != null
-      ? Array.from({ length: publication.dirtyMeshSections.length / 3 }, (_, i) => ({
-        sx: publication.dirtyMeshSections![i * 3]!,
-        sy: publication.dirtyMeshSections![i * 3 + 1]!,
-        sz: publication.dirtyMeshSections![i * 3 + 2]!
-      }))
-      : dirtyMeshSectionsFromChangedLight(worldSections, { coords: 'world' }),
+    dirtyMeshSections:
+      publication.dirtyMeshSections != null
+        ? Array.from({ length: publication.dirtyMeshSections.length / 3 }, (_, i) => ({
+            sx: publication.dirtyMeshSections![i * 3]!,
+            sy: publication.dirtyMeshSections![i * 3 + 1]!,
+            sz: publication.dirtyMeshSections![i * 3 + 2]!
+          }))
+        : dirtyMeshSectionsFromChangedLight(worldSections, { coords: 'world' }),
     workerMessage: {
       type: 'applyOwnerLightPublication',
       worldGeneration: publication.worldGeneration,

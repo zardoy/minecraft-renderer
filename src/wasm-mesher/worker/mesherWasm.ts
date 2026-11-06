@@ -16,8 +16,22 @@ import { applyOwnerPublicationToColumnCaches, applyRawLightPacketToCaches, owner
 import { INITIAL_TOPOLOGY_REVISION, snapshotMeshVersions, validateOwnerPublicationMessage } from '../../lib/clientLightVersions'
 import { provenMeshLightVersion } from './mesherLightDependencies'
 import { BULK_MESH_INTERVAL_MS, createMeshTickScheduler } from './mesherWasmTickSchedule'
-import { displayLightColumn, overlayDisplayLight, isLightSectionPresent, parsedUpdateLightFromWasm, worldSectionMaskBit, type UpdateLightColumnCache } from './mesherWasmLightMerge'
-import { CONVERSION_CACHE_LIMIT, clearConversionCache, getOrConvertColumn, invalidateConversion, patchConversionBlock, setConversionCacheLimit } from './mesherWasmConversionCache'
+import {
+  displayLightColumn,
+  overlayDisplayLight,
+  isLightSectionPresent,
+  parsedUpdateLightFromWasm,
+  worldSectionMaskBit,
+  type UpdateLightColumnCache
+} from './mesherWasmLightMerge'
+import {
+  CONVERSION_CACHE_LIMIT,
+  clearConversionCache,
+  getOrConvertColumn,
+  invalidateConversion,
+  patchConversionBlock,
+  setConversionCacheLimit
+} from './mesherWasmConversionCache'
 import { beginTickWasmParseCache, endTickWasmParseCache, getOrConvertTickWasmParse } from './mesherWasmTickParseCache'
 import { clearTopologyPostCache, clearTopologyPostCacheColumn, getOrComputeTopologyPost } from './mesherWasmTopologyPostCache'
 import { selectColumnGroupsForTick } from './mesherWasmColumnTickSelect'
@@ -1606,11 +1620,20 @@ async function processColumnTickInner() {
             // empty geometry.
             const tickKey = rawCacheKey(cx, cz)
             if (chunk) {
-              const cached = getOrConvertColumn(cx, cz, chunk, version, worldMinY, worldMaxY, () =>
-                (rawEntry && convertRawMapChunkToWasm(rawEntry, version)) ||
-                (v17Entry && convertParsedV17ToWasm(v17Entry, undefined, version)) ||
-                (v16Entry && convertParsedV16ToWasm(v16Entry, undefined, version)) ||
-                convertChunkToWasm(chunk, version, cx, cz, worldMinY, worldMaxY), chunk)
+              const cached = getOrConvertColumn(
+                cx,
+                cz,
+                chunk,
+                version,
+                worldMinY,
+                worldMaxY,
+                () =>
+                  (rawEntry && convertRawMapChunkToWasm(rawEntry, version)) ||
+                  (v17Entry && convertParsedV17ToWasm(v17Entry, undefined, version)) ||
+                  (v16Entry && convertParsedV16ToWasm(v16Entry, undefined, version)) ||
+                  convertChunkToWasm(chunk, version, cx, cz, worldMinY, worldMaxY),
+                chunk
+              )
               conv = cached.result
               hit = cached.hit
             } else if (rawEntry) {

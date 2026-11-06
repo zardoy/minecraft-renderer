@@ -50,5 +50,20 @@ for (; calls < 200000; calls++) {
 const totalMs = performance.now() - start
 if (e.fallbackRelights !== 0 || e.getBlockLight(editX, 72, 8) !== 14 || editLatencyMs == null) throw new Error('trusted path failed')
 if (neighborMode && (neighborPublication == null || neighborPublication > 2)) throw new Error('trusted neighbor convoy regression')
-console.log(JSON.stringify({ K, trusted: true, neighborMode, editLatencyMs, neighborLatencyMs, neighborPublication, totalMs, msPerColumn: totalMs / K, publications, dirtySections, calls: calls + 1, fallbackRelights: e.fallbackRelights }))
+console.log(
+  JSON.stringify({
+    K,
+    trusted: true,
+    neighborMode,
+    editLatencyMs,
+    neighborLatencyMs,
+    neighborPublication,
+    totalMs,
+    msPerColumn: totalMs / K,
+    publications,
+    dirtySections,
+    calls: calls + 1,
+    fallbackRelights: e.fallbackRelights
+  })
+)
 e.free()

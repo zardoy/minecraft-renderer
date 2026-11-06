@@ -400,12 +400,17 @@ describe('apply publication → cache + dirty mesh + worker fan-out', () => {
   it('uses exact owner world-origin dirtiness without expanding the stencil again', () => {
     const cache = new RendererLightCache(VERSION)
     cache.setWorldBounds(0, 256)
-    const result = applyOwnerPublicationToRenderer(cache, {
-      worldGeneration: 1,
-      publicationVersion: 1,
-      sections: [{ sx: 0, sy: 4, sz: 0, blockLight: packedNibble(1) }],
-      dirtyMeshSections: new Int32Array([0, 64, 0])
-    }, { acceptedGeneration: 1, lastVersion: 0 }, 'section-index')
+    const result = applyOwnerPublicationToRenderer(
+      cache,
+      {
+        worldGeneration: 1,
+        publicationVersion: 1,
+        sections: [{ sx: 0, sy: 4, sz: 0, blockLight: packedNibble(1) }],
+        dirtyMeshSections: new Int32Array([0, 64, 0])
+      },
+      { acceptedGeneration: 1, lastVersion: 0 },
+      'section-index'
+    )
     expect(result.dirtyMeshSections).toEqual([{ sx: 0, sy: 64, sz: 0 }])
   })
 

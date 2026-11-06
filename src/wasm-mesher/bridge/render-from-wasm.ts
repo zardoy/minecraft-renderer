@@ -694,12 +694,19 @@ export function renderWasmOutputToGeometry(
         if (emitted) {
           if (isClientLightProbeBlock(bx, by, bz)) {
             console.log('[lightProbe:shaderCube]', {
-              time: Date.now(), position: [bx, by, bz], blockStateId, name: prismBlock.name,
-              useModelLighting: false, wasmSky: block.sky_light_data?.map(values => [...values]),
+              time: Date.now(),
+              position: [bx, by, bz],
+              blockStateId,
+              name: prismBlock.name,
+              useModelLighting: false,
+              wasmSky: block.sky_light_data?.map(values => [...values]),
               visibleFaces: block.visible_faces,
-              jsNeighborSky: Object.fromEntries(Object.entries(elemFaces).map(([face, info]) => [
-                face, world?.getChannelLightNorm(new Vec3(bx, by, bz).offset(info.dir[0], info.dir[1], info.dir[2])).sky
-              ]))
+              jsNeighborSky: Object.fromEntries(
+                Object.entries(elemFaces).map(([face, info]) => [
+                  face,
+                  world?.getChannelLightNorm(new Vec3(bx, by, bz).offset(info.dir[0], info.dir[1], info.dir[2])).sky
+                ])
+              )
             })
           }
           continue
@@ -855,9 +862,14 @@ export function renderWasmOutputToGeometry(
           const useModelLighting = (!cachedModel.isCube || globalMatrix != null) && world
           if (isClientLightProbeBlock(bx, by, bz)) {
             console.log('[lightProbe:face]', {
-              time: Date.now(), position: [bx, by, bz], faceName, blockStateId,
-              name: prismBlock.name, isCube: cachedModel.isCube,
-              rotated: globalMatrix != null, useModelLighting: Boolean(useModelLighting),
+              time: Date.now(),
+              position: [bx, by, bz],
+              faceName,
+              blockStateId,
+              name: prismBlock.name,
+              isCube: cachedModel.isCube,
+              rotated: globalMatrix != null,
+              useModelLighting: Boolean(useModelLighting),
               wasmSky: skyValuesRaw ? [...skyValuesRaw] : null,
               jsNeighborSky: world?.getChannelLightNorm(new Vec3(bx, by, bz).offset(...transformedDirI)).sky
             })
@@ -943,8 +955,13 @@ export function renderWasmOutputToGeometry(
             tgtBlock.push(blockLightNorm)
             if (isClientLightProbeBlock(bx, by, bz)) {
               console.log('[lightProbe:vertex]', {
-                time: Date.now(), position: [bx, by, bz], faceName, cornerIdx,
-                useModelLighting: Boolean(useModelLighting), skyLightNorm, blockLightNorm
+                time: Date.now(),
+                position: [bx, by, bz],
+                faceName,
+                cornerIdx,
+                useModelLighting: Boolean(useModelLighting),
+                skyLightNorm,
+                blockLightNorm
               })
             }
 

@@ -286,9 +286,12 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
 
       // An asynchronous fetch must not resurrect a truly unloaded column.
       const [currentX, currentZ] = chunkPos(this.lastPos)
-      if ((this.columnUnloadEpoch.get(key) ?? 0) !== epoch
-        || Math.abs(currentX - Math.floor(pos.x / 16)) > this.viewDistance
-        || Math.abs(currentZ - Math.floor(pos.z / 16)) > this.viewDistance) return false
+      if (
+        (this.columnUnloadEpoch.get(key) ?? 0) !== epoch ||
+        Math.abs(currentX - Math.floor(pos.x / 16)) > this.viewDistance ||
+        Math.abs(currentZ - Math.floor(pos.z / 16)) > this.viewDistance
+      )
+        return false
       if (column) {
         const chunk = column.toJson()
         const worldConfig: WorldSizeParams = {
@@ -328,11 +331,10 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
   }
 
   private async runColumnGeometryReload(): Promise<void> {
-    const coords = Object.keys(this.loadedChunks).filter(key => this.loadedChunks[key])
+    const coords = Object.keys(this.loadedChunks)
+      .filter(key => this.loadedChunks[key])
       .map(key => key.split(',').map(Number) as [number, number])
-    coords.sort(([ax, az], [bx, bz]) =>
-      (ax - this.lastPos.x) ** 2 + (az - this.lastPos.z) ** 2
-      - (bx - this.lastPos.x) ** 2 - (bz - this.lastPos.z) ** 2)
+    coords.sort(([ax, az], [bx, bz]) => (ax - this.lastPos.x) ** 2 + (az - this.lastPos.z) ** 2 - (bx - this.lastPos.x) ** 2 - (bz - this.lastPos.z) ** 2)
     for (const [x, z] of coords) this.emit('unloadChunk', { x, z, preserveClientLight: true })
     for (const [x, z] of coords) {
       const key = `${x},${z}`
