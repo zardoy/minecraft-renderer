@@ -8,6 +8,7 @@ import { subscribeKey } from 'valtio/utils'
 import { proxy, subscribe } from 'valtio'
 import type { ResourcesManagerTransferred } from '../resourcesManager/resourcesManager'
 import { dynamicMcDataFiles } from './buildSharedConfig.mjs'
+import { getMesherVersionTables } from './mesherMcDataSupply'
 import { DisplayWorldOptions, GraphicsInitOptions, RendererReactiveState, SoundSystem, UpdateCameraOptions } from '../graphicsBackend/types'
 import {
   HighestBlockInfo,
@@ -2264,7 +2265,8 @@ let mesherMcDataTintsMissingWarned = false
 
 export const meshersSendMcData = (workers: Worker[], version: string, mcDataKeys = dynamicMcDataFiles, mcDataFull: IndexedData) => {
   const mcData: { version: IndexedData['version']; tints?: unknown; [key: string]: unknown } = {
-    version: JSON.parse(JSON.stringify(mcDataFull.version))
+    version: JSON.parse(JSON.stringify(mcDataFull.version)),
+    ...getMesherVersionTables(mcDataFull)
   }
   for (const [finalKey, sourceKey] of Object.entries(mcDataKeys)) {
     mcData[finalKey] = mcDataFull[sourceKey]

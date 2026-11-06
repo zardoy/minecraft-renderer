@@ -146,41 +146,117 @@ function shortestYawRadians(fromYawRad: number, toYawRad: number): number {
   return norm > Math.PI ? norm - TAU_YAW : norm
 }
 
+/** Voice chat presence for a player, drawn as a small speaker glyph before their nametag. */
+export type PlayerVoiceState = 'speaking' | 'muted' | 'idle'
+
+/**
+ * Draws a small speaker glyph centered at the origin of the current transform.
+ * `size` is the glyph's bounding box (both width and height).
+ */
+function drawVoiceStateIcon(ctx: OffscreenCanvasRenderingContext2D, state: PlayerVoiceState, cx: number, cy: number, size: number) {
+  const color = state === 'speaking' ? '#3ddc47' : state === 'muted' ? '#ff5555' : '#cfcfcf'
+
+  ctx.save()
+  ctx.translate(cx, cy)
+  ctx.fillStyle = color
+  ctx.strokeStyle = color
+  ctx.lineWidth = Math.max(1.5, size * 0.09)
+  ctx.lineCap = 'round'
+
+  // Speaker silhouette: a small box with a cone opening to the right
+  const boxWidth = size * 0.22
+  const boxHeight = size * 0.34
+  const coneWidth = size * 0.24
+  const left = -size * 0.44
+
+  ctx.beginPath()
+  ctx.moveTo(left, -boxHeight / 2)
+  ctx.lineTo(left + boxWidth, -boxHeight / 2)
+  ctx.lineTo(left + boxWidth + coneWidth, -size * 0.5)
+  ctx.lineTo(left + boxWidth + coneWidth, size * 0.5)
+  ctx.lineTo(left + boxWidth, boxHeight / 2)
+  ctx.lineTo(left, boxHeight / 2)
+  ctx.closePath()
+  ctx.fill()
+
+  const coneTip = left + boxWidth + coneWidth
+
+  if (state === 'speaking') {
+    ctx.beginPath()
+    ctx.arc(coneTip + size * 0.06, 0, size * 0.16, -Math.PI * 0.32, Math.PI * 0.32)
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.arc(coneTip + size * 0.06, 0, size * 0.28, -Math.PI * 0.28, Math.PI * 0.28)
+    ctx.stroke()
+  }
+
+  if (state === 'muted') {
+    ctx.beginPath()
+    ctx.moveTo(-size * 0.46, -size * 0.46)
+    ctx.lineTo(size * 0.46, size * 0.46)
+    ctx.stroke()
+  }
+
+  ctx.restore()
+}
+
 function getUsernameTexture(
-  { username, nameTagBackgroundColor = 'rgba(0, 0, 0, 0.3)', nameTagTextOpacity = 255 }: any,
+  { username, nameTagBackgroundColor = 'rgba(0, 0, 0, 0.3)', nameTagTextOpacity = 255, voiceState }: any,
   { fontFamily = 'mojangles' }: any,
   version: string
 ) {
-  const canvas = createCanvas(64, 64)
-
+  const measureCanvas = createCanvas(64, 64)
   const PrismarineChat = PrismarineChatLoader(version)
 
-  const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('Could not get 2d context')
+  const measureCtx = measureCanvas.getContext('2d')
+  if (!measureCtx) throw new Error('Could not get 2d context')
 
   const fontSize = 48
   const padding = 5
-  ctx.font = `${fontSize}px ${fontFamily}`
+  measureCtx.font = `${fontSize}px ${fontFamily}`
 
   const plainLines = String(typeof username === 'string' ? username : new PrismarineChat(username).toString()).split('\n')
   let textWidth = 0
   for (const line of plainLines) {
-    const width = ctx.measureText(line).width + padding * 2
+    const width = measureCtx.measureText(line).width + padding * 2
     if (width > textWidth) textWidth = width
   }
 
-  canvas.width = textWidth
-  canvas.height = (fontSize + padding) * plainLines.length
+  const height = (fontSize + padding) * plainLines.length
+
+  // Render the text onto its own transparent canvas so the existing
+  // centered-text layout in renderComponent() is unaffected by compositing it
+  // alongside the icon. The background plate is painted exactly once, on the
+  // final canvas below — painting it here too would double-blend the alpha
+  // under the text relative to the icon area, producing a visible seam.
+  const textCanvas = createCanvas(textWidth, height)
+  const textCtx = textCanvas.getContext('2d')
+  if (!textCtx) throw new Error('Could not get 2d context')
+
+  textCtx.globalAlpha = nameTagTextOpacity / 255
+  const textRendered = renderComponent(username, PrismarineChat, textCanvas, fontSize, 'white', -padding + fontSize)
+  if (!textRendered) return undefined
+  textCtx.globalAlpha = 1
+
+  const iconSize = fontSize * 0.85
+  const iconAreaWidth = voiceState ? iconSize + padding * 2.5 : 0
+
+  // The nametag sprite is anchored (and thus centered above the player) at the
+  // midpoint of this canvas. Mirroring the icon's width as a second, unpainted
+  // margin on the right moves that midpoint to align with the *text's* own
+  // center instead of the icon+text bounding box's center — otherwise the
+  // icon's extra width on the left alone drags the whole sprite's anchor left,
+  // which visually reads as the text drifting right of the player.
+  const canvas = createCanvas(iconAreaWidth * 2 + textWidth, height)
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('Could not get 2d context')
 
   ctx.fillStyle = nameTagBackgroundColor
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
-
-  ctx.globalAlpha = nameTagTextOpacity / 255
-
-  const textRendered = renderComponent(username, PrismarineChat, canvas, fontSize, 'white', -padding + fontSize)
-  if (!textRendered) return undefined
-
-  ctx.globalAlpha = 1
+  ctx.fillRect(0, 0, iconAreaWidth + textWidth, canvas.height)
+  if (voiceState) {
+    drawVoiceStateIcon(ctx, voiceState, iconAreaWidth / 2, canvas.height / 2, iconSize)
+  }
+  ctx.drawImage(textCanvas, iconAreaWidth, 0)
 
   return canvas
 }
@@ -233,6 +309,13 @@ const addNametag = (entity, options: { fontFamily: string }, mesh, version: stri
 
   mesh.add(nameTag)
   return nameTag
+}
+
+/** Player nametags are placed above the skin model and scaled up; text_display/mob nametags are not. */
+function applyPlayerNametagTransform(nametag: THREE.Object3D | undefined, playerObject: { position: THREE.Vector3; scale: THREE.Vector3 }) {
+  if (!nametag) return
+  nametag.position.y = playerObject.position.y + playerObject.scale.y * 16 + 3
+  nametag.scale.multiplyScalar(12)
 }
 
 // todo cleanup
@@ -399,6 +482,7 @@ export class Entities {
     }
     this.entities = {}
     this.currentSkinUrls = {}
+    this.playerVoiceStates = {}
 
     // Clean up player entity
     if (this.playerEntity) {
@@ -740,6 +824,33 @@ export class Entities {
     if (this.playerEntity?.originalEntity.id === entityId) return this.playerEntity?.playerObject
     const playerObject = this.entities[entityId]?.playerObject
     return playerObject
+  }
+
+  /** Current voice chat presence per entity id, keyed as a string. Absent = no voice indicator. */
+  playerVoiceStates: Record<string, PlayerVoiceState> = {}
+
+  /**
+   * Show or hide the mic glyph on a player's nametag. `state` undefined hides it
+   * (e.g. the player left voice chat, or walked out of proximity range).
+   * Regenerates the nametag texture, so callers should only invoke this on
+   * actual state transitions (speaking start/stop, mute toggle), not per-frame.
+   */
+  setPlayerVoiceState(entityId: string | number, username: string, state: PlayerVoiceState | undefined) {
+    const key = String(entityId)
+    if (state) {
+      this.playerVoiceStates[key] = state
+    } else {
+      delete this.playerVoiceStates[key]
+    }
+
+    const e = this.entities[entityId]
+    const playerObject = e?.playerObject
+    if (!e || !playerObject) return
+    const mesh = e.children.find(c => c.name === 'mesh')
+    if (!mesh) return
+
+    const nametag = addNametag({ username, voiceState: state }, this.entitiesOptions, mesh, this.worldRenderer.version)
+    applyPlayerNametagTransform(nametag, playerObject)
   }
 
   uuidPerSkinUrlsCache = {} as Record<string, { skinUrl?: string; capeUrl?: string }>
@@ -1095,6 +1206,7 @@ export class Entities {
       disposeObject(e)
       // todo dispose textures as well ?
       delete this.entities[entity.id]
+      delete this.playerVoiceStates[String(entity.id)]
       return
     }
     if (!this.isRenderingAllowed()) return
@@ -1166,11 +1278,13 @@ export class Entities {
         mesh = wrapper
 
         if (entity.username) {
-          const nametag = addNametag(entity, { fontFamily: 'mojangles' }, wrapper, this.worldRenderer.version)
-          if (nametag) {
-            nametag.position.y = playerObject.position.y + playerObject.scale.y * 16 + 3
-            nametag.scale.multiplyScalar(12)
-          }
+          const nametag = addNametag(
+            { ...entity, voiceState: this.playerVoiceStates[entity.id] },
+            { fontFamily: 'mojangles' },
+            wrapper,
+            this.worldRenderer.version
+          )
+          applyPlayerNametagTransform(nametag, playerObject)
         }
       } else {
         mesh = getEntityMesh(this.mcData, entity, this.worldRenderer, this.entitiesOptions, { ...overrides, customModel: entity['customModel'] })

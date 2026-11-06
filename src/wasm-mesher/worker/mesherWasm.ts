@@ -1,7 +1,8 @@
 import { Vec3 } from 'vec3'
 import { setClientLightProbePositions } from '../../lib/clientLightProbe'
-import { convertChunkToWasm, getBlockMeta, type ChunkConversionResult } from '../bridge/convertChunk'
+import { convertChunkToWasm, getBlockMeta, getGlobalPaletteBits, type ChunkConversionResult } from '../bridge/convertChunk'
 import { extractColumnHeightmap, splitColumnWasmOutputToSections } from '../bridge/render-from-wasm'
+import { createGeometryIndexArray } from '../bridge/geometryIndices'
 import { setBlockStatesData as setMesherData } from '../../mesher-shared/models'
 import { defaultMesherConfig, type MesherGeometryOutput, SECTION_HEIGHT } from '../../mesher-shared/shared'
 import { SHADER_CUBES_FORMAT_VERSION } from '../../mesher-shared/shaderCubeFormat'
@@ -539,13 +540,10 @@ const convertRawMapChunkToWasm = (raw: RawMapChunkEntry, version: string): Chunk
   // 1.18 introduced the new chunk format; on earlier protocols the packet
   // shape differs and our parser would throw. Fall back to the JS path.
   if (raw.protocol < 757) return null
-  // max_bits_per_block / max_bits_per_biome match the parity-tested defaults
-  // in `wasm-mesher/src/parser_v18plus.rs` (see Stage 2 fixtures).
-  const MAX_BITS_PER_BLOCK = 8
-  const MAX_BITS_PER_BIOME = 3
+  const globalBits = getGlobalPaletteBits(version)
   let parsed: any
   try {
-    parsed = (wasm as any).parseMapChunkV18Plus(raw.rawPacket, raw.numSections, MAX_BITS_PER_BLOCK, MAX_BITS_PER_BIOME, raw.protocol)
+    parsed = (wasm as any).parseMapChunkV18Plus(raw.rawPacket, raw.numSections, globalBits.blocks, globalBits.biomes, raw.protocol)
   } catch (err) {
     console.warn('[WASM Mesher] parseMapChunkV18Plus failed, falling back:', err)
     return null
@@ -678,9 +676,6 @@ const convertParsedV16ToWasm = (entry: ParsedV16Entry, lightEntry: UpdateLightCo
 // Fused parse+mesh helpers (single WASM call, no typed arrays in JS heap)
 // ---------------------------------------------------------------------------
 
-const MAX_BITS_PER_BLOCK = 8
-const MAX_BITS_PER_BIOME = 3
-
 /// Fused single-column mesh for 1.18+ raw map_chunk.
 /// Returns the GeometryOutput directly (or null on failure → fallback).
 const meshColumnFromRawV18Plus = (
@@ -694,12 +689,13 @@ const meshColumnFromRawV18Plus = (
   if (!wasm || !(wasm as any).generateGeometryFromMapChunkV18Plus) return null
   if (raw.protocol < 757) return null
   const columnHeight = worldMaxY - worldMinY
+  const globalBits = getGlobalPaletteBits(version)
   try {
     return (wasm as any).generateGeometryFromMapChunkV18Plus(
       raw.rawPacket,
       raw.numSections,
-      MAX_BITS_PER_BLOCK,
-      MAX_BITS_PER_BIOME,
+      globalBits.blocks,
+      globalBits.biomes,
       raw.protocol,
       x,
       worldMinY,
@@ -807,12 +803,13 @@ const meshMultiColumnsFromRawV18Plus = (
   }
 
   const columnHeight = worldMaxY - worldMinY
+  const globalBits = getGlobalPaletteBits(version)
   try {
     return (wasm as any).generateGeometryFromMapChunkV18PlusMulti(
       rawPackets,
       numSectionsList,
-      MAX_BITS_PER_BLOCK,
-      MAX_BITS_PER_BIOME,
+      globalBits.blocks,
+      globalBits.biomes,
       protocol,
       chunkXs,
       chunkZs,
@@ -1886,8 +1883,8 @@ async function processColumnTickInner() {
         const hasLegacyMesh = hasOpaqueMesh || hasBlendMesh
         const hasShaderCubes = (exported?.shaderCubes?.count ?? 0) > 0
         if (exported && (hasLegacyMesh || hasShaderCubes)) {
-          const maxIndex = exported.geometry.indices.length > 0 ? Math.max(...exported.geometry.indices) : 0
-          const using32Array = maxIndex > 65535
+          const indices = createGeometryIndexArray(exported.geometry.indices)
+          const using32Array = indices instanceof Uint32Array
           geometry = {
             sectionYNumber: (sy - (config?.worldMinY || 0)) >> 4,
             chunkKey: worldColumnKey(sx, sz),
@@ -1906,7 +1903,7 @@ async function processColumnTickInner() {
             skyLights: new Float32Array(exported.geometry.skyLights),
             blockLights: new Float32Array(exported.geometry.blockLights),
             uvs: new Float32Array(exported.geometry.uvs),
-            indices: using32Array ? new Uint32Array(exported.geometry.indices) : new Uint16Array(exported.geometry.indices),
+            indices,
             indicesCount: exported.geometry.indices.length,
             using32Array,
             tiles: {},
@@ -1930,7 +1927,6 @@ async function processColumnTickInner() {
             }
           }
           if (exported.blendGeometry && hasBlendMesh) {
-            const blendMax = Math.max(...exported.blendGeometry.indices)
             geometry.blend = {
               positions: new Float32Array(exported.blendGeometry.positions),
               normals: new Float32Array(exported.blendGeometry.normals),
@@ -1938,7 +1934,7 @@ async function processColumnTickInner() {
               skyLights: new Float32Array(exported.blendGeometry.skyLights),
               blockLights: new Float32Array(exported.blendGeometry.blockLights),
               uvs: new Float32Array(exported.blendGeometry.uvs),
-              indices: blendMax > 65535 ? new Uint32Array(exported.blendGeometry.indices) : new Uint16Array(exported.blendGeometry.indices)
+              indices: createGeometryIndexArray(exported.blendGeometry.indices)
             }
           }
           transferable = [
