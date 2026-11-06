@@ -117,6 +117,18 @@ function createRenderer(enableOwner = false, workerCount = 2, version = '1.17.1'
 }
 
 describe('WorldRendererCommon client light owner spawn', () => {
+  test('owner idle releases only settled edits without a covering light publication', () => {
+    const renderer = createRenderer(true)
+    const internal = renderer as any
+    internal.interactiveSections.set('0,64,0', { lightVersionAtEdit: 1, editGeneration: 2 })
+    internal.interactiveSections.set('16,64,0', { lightVersionAtEdit: 1, editGeneration: 3 })
+    internal.interactiveSections.set('32,64,0', { lightVersionAtEdit: 1, editGeneration: 2, coveringVersion: 2 })
+    internal.releaseInteractiveEditsWithoutCoveringPublication(2)
+    expect(internal.interactiveSections.has('0,64,0')).toBe(false)
+    expect(internal.interactiveSections.has('16,64,0')).toBe(true)
+    expect(internal.interactiveSections.has('32,64,0')).toBe(true)
+  })
+
   beforeEach(() => {
     ensurePromiseWithResolvers()
     constructedScripts.length = 0

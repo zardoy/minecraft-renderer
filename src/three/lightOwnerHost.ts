@@ -12,12 +12,14 @@ export type LightPublication = {
   worldGeneration: number
   publicationVersion: number
   sections: LightPublicationSection[]
+  /** Flat world-origin triples, independent of the section payload coordinates. */
+  dirtyMeshSections?: Int32Array
 }
 
 export type LightOwnerEvent =
   | { type: 'ingestBlockSection'; sx: number; sy: number; sz: number; states: Uint16Array }
   | { type: 'setAvailability'; sx: number; sy: number; sz: number; availability: 'loaded' | 'lightOnly' | 'unloaded' }
-  | { type: 'serverLight'; sx: number; sy: number; sz: number; channel: 'block' | 'sky'; kind: 'omitted' | 'empty' | 'data'; data?: Uint8Array }
+  | { type: 'serverLight'; sx: number; sy: number; sz: number; channel: 'block' | 'sky'; kind: 'omitted' | 'empty' | 'data'; trusted?: boolean; data?: Uint8Array }
   | { type: 'blockChange'; x: number; y: number; z: number; stateId: number }
   | { type: 'unloadColumn'; sx: number; sz: number }
 

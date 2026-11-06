@@ -80,6 +80,7 @@ pub enum LightEvent {
         sz: i32,
         channel: LightChannel,
         kind: ServerLightKind,
+        trusted: bool,
     },
     BlockChange {
         x: i32,
@@ -107,6 +108,7 @@ pub struct LightPublication {
     pub world_generation: u64,
     pub publication_version: u64,
     pub sections: Vec<PublishedSection>,
+    pub dirty_mesh_sections: Vec<i32>,
 }
 
 #[derive(Clone)]
@@ -151,6 +153,11 @@ pub struct LightEngine {
     sky_light_enabled: bool,
     sections: HashMap<SectionKey, Section>,
     pending: VecDeque<LightEvent>,
+    server_lit_columns: HashSet<(i32, i32)>,
+    trusted_fill_columns: HashSet<(i32, i32)>,
+    deferred_relight: VecDeque<(i32, i32)>,
+    deferred_relight_set: HashSet<(i32, i32)>,
+    fallback_relights: u32,
     decrease_q: VecDeque<(i32, i32, i32, u8)>,
     increase_q: VecDeque<(i32, i32, i32, u8)>,
     /// Sky queues are independent of block light. `bool` is skip-up (vanilla sky source).
@@ -159,6 +166,7 @@ pub struct LightEngine {
     /// Publication set only — never a solver guard and never "skip seed".
     changed_for_publication: HashSet<SectionKey>,
     changed_sky: HashSet<SectionKey>,
+    mesh_dirty_mask: HashMap<SectionKey, u32>,
     check_dedup: HashSet<(i32, i32, i32)>,
     sky_check_dedup: HashSet<(i32, i32, i32)>,
     transaction_open: bool,
@@ -188,12 +196,18 @@ impl LightEngine {
             sky_light_enabled: true,
             sections: HashMap::new(),
             pending: VecDeque::new(),
+            server_lit_columns: HashSet::new(),
+            trusted_fill_columns: HashSet::new(),
+            deferred_relight: VecDeque::new(),
+            deferred_relight_set: HashSet::new(),
+            fallback_relights: 0,
             decrease_q: VecDeque::new(),
             increase_q: VecDeque::new(),
             sky_decrease_q: VecDeque::new(),
             sky_increase_q: VecDeque::new(),
             changed_for_publication: HashSet::new(),
             changed_sky: HashSet::new(),
+            mesh_dirty_mask: HashMap::new(),
             check_dedup: HashSet::new(),
             sky_check_dedup: HashSet::new(),
             transaction_open: false,
@@ -314,6 +328,7 @@ impl LightEngine {
 
     fn has_remaining_work(&self) -> bool {
         !self.pending.is_empty() || self.prep_in_progress() || self.has_queue_work()
+            || !self.deferred_relight_set.is_empty()
     }
 
     fn finish_transaction_if_idle(&mut self) {
@@ -369,6 +384,17 @@ impl LightEngine {
                 }
             }
         }
+        let fill_columns = std::mem::take(&mut self.trusted_fill_columns);
+        for (sx, sz) in fill_columns {
+            // These sections were ingested before their light arrived.
+            for (x, y, z) in self.loaded_column_keys(sx, sz) {
+                self.fill_trusted_missing_light(x, y, z);
+                self.publish_with_remesh(x, y, z);
+            }
+        }
+        if self.pending.is_empty() && !self.has_queue_work() && self.pending_sky_xz.is_empty() {
+            self.start_deferred_relight();
+        }
         self.flush_pending_sky_columns(start, budget_ms)
     }
 
@@ -382,6 +408,24 @@ impl LightEngine {
             self.sections.keys().map(|&(sx, _, sz)| (sx, sz)).collect();
         promote_edit_column(&mut self.pending, |sx, sz| known_columns.contains(&(sx, sz)));
         self.waiting_this_batch = column_admission_len(&self.pending);
+        // Trusted ingest must not wake faces. Admit the promoted trusted edit
+        // dependencies before solving so the edit can reach newly loaded neighbors.
+        // That includes neighbors whose trusted light was installed by an earlier
+        // batch while their block sections are still pending.
+        let edit_column = self.pending.iter().take(self.waiting_this_batch)
+            .find(|event| matches!(event, LightEvent::BlockChange { .. })).map(event_column);
+        if let Some((sx, sz)) = edit_column {
+            let trusted: HashSet<_> = self.pending.iter().filter_map(|event| match event {
+                LightEvent::ServerLight { sx, sz, trusted: true, .. } => Some((*sx, *sz)),
+                _ => None,
+            }).collect();
+            let server_lit = &self.server_lit_columns;
+            self.waiting_this_batch = self.pending.iter().take_while(|event| {
+                let column = event_column(event);
+                column == (sx, sz) || ((trusted.contains(&column) || server_lit.contains(&column))
+                    && column.0.abs_diff(sx) <= 1 && column.1.abs_diff(sz) <= 1)
+            }).count();
+        }
     }
 
     fn invalidate_sky_source_xz(&mut self, x: i32, z: i32) {
@@ -443,22 +487,12 @@ impl LightEngine {
                     section.states = Some(pad_states(states));
                     section.availability = SectionAvailability::Loaded;
                 }
-                for ly in 0..16 {
-                    for lz in 0..16 {
-                        for lx in 0..16 {
-                            let x = sx * 16 + lx as i32;
-                            let y = sy * 16 + ly as i32;
-                            let z = sz * 16 + lz as i32;
-                            if self.emission_at(x, y, z) > 0 || self.get_block_light(x, y, z) > 0 {
-                                self.check_loaded_cell(x, y, z);
-                            }
-                        }
-                    }
-                }
                 self.invalidate_sky_source_section(sx, sz);
-                self.wake_section_face_contacts(sx, sy, sz);
-                if self.sky_light_enabled {
-                    self.mark_sky_columns_in_section(sx, sz);
+                if self.server_lit_columns.contains(&(sx, sz)) {
+                    self.fill_trusted_missing_light(sx, sy, sz);
+                    self.publish_with_remesh(sx, sy, sz);
+                } else if self.deferred_relight_set.insert((sx, sz)) {
+                    self.deferred_relight.push_back((sx, sz));
                 }
                 self.mark_changed(sx, sy, sz);
             }
@@ -474,7 +508,6 @@ impl LightEngine {
                 }
                 self.invalidate_sky_source_section(sx, sz);
                 self.ensure_section(sx, sy, sz, availability).availability = availability;
-                self.mark_changed(sx, sy, sz);
             }
             LightEvent::ServerLight {
                 sx,
@@ -482,7 +515,8 @@ impl LightEngine {
                 sz,
                 channel,
                 kind,
-            } => self.apply_server_light(sx, sy, sz, channel, kind),
+                trusted,
+            } => self.apply_server_light(sx, sy, sz, channel, kind, trusted),
             LightEvent::BlockChange { x, y, z, state_id } => {
                 self.apply_block_change(x, y, z, state_id);
             }
@@ -494,9 +528,14 @@ impl LightEngine {
                     .copied()
                     .filter(|key| key.0 == sx && key.2 == sz)
                     .collect();
-                for (usx, usy, usz) in &keys {
-                    self.reconcile_unloading_section(*usx, *usy, *usz);
+                if !self.server_lit_columns.remove(&(sx, sz)) {
+                    for (usx, usy, usz) in &keys {
+                        self.reconcile_unloading_section(*usx, *usy, *usz);
+                    }
                 }
+                self.trusted_fill_columns.remove(&(sx, sz));
+                self.deferred_relight_set.remove(&(sx, sz));
+                self.deferred_relight.retain(|key| *key != (sx, sz));
                 for (usx, usy, usz) in keys {
                     self.remove_section_storage(usx, usy, usz);
                 }
@@ -523,7 +562,6 @@ impl LightEngine {
         }
         let emission = self.emission_of(state_id);
         self.invalidate_sky_source_xz(x, z);
-        self.mark_changed(sx, sy, sz);
 
         if emission < old_light {
             self.set_block_light(x, y, z, 0);
@@ -544,20 +582,121 @@ impl LightEngine {
         self.mark_sky_column_dirty(x, z);
     }
 
-    fn apply_server_light(&mut self, sx: i32, sy: i32, sz: i32, channel: LightChannel, kind: ServerLightKind) {
+    fn apply_server_light(&mut self, sx: i32, sy: i32, sz: i32, channel: LightChannel, kind: ServerLightKind, trusted: bool) {
         match kind {
             ServerLightKind::Omitted => {}
             ServerLightKind::Empty => {
                 let zeros = vec![0u8; LIGHT_SECTION_BUFFER_BYTES];
-                self.accept_and_reconcile_server(sx, sy, sz, channel, &zeros);
+                if trusted { self.install_trusted_server_light(sx, sy, sz, channel, &zeros); }
+                else { self.accept_and_reconcile_server(sx, sy, sz, channel, &zeros); }
             }
             ServerLightKind::Data(data) => {
                 if data.len() != LIGHT_SECTION_BUFFER_BYTES {
                     return;
                 }
-                self.accept_and_reconcile_server(sx, sy, sz, channel, &data);
+                if trusted { self.install_trusted_server_light(sx, sy, sz, channel, &data); }
+                else { self.accept_and_reconcile_server(sx, sy, sz, channel, &data); }
             }
         }
+    }
+
+    fn start_deferred_relight(&mut self) {
+        while let Some((sx, sz)) = self.deferred_relight.pop_front() {
+            if !self.deferred_relight_set.remove(&(sx, sz)) || self.server_lit_columns.contains(&(sx, sz)) {
+                continue;
+            }
+            self.fallback_relights += 1;
+            for (sx, sy, sz) in self.loaded_column_keys(sx, sz) {
+                for ly in 0..16 {
+                    for lz in 0..16 {
+                        for lx in 0..16 {
+                            let (x, y, z) = (sx * 16 + lx, sy * 16 + ly, sz * 16 + lz);
+                            if self.emission_at(x, y, z) > 0 || self.get_block_light(x, y, z) > 0 {
+                                self.check_loaded_cell(x, y, z);
+                            }
+                        }
+                    }
+                }
+                self.wake_section_face_contacts(sx, sy, sz);
+                self.mark_sky_columns_in_section(sx, sz);
+            }
+            break;
+        }
+    }
+
+    /// Section Y indices of one column, including the light padding below and above.
+    fn column_section_ys(&self) -> std::ops::RangeInclusive<i32> {
+        self.world_min_y.div_euclid(16) - 1..=(self.world_min_y + self.world_height).div_euclid(16)
+    }
+
+    fn loaded_column_keys(&self, sx: i32, sz: i32) -> Vec<SectionKey> {
+        self.column_section_ys()
+            .filter(|&sy| matches!(self.sections.get(&(sx, sy, sz)),
+                Some(s) if s.availability == SectionAvailability::Loaded))
+            .map(|sy| (sx, sy, sz))
+            .collect()
+    }
+
+    fn fill_trusted_missing_light(&mut self, sx: i32, sy: i32, sz: i32) {
+        let Some(section) = self.sections.get(&(sx, sy, sz)) else { return; };
+        let missing_block = section.accepted_block.is_none();
+        let missing_sky = self.sky_light_enabled && section.accepted_sky.is_none();
+        let above = if missing_sky {
+            (sy + 1..=*self.column_section_ys().end()).find_map(|y| self.sections.get(&(sx, y, sz))
+                .and_then(|s| s.accepted_sky.as_ref()).map(|sky| sky[..128].to_vec()))
+        } else { None };
+        if missing_block { self.copy_working(sx, sy, sz, LightChannel::Block, &[0; 2048]); }
+        if missing_sky {
+            let mut packed = vec![255; 2048];
+            if let Some(above) = above {
+                for layer in packed.chunks_mut(128) { layer.copy_from_slice(&above[..128]); }
+            }
+            self.copy_working(sx, sy, sz, LightChannel::Sky, &packed);
+        }
+    }
+
+    fn install_trusted_server_light(&mut self, sx: i32, sy: i32, sz: i32, channel: LightChannel, packed: &[u8]) {
+        // Fill omitted sections only on the column's first trusted packet. Later
+        // edge resends carry changed sections only; refilling would erase local edits.
+        if self.server_lit_columns.insert((sx, sz)) {
+            self.trusted_fill_columns.insert((sx, sz));
+        }
+        self.deferred_relight_set.remove(&(sx, sz));
+        let availability = self.section_availability(sx, sy, sz);
+        let section = self.ensure_section(sx, sy, sz, if availability == SectionAvailability::Unloaded {
+            SectionAvailability::LightOnly
+        } else { availability });
+        match channel {
+            LightChannel::Block => section.accepted_block = Some(packed.to_vec()),
+            LightChannel::Sky => section.accepted_sky = Some(packed.to_vec()),
+        }
+        if channel == LightChannel::Sky {
+            self.invalidate_sky_source_section(sx, sz);
+            if !self.sky_light_enabled { return; }
+        }
+        // Padding layers remain available for the vanilla repeat-from-above rule.
+        self.copy_working(sx, sy, sz, channel, packed);
+    }
+
+    fn copy_working(&mut self, sx: i32, sy: i32, sz: i32, channel: LightChannel, packed: &[u8]) {
+        let Some(section) = self.sections.get_mut(&(sx, sy, sz)) else { return; };
+        let working = channel_buf_mut(section, channel);
+        let mut mask = 0;
+        for (byte_index, (&old, &new)) in working.iter().zip(packed).enumerate() {
+            let changed = old ^ new;
+            if changed == 0 { continue; }
+            for half in 0..2 {
+                if changed & (15 << (half * 4)) == 0 { continue; }
+                let index = byte_index * 2 + half;
+                mask |= dirty_mask_for_cell(index & 15, index >> 8, (index >> 4) & 15);
+            }
+        }
+        if mask == 0 { return; }
+        working.copy_from_slice(packed);
+        self.transaction_open = true;
+        *self.mesh_dirty_mask.entry((sx, sy, sz)).or_default() |= mask;
+        self.changed_for_publication.insert((sx, sy, sz));
+        if channel == LightChannel::Sky { self.changed_sky.insert((sx, sy, sz)); }
     }
 
     fn accept_and_reconcile_server(&mut self, sx: i32, sy: i32, sz: i32, channel: LightChannel, packed: &[u8]) {
@@ -647,6 +786,7 @@ impl LightEngine {
         self.sections.remove(&(sx, sy, sz));
         self.changed_for_publication.remove(&(sx, sy, sz));
         self.changed_sky.remove(&(sx, sy, sz));
+        self.mesh_dirty_mask.remove(&(sx, sy, sz));
         self.mark_transaction();
     }
 
@@ -1136,16 +1276,38 @@ impl LightEngine {
         if sections.is_empty() {
             return;
         }
+        let mut dirty = HashSet::new();
+        for ((sx, sy, sz), mask) in self.mesh_dirty_mask.drain() {
+            for dx in -1..=1 {
+                for dy in -1..=1 {
+                    for dz in -1..=1 {
+                        let bit = ((dx + 1) * 9 + (dy + 1) * 3 + dz + 1) as u32;
+                        let y = (sy + dy) * 16;
+                        if mask & (1 << bit) != 0 && y < self.world_min_y + self.world_height && y + 16 > self.world_min_y {
+                            dirty.insert(((sx + dx) * 16, y, (sz + dz) * 16));
+                        }
+                    }
+                }
+            }
+        }
+        let mut dirty: Vec<_> = dirty.into_iter().collect();
+        dirty.sort_unstable();
+        let dirty_mesh_sections = dirty.into_iter().flat_map(|(x, y, z)| [x, y, z]).collect();
         let incoming = LightPublication {
             world_generation: self.world_generation,
             publication_version: self.publication_version,
             sections,
+            dirty_mesh_sections,
         };
         match self.ready_publication.as_mut() {
             Some(existing) => {
                 existing.publication_version = incoming.publication_version;
                 existing.world_generation = incoming.world_generation;
                 existing.sections.extend(incoming.sections);
+                let mut dirty: HashSet<_> = existing.dirty_mesh_sections.chunks_exact(3)
+                    .map(|v| (v[0], v[1], v[2])).collect();
+                dirty.extend(incoming.dirty_mesh_sections.chunks_exact(3).map(|v| (v[0], v[1], v[2])));
+                existing.dirty_mesh_sections = dirty.into_iter().flat_map(|(x, y, z)| [x, y, z]).collect();
             }
             None => self.ready_publication = Some(incoming),
         }
@@ -1159,6 +1321,14 @@ impl LightEngine {
     fn mark_sky_changed(&mut self, sx: i32, sy: i32, sz: i32) {
         self.changed_sky.insert((sx, sy, sz));
         self.mark_changed(sx, sy, sz);
+    }
+
+    /// First delivery of a section's light to the meshers. Nibble diffs miss values
+    /// that equal the initial zeros (dark caves), and meshers default absent sky to 15,
+    /// so publish both channels and remesh every section that samples this one.
+    fn publish_with_remesh(&mut self, sx: i32, sy: i32, sz: i32) {
+        *self.mesh_dirty_mask.entry((sx, sy, sz)).or_default() |= ALL_NEIGHBOR_SECTIONS;
+        if self.sky_light_enabled { self.mark_sky_changed(sx, sy, sz); } else { self.mark_changed(sx, sy, sz); }
     }
 
     fn mark_transaction(&mut self) {
@@ -1204,7 +1374,12 @@ impl LightEngine {
         let Some(section) = self.sections.get_mut(&(sx, sy, sz)) else {
             return;
         };
+        if nibble_at(channel_buf(section, channel), local(x), local(y), local(z)) == (value & 15) {
+            return;
+        }
         set_nibble(channel_buf_mut(section, channel), local(x), local(y), local(z), value);
+        self.transaction_open = true;
+        *self.mesh_dirty_mask.entry((sx, sy, sz)).or_default() |= dirty_mask_for_cell(local(x), local(y), local(z));
         self.changed_for_publication.insert((sx, sy, sz));
         if channel == LightChannel::Sky {
             self.changed_sky.insert((sx, sy, sz));
@@ -1446,6 +1621,24 @@ fn section_key(x: i32, y: i32, z: i32) -> SectionKey {
     (x.div_euclid(16), y.div_euclid(16), z.div_euclid(16))
 }
 
+/// Every bit of the 3x3x3 section stencil used by `dirty_mask_for_cell`.
+const ALL_NEIGHBOR_SECTIONS: u32 = (1 << 27) - 1;
+
+fn dirty_mask_for_cell(x: usize, y: usize, z: usize) -> u32 {
+    let mut mask = 0;
+    for dx in -1..=1 {
+        if dx != 0 && !((dx == -1 && x == 0) || (dx == 1 && x == 15)) { continue; }
+        for dy in -1..=1 {
+            if dy != 0 && !((dy == -1 && y == 0) || (dy == 1 && y == 15)) { continue; }
+            for dz in -1..=1 {
+                if dz != 0 && !((dz == -1 && z == 0) || (dz == 1 && z == 15)) { continue; }
+                mask |= 1 << ((dx + 1) * 9 + (dy + 1) * 3 + dz + 1);
+            }
+        }
+    }
+    mask
+}
+
 fn local(v: i32) -> usize {
     v.rem_euclid(16) as usize
 }
@@ -1571,6 +1764,11 @@ impl JsLightEngine {
         }
     }
 
+    #[wasm_bindgen(getter, js_name = fallbackRelights)]
+    pub fn js_fallback_relights(&self) -> u32 {
+        self.inner.fallback_relights
+    }
+
     #[wasm_bindgen(js_name = getBlockLight)]
     pub fn js_get_block_light(&self, x: i32, y: i32, z: i32) -> u8 {
         self.inner.get_block_light(x, y, z)
@@ -1627,6 +1825,8 @@ fn event_from_js(event: &JsValue) -> Result<LightEvent, String> {
                 sz: js_i32(event, "sz")?,
                 channel,
                 kind,
+                trusted: js_sys::Reflect::get(event, &JsValue::from_str("trusted"))
+                    .ok().and_then(|v| v.as_bool()).unwrap_or(false),
             })
         }
         "blockChange" => Ok(LightEvent::BlockChange {
@@ -1674,6 +1874,8 @@ fn publication_to_js(publication: &LightPublication) -> JsValue {
         list.push(&item);
     }
     js_sys::Reflect::set(&obj, &JsValue::from_str("sections"), &list).unwrap();
+    let dirty = js_sys::Int32Array::from(publication.dirty_mesh_sections.as_slice());
+    js_sys::Reflect::set(&obj, &JsValue::from_str("dirtyMeshSections"), &dirty).unwrap();
     obj.into()
 }
 
@@ -1739,6 +1941,11 @@ mod tests {
         });
     }
 
+    fn load_trusted_section(e: &mut LightEngine, sx: i32, sy: i32, sz: i32, states: Vec<u16>) {
+        e.server_lit_columns.insert((sx, sz));
+        load_section(e, sx, sy, sz, states);
+    }
+
     fn finish(e: &mut LightEngine) -> Option<LightPublication> {
         let mut remaining = true;
         let mut guard = 0;
@@ -1772,8 +1979,191 @@ mod tests {
         ]
     }
 
+    fn trusted_seed(e: &mut LightEngine, sx: i32, sy: i32, sz: i32, channel: LightChannel, value: u8) {
+        e.push_event(LightEvent::ServerLight { sx, sy, sz, channel, trusted: true,
+            kind: ServerLightKind::Data(pack_uniform_section(value)) });
+    }
+
+    #[test]
+    fn trusted_ingest_and_omitted_sky_have_no_solver_work() {
+        let mut e = engine();
+        trusted_seed(&mut e, 0, 2, 0, LightChannel::Sky, 7);
+        load_section(&mut e, 0, 0, 0, air_section());
+        load_section(&mut e, 0, 1, 0, air_section());
+        e.step_nodes(0);
+        assert!(!e.has_queue_work());
+        assert!(!e.prep_in_progress());
+        assert_eq!(e.fallback_relights, 0);
+        assert_eq!(e.get_sky_light(8, 8, 8), 7);
+        assert_eq!(e.get_sky_light(8, 24, 8), 7);
+        assert_eq!(e.get_block_light(8, 8, 8), 0);
+        assert!(e.poll_completed_publication().is_some());
+        assert!(!e.has_remaining_work());
+    }
+
+    #[test]
+    fn trusted_packet_cancels_deferred_fallback_and_unload_does_not_reconcile() {
+        let mut e = engine();
+        load_section(&mut e, 0, 4, 0, air_section());
+        load_trusted_section(&mut e, 1, 4, 0, air_section());
+        trusted_seed(&mut e, 0, 4, 0, LightChannel::Block, 9);
+        finish(&mut e);
+        assert_eq!(e.fallback_relights, 0);
+        let before = e.packed_block_light(1, 4, 0).unwrap().to_vec();
+        e.push_event(LightEvent::UnloadColumn { sx: 0, sz: 0 });
+        finish(&mut e);
+        assert_eq!(e.packed_block_light(1, 4, 0).unwrap(), before);
+        assert!(!e.has_queue_work());
+    }
+
+    #[test]
+    fn fallback_is_deduplicated_and_runs_after_pending_columns() {
+        let mut e = engine();
+        load_section(&mut e, 0, 4, 0, air_section());
+        load_section(&mut e, 0, 5, 0, air_section());
+        load_trusted_section(&mut e, 1, 4, 0, air_section());
+        drain_until_publication(&mut e);
+        assert_eq!(e.fallback_relights, 0);
+        finish(&mut e);
+        assert_eq!(e.fallback_relights, 1);
+    }
+
+    #[test]
+    fn stencil_dirty_is_exact_and_unchanged_edit_does_not_publish() {
+        let mut e = engine();
+        e.set_sky_light_enabled(false);
+        load_trusted_section(&mut e, 0, 4, 0, air_section());
+        finish(&mut e);
+        e.write_working(8, 72, 8, LightChannel::Block, 1);
+        e.publish_completed();
+        assert_eq!(e.poll_completed_publication().unwrap().dirty_mesh_sections, vec![0, 64, 0]);
+        e.write_working(15, 79, 15, LightChannel::Block, 1);
+        e.publish_completed();
+        assert_eq!(e.poll_completed_publication().unwrap().dirty_mesh_sections.len(), 8 * 3);
+        e.push_event(LightEvent::BlockChange { x: 2, y: 66, z: 2, state_id: AIR });
+        assert!(finish(&mut e).is_none());
+    }
+
+    #[test]
+    fn trusted_pending_neighbor_is_admitted_before_edit_solver() {
+        let mut e = engine();
+        e.set_sky_light_enabled(false);
+        trusted_seed(&mut e, 0, 4, 0, LightChannel::Block, 0);
+        load_section(&mut e, 0, 4, 0, air_section());
+        while e.step_nodes(100_000) {}
+        e.poll_completed_publication();
+        for sx in [10, 1] {
+            trusted_seed(&mut e, sx, 4, 0, LightChannel::Block, 0);
+            load_section(&mut e, sx, 4, 0, air_section());
+        }
+        e.push_event(LightEvent::BlockChange { x: 15, y: 72, z: 8, state_id: 2 });
+        e.step_nodes(128);
+        while e.batch_in_progress() { e.step_nodes(128); }
+        assert_eq!(e.get_block_light(16, 72, 8), 13);
+        assert_eq!(e.fallback_relights, 0);
+    }
+
+    #[test]
+    fn server_lit_neighbor_with_pending_ingest_is_admitted_before_edit_solver() {
+        let mut e = engine();
+        e.set_sky_light_enabled(false);
+        load_trusted_section(&mut e, 0, 4, 0, air_section());
+        while e.step_nodes(100_000) {}
+        e.poll_completed_publication();
+        // Light was installed by an earlier batch; only the block sections are pending.
+        for sx in [10, 1] {
+            load_trusted_section(&mut e, sx, 4, 0, air_section());
+        }
+        e.push_event(LightEvent::BlockChange { x: 15, y: 72, z: 8, state_id: TORCH });
+        e.step_nodes(128);
+        while e.batch_in_progress() { e.step_nodes(128); }
+        assert_eq!(e.get_block_light(16, 72, 8), 13);
+        assert_eq!(e.fallback_relights, 0);
+    }
+
+    #[test]
+    fn later_trusted_packet_keeps_local_light_in_filled_sections() {
+        let mut e = engine();
+        e.set_sky_light_enabled(false);
+        trusted_seed(&mut e, 0, 5, 0, LightChannel::Block, 0);
+        load_section(&mut e, 0, 4, 0, air_section());
+        finish(&mut e);
+        e.push_event(LightEvent::BlockChange { x: 8, y: 72, z: 8, state_id: TORCH });
+        finish(&mut e);
+        let lit = e.packed_block_light(0, 4, 0).unwrap().to_vec();
+        assert!(lit.iter().any(|&b| b != 0));
+        // An edge resend for another section of the same column must not refill section 4.
+        trusted_seed(&mut e, 0, 10, 0, LightChannel::Block, 0);
+        finish(&mut e);
+        assert_eq!(e.packed_block_light(0, 4, 0).unwrap(), lit);
+        assert_eq!(e.fallback_relights, 0);
+    }
+
+    #[test]
+    fn dark_trusted_section_publishes_sky_and_remeshes_neighbors_in_either_order() {
+        // All-zero light equals the initial buffers, so nibble diffs alone never publish it.
+        for light_first in [true, false] {
+            let mut e = engine();
+            let seed = |e: &mut LightEngine| for channel in [LightChannel::Block, LightChannel::Sky] {
+                trusted_seed(e, 0, 4, 0, channel, 0);
+            };
+            if light_first { seed(&mut e); }
+            load_section(&mut e, 0, 4, 0, stone_section());
+            if !light_first { seed(&mut e); }
+            let mut sky = HashSet::new();
+            let mut dirty = HashSet::new();
+            for _ in 0..64 {
+                let remaining = e.step(1_000.0);
+                if let Some(p) = e.poll_completed_publication() {
+                    sky.extend(p.sections.iter().filter(|s| s.sky_light.is_some()).map(|s| (s.sx, s.sy, s.sz)));
+                    dirty.extend(p.dirty_mesh_sections.chunks_exact(3).map(|v| (v[0], v[1], v[2])));
+                }
+                if !remaining { break; }
+            }
+            assert!(sky.contains(&(0, 4, 0)), "light_first={light_first}");
+            // Center, the section above (its ceiling faces sample this one), below, and a side neighbor.
+            for key in [(0, 64, 0), (0, 80, 0), (0, 48, 0), (16, 64, 0)] {
+                assert!(dirty.contains(&key), "light_first={light_first} missing {key:?}");
+            }
+            assert_eq!(e.fallback_relights, 0);
+        }
+    }
+
+    #[test]
+    fn trusted_and_fallback_tunnel_edits_match_all_cells() {
+        let mut fallback = engine();
+        for sx in 0..2 { for sy in 4..6 { load_section(&mut fallback, sx, sy, 0, x_air_tunnel()); } }
+        finish(&mut fallback);
+        let mut trusted = engine();
+        for sx in 0..2 { for sy in 4..6 {
+            for channel in [LightChannel::Block, LightChannel::Sky] {
+                let section = fallback.sections.get(&(sx, sy, 0)).unwrap();
+                trusted.push_event(LightEvent::ServerLight { sx, sy, sz: 0, channel, trusted: true,
+                    kind: ServerLightKind::Data(channel_buf(section, channel).to_vec()) });
+            }
+            load_section(&mut trusted, sx, sy, 0, x_air_tunnel());
+        } }
+        finish(&mut trusted);
+        for state_id in [TORCH, AIR] {
+            for e in [&mut trusted, &mut fallback] {
+                e.push_event(LightEvent::BlockChange { x: 15, y: 79, z: 8, state_id });
+                e.step_nodes(1);
+                assert!(e.poll_completed_publication().is_none());
+                let publication = finish(e).unwrap();
+                assert!(!publication.dirty_mesh_sections.is_empty());
+            }
+            for sx in 0..2 { for sy in 4..6 {
+                assert_eq!(trusted.packed_block_light(sx, sy, 0), fallback.packed_block_light(sx, sy, 0));
+                assert_eq!(trusted.sections.get(&(sx, sy, 0)).unwrap().sky_light,
+                    fallback.sections.get(&(sx, sy, 0)).unwrap().sky_light);
+            } }
+        }
+        assert_eq!(trusted.section_availability(2, 4, 0), SectionAvailability::Unloaded);
+        assert_eq!(trusted.fallback_relights, 0);
+    }
+
     fn zero_seed_section(e: &mut LightEngine, sx: i32, sy: i32, sz: i32) {
-        e.push_event(LightEvent::ServerLight {
+        e.push_event(LightEvent::ServerLight { trusted: false,
             sx,
             sy,
             sz,
@@ -1812,7 +2202,7 @@ mod tests {
             sz,
             availability: SectionAvailability::LightOnly,
         });
-        e.push_event(LightEvent::ServerLight {
+        e.push_event(LightEvent::ServerLight { trusted: false,
             sx,
             sy,
             sz,
@@ -1854,7 +2244,7 @@ mod tests {
     fn invariant_seed_without_source_or_boundary_is_zero() {
         let mut e = engine();
         load_section(&mut e, 0, 4, 0, air_section());
-        e.push_event(LightEvent::ServerLight {
+        e.push_event(LightEvent::ServerLight { trusted: false,
             sx: 0,
             sy: 4,
             sz: 0,
@@ -1961,7 +2351,7 @@ mod tests {
         set_light_only_boundary(&mut e, 0, 1, 0, 3);
         finish(&mut e);
 
-        e.push_event(LightEvent::ServerLight {
+        e.push_event(LightEvent::ServerLight { trusted: false,
             sx: 0,
             sy: 1,
             sz: 0,
@@ -1980,7 +2370,7 @@ mod tests {
         set_light_only_boundary(&mut e, 0, 0, 0, 7);
         finish(&mut e);
         assert_eq!(e.get_block_light(1, 1, 1), 7, "known boundary 7");
-        e.push_event(LightEvent::ServerLight {
+        e.push_event(LightEvent::ServerLight { trusted: false,
             sx: 0,
             sy: 0,
             sz: 0,
@@ -2169,7 +2559,7 @@ mod tests {
             if !empty && !data {
                 continue;
             }
-            e.push_event(LightEvent::ServerLight {
+            e.push_event(LightEvent::ServerLight { trusted: false,
                 sx: parsed.x,
                 sy: sy as i32,
                 sz: parsed.z,
@@ -2221,7 +2611,7 @@ mod tests {
             sz,
             availability: SectionAvailability::LightOnly,
         });
-        e.push_event(LightEvent::ServerLight {
+        e.push_event(LightEvent::ServerLight { trusted: false,
             sx,
             sy,
             sz,
@@ -2347,7 +2737,7 @@ mod tests {
     fn sky_invariant_seed_without_source_or_boundary_is_zero() {
         let mut e = engine();
         load_section(&mut e, 0, 4, 0, air_section());
-        e.push_event(LightEvent::ServerLight {
+        e.push_event(LightEvent::ServerLight { trusted: false,
             sx: 0,
             sy: 4,
             sz: 0,
@@ -2416,7 +2806,7 @@ mod tests {
         let mut continuous = engine();
         load_world_top_air(&mut continuous);
         finish(&mut continuous);
-        continuous.push_event(LightEvent::ServerLight {
+        continuous.push_event(LightEvent::ServerLight { trusted: false,
             sx: 0,
             sy: top_section_y(&continuous),
             sz: 0,
@@ -2431,7 +2821,7 @@ mod tests {
         let mut sliced = engine();
         load_world_top_air(&mut sliced);
         sliced.step_nodes(1);
-        sliced.push_event(LightEvent::ServerLight {
+        sliced.push_event(LightEvent::ServerLight { trusted: false,
             sx: 0,
             sy: top_section_y(&sliced),
             sz: 0,
@@ -2466,7 +2856,7 @@ mod tests {
         finish(&mut e);
         let y = e.world_min_y + e.world_height - 1;
         assert_eq!(e.get_sky_light(8, y, 8), 0, "nether/end must not invent sky 15");
-        e.push_event(LightEvent::ServerLight {
+        e.push_event(LightEvent::ServerLight { trusted: false,
             sx: 0,
             sy: top_section_y(&e),
             sz: 0,
@@ -2842,7 +3232,7 @@ mod tests {
         let mut e = engine();
         let mut packed = pack_uniform_section(0);
         set_nibble(&mut packed, 15, 0, 8, 14);
-        e.push_event(LightEvent::ServerLight {
+        e.push_event(LightEvent::ServerLight { trusted: false,
             sx: 0,
             sy: 4,
             sz: 0,
@@ -2868,7 +3258,7 @@ mod tests {
         finish(&mut e);
         let mut packed = pack_uniform_section(0);
         set_nibble(&mut packed, 15, 0, 8, 14);
-        e.push_event(LightEvent::ServerLight {
+        e.push_event(LightEvent::ServerLight { trusted: false,
             sx: 0,
             sy: 4,
             sz: 0,
@@ -3007,7 +3397,7 @@ mod tests {
             z: 8,
             state_id: AIR,
         });
-        e.push_event(LightEvent::ServerLight {
+        e.push_event(LightEvent::ServerLight { trusted: false,
             sx: 0,
             sy: 4,
             sz: 0,
@@ -3024,10 +3414,10 @@ mod tests {
     fn batch_admits_one_column_not_entire_pending_queue() {
         let mut e = engine();
         for sy in 0..16 {
-            load_section(&mut e, 0, sy, 0, air_section());
+            load_trusted_section(&mut e, 0, sy, 0, air_section());
         }
         for sy in 0..16 {
-            load_section(&mut e, 1, sy, 0, air_section());
+            load_trusted_section(&mut e, 1, sy, 0, air_section());
         }
         let first = drain_until_publication(&mut e).expect("first column must publish before later pending columns");
         assert!(
@@ -3052,7 +3442,7 @@ mod tests {
     fn batch_keeps_same_column_events_together() {
         let mut e = engine();
         for sy in 0..16 {
-            load_section(&mut e, 0, sy, 0, air_section());
+            load_trusted_section(&mut e, 0, sy, 0, air_section());
         }
         let first = drain_until_publication(&mut e).expect("column load must publish");
         assert!(!e.step(0.0), "a single column is one admission unit");
@@ -3066,10 +3456,10 @@ mod tests {
     fn batch_fifo_keeps_later_edit_after_prior_columns() {
         let mut e = engine();
         for sy in 0..16 {
-            load_section(&mut e, 0, sy, 0, air_section());
+            load_trusted_section(&mut e, 0, sy, 0, air_section());
         }
         for sy in 0..16 {
-            load_section(&mut e, 1, sy, 0, air_section());
+            load_trusted_section(&mut e, 1, sy, 0, air_section());
         }
         e.push_event(LightEvent::BlockChange {
             x: 8,
@@ -3095,10 +3485,10 @@ mod tests {
     fn batch_edit_jumps_foreign_column_convoy() {
         let mut e = engine();
         for sy in 0..16 {
-            load_section(&mut e, 0, sy, 0, air_section());
+            load_trusted_section(&mut e, 0, sy, 0, air_section());
         }
         for sy in 0..16 {
-            load_section(&mut e, 1, sy, 0, air_section());
+            load_trusted_section(&mut e, 1, sy, 0, air_section());
         }
         e.push_event(LightEvent::BlockChange {
             x: 24,
@@ -3122,7 +3512,7 @@ mod tests {
         for already_loaded in [false, true] {
             let mut e = engine();
             e.set_sky_light_enabled(false);
-            load_section(&mut e, -1, 4, 0, air_section());
+            load_trusted_section(&mut e, -1, 4, 0, air_section());
             if already_loaded {
                 finish(&mut e);
             }
@@ -3171,12 +3561,12 @@ mod tests {
             ] {
                 let mut e = engine();
                 e.set_sky_light_enabled(false);
-                load_section(&mut e, 0, 4, 0, air_section());
+                load_trusted_section(&mut e, 0, 4, 0, air_section());
                 finish(&mut e);
                 let edit = LightEvent::BlockChange { x, y: 72, z, state_id: TORCH };
                 if edit_at_head { e.push_event(edit.clone()); }
                 for sx in 100..164 {
-                    load_section(&mut e, sx, 4, 0, air_section());
+                    load_trusted_section(&mut e, sx, 4, 0, air_section());
                 }
                 for &(sx, sz) in &neighbors {
                     load_section(&mut e, sx, 4, sz, air_section());
@@ -3188,13 +3578,12 @@ mod tests {
                     e.poll_completed_publication();
                 }
                 let distance = (target.0 - x).abs() + (target.1 - z).abs();
-                assert_eq!(e.get_block_light(target.0, 72, target.1), 14 - distance as u8,
-                    "neighbor must light before bulk: head={edit_at_head}, x={x}, z={z}");
+                assert_eq!(e.get_block_light(target.0, 72, target.1), 0,
+                    "unseeded neighbor relight must wait for bulk: head={edit_at_head}, x={x}, z={z}");
                 assert_eq!(e.section_availability(100, 4, 0), SectionAvailability::Unloaded);
                 assert_eq!(e.pending.len(), 128, "unrelated bulk remains queued");
-                let early = e.get_block_light(target.0, 72, target.1);
                 finish(&mut e);
-                assert_eq!(e.get_block_light(target.0, 72, target.1), early);
+                assert_eq!(e.get_block_light(target.0, 72, target.1), 14 - distance as u8);
             }
         }
     }
@@ -3206,7 +3595,7 @@ mod tests {
             LightEvent::UnloadColumn { sx: 1, sz: 0 },
             LightEvent::IngestBlockSection { sx: 1, sy: 4, sz: 0, states: air_section() },
             LightEvent::SetAvailability { sx: 1, sy: 4, sz: 0, availability: SectionAvailability::Loaded },
-            LightEvent::ServerLight { sx: 1, sy: 4, sz: 0, channel: LightChannel::Block, kind: ServerLightKind::Empty },
+            LightEvent::ServerLight { trusted: false, sx: 1, sy: 4, sz: 0, channel: LightChannel::Block, kind: ServerLightKind::Empty },
         ];
         let bulk: Vec<_> = (100..104).map(|sx| LightEvent::UnloadColumn { sx, sz: 0 }).collect();
         let mut pending = VecDeque::new();
@@ -3227,7 +3616,7 @@ mod tests {
         let mut e = engine();
         for sx in 0..3 {
             for sy in 0..16 {
-                load_section(&mut e, sx, sy, 0, air_section());
+                load_trusted_section(&mut e, sx, sy, 0, air_section());
             }
         }
         e.push_event(LightEvent::BlockChange {
@@ -3249,7 +3638,7 @@ mod tests {
     fn batch_edit_does_not_jump_unknown_column() {
         let mut e = engine();
         for sy in 0..16 {
-            load_section(&mut e, 0, sy, 0, air_section());
+            load_trusted_section(&mut e, 0, sy, 0, air_section());
         }
         e.push_event(LightEvent::BlockChange {
             x: 80,
@@ -3275,13 +3664,13 @@ mod tests {
     #[test]
     fn batch_edit_known_column_missing_sy_does_not_materialize_air() {
         let mut e = engine();
-        load_section(&mut e, 0, 4, 0, air_section());
+        load_trusted_section(&mut e, 0, 4, 0, air_section());
         finish(&mut e);
         assert!(e.packed_block_light(0, 4, 0).is_some());
         assert_eq!(e.section_availability(0, 5, 0), SectionAvailability::Unloaded);
 
         for sy in 0..16 {
-            load_section(&mut e, 1, sy, 0, air_section());
+            load_trusted_section(&mut e, 1, sy, 0, air_section());
         }
         e.push_event(LightEvent::BlockChange {
             x: 8,
@@ -3316,15 +3705,15 @@ mod tests {
     fn batch_edit_jumps_loaded_column_ahead_of_new_bulk() {
         let mut e = engine();
         for sy in 0..16 {
-            load_section(&mut e, 0, sy, 0, air_section());
+            load_trusted_section(&mut e, 0, sy, 0, air_section());
         }
         finish(&mut e);
         assert_eq!(e.get_sky_light(8, 64, 8), 15);
         for sy in 0..16 {
-            load_section(&mut e, 1, sy, 0, air_section());
+            load_trusted_section(&mut e, 1, sy, 0, air_section());
         }
         for sy in 0..16 {
-            load_section(&mut e, 2, sy, 0, air_section());
+            load_trusted_section(&mut e, 2, sy, 0, air_section());
         }
         e.push_event(LightEvent::BlockChange {
             x: 8,
@@ -3351,7 +3740,7 @@ mod tests {
         let (emission, light_block) = default_test_tables();
         e.set_light_tables(&emission, &light_block);
         for sy in 0..16 {
-            load_section(&mut e, 0, sy, 0, air_section());
+            load_trusted_section(&mut e, 0, sy, 0, air_section());
         }
         finish(&mut e);
         assert_eq!(e.get_sky_light(8, 64, 8), 15);
@@ -3367,7 +3756,7 @@ mod tests {
     fn sky_source_memo_invalidates_on_occluding_block() {
         let mut e = engine();
         for sy in 0..16 {
-            load_section(&mut e, 0, sy, 0, air_section());
+            load_trusted_section(&mut e, 0, sy, 0, air_section());
         }
         finish(&mut e);
         assert_eq!(e.get_sky_light(8, 64, 8), 15);
@@ -3394,14 +3783,14 @@ mod tests {
     #[test]
     fn sky_source_memo_invalidates_on_availability_unload_sliced() {
         let setup = |e: &mut LightEngine| {
-            load_section(e, 0, 4, 0, x_air_tunnel());
+            load_trusted_section(e, 0, 4, 0, x_air_tunnel());
             e.push_event(LightEvent::SetAvailability {
                 sx: 1,
                 sy: 4,
                 sz: 0,
                 availability: SectionAvailability::LightOnly,
             });
-            e.push_event(LightEvent::ServerLight {
+            e.push_event(LightEvent::ServerLight { trusted: false,
                 sx: 1,
                 sy: 4,
                 sz: 0,

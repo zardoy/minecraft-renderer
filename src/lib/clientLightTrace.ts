@@ -43,6 +43,7 @@ export type ClientLightTraceEvent = {
   eventAgeMs?: number
   currentColumn?: string
   queueDepth?: number
+  fallbackRelights?: number
   txnMs?: number
   displayedStart?: number
   displayedCount?: number

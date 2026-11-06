@@ -187,9 +187,15 @@ export function cloneLightCache(cache: UpdateLightColumnCache): UpdateLightColum
 }
 
 export function displayLightColumn(cache: UpdateLightColumnCache, channel: 'sky' | 'block', fill = channel === 'sky' ? 15 : 0): Uint8Array {
+  const out = new Uint8Array(cache.numSections * LIGHT_BLOCKS_PER_SECTION)
+  overlayDisplayLight(cache, channel, out, fill)
+  return out
+}
+
+/** Overlay the current display into a reusable conversion buffer. */
+export function overlayDisplayLight(cache: UpdateLightColumnCache, channel: 'sky' | 'block', out: Uint8Array, fill = channel === 'sky' ? 15 : 0): void {
   const src = channel === 'sky' ? cache.skyLight : cache.blockLight
   const present = channel === 'sky' ? cache.skyPresent : cache.blockPresent
-  const out = new Uint8Array(cache.numSections * LIGHT_BLOCKS_PER_SECTION)
   for (let s = 0; s < cache.numSections; s++) {
     const start = s * LIGHT_BLOCKS_PER_SECTION
     const end = start + LIGHT_BLOCKS_PER_SECTION
@@ -199,7 +205,6 @@ export function displayLightColumn(cache: UpdateLightColumnCache, channel: 'sky'
       out.fill(fill, start, end)
     }
   }
-  return out
 }
 
 export function parsedUpdateLightFromWasm(parsed: any, numSections: number): ParsedUpdateLight {

@@ -1,5 +1,6 @@
 /* eslint-disable guard-for-in */
 import { EventEmitter } from 'events'
+import { setClientLightProbePositions, isClientLightProbeSection } from './clientLightProbe'
 import { Vec3 } from 'vec3'
 import TypedEmitter from 'typed-emitter'
 import { WorldBlockProvider } from 'mc-assets/dist/worldBlockProvider'
@@ -419,6 +420,11 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.syncClientLightTraceConfig()
   }
 
+  setClientLightProbe(points: Array<[number, number, number]>) {
+    setClientLightProbePositions(points)
+    for (const worker of this.workers) worker.postMessage({ type: 'clientLightProbe', points })
+  }
+
   hasClientLightOwner(): boolean {
     return this.clientLightOwnerSession?.isReady === true
   }
@@ -523,7 +529,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         ...result.workerMessage,
         sessionEpoch: this.clientLightOwnerFence.sessionEpoch
       }
-      const targets = meshWorkerIndexesForDirtySections(result.dirtyMeshSections, this.workers.length, (sx, sy, sz) =>
+      // A column's own worker needs its light even when nothing there is dirty; a missing section meshes as sky 15.
+      const targets = meshWorkerIndexesForDirtySections([...result.dirtyMeshSections, ...workerMessage.sections], this.workers.length, (sx, sy, sz) =>
         this.getWorkerNumber(new Vec3(sx, sy, sz), true)
       )
       const indexes = targets.length ? targets : this.workers.map((_, index) => index)
@@ -912,6 +919,13 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   ): boolean {
     if (data.type !== 'geometry') return false
     const decision = this.evaluateOwnerGeometry(data)
+    if (isClientLightProbeSection(data.key)) {
+      console.log('[lightProbe:mesh]', {
+        time: Date.now(), key: data.key, lightPublicationVersion: data.lightPublicationVersion,
+        required: this.clientLightOwnerSession?.requiredLightForSection(data.key),
+        accepted: decision.accepted, keepCovering: decision.keepCovering
+      })
+    }
     if (!decision.accepted) {
       this.noteRejectedOwnerGeometry(data.key, this.clientLightOwnerSession?.requiredLightForSection(data.key), {
         expectLaterFinished: true
@@ -1968,9 +1982,12 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     const [x, y, z] = key.split(',').map(Number)
     if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return false
     const sectionHeight = this.getSectionHeight()
-    for (const source of this.interactiveSections.keys()) {
-      const [sx, sy, sz] = source.split(',').map(Number)
-      if (Math.abs(x - sx) <= 16 && Math.abs(y - sy) <= sectionHeight && Math.abs(z - sz) <= 16) return true
+    for (let dx = -16; dx <= 16; dx += 16) {
+      for (let dy = -sectionHeight; dy <= sectionHeight; dy += sectionHeight) {
+        for (let dz = -16; dz <= 16; dz += 16) {
+          if (this.interactiveSections.has(`${x + dx},${y + dy},${z + dz}`)) return true
+        }
+      }
     }
     return false
   }

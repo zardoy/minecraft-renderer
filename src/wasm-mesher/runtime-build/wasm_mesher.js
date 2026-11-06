@@ -272,53 +272,19 @@ export class JsLightEngine {
         wasm.__wbg_jslightengine_free(ptr, 0);
     }
     /**
-     * @param {number} world_min_y
-     * @param {number} world_height
-     */
-    constructor(world_min_y, world_height) {
-        const ret = wasm.jslightengine_js_new(world_min_y, world_height);
-        this.__wbg_ptr = ret >>> 0;
-        JsLightEngineFinalization.register(this, this.__wbg_ptr, this);
-        return this;
-    }
-    /**
-     * @param {Uint8Array} emission
-     * @param {Uint8Array} opacity
-     */
-    setLightTables(emission, opacity) {
-        const ptr0 = passArray8ToWasm0(emission, wasm.__wbindgen_malloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passArray8ToWasm0(opacity, wasm.__wbindgen_malloc);
-        const len1 = WASM_VECTOR_LEN;
-        wasm.jslightengine_setLightTables(this.__wbg_ptr, ptr0, len0, ptr1, len1);
-    }
-    /**
-     * @param {Uint8Array} occupancy
-     */
-    setOcclusionTable(occupancy) {
-        const ptr0 = passArray8ToWasm0(occupancy, wasm.__wbindgen_malloc);
-        const len0 = WASM_VECTOR_LEN;
-        wasm.jslightengine_setOcclusionTable(this.__wbg_ptr, ptr0, len0);
-    }
-    /**
      * @param {any} event
      */
     pushEvent(event) {
         wasm.jslightengine_pushEvent(this.__wbg_ptr, event);
     }
     /**
-     * @param {number} budget_ms
-     * @returns {boolean}
+     * @param {number} x
+     * @param {number} y
+     * @param {number} z
+     * @returns {number}
      */
-    step(budget_ms) {
-        const ret = wasm.jslightengine_step(this.__wbg_ptr, budget_ms);
-        return ret !== 0;
-    }
-    /**
-     * @returns {any}
-     */
-    pollCompletedPublication() {
-        const ret = wasm.jslightengine_pollCompletedPublication(this.__wbg_ptr);
+    getSkyLight(x, y, z) {
+        const ret = wasm.jslightengine_getSkyLight(this.__wbg_ptr, x, y, z);
         return ret;
     }
     /**
@@ -332,20 +298,61 @@ export class JsLightEngine {
         return ret;
     }
     /**
-     * @param {number} x
-     * @param {number} y
-     * @param {number} z
+     * @param {Uint8Array} emission
+     * @param {Uint8Array} opacity
+     */
+    setLightTables(emission, opacity) {
+        const ptr0 = passArray8ToWasm0(emission, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(opacity, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.jslightengine_setLightTables(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+    }
+    /**
      * @returns {number}
      */
-    getSkyLight(x, y, z) {
-        const ret = wasm.jslightengine_getSkyLight(this.__wbg_ptr, x, y, z);
-        return ret;
+    get fallbackRelights() {
+        const ret = wasm.jslightengine_fallbackRelights(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @param {Uint8Array} occupancy
+     */
+    setOcclusionTable(occupancy) {
+        const ptr0 = passArray8ToWasm0(occupancy, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.jslightengine_setOcclusionTable(this.__wbg_ptr, ptr0, len0);
     }
     /**
      * @param {boolean} enabled
      */
     setSkyLightEnabled(enabled) {
         wasm.jslightengine_setSkyLightEnabled(this.__wbg_ptr, enabled);
+    }
+    /**
+     * @returns {any}
+     */
+    pollCompletedPublication() {
+        const ret = wasm.jslightengine_pollCompletedPublication(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @param {number} budget_ms
+     * @returns {boolean}
+     */
+    step(budget_ms) {
+        const ret = wasm.jslightengine_step(this.__wbg_ptr, budget_ms);
+        return ret !== 0;
+    }
+    /**
+     * @param {number} world_min_y
+     * @param {number} world_height
+     */
+    constructor(world_min_y, world_height) {
+        const ret = wasm.jslightengine_js_new(world_min_y, world_height);
+        this.__wbg_ptr = ret >>> 0;
+        JsLightEngineFinalization.register(this, this.__wbg_ptr, this);
+        return this;
     }
 }
 if (Symbol.dispose) JsLightEngine.prototype[Symbol.dispose] = JsLightEngine.prototype.free;
@@ -1051,6 +1058,11 @@ function __wbg_get_imports() {
         const ret = Error(getStringFromWasm0(arg0, arg1));
         return ret;
     };
+    imports.wbg.__wbg___wbindgen_boolean_get_dea25b33882b895b = function(arg0) {
+        const v = arg0;
+        const ret = typeof(v) === 'boolean' ? v : undefined;
+        return isLikeNone(ret) ? 0xFFFFFF : ret ? 1 : 0;
+    };
     imports.wbg.__wbg___wbindgen_debug_string_adfb662ae34724b6 = function(arg0, arg1) {
         const ret = debugString(arg1);
         const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -1141,6 +1153,10 @@ function __wbg_get_imports() {
     };
     imports.wbg.__wbg_new_9f7fd5c3a6ba7298 = function(arg0) {
         const ret = new Uint16Array(arg0);
+        return ret;
+    };
+    imports.wbg.__wbg_new_from_slice_e6bd3cfb5a35313d = function(arg0, arg1) {
+        const ret = new Int32Array(getArrayI32FromWasm0(arg0, arg1));
         return ret;
     };
     imports.wbg.__wbg_new_with_length_1e8603a5c71d4e06 = function(arg0) {

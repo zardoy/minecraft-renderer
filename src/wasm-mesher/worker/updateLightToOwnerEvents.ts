@@ -15,7 +15,7 @@ export function eventsFromParsedUpdateLight(parsed: ParsedUpdateLight, worldMinY
       if (!hasData && !hasEmpty) continue
       const sy = baseSy + bit - 1
       if (hasEmpty) {
-        events.push({ type: 'serverLight', sx, sy, sz, channel, kind: 'empty' })
+        events.push({ type: 'serverLight', sx, sy, sz, channel, kind: 'empty', trusted: parsed.trustEdges })
         continue
       }
       let unpacked: Uint8Array | undefined
@@ -23,7 +23,7 @@ export function eventsFromParsedUpdateLight(parsed: ParsedUpdateLight, worldMinY
       else if (bit === parsed.numSections + 1) unpacked = above
       else unpacked = column.subarray((bit - 1) * 4096, bit * 4096)
       if (!unpacked || unpacked.length < 4096) {
-        events.push({ type: 'serverLight', sx, sy, sz, channel, kind: 'empty' })
+        events.push({ type: 'serverLight', sx, sy, sz, channel, kind: 'empty', trusted: parsed.trustEdges })
         continue
       }
       events.push({
@@ -33,6 +33,7 @@ export function eventsFromParsedUpdateLight(parsed: ParsedUpdateLight, worldMinY
         sz,
         channel,
         kind: 'data',
+        trusted: parsed.trustEdges,
         data: packUnpackedLightSection(unpacked)
       })
     }

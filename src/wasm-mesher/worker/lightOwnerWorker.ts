@@ -17,6 +17,7 @@ import {
 } from '../../lib/clientLightTrace'
 
 type WasmEngine = {
+  readonly fallbackRelights?: number
   setLightTables(emission: Uint8Array, opacity: Uint8Array): void
   setOcclusionTable?(occupancy: Uint8Array): void
   setSkyLightEnabled?(enabled: boolean): void
@@ -41,13 +42,14 @@ function runOwnerStepSlice(budgetMs: number) {
   localContinue = null
   const remaining = engine?.step(budgetMs) ?? false
   const publication = engine?.pollCompletedPublication() ?? null
-  ctx.postMessage({ type: 'stepped', remaining, publication, stepGeneration })
+  ctx.postMessage({ type: 'stepped', remaining, publication, stepGeneration, fallbackRelights: engine?.fallbackRelights ?? 0 })
   if (publication && isClientLightTraceEnabled() && isClientLightTraceArmed()) {
     postClientLightTrace(postTrace, {
       phase: 'ownerComplete',
       lightVersion: publication.publicationVersion,
       worldGeneration: publication.worldGeneration,
-      queueDepth: remaining ? 1 : 0
+      queueDepth: remaining ? 1 : 0,
+      fallbackRelights: engine?.fallbackRelights ?? 0
     })
   }
   if (remaining) {

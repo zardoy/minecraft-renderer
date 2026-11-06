@@ -1,4 +1,5 @@
 import { Vec3 } from 'vec3'
+import { setClientLightProbePositions } from '../../lib/clientLightProbe'
 import { convertChunkToWasm, getBlockMeta, type ChunkConversionResult } from '../bridge/convertChunk'
 import { extractColumnHeightmap, splitColumnWasmOutputToSections } from '../bridge/render-from-wasm'
 import { setBlockStatesData as setMesherData } from '../../mesher-shared/models'
@@ -15,8 +16,8 @@ import { applyOwnerPublicationToColumnCaches, applyRawLightPacketToCaches, owner
 import { INITIAL_TOPOLOGY_REVISION, snapshotMeshVersions, validateOwnerPublicationMessage } from '../../lib/clientLightVersions'
 import { provenMeshLightVersion } from './mesherLightDependencies'
 import { BULK_MESH_INTERVAL_MS, createMeshTickScheduler } from './mesherWasmTickSchedule'
-import { displayLightColumn, isLightSectionPresent, parsedUpdateLightFromWasm, worldSectionMaskBit, type UpdateLightColumnCache } from './mesherWasmLightMerge'
-import { CONVERSION_CACHE_LIMIT, clearConversionCache, getOrConvertColumn, invalidateConversion, setConversionCacheLimit } from './mesherWasmConversionCache'
+import { displayLightColumn, overlayDisplayLight, isLightSectionPresent, parsedUpdateLightFromWasm, worldSectionMaskBit, type UpdateLightColumnCache } from './mesherWasmLightMerge'
+import { CONVERSION_CACHE_LIMIT, clearConversionCache, getOrConvertColumn, invalidateConversion, patchConversionBlock, setConversionCacheLimit } from './mesherWasmConversionCache'
 import { beginTickWasmParseCache, endTickWasmParseCache, getOrConvertTickWasmParse } from './mesherWasmTickParseCache'
 import { clearTopologyPostCache, clearTopologyPostCacheColumn, getOrComputeTopologyPost } from './mesherWasmTopologyPostCache'
 import { selectColumnGroupsForTick } from './mesherWasmColumnTickSelect'
@@ -932,6 +933,10 @@ const handleMessage = async (data: any) => {
   }
 
   switch (data.type) {
+    case 'clientLightProbe': {
+      setClientLightProbePositions(data.points)
+      break
+    }
     case 'mesherData': {
       setMesherData(data.blockstatesModels, data.blocksAtlas, data.config.outputFormat === 'webgpu')
       ;(globalThis as any).__wasmBlockModelCache = new Map()
@@ -1067,9 +1072,10 @@ const handleMessage = async (data: any) => {
 
       const chunkX = Math.floor(loc.x / 16) * 16
       const chunkZ = Math.floor(loc.z / 16) * 16
-      // In-place mutation preserves chunk identity; explicit invalidation
-      // is required so the next tick recomputes from current block state.
-      invalidateConversion(chunkX, chunkZ)
+      const liveColumn = world?.getColumn(chunkX, chunkZ)
+      if (data.stateId == null || !patchConversionBlock(chunkX, chunkZ, liveColumn, loc.x, loc.y, loc.z, data.stateId)) {
+        invalidateConversion(chunkX, chunkZ)
+      }
       // Stage 3: the cached raw map_chunk no longer matches the live
       // column after a block update — drop it so the next mesh tick walks
       // the (now-updated) prismarine column instead.
@@ -1165,12 +1171,12 @@ const handleMessage = async (data: any) => {
           const reverted = revertDisplayToIncoming({ incoming: v17In, display: v17 })
           if (reverted.display) {
             updateLightV17Cache.set(key, reverted.display)
+            // The legacy mesh path reads the JS column, so it must leave owner light too.
             syncV17LightToColumn(cx, cz)
           }
         }
         ownerOwnedLightColumns.delete(key)
         appliedOwnerLightVersion.delete(key)
-        invalidateConversion(cx, cz)
       }
       break
     }
@@ -1215,12 +1221,13 @@ const handleMessage = async (data: any) => {
           })
           if (applied.incoming) incomingUpdateLightV17Cache.set(key, applied.incoming)
           updateLightV17Cache.set(key, applied.display)
+          // Light packets stop reaching this worker once the owner is ready, and the
+          // legacy mesh path reads the JS column rather than the display cache.
           syncV17LightToColumn(cx, cz, ownerDeltaSectionWorldYs(sections, cx, cz))
         }
         ownerOwnedLightColumns.add(key)
         appliedOwnerLightVersion.set(key, publicationVersion)
         if (typeof data.sessionEpoch === 'number') ownerSessionEpoch = data.sessionEpoch
-        invalidateConversion(cx, cz)
       }
       break
     }
@@ -1584,7 +1591,15 @@ async function processColumnTickInner() {
             // to the JS column walk — otherwise the column would render as
             // empty geometry.
             const tickKey = rawCacheKey(cx, cz)
-            if (rawEntry) {
+            if (chunk) {
+              const cached = getOrConvertColumn(cx, cz, chunk, version, worldMinY, worldMaxY, () =>
+                (rawEntry && convertRawMapChunkToWasm(rawEntry, version)) ||
+                (v17Entry && convertParsedV17ToWasm(v17Entry, undefined, version)) ||
+                (v16Entry && convertParsedV16ToWasm(v16Entry, undefined, version)) ||
+                convertChunkToWasm(chunk, version, cx, cz, worldMinY, worldMaxY), chunk)
+              conv = cached.result
+              hit = cached.hit
+            } else if (rawEntry) {
               const cached = getOrConvertTickWasmParse(tickKey, () => convertRawMapChunkToWasm(rawEntry, version))
               conv = cached.result
               if (cached.hit) preWasmParseHits++
@@ -1629,6 +1644,11 @@ async function processColumnTickInner() {
             } else {
               preNeighborConvert += ce - cs
               preNeighborCount++
+            }
+            const display = v17Light ?? v16Light
+            if (display) {
+              overlayDisplayLight(display, 'block', conv.blockLight, 0)
+              overlayDisplayLight(display, 'sky', conv.skyLight, config?.skyLight ?? 15)
             }
             conversions.push(conv)
             meshChunks.push({ x: cx, z: cz, chunk })
