@@ -43,7 +43,12 @@ describe('buildElementRotation', () => {
 
   it('treats a rotation without any angle as no rotation', () => {
     const { localMatrix, localShift } = buildElementRotation({ origin })
-    localMatrix.forEach((row, i) => close(row, [0, 1, 2].map(j => (i === j ? 1 : 0))))
+    localMatrix.forEach((row, i) =>
+      close(
+        row,
+        [0, 1, 2].map(j => (i === j ? 1 : 0))
+      )
+    )
     close(localShift, [0, 0, 0])
   })
 })

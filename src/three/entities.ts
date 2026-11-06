@@ -8,7 +8,6 @@ import { inferModelType, loadCapeToCanvas, loadEarsToCanvasFromSkin } from 'skin
 import { flat, fromFormattedString } from '@xmcl/text-component'
 import mojangson from 'mojangson'
 import { snakeCase } from 'change-case'
-import { Item } from 'prismarine-item'
 import { isEntityAttackable } from 'mineflayer-mouse/dist/attackableEntity'
 import { Team } from 'mineflayer'
 import PrismarineChatLoader from 'prismarine-chat'
@@ -380,6 +379,8 @@ function getEntityMesh(
   }
   return cube
 }
+
+type EquipmentItem = import('prismarine-entity').Entity['equipment'][number]
 
 export type SceneEntity = THREE.Object3D & {
   playerObject?: PlayerObjectType
@@ -1775,7 +1776,7 @@ export class Entities {
     return texture
   }
 
-  addItemModel(entityMesh: SceneEntity, hand: 'left' | 'right', item: Item, isPlayer = false) {
+  addItemModel(entityMesh: SceneEntity, hand: 'left' | 'right', item: EquipmentItem, isPlayer = false) {
     const bedrockParentName = `bone_${hand}item`
     const itemName = `custom_item_${hand}`
 
@@ -1991,7 +1992,7 @@ function getSpecificEntityMetadata<T extends keyof EntityMetadataVersions>(name:
   return getGeneralEntitiesMetadata(entity, mcData) as any
 }
 
-function addArmorModel(worldRenderer: WorldRendererThree, entityMesh: THREE.Object3D, slotType: string, item: Item, layer = 1, overlay = false) {
+function addArmorModel(worldRenderer: WorldRendererThree, entityMesh: THREE.Object3D, slotType: string, item: EquipmentItem, layer = 1, overlay = false) {
   if (!item) {
     removeArmorModel(entityMesh, slotType)
     return

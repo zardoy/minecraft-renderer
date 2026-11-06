@@ -11,7 +11,7 @@
 const mcDataToNode = require('minecraft-data/lib/loader')
 const indexer = require('minecraft-data/lib/indexer.js')
 
-function createVersion (type, suppliedVersion, protocolVersions) {
+function createVersion(type, suppliedVersion, protocolVersions) {
   const versions = indexer.buildIndexFromArray(protocolVersions, 'minecraftVersion') ?? {}
   // Allows comparisons against majorVersion even if `other` is not present in the versions list (e.g. 1.17.0 exists but not 1.17)
   for (const key in versions) {
@@ -23,12 +23,14 @@ function createVersion (type, suppliedVersion, protocolVersions) {
   // the supplied dataVersion is authoritative: the current version doesn't have to be present in the supplied list
   self.dataVersion = suppliedVersion.dataVersion ?? versions[suppliedVersion.minecraftVersion]?.dataVersion
   const v1 = self.dataVersion ?? 0
-  const raise = other => { throw new RangeError(`Version '${other}' not found in protocolVersions supplied by the main thread for ${type}`) }
-  self['>='] = other => versions[other] ? v1 >= versions[other].dataVersion : raise(other)
-  self['>'] = other => versions[other] ? v1 > versions[other].dataVersion : raise(other)
-  self['<'] = other => versions[other] ? v1 < versions[other].dataVersion : raise(other)
-  self['<='] = other => versions[other] ? v1 <= versions[other].dataVersion : raise(other)
-  self['=='] = other => versions[other] ? v1 === versions[other].dataVersion : raise(other)
+  const raise = other => {
+    throw new RangeError(`Version '${other}' not found in protocolVersions supplied by the main thread for ${type}`)
+  }
+  self['>='] = other => (versions[other] ? v1 >= versions[other].dataVersion : raise(other))
+  self['>'] = other => (versions[other] ? v1 > versions[other].dataVersion : raise(other))
+  self['<'] = other => (versions[other] ? v1 < versions[other].dataVersion : raise(other))
+  self['<='] = other => (versions[other] ? v1 <= versions[other].dataVersion : raise(other))
+  self['=='] = other => (versions[other] ? v1 === versions[other].dataVersion : raise(other))
   self.type = type
   self.majorVersion = suppliedVersion.majorVersion
   return self
