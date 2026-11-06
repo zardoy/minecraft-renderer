@@ -1586,7 +1586,9 @@ fn column_admission_len(pending: &VecDeque<LightEvent>) -> usize {
 /// Promote the earliest edit column, then its queued 3x3 neighborhood.
 /// Block light (level <= 15, decay >= 1) cannot reach beyond these columns.
 /// Preserve each column's event order and unrelated bulk order. Admission
-/// remains one column at a time; missing neighbors are never invented.
+/// remains one column at a time, except that `begin_batch_if_needed` adds
+/// adjacent server-lit columns to an edit's batch; missing neighbors are never
+/// invented.
 fn promote_edit_column(pending: &mut VecDeque<LightEvent>, column_known: impl Fn(i32, i32) -> bool) {
     if pending.is_empty() {
         return;
@@ -3601,6 +3603,7 @@ mod tests {
 
     /// FIFO inside the unit: a later edit cannot enter an earlier foreign-column batch.
     /// After that unit publishes, the leftover edit jumps remaining bulk.
+    /// Columns are two apart: adjacent server-lit columns join the edit's batch.
     #[test]
     fn batch_fifo_keeps_later_edit_after_prior_columns() {
         let mut e = engine();
@@ -3608,7 +3611,7 @@ mod tests {
             load_trusted_section(&mut e, 0, sy, 0, air_section());
         }
         for sy in 0..16 {
-            load_trusted_section(&mut e, 1, sy, 0, air_section());
+            load_trusted_section(&mut e, 2, sy, 0, air_section());
         }
         e.push_event(LightEvent::BlockChange {
             x: 8,
@@ -3626,10 +3629,11 @@ mod tests {
         );
         assert!(e.get_sky_light(8, 64, 8) < 15, "edit applies once its leftover unit is admitted");
         let third = drain_until_publication(&mut e).unwrap();
-        assert!(third.sections.iter().all(|section| section.sx == 1));
+        assert!(third.sections.iter().all(|section| section.sx == 2));
     }
 
     /// A later edit of a different column jumps the whole column unit ahead of the convoy.
+    /// Columns are two apart: adjacent server-lit columns join the edit's batch.
     #[test]
     fn batch_edit_jumps_foreign_column_convoy() {
         let mut e = engine();
@@ -3637,20 +3641,20 @@ mod tests {
             load_trusted_section(&mut e, 0, sy, 0, air_section());
         }
         for sy in 0..16 {
-            load_trusted_section(&mut e, 1, sy, 0, air_section());
+            load_trusted_section(&mut e, 2, sy, 0, air_section());
         }
         e.push_event(LightEvent::BlockChange {
-            x: 24,
+            x: 40,
             y: 64,
             z: 8,
             state_id: STONE,
         });
         let first = drain_until_publication(&mut e).unwrap();
         assert!(
-            first.sections.iter().all(|section| section.sx == 1 && section.sz == 0),
+            first.sections.iter().all(|section| section.sx == 2 && section.sz == 0),
             "edit column unit must be admitted first"
         );
-        assert!(e.get_sky_light(24, 64, 8) < 15, "jumped edit applies in its own unit");
+        assert!(e.get_sky_light(40, 64, 8) < 15, "jumped edit applies in its own unit");
         let second = drain_until_publication(&mut e).unwrap();
         assert!(second.sections.iter().all(|section| section.sx == 0 && section.sz == 0));
     }
@@ -3760,26 +3764,27 @@ mod tests {
     }
 
     /// Bulk columns keep their relative order around a jumped edit unit.
+    /// Columns are two apart: adjacent server-lit columns join the edit's batch.
     #[test]
     fn batch_edit_jump_preserves_remaining_bulk_order() {
         let mut e = engine();
-        for sx in 0..3 {
+        for sx in [0, 2, 4] {
             for sy in 0..16 {
                 load_trusted_section(&mut e, sx, sy, 0, air_section());
             }
         }
         e.push_event(LightEvent::BlockChange {
-            x: 24,
+            x: 40,
             y: 64,
             z: 8,
             state_id: STONE,
         });
         let first = drain_until_publication(&mut e).unwrap();
-        assert!(first.sections.iter().all(|section| section.sx == 1));
+        assert!(first.sections.iter().all(|section| section.sx == 2));
         let second = drain_until_publication(&mut e).unwrap();
         assert!(second.sections.iter().all(|section| section.sx == 0));
         let third = drain_until_publication(&mut e).unwrap();
-        assert!(third.sections.iter().all(|section| section.sx == 2));
+        assert!(third.sections.iter().all(|section| section.sx == 4));
     }
 
     /// A naked BlockChange for an unknown column must not jump or become AIR.
@@ -3850,6 +3855,7 @@ mod tests {
     }
 
     /// An edit of an already-loaded column jumps ahead of later bulk ingest.
+    /// Columns are two apart: adjacent server-lit columns join the edit's batch.
     #[test]
     fn batch_edit_jumps_loaded_column_ahead_of_new_bulk() {
         let mut e = engine();
@@ -3859,10 +3865,10 @@ mod tests {
         finish(&mut e);
         assert_eq!(e.get_sky_light(8, 64, 8), 15);
         for sy in 0..16 {
-            load_trusted_section(&mut e, 1, sy, 0, air_section());
+            load_trusted_section(&mut e, 2, sy, 0, air_section());
         }
         for sy in 0..16 {
-            load_trusted_section(&mut e, 2, sy, 0, air_section());
+            load_trusted_section(&mut e, 4, sy, 0, air_section());
         }
         e.push_event(LightEvent::BlockChange {
             x: 8,
@@ -3877,9 +3883,9 @@ mod tests {
         );
         assert!(e.get_sky_light(8, 64, 8) < 15);
         let second = drain_until_publication(&mut e).unwrap();
-        assert!(second.sections.iter().all(|section| section.sx == 1 && section.sz == 0));
+        assert!(second.sections.iter().all(|section| section.sx == 2 && section.sz == 0));
         let third = drain_until_publication(&mut e).unwrap();
-        assert!(third.sections.iter().all(|section| section.sx == 2 && section.sz == 0));
+        assert!(third.sections.iter().all(|section| section.sx == 4 && section.sz == 0));
     }
 
     /// BFS must reuse derived (x,z) source-meta. One air column is 256 sticks × H=256.
