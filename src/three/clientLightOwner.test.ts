@@ -81,6 +81,19 @@ describe('client light owner flag', () => {
 })
 
 describe('client light owner lifecycle', () => {
+  it('retains light requirements but clears topology only for geometry-reloaded columns', () => {
+    const { session, worker } = makeSession()
+    const send = vi.spyOn(worker, 'postMessage')
+    session.requiredLightBySection.set('0,64,0', { worldGeneration: 1, requiredVersion: 7, topologyRevision: 9 })
+    session.requiredLightBySection.set('16,64,0', { worldGeneration: 1, requiredVersion: 8, topologyRevision: 10 })
+    session.onGeometryReload(0, 0)
+    expect(session.requiredLightBySection.get('0,64,0')).toEqual({ worldGeneration: 1, requiredVersion: 7 })
+    expect(session.requiredLightBySection.get('16,64,0')?.topologyRevision).toBe(10)
+    expect(send).not.toHaveBeenCalled()
+    session.onUnload(0, 0)
+    expect(session.requiredLightBySection.has('0,64,0')).toBe(false)
+  })
+
   it('starts in starting and is not ready until the worker reports ready', () => {
     const { session } = makeSession()
     expect(session.state).toBe('starting')

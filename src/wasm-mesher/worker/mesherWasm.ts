@@ -397,6 +397,20 @@ function syncV17LightToColumn(x: number, z: number, onlySectionWorldYs?: number[
     const skyAuthoritative = isLightSectionPresent(skyPresent, worldSectionMaskBit(sectionIndex))
     const blockAuthoritative = isLightSectionPresent(blockPresent, worldSectionMaskBit(sectionIndex))
     if (!skyAuthoritative && !blockAuthoritative) continue
+    // Prismarine skips zero writes into null sections. Allocate through its
+    // setters so masks remain correct; the normal loop restores the true value.
+    const lightSectionIndex = sectionIndex + 1
+    const lightSections = col as typeof col & {
+      blockLightSections?: Array<unknown | null>
+      skyLightSections?: Array<unknown | null>
+    }
+    _syncLightPos.set(0, y, 0)
+    if (blockAuthoritative && lightSections.blockLightSections?.[lightSectionIndex] === null) {
+      col.setBlockLight(_syncLightPos, 1)
+    }
+    if (skyAuthoritative && lightSections.skyLightSections?.[lightSectionIndex] === null) {
+      col.setSkyLight(_syncLightPos, 1)
+    }
     for (let lz = 0; lz < CHUNK_SIZE; lz++) {
       for (let lx = 0; lx < CHUNK_SIZE; lx++) {
         const idx = lx + lz * CHUNK_SIZE + (y - minY) * CHUNK_SIZE * CHUNK_SIZE

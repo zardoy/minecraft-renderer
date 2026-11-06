@@ -482,9 +482,21 @@ impl LightEngine {
     fn apply_event(&mut self, event: LightEvent) {
         match event {
             LightEvent::IngestBlockSection { sx, sy, sz, states } => {
+                let states = pad_states(states);
+                let unchanged = self.sections.get(&(sx, sy, sz)).is_some_and(|section| {
+                    section.availability == SectionAvailability::Loaded
+                        && section.states.as_ref() == Some(&states)
+                });
+                if unchanged && !self.server_lit_columns.contains(&(sx, sz)) {
+                    // Fresh meshers need a full snapshot, even without numeric changes.
+                    if !self.deferred_relight_set.contains(&(sx, sz)) {
+                        self.publish_with_remesh(sx, sy, sz);
+                    }
+                    return;
+                }
                 {
                     let section = self.ensure_section(sx, sy, sz, SectionAvailability::Loaded);
-                    section.states = Some(pad_states(states));
+                    section.states = Some(states);
                     section.availability = SectionAvailability::Loaded;
                 }
                 self.invalidate_sky_source_section(sx, sz);
@@ -619,6 +631,7 @@ impl LightEngine {
                 }
                 self.wake_section_face_contacts(sx, sy, sz);
                 self.mark_sky_columns_in_section(sx, sz);
+                self.publish_with_remesh(sx, sy, sz);
             }
             break;
         }
@@ -1927,6 +1940,141 @@ mod tests {
         e
     }
 
+    #[test]
+    fn fallback_dark_sections_publish_authoritative_zero_sky() {
+        for closed_room in [false, true] {
+            let mut e = engine();
+            e.world_height = 32;
+            let mut lower = stone_section();
+            if closed_room {
+                for y in 4..12 {
+                    for z in 3..13 {
+                        for x in 3..13 {
+                            lower[(y * 256 + z * 16 + x) as usize] = AIR;
+                        }
+                    }
+                }
+            }
+            load_section(&mut e, 0, 0, 0, lower);
+            load_section(&mut e, 0, 1, 0, stone_section());
+            let mut publications = Vec::new();
+            while let Some(publication) = drain_until_publication(&mut e) {
+                publications.push(publication);
+            }
+            assert_eq!(e.get_sky_light(8, 8, 8), 0);
+            assert_eq!(e.fallback_relights, 1);
+            assert!(publications.iter().flat_map(|p| &p.sections).any(|s| {
+                s.sx == 0 && s.sy == 0 && s.sz == 0
+                    && s.sky_light.as_ref().is_some_and(|sky| sky.iter().all(|&v| v == 0))
+            }), "dark section omitted sky: consumer will treat absent sky as 15 (room={closed_room})");
+            for y in [0, 16] {
+                assert!(publications.iter().any(|p| p.dirty_mesh_sections.chunks_exact(3)
+                    .any(|key| key == [0, y, 0])), "missing dirty section {y}");
+            }
+        }
+    }
+
+    #[test]
+    fn identical_fallback_ingest_republishes_without_relight() {
+        let mut e = engine();
+        e.world_height = 32;
+        load_section(&mut e, 0, 0, 0, stone_section());
+        load_section(&mut e, 0, 1, 0, stone_section());
+        finish(&mut e).expect("initial publication");
+        while e.poll_completed_publication().is_some() {}
+        let relights = e.fallback_relights;
+        let expected = e.sections.get(&(0, 0, 0)).unwrap().sky_light.clone();
+        load_section(&mut e, 0, 0, 0, stone_section());
+        let publication = finish(&mut e).expect("snapshot publication");
+        assert_eq!(e.fallback_relights, relights);
+        let section = publication.sections.iter().find(|s| s.sy == 0).unwrap();
+        assert_eq!(section.sky_light.as_ref(), Some(&expected));
+        assert!(!e.server_lit_columns.contains(&(0, 0)));
+    }
+
+    #[test]
+    fn identical_open_ingest_republishes_current_light() {
+        let mut e = engine();
+        e.world_height = 16;
+        load_section(&mut e, 0, 0, 0, air_section());
+        finish(&mut e);
+        while e.poll_completed_publication().is_some() {}
+        let relights = e.fallback_relights;
+        let expected = e.sections.get(&(0, 0, 0)).unwrap().sky_light.clone();
+        assert_eq!(e.get_sky_light(8, 8, 8), 15);
+        load_section(&mut e, 0, 0, 0, air_section());
+        let snapshot = finish(&mut e).unwrap();
+        assert_eq!(e.fallback_relights, relights);
+        assert_eq!(snapshot.sections[0].sky_light.as_ref(), Some(&expected));
+    }
+
+    #[test]
+    fn repeated_pending_ingest_waits_for_one_fallback() {
+        let mut e = engine();
+        e.world_height = 16;
+        load_section(&mut e, 0, 0, 0, stone_section());
+        load_section(&mut e, 0, 0, 0, stone_section());
+        finish(&mut e);
+        assert_eq!(e.fallback_relights, 1);
+        let mut changed = stone_section();
+        changed[block_index(8, 8, 8)] = AIR;
+        load_section(&mut e, 0, 0, 0, changed);
+        finish(&mut e);
+        assert_eq!(e.fallback_relights, 2);
+    }
+
+    #[test]
+    fn fallback_budgeted_publication_matches_complete_solver() {
+        let mut sliced = engine();
+        let mut continuous = engine();
+        for e in [&mut sliced, &mut continuous] {
+            e.world_height = 16;
+            let mut states = stone_section();
+            for y in 4..16 { states[block_index(8, y, 8)] = AIR; }
+            load_section(e, 0, 0, 0, states);
+        }
+        finish(&mut continuous);
+        let mut saw_sky = false;
+        for _ in 0..100_000 {
+            let remaining = sliced.step_nodes(8);
+            while let Some(publication) = sliced.poll_completed_publication() {
+                for section in publication.sections {
+                    if let Some(sky) = section.sky_light {
+                        assert_eq!(sky, continuous.sections.get(&(section.sx, section.sy, section.sz)).unwrap().sky_light,
+                            "sky publication must contain the completed transaction");
+                        saw_sky = true;
+                    }
+                }
+            }
+            if !remaining { break; }
+        }
+        assert!(!sliced.has_remaining_work());
+        assert!(saw_sky);
+        assert_eq!(sliced.get_sky_light(8, 8, 8), 15);
+    }
+
+    #[test]
+    fn post_edit_identical_ingest_preserves_light_but_true_unload_relights() {
+        let mut e = engine();
+        e.world_height = 16;
+        load_section(&mut e, 0, 0, 0, air_section());
+        finish(&mut e);
+        while e.poll_completed_publication().is_some() {}
+        let mut edited = air_section();
+        edited[block_index(8, 8, 8)] = TORCH;
+        e.push_event(LightEvent::BlockChange { x: 8, y: 8, z: 8, state_id: TORCH });
+        load_section(&mut e, 0, 0, 0, edited.clone());
+        finish(&mut e);
+        assert_eq!(e.fallback_relights, 1);
+        assert_eq!(e.get_block_light(8, 8, 8), 14);
+        e.push_event(LightEvent::UnloadColumn { sx: 0, sz: 0 });
+        finish(&mut e);
+        load_section(&mut e, 0, 0, 0, edited);
+        finish(&mut e);
+        assert_eq!(e.fallback_relights, 2);
+        assert_eq!(e.get_block_light(8, 8, 8), 14);
+    }
+
     fn air_section() -> Vec<u16> {
         vec![AIR; BLOCK_SECTION_VOLUME]
     }
@@ -2471,7 +2619,8 @@ mod tests {
         let first = finish(&mut e).expect("ingest publication");
         assert_eq!(first.world_generation, 1);
         assert!(first.publication_version >= 1);
-        assert!(first.sections.iter().all(|s| s.sky_light.is_none()), "block-light engine publishes block only");
+        assert!(first.sections.iter().all(|s| s.sky_light.as_ref().is_some_and(|sky| sky.iter().all(|v| *v == 0))),
+            "initial fallback publishes authoritative zero sky even without numeric sky changes");
 
         e.push_event(LightEvent::BlockChange {
             x: 8,

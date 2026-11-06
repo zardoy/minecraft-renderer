@@ -664,6 +664,11 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     if (!this.active) return
 
     this.clearMesherPendingState()
+    // Worker topology revisions belong to the previous mesher lifetime.
+    // Reloaded columns replay owner snapshots through identical ingest.
+    for (const required of this.clientLightOwnerSession?.requiredLightBySection.values() ?? []) {
+      delete required.topologyRevision
+    }
     this.terminateAllMesherWorkers()
     this.initWorkers()
     await this.bootstrapMesherWorkers()
@@ -1387,7 +1392,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.checkAllFinished()
   }
 
-  removeColumn(x, z) {
+  removeColumn(x, z, opts?: { preserveClientLight?: boolean }) {
     delete this.loadedChunks[`${x},${z}`]
     // Cancel any pending heightmap debounce for this chunk
     const debounceKey = `${x},${z}`
@@ -1434,7 +1439,11 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.highestBlocksByChunks.delete(`${x},${z}`)
     this.cameraCollisionBlockCache.removeColumn(x, z)
     this.rendererLightCache.removeColumn(x, z)
-    this.clientLightOwnerSession?.onUnload(x, z)
+    if (opts?.preserveClientLight && this.clientLightOwnerSession?.isReady) {
+      this.clientLightOwnerSession.onGeometryReload(x, z)
+    } else {
+      this.clientLightOwnerSession?.onUnload(x, z)
+    }
     const columnKey = `${x},${z}`
     this.columnIncarnationByColumn.set(columnKey, this.columnIncarnationFor(columnKey) + 1)
     for (const key of [...this.topologyRevisionBySection.keys()]) {
@@ -1529,13 +1538,16 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         this.rendererLightCache.setWorldBounds(worldConfig.minY, worldConfig.worldHeight)
         this.queuedChunks.add(`${x},${z}`)
         const args = [x, z, chunk, isLightUpdate]
+        const incarnation = this.columnIncarnationFor(`${x},${z}`)
         if (!currentLoadChunkBatch) {
           // add a setting to use debounce instead
           currentLoadChunkBatch = {
             data: [],
             timeout: setTimeout(() => {
-              for (const args of currentLoadChunkBatch!.data) {
-                this.queuedChunks.delete(`${args[0]},${args[1]}`)
+              for (const { args, incarnation } of currentLoadChunkBatch!.data) {
+                const key = `${args[0]},${args[1]}`
+                this.queuedChunks.delete(key)
+                if (this.columnIncarnationFor(key) !== incarnation) continue
                 this.addColumn(...(args as Parameters<typeof this.addColumn>))
               }
               for (const fn of this.queuedFunctions) {
@@ -1546,7 +1558,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
             }, this.worldRendererConfig.addChunksBatchWaitTime)
           }
         }
-        currentLoadChunkBatch.data.push(args)
+        currentLoadChunkBatch.data.push({ args, incarnation })
       },
       signal
     )
@@ -1563,8 +1575,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     bindAbortableListener(
       worldEmitter,
       'unloadChunk',
-      ({ x, z }) => {
-        this.removeColumn(x, z)
+      ({ x, z, preserveClientLight }) => {
+        this.removeColumn(x, z, { preserveClientLight })
       },
       signal
     )

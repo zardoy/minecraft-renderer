@@ -1588,8 +1588,8 @@ export class WorldRendererThree extends WorldRendererCommon {
     }
   }
 
-  removeColumn(x, z) {
-    super.removeColumn(x, z)
+  removeColumn(x, z, opts?: { preserveClientLight?: boolean }) {
+    super.removeColumn(x, z, opts)
 
     this.clearPendingSectionUpdatesForChunk(x, z)
     const sectionHeight = this.getSectionHeight()

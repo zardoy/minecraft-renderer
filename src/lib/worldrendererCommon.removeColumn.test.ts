@@ -127,6 +127,22 @@ describe('WorldRendererCommon.removeColumn sectionsWaiting reconciliation', () =
     vi.unstubAllGlobals()
   })
 
+  test('preserves the ready light owner only during geometry reload', () => {
+    const renderer = createRenderer()
+    const owner = { isReady: true, onGeometryReload: vi.fn(), onUnload: vi.fn() }
+    const internal = renderer as any
+    internal.clientLightOwnerSession = owner
+    const oldIncarnation = internal.columnIncarnationFor('160,0')
+    renderer.removeColumn(160, 0, { preserveClientLight: true })
+    expect(owner.onGeometryReload).toHaveBeenCalledWith(160, 0)
+    expect(owner.onUnload).not.toHaveBeenCalled()
+    expect(internal.columnIncarnationFor('160,0')).toBe(oldIncarnation + 1)
+    expect(renderer.loadedChunks['160,0']).toBeUndefined()
+    renderer.loadedChunks['160,0'] = true
+    renderer.removeColumn(160, 0)
+    expect(owner.onUnload).toHaveBeenCalledWith(160, 0)
+  })
+
   test('clears sectionsWaiting when viewDistance gate blocks setSectionDirty(false)', () => {
     const renderer = createRenderer()
     const columnX = 160

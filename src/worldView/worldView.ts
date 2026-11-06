@@ -114,6 +114,8 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
   gotPanicLastTime = false
   panicChunksReload = () => {}
   loadedChunks: Record<ChunkPosKey, boolean> = {}
+  private columnUnloadEpoch = new Map<string, number>()
+  private geometryReload?: Promise<void>
   inLoading = false
   chunkReceiveTimes: number[] = []
   lastChunkReceiveTime = 0
@@ -272,7 +274,9 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
   /**
    * Load a chunk at the given position.
    */
-  async loadChunk(pos: { x: number; z: number; y?: number }, isLightUpdate = false, reason = 'spiral'): Promise<void> {
+  async loadChunk(pos: { x: number; z: number; y?: number }, isLightUpdate = false, reason = 'spiral'): Promise<boolean> {
+    const key = `${pos.x},${pos.z}`
+    const epoch = this.columnUnloadEpoch.get(key) ?? 0
     const [botX, botZ] = chunkPos(this.lastPos)
     const dx = Math.abs(botX - Math.floor(pos.x / 16))
     const dz = Math.abs(botZ - Math.floor(pos.z / 16))
@@ -280,6 +284,11 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
     if (dx <= this.viewDistance && dz <= this.viewDistance) {
       const column = await this.world.getColumnAt(pos.y !== undefined ? (pos as Vec3) : new Vec3(pos.x, 0, pos.z))
 
+      // An asynchronous fetch must not resurrect a truly unloaded column.
+      const [currentX, currentZ] = chunkPos(this.lastPos)
+      if ((this.columnUnloadEpoch.get(key) ?? 0) !== epoch
+        || Math.abs(currentX - Math.floor(pos.x / 16)) > this.viewDistance
+        || Math.abs(currentZ - Math.floor(pos.z / 16)) > this.viewDistance) return false
       if (column) {
         const chunk = column.toJson()
         const worldConfig: WorldSizeParams = {
@@ -303,8 +312,40 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
           reason,
           time: Date.now()
         })
+        return true
       } else if (this.isPlayground) {
         this.emit('markAsLoaded', { x: pos.x, z: pos.z })
+      }
+    }
+    return false
+  }
+
+  reloadColumnGeometry(): Promise<void> {
+    this.geometryReload ??= this.runColumnGeometryReload().finally(() => {
+      this.geometryReload = undefined
+    })
+    return this.geometryReload
+  }
+
+  private async runColumnGeometryReload(): Promise<void> {
+    const coords = Object.keys(this.loadedChunks).filter(key => this.loadedChunks[key])
+      .map(key => key.split(',').map(Number) as [number, number])
+    coords.sort(([ax, az], [bx, bz]) =>
+      (ax - this.lastPos.x) ** 2 + (az - this.lastPos.z) ** 2
+      - (bx - this.lastPos.x) ** 2 - (bz - this.lastPos.z) ** 2)
+    for (const [x, z] of coords) this.emit('unloadChunk', { x, z, preserveClientLight: true })
+    for (const [x, z] of coords) {
+      const key = `${x},${z}`
+      if (!this.loadedChunks[key]) continue
+      const epoch = this.columnUnloadEpoch.get(key) ?? 0
+      let reloaded = false
+      try {
+        reloaded = await this.loadChunk({ x, z }, false, 'geometry-reload')
+      } catch (error) {
+        console.warn(`Failed to reload column geometry ${key}`, error)
+      }
+      if (!reloaded && this.loadedChunks[key] && (this.columnUnloadEpoch.get(key) ?? 0) === epoch) {
+        this.unloadChunk({ x, z })
       }
     }
   }
@@ -334,6 +375,8 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
    * Unload a specific chunk.
    */
   unloadChunk(pos: { x: number; z: number }): void {
+    const key = `${pos.x},${pos.z}`
+    this.columnUnloadEpoch.set(key, (this.columnUnloadEpoch.get(key) ?? 0) + 1)
     this.emit('unloadChunk', { x: pos.x, z: pos.z })
     delete this.loadedChunks[`${pos.x},${pos.z}`]
     delete this.debugChunksInfo[`${pos.x},${pos.z}`]

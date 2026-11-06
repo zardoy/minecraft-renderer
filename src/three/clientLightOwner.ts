@@ -443,6 +443,13 @@ export class ClientLightOwnerSession {
     return this.requiredLightBySection.get(key)
   }
 
+  onGeometryReload(chunkX: number, chunkZ: number) {
+    for (const [key, required] of this.requiredLightBySection) {
+      const [sx, , sz] = key.split(',').map(Number)
+      if (sx === chunkX && sz === chunkZ) delete required.topologyRevision
+    }
+  }
+
   onUnload(chunkX: number, chunkZ: number) {
     this.pushEvent(eventsFromColumnUnload(chunkX, chunkZ))
     for (const key of [...this.requiredLightBySection.keys()]) {

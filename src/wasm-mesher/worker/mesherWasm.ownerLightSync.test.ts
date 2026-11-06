@@ -38,7 +38,12 @@ const INCOMING = {
 
 type WorkerSelf = { onmessage: (event: { data: unknown }) => void }
 type WorldLike = {
-  getColumn: (x: number, z: number) => { setSkyLight: (pos: Vec3, light: number) => void; setBlockLight: (pos: Vec3, light: number) => void }
+  getColumn: (x: number, z: number) => {
+    setSkyLight: (pos: Vec3, light: number) => void
+    setBlockLight: (pos: Vec3, light: number) => void
+    skyLightSections: Array<unknown | null>
+    blockLightSections: Array<unknown | null>
+  }
   getChannelLightNorm: (pos: Vec3) => { block: number; sky: number }
 }
 
@@ -129,6 +134,30 @@ describe('mesher worker JS column light with the client light owner', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     delete (globalThis as any).world
+  })
+
+  it('keeps authoritative zero light explicit in initially null sections', () => {
+    const sectionY = 96
+    const pos = new Vec3(COLUMN_X + 3, sectionY + 1, COLUMN_Z + 5)
+    expect(lightAt(pos)).toEqual({ block: 0, sky: 1 })
+    publishOwnerLight(1, sectionY, { sky: 0, block: 0 })
+    expect(lightAt(pos)).toEqual(expectedLight({ sky: 0, block: 0 }))
+    send({ type: 'chunk', x: COLUMN_X, z: COLUMN_Z, chunk: serverColumnJson() })
+    expect(lightAt(pos)).toEqual(expectedLight({ sky: 0, block: 0 }))
+  })
+
+  it('allocates only the authoritative channel and leaves omitted sections null', () => {
+    const sectionY = 96
+    send({
+      type: 'applyOwnerLightPublication', worldGeneration: 1, publicationVersion: 1,
+      sections: [{ sx: COLUMN_X, sy: sectionY, sz: COLUMN_Z, blockLight: new Uint8Array(2048) }]
+    })
+    const column = world().getColumn(COLUMN_X, COLUMN_Z)
+    expect(column.blockLightSections[sectionY / 16 + 1]).not.toBeNull()
+    expect(column.skyLightSections[sectionY / 16 + 1]).toBeNull()
+    expect(column.blockLightSections[sectionY / 16 + 2]).toBeNull()
+    expect(column.skyLightSections[sectionY / 16 + 2]).toBeNull()
+    expect(lightAt(new Vec3(COLUMN_X + 3, sectionY + 17, COLUMN_Z + 5))).toEqual({ block: 0, sky: 1 })
   })
 
   it('raises JS light when a publication brightens a section', () => {

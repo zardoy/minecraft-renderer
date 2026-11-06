@@ -36,6 +36,7 @@ export interface LoadChunkData {
 export interface UnloadChunkData {
   x: number
   z: number
+  preserveClientLight?: boolean
 }
 
 /**
