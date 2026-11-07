@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
 import { blockEntityBrightness, DEFAULT_LIGHTMAP_PARAMS } from '../../lib/blockEntityLighting'
-import { EntityLightController, entityProbeBlock, resolveEntityLightOverride } from '../entityLightController'
+import { EntityLightController, entityProbeBlock, resolveEntityLightOverride } from './entityLightController'
 
 const nightSky = 4 / 15
 
@@ -118,7 +118,6 @@ describe('EntityLightController', () => {
     root.add(new THREE.Mesh(new THREE.BoxGeometry(), material))
     controller.register(root, { eyeHeight: 0 })
 
-    // Entity lighting is independently disabled initially.
     setLightingEnabled(false)
     controller.update(root, { x: 8, y: 64, z: 8 })
     expect(material.color.r).toBeCloseTo(base.r, 5)

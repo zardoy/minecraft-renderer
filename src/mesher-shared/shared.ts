@@ -86,8 +86,53 @@ export type MesherGeometryOutput = {
   visibilitySet?: number
 }
 
+export type MeshGeometryMode = 'owner' | 'legacyBootstrap'
+
+export type MesherGeometryVersionFields = {
+  sessionEpoch?: number
+  columnIncarnation?: number
+  requestId?: number
+  topologyRevision?: number
+  lightPublicationVersion?: number
+  worldGeneration?: number
+  neighborTopologyRevisions?: Array<{ key: string; topologyRevision: number }>
+  meshMode?: MeshGeometryMode
+  clientLightRequestId?: number
+  clientLightEditSeq?: number
+  clientLightSessionEpoch?: number
+}
+
+export type MesherWorkerDirtyMessage = {
+  type: 'dirty'
+  x: number
+  y: number
+  z: number
+  value?: boolean
+  config?: MesherConfig
+} & MesherGeometryVersionFields
+
+export type MesherWorkerOwnerPublicationMessage = {
+  type: 'applyOwnerLightPublication'
+  worldGeneration: number
+  publicationVersion: number
+  sessionEpoch?: number
+  sections: Array<{ sx: number; sy: number; sz: number; blockLight: Uint8Array; skyLight?: Uint8Array }>
+}
+
+export type MesherWorkerRevertOwnerMessage = {
+  type: 'revertOwnerLightToIncoming'
+  sessionEpoch: number
+  worldGeneration: number
+}
+
+export type MesherWorkerOwnerFenceMessage = {
+  type: 'setOwnerAcceptFence'
+  sessionEpoch: number
+  rejectOwnerPublications: boolean
+}
+
 export interface MesherMainEvents {
-  geometry: { type: 'geometry'; key: string; geometry: MesherGeometryOutput; workerIndex: number }
+  geometry: { type: 'geometry'; key: string; geometry: MesherGeometryOutput; workerIndex: number } & MesherGeometryVersionFields
   sectionFinished: {
     type: 'sectionFinished'
     key: string
@@ -107,6 +152,8 @@ export interface MesherMainEvents {
     // Per-event counts for the column-mode conversion cache.
     preCacheHits?: number
     preCacheMisses?: number
+    preWasmParseHits?: number
+    preWasmParseMisses?: number
     chunkCount?: number
     worldColumns3x3?: number
     parsedCache3x3?: number

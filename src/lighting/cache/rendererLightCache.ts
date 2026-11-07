@@ -25,6 +25,12 @@ const hasChunkSection = (column: any, pos: Vec3) => {
   return false
 }
 
+const unpackNibble = (packed: Uint8Array, lx: number, ly: number, lz: number) => {
+  const local = (ly << 8) | (lz << 4) | lx
+  const byte = packed[local >> 1] ?? 0
+  return local & 1 ? byte >> 4 : byte & 0x0f
+}
+
 const hashBytes = (sections: Map<string, Uint8Array>) => {
   let hash = 2166136261
   const keys = [...sections.keys()].sort()
@@ -123,6 +129,50 @@ export class RendererLightCache {
     }
     this.columnHashes.delete(col)
     this.columnRevisions.delete(col)
+  }
+
+  /**
+   * Direct publication write: packed 2048-byte nibble channels.
+   * Block-only sections keep the current sky nibble; missing sky is 0, never 15.
+   * `sx/sy/sz` are world-aligned section origins.
+   */
+  ingestPackedSections(sections: Array<{ sx: number; sy: number; sz: number; blockLight: Uint8Array; skyLight?: Uint8Array }>): RendererLightIngestResult {
+    const touchedColumns = new Set<string>()
+    for (const section of sections) {
+      const sx = alignSection(section.sx)
+      const sy = alignSection(section.sy)
+      const sz = alignSection(section.sz)
+      if (section.blockLight.length !== 2048) continue
+      if (section.skyLight && section.skyLight.length !== 2048) continue
+      const key = sectionKey(sx, sy, sz)
+      const prev = this.sections.get(key)
+      const data = prev ? new Uint8Array(prev) : new Uint8Array(RENDERER_LIGHT_BYTES_PER_SECTION)
+      for (let ly = 0; ly < 16; ly++) {
+        for (let lz = 0; lz < 16; lz++) {
+          for (let lx = 0; lx < 16; lx++) {
+            const idx = blockIndex(lx, ly, lz)
+            const block = unpackNibble(section.blockLight, lx, ly, lz)
+            const sky = section.skyLight ? unpackNibble(section.skyLight, lx, ly, lz) : data[idx]! & 0x0f
+            data[idx] = (block << 4) | sky
+          }
+        }
+      }
+      this.sections.set(key, data)
+      touchedColumns.add(columnKey(sx, sz))
+    }
+
+    let revision = 0
+    for (const col of touchedColumns) {
+      revision = this.nextColumnRevision++
+      this.columnRevisions.set(col, revision)
+      const packed = new Map<string, Uint8Array>()
+      for (const [key, data] of this.sections) {
+        const [colSx, , colSz] = key.split(',').map(Number)
+        if (`${colSx},${colSz}` === col) packed.set(key, data)
+      }
+      this.columnHashes.set(col, hashBytes(packed))
+    }
+    return { changed: touchedColumns.size > 0, revision }
   }
 
   ingestColumn(chunkX: number, chunkZ: number, chunkJson: unknown): RendererLightIngestResult {

@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { DebugGui } from '../lib/DebugGui'
+import { DEFAULT_WATER_FOG_COLOR, getWaterFogEnd, waterFogColorToRgb } from './waterFog'
 
 export const DEFAULT_TEMPERATURE = 0.75
 
@@ -16,6 +17,8 @@ export class SkyboxRenderer {
   private temperature = DEFAULT_TEMPERATURE
   private inWater = false
   private waterBreathing = false
+  private underwaterSeconds = 0
+  private readonly waterFogColor = DEFAULT_WATER_FOG_COLOR
   private fogBrightness = 0
   private prevFogBrightness = 0
   private readonly fogOrangeness = 0 // Debug property to control sky color orangeness
@@ -97,7 +100,8 @@ export class SkyboxRenderer {
     }
   }
 
-  update(cameraPosition: THREE.Vector3, newViewDistance: number) {
+  update(cameraPosition: THREE.Vector3, newViewDistance: number, deltaSeconds = 0) {
+    if (this.inWater) this.underwaterSeconds += deltaSeconds
     if (newViewDistance !== this.viewDistance) {
       this.viewDistance = newViewDistance
       this.updateSkyColors()
@@ -138,6 +142,8 @@ export class SkyboxRenderer {
   // Update water state
   updateWaterState(inWater: boolean, waterBreathing: boolean) {
     if (this.debugGui.visible) return
+    // Vanilla restarts the vision ramp every time the camera leaves the water.
+    if (!inWater) this.underwaterSeconds = 0
     this.inWater = inWater
     this.waterBreathing = waterBreathing
     this.updateSkyColors()
@@ -341,13 +347,14 @@ export class SkyboxRenderer {
 
     // Handle water fog
     if (this.inWater) {
-      const waterViewDistance = this.waterBreathing ? 100 : 5
-      this.scene.fog = new THREE.Fog(new THREE.Color(0, 0, 1), 0.0025, waterViewDistance)
-      this.scene.background = new THREE.Color(0, 0, 1)
+      const fogColor = new THREE.Color(...waterFogColorToRgb(this.waterFogColor))
+      const fogEnd = Math.min(getWaterFogEnd(this.underwaterSeconds, this.waterBreathing), this.viewDistance * 16 * this.distanceFactor)
+      this.scene.fog = new THREE.Fog(fogColor, 0, fogEnd)
+      this.scene.background = fogColor
 
-      // Update sky and void colors for underwater effect
-      ;(this.skyMesh.material as THREE.MeshBasicMaterial).color.set(new THREE.Color(0, 0, 1))
-      ;(this.voidMesh.material as THREE.MeshBasicMaterial).color.set(new THREE.Color(0, 0, 0.6))
+      // Looking at the sky or void from below the surface shows the water fog colour.
+      ;(this.skyMesh.material as THREE.MeshBasicMaterial).color.copy(fogColor)
+      ;(this.voidMesh.material as THREE.MeshBasicMaterial).color.copy(fogColor)
       return
     }
 

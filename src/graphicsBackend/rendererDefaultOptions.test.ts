@@ -19,8 +19,8 @@ describe('newer-version lighting defaults', () => {
     expect(resolveEnableLighting(RENDERER_DEFAULT_OPTIONS.newVersionsLighting, true)).toBe(false)
   })
 
-  it('defaults entity lighting to off independently of world lighting', () => {
-    expect(RENDERER_DEFAULT_OPTIONS.entityLighting).toBe(false)
+  it('defaults entity lighting on so it can be turned off', () => {
+    expect(RENDERER_DEFAULT_OPTIONS.entityLighting).toBe(true)
   })
 
   it.each([false, true])('preserves a saved lighting preference (%s)', value => {

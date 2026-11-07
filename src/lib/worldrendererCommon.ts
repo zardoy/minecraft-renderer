@@ -7,6 +7,7 @@ import { subscribeKey } from 'valtio/utils'
 import { proxy, subscribe } from 'valtio'
 import type { ResourcesManagerTransferred } from '../resourcesManager/resourcesManager'
 import { dynamicMcDataFiles } from './buildSharedConfig.mjs'
+import { getMesherVersionTables } from './mesherMcDataSupply'
 import { DisplayWorldOptions, GraphicsInitOptions, RendererReactiveState, SoundSystem, UpdateCameraOptions } from '../graphicsBackend/types'
 import {
   HighestBlockInfo,
@@ -32,7 +33,25 @@ import { PlayerStateReactive } from '../playerState/playerState'
 import { IndexedData } from 'minecraft-data'
 import { WorldRendererConfig } from '../graphicsBackend/config'
 import { CameraCollisionBlockCache } from '../three/cameraCollisionBlockCache'
-import { RendererLightCache } from '../three/rendererLightCache'
+import { RendererLightCache } from '../lighting/cache/rendererLightCache'
+import { ClientLightCoordinator, type ClientLightHost } from '../lighting/coordinator/clientLightCoordinator'
+import {
+  bumpClientLightTraceSessionEpoch,
+  ingestRemoteClientLightTraceMessage,
+  isClientLightTraceEnabled,
+  isClientLightTraceMessage,
+  maybeEnableClientLightTraceFromLocation,
+  recordClientLightTrace,
+  setClientLightTraceConfigListener
+} from '../lighting/debug/clientLightTrace'
+import {
+  LIGHT_OWNER_WORKER_SCRIPT,
+  shouldAcceptMeshGeometry,
+  shouldSpawnClientLightOwner,
+  skyLightEnabledFromRendererState
+} from '../lighting/owner/clientLightOwner'
+import { shouldDispatchCoveringRemesh, validateMeshResultVersions } from '../lighting/versioning/clientLightVersions'
+import type { FeedChunkPacketPayload } from '../worldView/types'
 
 function mod(x, n) {
   return ((x % n) + n) % n
@@ -87,6 +106,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   }>
   customTexturesDataUrl = undefined as string | undefined
   workers: any[] = []
+  /** Client light owner session and the version bookkeeping that keeps owner-lit meshes consistent. */
+  readonly lightCoordinator = new ClientLightCoordinator(this.createLightHost())
   viewerChunkPosition?: Vec3
   // Last viewer chunk-grid coords for which `onViewerChunkPositionChanged`
   // fired — throttles the hook to chunk-grid changes.
@@ -126,6 +147,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   // Cumulative cache hit/miss counters (column-mode conversion cache).
   workersPreCacheHitsTotal = 0
   workersPreCacheMissesTotal = 0
+  workersPreWasmParseHitsTotal = 0
+  workersPreWasmParseMissesTotal = 0
   private static readonly PHASE_PERF_LOG_INTERVAL = 64
   geometryReceiveCount = {} as Record<number, number>
   allLoadedIn: undefined | number
@@ -155,7 +178,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   // Geometry throttle: first dirty per section is instant, subsequent within window are grouped
   private sectionDirtyCount = new Map<string, number>()
   private sectionDirtyTimers = new Map<string, ReturnType<typeof setTimeout>>()
-  private sectionDirtyPendingArgs = new Map<string, { pos: Vec3; value: boolean; useChangeWorker: boolean }>()
+  private sectionDirtyPendingArgs = new Map<string, { pos: Vec3; value: boolean; useChangeWorker: boolean; urgent?: boolean }>()
+  private sectionDirtyLightMeta = new Map<string, { lightPublicationVersion: number; worldGeneration?: number }>()
   private static readonly GEOMETRY_THROTTLE_THRESHOLD = 1
   private static readonly GEOMETRY_THROTTLE_DELAY = 100 // ms
 
@@ -231,6 +255,11 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.playerStateReactive = displayOptions.playerStateReactive!
     this.playerStateUtils = getPlayerStateUtils(this.playerStateReactive)
     this.reactiveState = displayOptions.rendererState!
+    maybeEnableClientLightTraceFromLocation()
+    if (isClientLightTraceEnabled()) bumpClientLightTraceSessionEpoch()
+    setClientLightTraceConfigListener(() => {
+      this.lightCoordinator.syncTraceConfig()
+    })
     // this.mesherLogReader = new MesherLogReader(this)
     this.renderUpdateEmitter.on('update', () => {
       const loadedChunks = Object.keys(this.finishedChunks).length
@@ -357,6 +386,81 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     for (let i = 0; i < numWorkers; i++) {
       this.workers.push(this.createMesherWorker())
     }
+    this.lightCoordinator.maybeSpawn()
+    this.lightCoordinator.syncTraceConfig()
+  }
+
+  setClientLightProbe(points: Array<[number, number, number]>) {
+    this.lightCoordinator.setProbe(points)
+  }
+
+  hasClientLightOwner(): boolean {
+    return this.lightCoordinator.hasOwner()
+  }
+
+  getClientLightOwnerWorker(): Worker | null {
+    return this.lightCoordinator.getWorker()
+  }
+
+  getClientLightOwnerFailureReason(): string | null {
+    return this.lightCoordinator.getFailureReason()
+  }
+
+  columnIncarnationFor(columnKey: string): number {
+    return this.lightCoordinator.columnIncarnationFor(columnKey)
+  }
+
+  private createLightHost(): ClientLightHost {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const renderer = this
+    return {
+      get version() {
+        return renderer.version
+      },
+      get workers() {
+        return renderer.workers
+      },
+      get rendererLightCache() {
+        return renderer.rendererLightCache
+      },
+      get worldRendererConfig() {
+        return renderer.worldRendererConfig
+      },
+      get worldSizeParams() {
+        return renderer.worldSizeParams
+      },
+      get playerStateReactive() {
+        return renderer.playerStateReactive
+      },
+      get sectionsWaiting() {
+        return renderer.sectionsWaiting
+      },
+      get loadedChunks() {
+        return renderer.loadedChunks
+      },
+      get sectionDirtyLightMeta() {
+        return renderer.sectionDirtyLightMeta
+      },
+      getSectionHeight: () => renderer.getSectionHeight(),
+      getWorkerNumber: (pos, updateAction) => renderer.getWorkerNumber(pos, updateAction),
+      setSectionDirty: (pos, value, useChangeWorker) => renderer.setSectionDirty(pos, value, useChangeWorker),
+      dispatchDirtyImmediate: (pos, value, useChangeWorker) => renderer._dispatchDirtyImmediate(pos, value, useChangeWorker),
+      createLightOwnerWorker: onMessage => initMesherWorker(onMessage, LIGHT_OWNER_WORKER_SCRIPT)
+    }
+  }
+
+  feedChunkPacket(payload: FeedChunkPacketPayload) {
+    const { kind, ...rest } = payload
+    const message = { type: kind, ...rest }
+    const isLightPacket = kind === 'setUpdateLightV17' || kind === 'setUpdateLightV16'
+    const ownerSession = this.lightCoordinator.session
+    if (ownerSession && isLightPacket) {
+      ownerSession.pushRawUpdateLight(kind, rest as Record<string, unknown>)
+      if (ownerSession.isReady) return
+    }
+    for (const worker of this.workers) {
+      worker.postMessage(message)
+    }
   }
 
   private syncMesherPoolSnapshot() {
@@ -404,6 +508,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.sectionDirtyTimers.clear()
     this.sectionDirtyCount.clear()
     this.sectionDirtyPendingArgs.clear()
+    this.sectionDirtyLightMeta.clear()
+    this.lightCoordinator.clearPendingMesherState()
     this.reactiveState.world.mesherWork = false
   }
 
@@ -426,6 +532,9 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     if (!this.active) return
 
     this.clearMesherPendingState()
+    // Worker topology revisions belong to the previous mesher lifetime.
+    // Reloaded columns replay owner snapshots through identical ingest.
+    this.lightCoordinator.forgetRequiredTopology()
     this.terminateAllMesherWorkers()
     this.initWorkers()
     await this.bootstrapMesherWorkers()
@@ -492,6 +601,15 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         this.changeCardinalLight(value)
       })
     )
+    this.valtioUnsubs.push(
+      this.onReactivePlayerStateUpdated(
+        'lightingDisabled',
+        value => {
+          this.lightCoordinator.session?.setSkyLightEnabled(skyLightEnabledFromRendererState({ lightingDisabled: value }))
+        },
+        false
+      )
+    )
   }
 
   watchReactiveConfig() {
@@ -499,6 +617,16 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       this.onReactiveConfigUpdated('fetchPlayerSkins', value => {
         setSkinsConfig({ apiEnabled: value })
       })
+    )
+    this.valtioUnsubs.push(
+      this.onReactiveConfigUpdated(
+        'enableClientLightOwner',
+        enabled => {
+          if (enabled) this.lightCoordinator.maybeSpawn()
+          else this.lightCoordinator.terminate()
+        },
+        false
+      )
     )
   }
 
@@ -551,15 +679,49 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   }
 
   handleMessage(rawData: any) {
-    const data = rawData as MesherMainEvent
+    const data = rawData as MesherMainEvent & {
+      worldGeneration?: number
+      lightPublicationVersion?: number
+      clientLightRequestId?: number
+      clientLightEditSeq?: number
+      clientLightSessionEpoch?: number
+    }
     if (!this.active) return
+    if (isClientLightTraceMessage(rawData)) {
+      ingestRemoteClientLightTraceMessage(rawData)
+      return
+    }
     this.mesherLogReader?.workerMessageReceived(data.type, data)
-    if (data.type !== 'geometry' || !this.debugStopGeometryUpdate) {
+    const staleOwnerGeometry = this.lightCoordinator.rejectStaleOwnerGeometry(data)
+    if (staleOwnerGeometry && data.type === 'geometry' && isClientLightTraceEnabled()) {
+      recordClientLightTrace({
+        phase: 'reject',
+        sectionKey: data.key,
+        requestId: data.clientLightRequestId,
+        editSeq: data.clientLightEditSeq,
+        sessionEpoch: data.clientLightSessionEpoch,
+        lightVersion: data.lightPublicationVersion,
+        worldGeneration: data.worldGeneration
+      })
+    }
+    if ((data.type !== 'geometry' || !this.debugStopGeometryUpdate) && !staleOwnerGeometry) {
       const start = performance.now()
       this.handleWorkerMessage(data as WorkerReceive)
       this.workerCustomHandleTime += performance.now() - start
     }
     if (data.type === 'geometry') {
+      if (!staleOwnerGeometry && isClientLightTraceEnabled()) {
+        recordClientLightTrace({
+          phase: 'receive',
+          sectionKey: data.key,
+          requestId: data.clientLightRequestId,
+          editSeq: data.clientLightEditSeq,
+          sessionEpoch: data.clientLightSessionEpoch,
+          lightVersion: data.lightPublicationVersion,
+          worldGeneration: data.worldGeneration,
+          workerIndex: data.workerIndex
+        })
+      }
       this.logWorkerWork(() => `-> ${data.workerIndex} geometry ${data.key} ${JSON.stringify({ dataSize: JSON.stringify(data).length })}`)
       this.geometryReceiveCount[data.workerIndex] ??= 0
       this.geometryReceiveCount[data.workerIndex]++
@@ -569,6 +731,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     if (data.type === 'sectionFinished') {
       // on after load & unload section
       this.logWorkerWork(`<- ${data.workerIndex} sectionFinished ${data.key} ${JSON.stringify({ processTime: data.processTime })}`)
+      const rejectedFinish = this.lightCoordinator.consumeRejectedFinish(data.key)
       if (!this.sectionsWaiting.has(data.key)) {
         console.debug(`sectionFinished for non-outstanding section ${data.key} (viewDistance=${this.viewDistance})`)
         return
@@ -576,7 +739,14 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       this.sectionsWaiting.set(data.key, this.sectionsWaiting.get(data.key)! - 1)
       if (this.sectionsWaiting.get(data.key) === 0) {
         this.sectionsWaiting.delete(data.key)
-        this.finishedSections[data.key] = true
+        if (!rejectedFinish) {
+          this.lightCoordinator.forgetCovering(data.key)
+          this.finishedSections[data.key] = true
+        }
+      }
+      if (rejectedFinish) {
+        this.lightCoordinator.maybeDispatchCoveringRemesh(data.key)
+        if (!this.finishedSections[data.key]) return
       }
 
       const chunkCoords = data.key.split(',').map(Number)
@@ -650,6 +820,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         this.workersPreOtherAverageTime = (this.workersPreOtherAverageTime * (n - 1) + po) / n
         this.workersPreCacheHitsTotal += pch
         this.workersPreCacheMissesTotal += pcm
+        if (typeof data.preWasmParseHits === 'number') this.workersPreWasmParseHitsTotal += data.preWasmParseHits
+        if (typeof data.preWasmParseMisses === 'number') this.workersPreWasmParseMissesTotal += data.preWasmParseMisses
         if (this.worldRendererConfig.debugWasmPerf && n % WorldRendererCommon.PHASE_PERF_LOG_INTERVAL === 0) {
           const total = this.workersPreAverageTime + this.workersWasmAverageTime + this.workersPostAverageTime
           const prePct = total > 0 ? (this.workersPreAverageTime / total) * 100 : 0
@@ -664,9 +836,11 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
           const nbrPerAvg = nbrCnt > 0 ? this.workersPreNeighborConvertAverageTime / nbrCnt : 0
           const cacheTotal = this.workersPreCacheHitsTotal + this.workersPreCacheMissesTotal
           const cacheHitPct = cacheTotal > 0 ? (this.workersPreCacheHitsTotal / cacheTotal) * 100 : 0
+          const wasmParseTotal = this.workersPreWasmParseHitsTotal + this.workersPreWasmParseMissesTotal
+          const wasmParseHitPct = wasmParseTotal > 0 ? (this.workersPreWasmParseHitsTotal / wasmParseTotal) * 100 : 0
           // eslint-disable-next-line no-console
           console.log(
-            `[wasm-mesher perf] n=${n} pre=${this.workersPreAverageTime.toFixed(2)}ms (${prePct.toFixed(1)}%) wasm=${this.workersWasmAverageTime.toFixed(2)}ms (${wasmPct.toFixed(1)}%) post=${this.workersPostAverageTime.toFixed(2)}ms (${postPct.toFixed(1)}%) | pre.targetConvert=${this.workersPreTargetConvertAverageTime.toFixed(2)}ms (${tgtPct.toFixed(1)}%) pre.neighborConvert=${this.workersPreNeighborConvertAverageTime.toFixed(2)}ms (${nbrPct.toFixed(1)}%) [n̄=${nbrCnt.toFixed(2)}, per-nbr=${nbrPerAvg.toFixed(2)}ms] pre.typedArrayBuild=${this.workersPreTypedArrayBuildAverageTime.toFixed(2)}ms (${tabPct.toFixed(1)}%) pre.other=${this.workersPreOtherAverageTime.toFixed(2)}ms (${othPct.toFixed(1)}%) | pre.cache hits=${this.workersPreCacheHitsTotal} misses=${this.workersPreCacheMissesTotal} (${cacheHitPct.toFixed(1)}% hit)`
+            `[wasm-mesher perf] n=${n} pre=${this.workersPreAverageTime.toFixed(2)}ms (${prePct.toFixed(1)}%) wasm=${this.workersWasmAverageTime.toFixed(2)}ms (${wasmPct.toFixed(1)}%) post=${this.workersPostAverageTime.toFixed(2)}ms (${postPct.toFixed(1)}%) | pre.targetConvert=${this.workersPreTargetConvertAverageTime.toFixed(2)}ms (${tgtPct.toFixed(1)}%) pre.neighborConvert=${this.workersPreNeighborConvertAverageTime.toFixed(2)}ms (${nbrPct.toFixed(1)}%) [n̄=${nbrCnt.toFixed(2)}, per-nbr=${nbrPerAvg.toFixed(2)}ms] pre.typedArrayBuild=${this.workersPreTypedArrayBuildAverageTime.toFixed(2)}ms (${tabPct.toFixed(1)}%) pre.other=${this.workersPreOtherAverageTime.toFixed(2)}ms (${othPct.toFixed(1)}%) | pre.cache hits=${this.workersPreCacheHitsTotal} misses=${this.workersPreCacheMissesTotal} (${cacheHitPct.toFixed(1)}% hit) | pre.wasmParse hits=${this.workersPreWasmParseHitsTotal} misses=${this.workersPreWasmParseMissesTotal} (${wasmParseHitPct.toFixed(1)}% hit)`
           )
         }
       }
@@ -729,6 +903,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
   timeUpdated?(newTime: number): void
 
+  moonPhaseUpdated?(phase: number): void
+
   /** Called when day-cycle sky-light bucket changes; Three.js overrides to remesh. */
   protected onDayCycleSkyLightChanged?(_skyLight: number): void
 
@@ -776,11 +952,13 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   abstract updateShowChunksBorder(value: boolean): void
 
   resetWorld() {
+    this.lightCoordinator.interactiveSections.clear()
     // destroy workers
     for (const worker of this.workers) {
       worker.terminate()
     }
     this.workers = []
+    this.lightCoordinator.terminate()
   }
 
   async resetWorkers() {
@@ -912,6 +1090,14 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.mesherLogReader?.chunkReceived(x, z, chunk.length)
     this.cameraCollisionBlockCache.ingestColumn(x, z, chunk)
     this.rendererLightCache.ingestColumn(x, z, chunk)
+    this.lightCoordinator.session?.ingestColumn({
+      chunkX: x,
+      chunkZ: z,
+      chunkJson: chunk,
+      version: this.version,
+      worldMinY: this.worldSizeParams.minY,
+      worldHeight: this.worldSizeParams.worldHeight
+    })
     const sectionHeight = this.getSectionHeight()
     const CHUNK_SIZE = 16
 
@@ -937,7 +1123,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.checkAllFinished()
   }
 
-  removeColumn(x, z) {
+  removeColumn(x, z, opts?: { preserveClientLight?: boolean }) {
     delete this.loadedChunks[`${x},${z}`]
     // Cancel any pending heightmap debounce for this chunk
     const debounceKey = `${x},${z}`
@@ -953,6 +1139,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         this.sectionDirtyTimers.delete(key)
         this.sectionDirtyCount.delete(key)
         this.sectionDirtyPendingArgs.delete(key)
+        this.sectionDirtyLightMeta.delete(key)
       }
     }
     for (let i = 0; i < this.workers.length; i++) {
@@ -977,11 +1164,13 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         )
       }
       this.sectionsWaiting.delete(sectionKey)
+      this.lightCoordinator.forgetInteractiveSection(sectionKey)
       delete this.finishedSections[sectionKey]
     }
     this.highestBlocksByChunks.delete(`${x},${z}`)
     this.cameraCollisionBlockCache.removeColumn(x, z)
     this.rendererLightCache.removeColumn(x, z)
+    this.lightCoordinator.onColumnRemoved(x, z, opts)
     const heightmapKey = `${Math.floor(x / 16)},${Math.floor(z / 16)}`
     delete this.reactiveState.world.heightmaps[heightmapKey]
 
@@ -1062,13 +1251,16 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         this.rendererLightCache.setWorldBounds(worldConfig.minY, worldConfig.worldHeight)
         this.queuedChunks.add(`${x},${z}`)
         const args = [x, z, chunk, isLightUpdate]
+        const incarnation = this.columnIncarnationFor(`${x},${z}`)
         if (!currentLoadChunkBatch) {
           // add a setting to use debounce instead
           currentLoadChunkBatch = {
             data: [],
             timeout: setTimeout(() => {
-              for (const args of currentLoadChunkBatch!.data) {
-                this.queuedChunks.delete(`${args[0]},${args[1]}`)
+              for (const { args, incarnation } of currentLoadChunkBatch!.data) {
+                const key = `${args[0]},${args[1]}`
+                this.queuedChunks.delete(key)
+                if (this.columnIncarnationFor(key) !== incarnation) continue
                 this.addColumn(...(args as Parameters<typeof this.addColumn>))
               }
               for (const fn of this.queuedFunctions) {
@@ -1079,7 +1271,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
             }, this.worldRendererConfig.addChunksBatchWaitTime)
           }
         }
-        currentLoadChunkBatch.data.push(args)
+        currentLoadChunkBatch.data.push({ args, incarnation })
       },
       signal
     )
@@ -1096,8 +1288,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     bindAbortableListener(
       worldEmitter,
       'unloadChunk',
-      ({ x, z }) => {
-        this.removeColumn(x, z)
+      ({ x, z, preserveClientLight }) => {
+        this.removeColumn(x, z, { preserveClientLight })
       },
       signal
     )
@@ -1203,6 +1395,15 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
     bindAbortableListener(
       worldEmitter,
+      'moonPhase',
+      phase => {
+        this.moonPhaseUpdated?.(phase)
+      },
+      signal
+    )
+
+    bindAbortableListener(
+      worldEmitter,
       'biomeUpdate',
       ({ biome }) => {
         this.biomeUpdated?.(biome)
@@ -1258,43 +1459,49 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     if (stateId !== undefined) {
       this.cameraCollisionBlockCache.setBlockStateId(pos.x, pos.y, pos.z, stateId)
     }
-    this.setSectionDirty(pos, true, true)
-    if (this.neighborChunkUpdates) {
-      const CHUNK_SIZE = 16
-      const sectionHeight = this.getSectionHeight()
-      if ((pos.x & 15) === 0) this.setSectionDirty(pos.offset(-CHUNK_SIZE, 0, 0), true, true)
-      if ((pos.x & 15) === 15) this.setSectionDirty(pos.offset(CHUNK_SIZE, 0, 0), true, true)
-      if ((pos.y & (sectionHeight - 1)) === 0) this.setSectionDirty(pos.offset(0, -sectionHeight, 0), true, true)
-      if ((pos.y & (sectionHeight - 1)) === sectionHeight - 1) this.setSectionDirty(pos.offset(0, sectionHeight, 0), true, true)
-      if ((pos.z & 15) === 0) this.setSectionDirty(pos.offset(0, 0, -CHUNK_SIZE), true, true)
-      if ((pos.z & 15) === 15) this.setSectionDirty(pos.offset(0, 0, CHUNK_SIZE), true, true)
+    this.lightCoordinator.noteBlockChange(pos, stateId, this.neighborChunkUpdates)
+    this.lightCoordinator.nextDirtyUrgent = true
+    try {
+      this.setSectionDirty(pos, true, true)
+      if (this.neighborChunkUpdates) {
+        const CHUNK_SIZE = 16
+        const sectionHeight = this.getSectionHeight()
+        if ((pos.x & 15) === 0) this.setSectionDirty(pos.offset(-CHUNK_SIZE, 0, 0), true, true)
+        if ((pos.x & 15) === 15) this.setSectionDirty(pos.offset(CHUNK_SIZE, 0, 0), true, true)
+        if ((pos.y & (sectionHeight - 1)) === 0) this.setSectionDirty(pos.offset(0, -sectionHeight, 0), true, true)
+        if ((pos.y & (sectionHeight - 1)) === sectionHeight - 1) this.setSectionDirty(pos.offset(0, sectionHeight, 0), true, true)
+        if ((pos.z & 15) === 0) this.setSectionDirty(pos.offset(0, 0, -CHUNK_SIZE), true, true)
+        if ((pos.z & 15) === 15) this.setSectionDirty(pos.offset(0, 0, CHUNK_SIZE), true, true)
 
-      if (needAoRecalculation) {
-        // top view neighbors
-        if ((pos.x & 15) === 0 && (pos.z & 15) === 0) this.setSectionDirty(pos.offset(-CHUNK_SIZE, 0, -CHUNK_SIZE), true, true)
-        if ((pos.x & 15) === 15 && (pos.z & 15) === 0) this.setSectionDirty(pos.offset(CHUNK_SIZE, 0, -CHUNK_SIZE), true, true)
-        if ((pos.x & 15) === 0 && (pos.z & 15) === 15) this.setSectionDirty(pos.offset(-CHUNK_SIZE, 0, CHUNK_SIZE), true, true)
-        if ((pos.x & 15) === 15 && (pos.z & 15) === 15) this.setSectionDirty(pos.offset(CHUNK_SIZE, 0, CHUNK_SIZE), true, true)
+        if (needAoRecalculation) {
+          // top view neighbors
+          if ((pos.x & 15) === 0 && (pos.z & 15) === 0) this.setSectionDirty(pos.offset(-CHUNK_SIZE, 0, -CHUNK_SIZE), true, true)
+          if ((pos.x & 15) === 15 && (pos.z & 15) === 0) this.setSectionDirty(pos.offset(CHUNK_SIZE, 0, -CHUNK_SIZE), true, true)
+          if ((pos.x & 15) === 0 && (pos.z & 15) === 15) this.setSectionDirty(pos.offset(-CHUNK_SIZE, 0, CHUNK_SIZE), true, true)
+          if ((pos.x & 15) === 15 && (pos.z & 15) === 15) this.setSectionDirty(pos.offset(CHUNK_SIZE, 0, CHUNK_SIZE), true, true)
 
-        // side view neighbors (but ignore updates above)
-        // z view neighbors
-        if ((pos.x & 15) === 0 && (pos.y & (sectionHeight - 1)) === 0) this.setSectionDirty(pos.offset(-CHUNK_SIZE, -sectionHeight, 0), true, true)
-        if ((pos.x & 15) === 15 && (pos.y & (sectionHeight - 1)) === 0) this.setSectionDirty(pos.offset(CHUNK_SIZE, -sectionHeight, 0), true, true)
+          // side view neighbors (but ignore updates above)
+          // z view neighbors
+          if ((pos.x & 15) === 0 && (pos.y & (sectionHeight - 1)) === 0) this.setSectionDirty(pos.offset(-CHUNK_SIZE, -sectionHeight, 0), true, true)
+          if ((pos.x & 15) === 15 && (pos.y & (sectionHeight - 1)) === 0) this.setSectionDirty(pos.offset(CHUNK_SIZE, -sectionHeight, 0), true, true)
 
-        // x view neighbors
-        if ((pos.z & 15) === 0 && (pos.y & (sectionHeight - 1)) === 0) this.setSectionDirty(pos.offset(0, -sectionHeight, -CHUNK_SIZE), true, true)
-        if ((pos.z & 15) === 15 && (pos.y & (sectionHeight - 1)) === 0) this.setSectionDirty(pos.offset(0, -sectionHeight, CHUNK_SIZE), true, true)
+          // x view neighbors
+          if ((pos.z & 15) === 0 && (pos.y & (sectionHeight - 1)) === 0) this.setSectionDirty(pos.offset(0, -sectionHeight, -CHUNK_SIZE), true, true)
+          if ((pos.z & 15) === 15 && (pos.y & (sectionHeight - 1)) === 0) this.setSectionDirty(pos.offset(0, -sectionHeight, CHUNK_SIZE), true, true)
 
-        // x & z neighbors
-        if ((pos.y & (sectionHeight - 1)) === 0 && (pos.x & 15) === 0 && (pos.z & 15) === 0)
-          this.setSectionDirty(pos.offset(-CHUNK_SIZE, -sectionHeight, -CHUNK_SIZE), true, true)
-        if ((pos.y & (sectionHeight - 1)) === 0 && (pos.x & 15) === 15 && (pos.z & 15) === 0)
-          this.setSectionDirty(pos.offset(CHUNK_SIZE, -sectionHeight, -CHUNK_SIZE), true, true)
-        if ((pos.y & (sectionHeight - 1)) === 0 && (pos.x & 15) === 0 && (pos.z & 15) === 15)
-          this.setSectionDirty(pos.offset(-CHUNK_SIZE, -sectionHeight, CHUNK_SIZE), true, true)
-        if ((pos.y & (sectionHeight - 1)) === 0 && (pos.x & 15) === 15 && (pos.z & 15) === 15)
-          this.setSectionDirty(pos.offset(CHUNK_SIZE, -sectionHeight, CHUNK_SIZE), true, true)
+          // x & z neighbors
+          if ((pos.y & (sectionHeight - 1)) === 0 && (pos.x & 15) === 0 && (pos.z & 15) === 0)
+            this.setSectionDirty(pos.offset(-CHUNK_SIZE, -sectionHeight, -CHUNK_SIZE), true, true)
+          if ((pos.y & (sectionHeight - 1)) === 0 && (pos.x & 15) === 15 && (pos.z & 15) === 0)
+            this.setSectionDirty(pos.offset(CHUNK_SIZE, -sectionHeight, -CHUNK_SIZE), true, true)
+          if ((pos.y & (sectionHeight - 1)) === 0 && (pos.x & 15) === 0 && (pos.z & 15) === 15)
+            this.setSectionDirty(pos.offset(-CHUNK_SIZE, -sectionHeight, CHUNK_SIZE), true, true)
+          if ((pos.y & (sectionHeight - 1)) === 0 && (pos.x & 15) === 15 && (pos.z & 15) === 15)
+            this.setSectionDirty(pos.offset(CHUNK_SIZE, -sectionHeight, CHUNK_SIZE), true, true)
+        }
       }
+    } finally {
+      this.lightCoordinator.nextDirtyUrgent = false
     }
   }
 
@@ -1385,6 +1592,28 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     const sectionHeight = this.getSectionHeight()
     const key = `${Math.floor(pos.x / CHUNK_SIZE) * CHUNK_SIZE},${Math.floor(pos.y / sectionHeight) * sectionHeight},${Math.floor(pos.z / CHUNK_SIZE) * CHUNK_SIZE}`
 
+    this.sectionDirtyLightMeta ??= new Map()
+    if (this.lightCoordinator.nextDirtyLightMeta.lightPublicationVersion != null) {
+      const prev = this.sectionDirtyLightMeta.get(key)
+      const incomingVersion = this.lightCoordinator.nextDirtyLightMeta.lightPublicationVersion
+      if (!prev || incomingVersion >= prev.lightPublicationVersion) {
+        this.sectionDirtyLightMeta.set(key, {
+          lightPublicationVersion: incomingVersion,
+          worldGeneration: this.lightCoordinator.nextDirtyLightMeta.worldGeneration
+        })
+      }
+    }
+
+    if (this.lightCoordinator.nextDirtyLightMeta.lightPublicationVersion != null || this.lightCoordinator.nextDirtyUrgent) {
+      this._dispatchDirtyImmediate(pos, value, useChangeWorker)
+      const pendingTimer = this.sectionDirtyTimers.get(key)
+      if (pendingTimer) clearTimeout(pendingTimer)
+      this.sectionDirtyTimers.delete(key)
+      this.sectionDirtyCount.delete(key)
+      this.sectionDirtyPendingArgs.delete(key)
+      return
+    }
+
     const currentCount = (this.sectionDirtyCount.get(key) ?? 0) + 1
     this.sectionDirtyCount.set(key, currentCount)
 
@@ -1402,14 +1631,19 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
             this.sectionDirtyTimers.delete(key)
             this.sectionDirtyPendingArgs.delete(key)
             if (args) {
-              this._dispatchDirtyImmediate(args.pos, args.value, args.useChangeWorker)
+              this.dispatchPendingDirty(args)
             }
           }, WorldRendererCommon.GEOMETRY_THROTTLE_DELAY)
         )
       }
     } else {
       // Subsequent requests — throttle: store latest args, existing timer will dispatch
-      this.sectionDirtyPendingArgs.set(key, { pos, value, useChangeWorker })
+      this.sectionDirtyPendingArgs.set(key, {
+        pos,
+        value,
+        useChangeWorker,
+        urgent: this.lightCoordinator.nextDirtyUrgent || this.sectionDirtyPendingArgs.get(key)?.urgent
+      })
 
       if (!this.sectionDirtyTimers.has(key)) {
         this.sectionDirtyTimers.set(
@@ -1420,12 +1654,18 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
             this.sectionDirtyTimers.delete(key)
             this.sectionDirtyPendingArgs.delete(key)
             if (args) {
-              this._dispatchDirtyImmediate(args.pos, args.value, args.useChangeWorker)
+              this.dispatchPendingDirty(args)
             }
           }, WorldRendererCommon.GEOMETRY_THROTTLE_DELAY)
         )
       }
     }
+  }
+
+  private dispatchPendingDirty(args: { pos: Vec3; value: boolean; useChangeWorker: boolean; urgent?: boolean }) {
+    this.lightCoordinator.withDirtyUrgency(!!args.urgent, () => {
+      this._dispatchDirtyImmediate(args.pos, args.value, args.useChangeWorker)
+    })
   }
 
   /** Dispatch dirty message to worker without throttle (original logic) */
@@ -1441,25 +1681,47 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     // is always dispatched to the same worker
     const hash = this.getWorkerNumber(pos, useChangeWorker && (this.mesherLogger.active || this.worldRendererConfig.dedicatedChangeWorker))
     this.sectionsWaiting.set(key, (this.sectionsWaiting.get(key) ?? 0) + 1)
-    if (this.forceCallFromMesherReplayer) {
-      this.workers[hash].postMessage({
-        type: 'dirty',
-        x: pos.x,
-        y: pos.y,
-        z: pos.z,
-        value,
-        config: this.getMesherConfig()
+    this.sectionDirtyLightMeta ??= new Map()
+    const { lightMeta, ownerVersions, traceIds } = this.lightCoordinator.describeDirty(pos, key)
+    const dirtyMessage = {
+      type: 'dirty' as const,
+      x: pos.x,
+      y: pos.y,
+      z: pos.z,
+      value,
+      config: this.getMesherConfig(),
+      ...(lightMeta?.lightPublicationVersion != null
+        ? {
+            lightPublicationVersion: lightMeta.lightPublicationVersion,
+            worldGeneration: lightMeta.worldGeneration
+          }
+        : {}),
+      ...ownerVersions,
+      ...(this.lightCoordinator.nextDirtyUrgent ? { urgent: true as const } : {}),
+      ...(traceIds
+        ? {
+            clientLightRequestId: traceIds.requestId,
+            clientLightEditSeq: traceIds.editSeq,
+            clientLightSessionEpoch: traceIds.sessionEpoch
+          }
+        : {})
+    }
+    if (traceIds) {
+      recordClientLightTrace({
+        phase: 'mesherEnqueue',
+        sectionKey: key,
+        requestId: traceIds.requestId,
+        editSeq: traceIds.editSeq,
+        sessionEpoch: traceIds.sessionEpoch,
+        lightVersion: lightMeta?.lightPublicationVersion,
+        worldGeneration: lightMeta?.worldGeneration
       })
+    }
+    if (this.forceCallFromMesherReplayer) {
+      this.workers[hash].postMessage(dirtyMessage)
     } else {
       this.toWorkerMessagesQueue[hash] ??= []
-      this.toWorkerMessagesQueue[hash].push({
-        type: 'dirty',
-        x: pos.x,
-        y: pos.y,
-        z: pos.z,
-        value,
-        config: this.getMesherConfig()
-      })
+      this.toWorkerMessagesQueue[hash].push(dirtyMessage)
       this.dispatchMessages()
     }
   }
@@ -1540,12 +1802,15 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.sectionDirtyTimers.clear()
     this.sectionDirtyCount.clear()
     this.sectionDirtyPendingArgs.clear()
+    this.sectionDirtyLightMeta.clear()
 
+    setClientLightTraceConfigListener(undefined)
     // Stop all workers
     for (const worker of this.workers) {
       worker.terminate()
     }
     this.workers = []
+    this.lightCoordinator.terminate()
 
     // Stop and destroy sound system
     if (this.soundSystem) {
@@ -1595,7 +1860,8 @@ let mesherMcDataTintsMissingWarned = false
 
 export const meshersSendMcData = (workers: Worker[], version: string, mcDataKeys = dynamicMcDataFiles, mcDataFull: IndexedData) => {
   const mcData: { version: IndexedData['version']; tints?: unknown; [key: string]: unknown } = {
-    version: JSON.parse(JSON.stringify(mcDataFull.version))
+    version: JSON.parse(JSON.stringify(mcDataFull.version)),
+    ...getMesherVersionTables(mcDataFull)
   }
   for (const [finalKey, sourceKey] of Object.entries(mcDataKeys)) {
     mcData[finalKey] = mcDataFull[sourceKey]

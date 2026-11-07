@@ -4,6 +4,7 @@ import nbt from 'prismarine-nbt'
 import * as tweenJs from '@tweenjs/tween.js'
 import { Biome } from 'minecraft-data'
 import { DisplayWorldOptions, GraphicsInitOptions } from '../graphicsBackend/types'
+import { AnimatedBlockTextures, createAnimatedBlockTextures } from './blockAnimations'
 import { sectionPos } from '../lib/simpleUtils'
 import { WorldRendererCommon } from '../lib/worldrendererCommon'
 import { calculateSkyLightSimple } from '../lib/skyLight'
@@ -39,7 +40,9 @@ import { FireworksManager } from './fireworks'
 import { SceneOrigin } from './sceneOrigin'
 import { downloadWorldGeometry } from './worldGeometryExport'
 import { ChunkMeshManager } from './chunkMeshManager'
-import { EntityLightController } from './entityLightController'
+import { selectReadySectionFlushes } from '../lighting/versioning/pendingSectionFlush'
+import { isClientLightTraceEnabled, recordClientLightTrace } from '../lighting/debug/clientLightTrace'
+import { EntityLightController } from '../lighting/entity/entityLightController'
 import { raycastVoxelSolid } from './thirdPersonVoxelRaycast'
 import type { RendererModuleManifest, RegisteredModule, RendererModuleController } from './rendererModuleSystem'
 import { BUILTIN_MODULES } from './modules/index'
@@ -94,6 +97,7 @@ export class WorldRendererThree extends WorldRendererCommon {
   cameraGroupVr?: THREE.Object3D
   material = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, alphaTest: 0.1 })
   itemsTexture!: THREE.Texture
+  blockAnimations?: AnimatedBlockTextures
   cursorBlock: CursorBlock
   onRender: Array<(deltaTime: number) => void> = []
   private lastRenderTime = 0
@@ -211,7 +215,7 @@ export class WorldRendererThree extends WorldRendererCommon {
       getLightmapParams: () => this.chunkMeshManager.getLightmapParams(),
       getColumnRevision: (cx, cz) => this.rendererLightCache.getColumnRevision(cx, cz),
       getGlobalRevision: () => this.rendererLightCache.getGlobalRevision(),
-      lightingEnabled: () => this.worldRendererConfig.enableLighting !== false && this.worldRendererConfig.enableEntityLighting === true
+      lightingEnabled: () => this.worldRendererConfig.enableLighting !== false && this.worldRendererConfig.enableEntityLighting !== false
     })
     this.onRenderDistanceChanged = viewDistance => {
       this.chunkMeshManager.updateViewDistance(viewDistance)
@@ -572,6 +576,9 @@ export class WorldRendererThree extends WorldRendererCommon {
       this.cursorBlock.setHighlightCursorBlock(value ? new Vec3(value.x, value.y, value.z) : null, value?.shapes)
     })
     this.onReactivePlayerStateUpdated('diggingBlock', value => {
+      if (value && (value.stage == null || value.stage === 0) && isClientLightTraceEnabled()) {
+        recordClientLightTrace({ phase: 'inputClick', sectionKey: `${value.x},${value.y},${value.z}` })
+      }
       this.cursorBlock.updateBreakAnimation(value ? { x: value.x, y: value.y, z: value.z } : undefined, value?.stage ?? null, value?.mergedShape)
     })
     this.onReactivePlayerStateUpdated('perspective', value => {
@@ -708,7 +715,10 @@ export class WorldRendererThree extends WorldRendererCommon {
     const texture = loadThreeJsTextureFromBitmap(resources.blocksAtlasImage!)
     texture.needsUpdate = true
     texture.flipY = false
+    // nearest filtering never samples mipmaps, but three would regenerate them for the whole atlas on every animated texture update
+    texture.generateMipmaps = false
     this.material.map = texture
+    this.setupBlockAnimations(texture, resources)
     this.chunkMeshManager.syncCubeShaderUniforms()
     this.chunkMeshManager.syncLegacyShaderUniforms()
 
@@ -732,6 +742,26 @@ export class WorldRendererThree extends WorldRendererCommon {
     }
   }
 
+  private setupBlockAnimations(atlasTexture: THREE.Texture, resources: NonNullable<typeof this.resourcesManager.currentResources>) {
+    this.blockAnimations?.dispose()
+    this.blockAnimations = undefined
+    if (!resources.blockAnimationAssets) return
+    try {
+      const { animations, framesImage } = resources.blockAnimationAssets
+      const replaced = new Set(resources.replacedBlockTextures)
+      this.blockAnimations = createAnimatedBlockTextures({
+        atlasTexture,
+        atlasJson: resources.blocksAtlasJson,
+        version: resources.texturesVersion,
+        animations,
+        framesImage,
+        skip: name => replaced.has(name)
+      })
+    } catch (err) {
+      console.warn('Animated block textures are disabled:', err)
+    }
+  }
+
   onAllTexturesLoaded() {
     this.holdingBlock.ready = true
     this.holdingBlock.updateItem()
@@ -748,14 +778,18 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
 
   timeUpdated(newTime: number): void {
-    // Update starfield module with time
-    const starfieldModule = this.getModule<any>('starfield')
-    if (starfieldModule?.updateTimeOfDay) {
-      starfieldModule.updateTimeOfDay(newTime)
+    for (const module of Object.values(this.modules)) {
+      ;(module.controller as { updateTimeOfDay?: (time: number) => void }).updateTimeOfDay?.(newTime)
     }
 
     this.skyboxRenderer.updateTime(newTime)
     this.syncSkyLevelFromTime(newTime)
+  }
+
+  moonPhaseUpdated(phase: number): void {
+    for (const module of Object.values(this.modules)) {
+      ;(module.controller as { updateMoonPhase?: (phase: number) => void }).updateMoonPhase?.(phase)
+    }
   }
 
   private syncSkyLevelFromTime(timeOfDay: number): void {
@@ -900,45 +934,37 @@ export class WorldRendererThree extends WorldRendererCommon {
     if (this.pendingSectionUpdates.size === 0) return
 
     const now = performance.now()
-    const sectionHeight = this.getSectionHeight()
-    const ready: string[] = []
-
-    for (const key of this.pendingSectionUpdates.keys()) {
-      const startedAt = this.pendingSectionBufferStartTimes.get(key) ?? now
-      const sinceFirst = now - startedAt
-
-      if (sinceFirst < WorldRendererThree.MAX_SECTION_UPDATE_BUFFER_MS) {
-        // Still within this section's grace window — wait if any neighbor is
-        // currently being re-meshed so we don't briefly expose a hole between
-        // the just-updated section and a stale neighbor (sky-flicker bug).
-        const [sx, sy, sz] = key.split(',').map(Number)
-        const neighborKeys = [
-          `${sx - 16},${sy},${sz}`,
-          `${sx + 16},${sy},${sz}`,
-          `${sx},${sy - sectionHeight},${sz}`,
-          `${sx},${sy + sectionHeight},${sz}`,
-          `${sx},${sy},${sz - 16}`,
-          `${sx},${sy},${sz + 16}`
-        ]
-        let neighborBusy = false
-        for (const neighborKey of neighborKeys) {
-          if (this.sectionsWaiting.has(neighborKey) && !this.pendingSectionUpdates.has(neighborKey) && this.sectionObjects[neighborKey]) {
-            neighborBusy = true
-            break
+    // Face-adjacent buffered sections are installed as one group: a lone
+    // install would show the neighbour's faces still culled against the old
+    // block state, i.e. a see-through hole (sky flash) on dig/place.
+    const ready = selectReadySectionFlushes({
+      pendingKeys: this.pendingSectionUpdates.keys(),
+      startedAt: key => this.pendingSectionBufferStartTimes.get(key),
+      now,
+      maxBufferMs: WorldRendererThree.MAX_SECTION_UPDATE_BUFFER_MS,
+      sectionHeight: this.getSectionHeight(),
+      isOutstanding: key => this.sectionsWaiting.has(key) && !this.pendingSectionUpdates.has(key),
+      ...(this.lightCoordinator.isSessionLive()
+        ? {
+            isTopologyOutstanding: (key: string) => this.lightCoordinator.pendingTopologyBySection.has(key) && !this.pendingSectionUpdates.has(key)
           }
-        }
-        if (neighborBusy) continue
-      }
-
-      ready.push(key)
-    }
+        : {}),
+      hasSectionObject: key => !!this.sectionObjects[key]
+    })
 
     if (ready.length === 0) return
 
-    for (const key of ready) {
+    for (const { key, reason } of ready) {
       const update = this.pendingSectionUpdates.get(key)!
       this.pendingSectionUpdates.delete(key)
       this.pendingSectionBufferStartTimes.delete(key)
+      if (isClientLightTraceEnabled()) {
+        recordClientLightTrace({
+          phase: 'flush',
+          sectionKey: key,
+          flushReason: reason
+        })
+      }
 
       const chunkCoords = update.key.split(',')
       const chunkKey = `${chunkCoords[0]},${chunkCoords[2]}`
@@ -947,6 +973,14 @@ export class WorldRendererThree extends WorldRendererCommon {
         this.chunkMeshManager.releaseSection(update.key)
         continue
       }
+
+      const decision = this.lightCoordinator.evaluateOwnerGeometry(update)
+      if (!decision.accepted || update.geometry?.hadErrors) {
+        this.lightCoordinator.noteRejectedOwnerGeometry(update.key, undefined, { expectLaterFinished: false })
+        continue
+      }
+      this.lightCoordinator.acknowledgeAcceptedTopology(update)
+      if (decision.keepCovering) this.lightCoordinator.maybeDispatchCoveringRemesh(update.key)
 
       if (!this.chunkMeshManager.sectionHasRenderableContent(update.geometry)) {
         this.chunkMeshManager.releaseSection(update.key)
@@ -982,12 +1016,27 @@ export class WorldRendererThree extends WorldRendererCommon {
         return
       }
 
+      const decision = this.lightCoordinator.evaluateOwnerGeometry(data)
+      if (!decision.accepted || data.geometry?.hadErrors) {
+        this.lightCoordinator.noteRejectedOwnerGeometry(data.key, undefined, { expectLaterFinished: true })
+        return
+      }
+      this.lightCoordinator.acknowledgeAcceptedTopology(data)
+      if (decision.keepCovering) this.lightCoordinator.maybeDispatchCoveringRemesh(data.key)
+
       if (this.sectionObjects[data.key]) {
         this.pendingSectionUpdates.set(data.key, data)
         // Per-section deadline: only set if we don't already have one, so
         // repeated updates to the same section don't postpone its flush.
         if (!this.pendingSectionBufferStartTimes.has(data.key)) {
           this.pendingSectionBufferStartTimes.set(data.key, performance.now())
+        }
+        if (isClientLightTraceEnabled()) {
+          recordClientLightTrace({
+            phase: 'pending',
+            sectionKey: data.key,
+            queueDepth: this.pendingSectionUpdates.size
+          })
         }
         return
       }
@@ -1345,7 +1394,7 @@ export class WorldRendererThree extends WorldRendererCommon {
 
     // Update skybox position to follow camera
     const cameraPos = this.getCameraPosition()
-    this.skyboxRenderer.update(cameraPos, this.viewDistance)
+    this.skyboxRenderer.update(cameraPos, this.viewDistance, deltaTime)
 
     this.updateSmoothFov()
     if (sizeChanged) {
@@ -1419,6 +1468,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     if (!didBlendAllAttrUpload && globalLegacyBlendBuffer?.hasPendingIndexUploads()) {
       globalLegacyBlendBuffer.uploadDirtyIndexRange()
     }
+    this.blockAnimations?.update(this.renderer, start, this.worldRendererConfig.animatedTextures)
     this.renderer.render(this.scene, cam)
 
     if (
@@ -1568,8 +1618,8 @@ export class WorldRendererThree extends WorldRendererCommon {
     }
   }
 
-  removeColumn(x, z) {
-    super.removeColumn(x, z)
+  removeColumn(x, z, opts?: { preserveClientLight?: boolean }) {
+    super.removeColumn(x, z, opts)
 
     this.clearPendingSectionUpdatesForChunk(x, z)
     const sectionHeight = this.getSectionHeight()
@@ -1618,6 +1668,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.pendingSectionUpdates.clear()
     this.pendingSectionBufferStartTimes.clear()
     this.chunkMeshManager.dispose()
+    this.blockAnimations?.dispose()
     this.disposeModules()
     this.fireworksLegacy.destroy()
     super.destroy()

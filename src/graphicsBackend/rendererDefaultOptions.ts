@@ -45,6 +45,7 @@ export const RENDERER_DEFAULT_OPTIONS = {
   rendererWorldPerformance: 'normal' as 'low-energy' | 'normal' | 'maximum',
   rendererMeshersCountOverride: null as number | null,
   starfieldRendering: true as boolean,
+  cloudsRendering: true as boolean,
   defaultSkybox: true as boolean,
   menuBackgroundMode: MB.mode,
   menuBackgroundMinecraftTextures: MB.minecraftTextures as boolean,
@@ -66,7 +67,7 @@ export const RENDERER_DEFAULT_OPTIONS = {
   vanillaLook: false as boolean,
   smoothLighting: true as boolean,
   newVersionsLighting: false as boolean,
-  entityLighting: false as boolean,
+  entityLighting: true as boolean,
   vrSupport: true as boolean,
   vrPageGameRendering: false as boolean,
   clipWorldBelowY: undefined as number | undefined,
@@ -185,6 +186,9 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
   },
   starfieldRendering: {
     text: 'Starfield'
+  },
+  cloudsRendering: {
+    text: 'Clouds'
   },
   defaultSkybox: {
     text: 'Default skybox'
@@ -314,6 +318,7 @@ export const RENDERER_RENDER_GUI_SECTIONS: ReadonlyArray<{
     keys: [
       'rendererWorldPerformance',
       'starfieldRendering',
+      'cloudsRendering',
       'defaultSkybox',
       'disableBlockEntityTextures',
       'showChunkBorders',

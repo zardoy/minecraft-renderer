@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { blockEntityBrightness, DEFAULT_LIGHTMAP_PARAMS, type BlockLightmapParams } from '../lib/blockEntityLighting'
+import { blockEntityBrightness, DEFAULT_LIGHTMAP_PARAMS, type BlockLightmapParams } from '../../lib/blockEntityLighting'
 
 export type EntityLightOverride = 'normal' | 'fullbright'
 

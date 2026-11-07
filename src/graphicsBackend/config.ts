@@ -30,6 +30,11 @@ export const defaultWorldRendererConfig = {
   /** 0=off, 1=holes red, 2=tileIndex, 3=faceId colors, 4=atlas alpha */
   shaderCubeDebugMode: 0,
   mesherWorkers: 1,
+  /**
+   * Animated block textures (water, lava, fire, portals...). `basic` switches frames,
+   * `smooth` also blends frames of animations that request it (command blocks, magma...) like vanilla.
+   */
+  animatedTextures: 'smooth' as 'off' | 'basic' | 'smooth',
   addChunksBatchWaitTime: 200,
   _experimentalSmoothChunkLoading: true,
   _renderByChunks: false,
@@ -42,6 +47,11 @@ export const defaultWorldRendererConfig = {
    * remeshing (change worker). When true, initial chunk meshing is
    * distributed only across workers[0 .. n-2]. */
   dedicatedChangeWorker: false,
+  /**
+   * Dedicated WASM light-owner worker. Default OFF: wiring exists so a
+   * human can flip this for live 1.17.1 runs. Do not enable for players.
+   */
+  enableClientLightOwner: false,
 
   // Rendering engine settings
   /** Face shading: vanilla Minecraft vs higher-contrast client look */
@@ -51,10 +61,13 @@ export const defaultWorldRendererConfig = {
   dayCycle: true,
   smoothLighting: true,
   enableLighting: true,
-  /** Entity shading is independently opt-in; block lighting remains controlled by enableLighting. */
-  enableEntityLighting: false,
+  /** Entity shading is on unless the entity lighting option is turned off. Block lighting stays on enableLighting. */
+  enableEntityLighting: true,
   starfield: true,
   defaultSkybox: true,
+  clouds: true,
+  /** World Y of the cloud layer (vanilla overworld: 192 since 1.18, 128 before). */
+  cloudHeight: 192,
   renderEntities: true,
   extraBlockRenderers: true,
   foreground: true,

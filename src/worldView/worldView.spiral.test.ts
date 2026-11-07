@@ -10,7 +10,7 @@ describe('WorldView._loadChunks spiral guard', () => {
     }
     const view = new WorldView(world, 8, new Vec3(0, 64, 0))
     view.addWaitTime = 0
-    view.loadChunk = vi.fn(async () => {})
+    view.loadChunk = vi.fn(async () => true)
 
     const positions = [new Vec3(0, 0, 0)]
     const spiralA = view._loadChunks(positions, new Vec3(0, 64, 0))
