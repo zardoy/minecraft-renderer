@@ -131,7 +131,7 @@ describe('WorldRendererCommon.removeColumn sectionsWaiting reconciliation', () =
     const renderer = createRenderer()
     const owner = { isReady: true, onGeometryReload: vi.fn(), onUnload: vi.fn() }
     const internal = renderer as any
-    internal.clientLightOwnerSession = owner
+    renderer.lightCoordinator.session = owner as any
     const oldIncarnation = internal.columnIncarnationFor('160,0')
     renderer.removeColumn(160, 0, { preserveClientLight: true })
     expect(owner.onGeometryReload).toHaveBeenCalledWith(160, 0)

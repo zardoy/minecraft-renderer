@@ -915,9 +915,9 @@ export class WorldRendererThree extends WorldRendererCommon {
       maxBufferMs: WorldRendererThree.MAX_SECTION_UPDATE_BUFFER_MS,
       sectionHeight: this.getSectionHeight(),
       isOutstanding: key => this.sectionsWaiting.has(key) && !this.pendingSectionUpdates.has(key),
-      ...(this.isClientLightOwnerSessionLive()
+      ...(this.lightCoordinator.isSessionLive()
         ? {
-            isTopologyOutstanding: (key: string) => this.pendingTopologyBySection.has(key) && !this.pendingSectionUpdates.has(key)
+            isTopologyOutstanding: (key: string) => this.lightCoordinator.pendingTopologyBySection.has(key) && !this.pendingSectionUpdates.has(key)
           }
         : {}),
       hasSectionObject: key => !!this.sectionObjects[key]
@@ -945,13 +945,13 @@ export class WorldRendererThree extends WorldRendererCommon {
         continue
       }
 
-      const decision = this.evaluateOwnerGeometry(update)
+      const decision = this.lightCoordinator.evaluateOwnerGeometry(update)
       if (!decision.accepted || update.geometry?.hadErrors) {
-        this.noteRejectedOwnerGeometry(update.key, undefined, { expectLaterFinished: false })
+        this.lightCoordinator.noteRejectedOwnerGeometry(update.key, undefined, { expectLaterFinished: false })
         continue
       }
-      this.acknowledgeAcceptedOwnerTopology(update)
-      if (decision.keepCovering) this.maybeDispatchCoveringRemesh(update.key)
+      this.lightCoordinator.acknowledgeAcceptedTopology(update)
+      if (decision.keepCovering) this.lightCoordinator.maybeDispatchCoveringRemesh(update.key)
 
       if (!this.chunkMeshManager.sectionHasRenderableContent(update.geometry)) {
         this.chunkMeshManager.releaseSection(update.key)
@@ -987,13 +987,13 @@ export class WorldRendererThree extends WorldRendererCommon {
         return
       }
 
-      const decision = this.evaluateOwnerGeometry(data)
+      const decision = this.lightCoordinator.evaluateOwnerGeometry(data)
       if (!decision.accepted || data.geometry?.hadErrors) {
-        this.noteRejectedOwnerGeometry(data.key, undefined, { expectLaterFinished: true })
+        this.lightCoordinator.noteRejectedOwnerGeometry(data.key, undefined, { expectLaterFinished: true })
         return
       }
-      this.acknowledgeAcceptedOwnerTopology(data)
-      if (decision.keepCovering) this.maybeDispatchCoveringRemesh(data.key)
+      this.lightCoordinator.acknowledgeAcceptedTopology(data)
+      if (decision.keepCovering) this.lightCoordinator.maybeDispatchCoveringRemesh(data.key)
 
       if (this.sectionObjects[data.key]) {
         this.pendingSectionUpdates.set(data.key, data)

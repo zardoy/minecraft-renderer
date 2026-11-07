@@ -119,7 +119,7 @@ function createRenderer(enableOwner = false, workerCount = 2, version = '1.17.1'
 describe('WorldRendererCommon client light owner spawn', () => {
   test('owner idle releases only settled edits without a covering light publication', () => {
     const renderer = createRenderer(true)
-    const internal = renderer as any
+    const internal = renderer.lightCoordinator as any
     internal.interactiveSections.set('0,64,0', { lightVersionAtEdit: 1, editGeneration: 2 })
     internal.interactiveSections.set('16,64,0', { lightVersionAtEdit: 1, editGeneration: 3 })
     internal.interactiveSections.set('32,64,0', { lightVersionAtEdit: 1, editGeneration: 2, coveringVersion: 2 })
@@ -289,7 +289,7 @@ describe('WorldRendererCommon client light owner spawn', () => {
     const dirties = () => mesh.postMessage.mock.calls.map(call => call[0]).filter((message: { type?: string }) => message?.type === 'dirty')
     publish(5)
     renderer.setBlockStateIdInner(new Vec3(1, 64, 1), 1)
-    const topology = (renderer as any).topologyRevisionBySection.get('0,64,0') as number
+    const topology = (renderer as any).lightCoordinator.topologyRevisionBySection.get('0,64,0') as number
     const geometry = {
       type: 'geometry',
       key: '0,64,0',
@@ -303,7 +303,7 @@ describe('WorldRendererCommon client light owner spawn', () => {
       workerIndex: 0,
       geometry: {}
     }
-    const early = (renderer as any).evaluateOwnerGeometry(geometry)
+    const early = (renderer as any).lightCoordinator.evaluateOwnerGeometry(geometry)
     expect(early.accepted).toBe(true)
     expect(early.keepCovering).toBe(false)
     renderer.handleMessage(geometry)
@@ -391,7 +391,7 @@ describe('WorldRendererCommon client light owner spawn', () => {
       const mesh = renderer.workers[0] as { postMessage: ReturnType<typeof vi.fn> }
       renderer.setSectionDirty(new Vec3(0, 64, 0), true, true)
       mesh.postMessage.mockClear()
-      ;(renderer as any).onClientLightOwnerPublication({
+      ;(renderer as any).lightCoordinator.onPublication({
         applied: true,
         lastVersion: 7,
         acceptedGeneration: 1,
@@ -421,7 +421,7 @@ describe('WorldRendererCommon client light owner spawn', () => {
       publicationVersion: 4,
       sections: [{ sx: 0, sy: 64, sz: 0, blockLight: new Uint8Array(2048) }]
     }
-    ;(renderer as any).onClientLightOwnerPublication({
+    ;(renderer as any).lightCoordinator.onPublication({
       applied: true,
       lastVersion: 4,
       acceptedGeneration: 1,
@@ -444,7 +444,7 @@ describe('WorldRendererCommon client light owner spawn', () => {
       const mesh = renderer.workers[0] as { postMessage: ReturnType<typeof vi.fn> }
       mesh.postMessage.mockClear()
       renderer.setSectionDirty(new Vec3(0, 64, 0), true, true)
-      ;(renderer as any).onClientLightOwnerPublication({
+      ;(renderer as any).lightCoordinator.onPublication({
         applied: true,
         lastVersion: 7,
         acceptedGeneration: 1,
@@ -502,7 +502,7 @@ describe('WorldRendererCommon client light owner spawn', () => {
     expect(replacement).toHaveLength(1)
     expect(replacement[0]?.lightPublicationVersion).toBe(2)
     expect(renderer.sectionsWaiting.get('0,64,0')).toBe(1)
-    expect((renderer as any).rejectedFinishedBySection.get('0,64,0') ?? 0).toBe(0)
+    expect((renderer as any).lightCoordinator.rejectedFinishedBySection.get('0,64,0') ?? 0).toBe(0)
   })
 
   test('fast A→B→C drops B and keeps a single covering remesh for C', () => {
@@ -543,7 +543,7 @@ describe('WorldRendererCommon client light owner spawn', () => {
       geometry: {}
     })
     expect(mesh.postMessage.mock.calls.filter(call => call[0]?.type === 'dirty')).toHaveLength(0)
-    const accepted = (renderer as any).evaluateOwnerGeometry({
+    const accepted = (renderer as any).lightCoordinator.evaluateOwnerGeometry({
       type: 'geometry',
       key: '0,64,0',
       worldGeneration: 1,
@@ -569,7 +569,7 @@ describe('WorldRendererCommon client light owner spawn', () => {
     expect(renderer.hasClientLightOwner()).toBe(false)
     expect((renderer as any).getClientLightOwnerFailureReason()).toBe('owner wasm crashed')
     expect(mesh.postMessage.mock.calls.some(call => call[0]?.type === 'revertOwnerLightToIncoming')).toBe(true)
-    const late = (renderer as any).evaluateOwnerGeometry({
+    const late = (renderer as any).lightCoordinator.evaluateOwnerGeometry({
       type: 'geometry',
       key: '0,64,0',
       worldGeneration: 1,
@@ -593,7 +593,7 @@ describe('WorldRendererCommon client light owner spawn', () => {
     renderer.loadedChunks['0,0'] = true
     const second = (renderer as any).columnIncarnationFor('0,0')
     expect(second).toBeGreaterThan(first ?? 0)
-    const late = (renderer as any).evaluateOwnerGeometry({
+    const late = (renderer as any).lightCoordinator.evaluateOwnerGeometry({
       type: 'geometry',
       key: '0,64,0',
       worldGeneration: 1,
@@ -644,7 +644,7 @@ describe('WorldRendererCommon client light owner spawn', () => {
     owner.onmessage?.({ data: { type: 'ready' } } as MessageEvent)
     renderer.setBlockStateIdInner(new Vec3(1, 64, 1), 1)
     renderer.setBlockStateIdInner(new Vec3(1, 64, 1), 2)
-    const topology = (renderer as any).topologyRevisionBySection.get('0,64,0') as number
+    const topology = (renderer as any).lightCoordinator.topologyRevisionBySection.get('0,64,0') as number
     expect(topology).toBeGreaterThan(1)
     owner.onmessage?.({
       data: {
@@ -656,7 +656,7 @@ describe('WorldRendererCommon client light owner spawn', () => {
         }
       }
     } as MessageEvent)
-    expect((renderer as any).clientLightOwnerSession.requiredLightForSection('0,64,0')?.topologyRevision).toBe(topology)
+    expect((renderer as any).lightCoordinator.session.requiredLightForSection('0,64,0')?.topologyRevision).toBe(topology)
     const mesh = renderer.workers[0] as { postMessage: ReturnType<typeof vi.fn> }
     mesh.postMessage.mockClear()
     renderer.sectionsWaiting.set('0,64,0', 1)
@@ -673,7 +673,7 @@ describe('WorldRendererCommon client light owner spawn', () => {
       geometry: {}
     })
     expect(
-      (renderer as any).evaluateOwnerGeometry({
+      (renderer as any).lightCoordinator.evaluateOwnerGeometry({
         type: 'geometry',
         key: '0,64,0',
         worldGeneration: 1,
@@ -685,14 +685,14 @@ describe('WorldRendererCommon client light owner spawn', () => {
       }).accepted
     ).toBe(false)
     expect(mesh.postMessage.mock.calls.filter(call => call[0]?.type === 'dirty')).toHaveLength(0)
-    expect((renderer as any).pendingTopologyBySection.get('0,64,0')).toBe(topology)
+    expect((renderer as any).lightCoordinator.pendingTopologyBySection.get('0,64,0')).toBe(topology)
     renderer.handleMessage({ type: 'sectionFinished', key: '0,64,0', workerIndex: 0, processTime: 0 })
     const replacement = mesh.postMessage.mock.calls.map(call => call[0]).filter((message: { type?: string }) => message?.type === 'dirty')
     expect(replacement).toHaveLength(1)
     expect(replacement[0]?.topologyRevision).toBe(topology)
     expect(replacement[0]?.lightPublicationVersion).toBe(4)
     expect(renderer.sectionsWaiting.get('0,64,0')).toBe(1)
-    expect((renderer as any).pendingTopologyBySection.get('0,64,0')).toBe(topology)
+    expect((renderer as any).lightCoordinator.pendingTopologyBySection.get('0,64,0')).toBe(topology)
   })
 
   test('fresh topology with stale light installs and keeps covering without a second dispatch', () => {
@@ -704,7 +704,7 @@ describe('WorldRendererCommon client light owner spawn', () => {
     const owner = renderer.getClientLightOwnerWorker() as { onmessage: ((event: MessageEvent) => void) | null }
     owner.onmessage?.({ data: { type: 'ready' } } as MessageEvent)
     renderer.setBlockStateIdInner(new Vec3(1, 64, 1), 1)
-    const topology = (renderer as any).topologyRevisionBySection.get('0,64,0') as number
+    const topology = (renderer as any).lightCoordinator.topologyRevisionBySection.get('0,64,0') as number
     owner.onmessage?.({
       data: {
         type: 'publication',
@@ -730,7 +730,7 @@ describe('WorldRendererCommon client light owner spawn', () => {
       workerIndex: 0,
       geometry: {}
     })
-    const decision = (renderer as any).evaluateOwnerGeometry({
+    const decision = (renderer as any).lightCoordinator.evaluateOwnerGeometry({
       type: 'geometry',
       key: '0,64,0',
       worldGeneration: 1,
@@ -743,11 +743,11 @@ describe('WorldRendererCommon client light owner spawn', () => {
     expect(decision.accepted).toBe(true)
     expect(decision.keepCovering).toBe(true)
     expect(mesh.postMessage.mock.calls.filter(call => call[0]?.type === 'dirty')).toHaveLength(0)
-    expect((renderer as any).pendingCoveringBySection.has('0,64,0')).toBe(true)
-    expect((renderer as any).pendingTopologyBySection.has('0,64,0')).toBe(false)
+    expect((renderer as any).lightCoordinator.pendingCoveringBySection.has('0,64,0')).toBe(true)
+    expect((renderer as any).lightCoordinator.pendingTopologyBySection.has('0,64,0')).toBe(false)
     renderer.handleMessage({ type: 'sectionFinished', key: '0,64,0', workerIndex: 0, processTime: 0 })
     expect(renderer.sectionsWaiting.get('0,64,0')).toBe(1)
-    expect((renderer as any).pendingCoveringBySection.has('0,64,0')).toBe(true)
+    expect((renderer as any).lightCoordinator.pendingCoveringBySection.has('0,64,0')).toBe(true)
   })
 
   test('fast A→B→C publications keep the max topology revision', () => {
@@ -776,8 +776,8 @@ describe('WorldRendererCommon client light owner spawn', () => {
     publish(2)
     renderer.setBlockStateIdInner(new Vec3(1, 64, 1), 3)
     publish(3)
-    const topology = (renderer as any).topologyRevisionBySection.get('0,64,0')
-    expect((renderer as any).clientLightOwnerSession.requiredLightForSection('0,64,0')).toMatchObject({
+    const topology = (renderer as any).lightCoordinator.topologyRevisionBySection.get('0,64,0')
+    expect((renderer as any).lightCoordinator.session.requiredLightForSection('0,64,0')).toMatchObject({
       requiredVersion: 3,
       worldGeneration: 1,
       topologyRevision: topology
@@ -808,12 +808,12 @@ describe('WorldRendererCommon client light owner spawn', () => {
       (worker as { postMessage: ReturnType<typeof vi.fn> }).postMessage.mock.calls.some(call => call[0]?.type === 'applyOwnerLightPublication')
     )
     expect(posted).toEqual([true, true])
-    expect((renderer as any).clientLightOwnerSession.requiredLightForSection('16,64,0')?.requiredVersion).toBe(8)
-    expect((renderer as any).clientLightOwnerSession.requiredLightForSection('-16,64,0')?.requiredVersion).toBe(8)
+    expect((renderer as any).lightCoordinator.session.requiredLightForSection('16,64,0')?.requiredVersion).toBe(8)
+    expect((renderer as any).lightCoordinator.session.requiredLightForSection('-16,64,0')?.requiredVersion).toBe(8)
 
     const evaluate = (key: string, lightPublicationVersion: number, meshMode: 'owner' | 'legacyBootstrap') => {
       const [x, , z] = key.split(',').map(Number)
-      return (renderer as any).evaluateOwnerGeometry({
+      return (renderer as any).lightCoordinator.evaluateOwnerGeometry({
         type: 'geometry',
         key,
         worldGeneration: 1,
@@ -844,7 +844,7 @@ describe('WorldRendererCommon client light owner spawn', () => {
     const first = renderer.columnIncarnationFor('0,0')
     renderer.removeColumn(0, 0)
     renderer.loadedChunks['0,0'] = true
-    const late = (renderer as any).evaluateOwnerGeometry({
+    const late = (renderer as any).lightCoordinator.evaluateOwnerGeometry({
       type: 'geometry',
       key: '0,64,0',
       meshMode: 'legacyBootstrap',
