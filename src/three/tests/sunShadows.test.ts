@@ -126,7 +126,7 @@ describe('caster selection', () => {
 describe('SunShadowsModule', () => {
   it('is off by default and does no GPU work while disabled', () => {
     expect(RENDERER_DEFAULT_OPTIONS.sunShadows).toBe('off')
-    expect(RENDERER_DEFAULT_OPTIONS.wavingFoliage).toBe(false)
+    expect(RENDERER_DEFAULT_OPTIONS.wavingGrass).toBe(false)
     const blockEffects = new BlockEffects()
     const worldRenderer = { blockEffects, timeOfTheDay: 6000, worldRendererConfig: { ...defaultWorldRendererConfig } }
     const module = new SunShadowsModule(worldRenderer as any)

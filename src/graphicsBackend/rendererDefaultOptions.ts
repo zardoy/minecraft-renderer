@@ -46,7 +46,7 @@ export const RENDERER_DEFAULT_OPTIONS = {
   rendererMeshersCountOverride: null as number | null,
   starfieldRendering: true as boolean,
   cloudsRendering: true as boolean,
-  wavingFoliage: false as boolean,
+  wavingGrass: false as boolean,
   sunShadows: 'off' as 'off' | 'normal' | 'soft',
   sunShadowsDistance: 64,
   defaultSkybox: true as boolean,
@@ -192,8 +192,8 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
   cloudsRendering: {
     text: 'Clouds'
   },
-  wavingFoliage: {
-    text: 'Waving foliage',
+  wavingGrass: {
+    text: 'Waving grass',
     tooltip: 'Grass, flowers, crops and leaves sway in the wind.'
   },
   sunShadows: {
@@ -337,7 +337,7 @@ export const RENDERER_RENDER_GUI_SECTIONS: ReadonlyArray<{
       'rendererWorldPerformance',
       'starfieldRendering',
       'cloudsRendering',
-      'wavingFoliage',
+      'wavingGrass',
       'sunShadows',
       'sunShadowsDistance',
       'defaultSkybox',

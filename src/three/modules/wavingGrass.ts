@@ -5,7 +5,7 @@ import type { RendererModuleController, RendererModuleManifest } from '../render
  * Grass, flowers, saplings, crops (legacy geometry, tagged by the mesher) and leaves (shader cubes) sway in the wind.
  * Pure vertex shader work: enabling it adds a define to the block materials (one recompile), disabled it costs nothing.
  */
-export class WavingFoliageModule implements RendererModuleController {
+export class WavingGrassModule implements RendererModuleController {
   private enabled = false
 
   constructor(private readonly worldRenderer: WorldRendererThree) {}
@@ -23,7 +23,7 @@ export class WavingFoliageModule implements RendererModuleController {
   }
 
   autoEnableCheck(): boolean {
-    return this.worldRenderer.worldRendererConfig.wavingFoliage
+    return this.worldRenderer.worldRendererConfig.wavingGrass
   }
 
   // Runs after the frame is drawn, the time is one frame behind which is not noticeable.
@@ -36,7 +36,7 @@ export class WavingFoliageModule implements RendererModuleController {
   }
 }
 
-export const wavingFoliageManifest: RendererModuleManifest = {
-  id: 'wavingFoliage',
-  controller: WavingFoliageModule
+export const wavingGrassManifest: RendererModuleManifest = {
+  id: 'wavingGrass',
+  controller: WavingGrassModule
 }

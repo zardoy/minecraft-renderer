@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 import { BlockEffects, buildLeafTileMask, swayOriginMod, wrapSwayTime } from '../blockEffects'
-import { WavingFoliageModule } from '../modules/wavingFoliage'
+import { WavingGrassModule } from '../modules/wavingGrass'
 import { createCubeBlockMaterial, cubeBlockVertexShader } from '../shaders/cubeBlockShader'
 import { createGlobalLegacyBlockMaterial } from '../shaders/legacyBlockShader'
 import { defaultWorldRendererConfig } from '../../graphicsBackend/config'
@@ -97,17 +97,17 @@ it('cube vertex shader keeps the sway behind its define', () => {
   expect(cubeBlockVertexShader).toContain('leafSwayOffset(v_texIndex, relativePos)')
 })
 
-describe('WavingFoliageModule', () => {
+describe('WavingGrassModule', () => {
   const createModule = () => {
     const blockEffects = new BlockEffects()
     const worldRenderer = { blockEffects, worldRendererConfig: { ...defaultWorldRendererConfig } }
-    return { module: new WavingFoliageModule(worldRenderer as any), blockEffects, worldRenderer }
+    return { module: new WavingGrassModule(worldRenderer as any), blockEffects, worldRenderer }
   }
 
   it('is off by default and follows the option', () => {
     const { module, worldRenderer } = createModule()
     expect(module.autoEnableCheck()).toBe(false)
-    worldRenderer.worldRendererConfig.wavingFoliage = true
+    worldRenderer.worldRendererConfig.wavingGrass = true
     expect(module.autoEnableCheck()).toBe(true)
   })
 
