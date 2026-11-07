@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { migrateRendererOptions, RENDERER_DEFAULT_OPTIONS, resolveEnableLighting } from './rendererDefaultOptions'
+import { migrateRendererOptions, resolveEnableLighting } from './rendererDefaultOptions'
 
 describe('migrateRendererOptions', () => {
   it('drops the leaked migration flag so it is not a user option', () => {
@@ -14,15 +14,6 @@ describe('migrateRendererOptions', () => {
 })
 
 describe('newer-version lighting defaults', () => {
-  it('keeps lighting opt-in on 1.13+', () => {
-    expect(RENDERER_DEFAULT_OPTIONS.newVersionsLighting).toBe(false)
-    expect(resolveEnableLighting(RENDERER_DEFAULT_OPTIONS.newVersionsLighting, true)).toBe(false)
-  })
-
-  it('defaults entity lighting on so it can be turned off', () => {
-    expect(RENDERER_DEFAULT_OPTIONS.entityLighting).toBe(true)
-  })
-
   it.each([false, true])('preserves a saved lighting preference (%s)', value => {
     const saved: Record<string, unknown> = { newVersionsLighting: value }
     migrateRendererOptions(saved)

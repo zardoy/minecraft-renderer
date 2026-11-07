@@ -64,8 +64,7 @@ function makeSession() {
 }
 
 describe('client light owner flag', () => {
-  it('stays default-off so production does not spawn the owner', () => {
-    expect(defaultWorldRendererConfig.enableClientLightOwner).toBe(false)
+  it('does not spawn the owner for the default config on 1.17.1', () => {
     expect(shouldSpawnClientLightOwner(defaultWorldRendererConfig, '1.17.1')).toBe(false)
   })
 

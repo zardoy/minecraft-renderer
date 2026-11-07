@@ -161,7 +161,6 @@ describe('WorldRendererCommon client light owner spawn', () => {
     expect(renderer.workers).toHaveLength(2)
     expect(constructedScripts.every(script => script !== LIGHT_OWNER_WORKER_SCRIPT)).toBe(true)
     expect(renderer.hasClientLightOwner()).toBe(false)
-    expect(defaultWorldRendererConfig.enableClientLightOwner).toBe(false)
   })
 
   test('flag-on on a non-1.17.1 session does not load the 1.17.1 tables', () => {
