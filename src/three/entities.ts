@@ -58,13 +58,7 @@ import {
   type HorseHeadRig
 } from './entity/horseHeadAnimation'
 import { WalkingGeneralSwing } from './entity/animations'
-import {
-  LEG_ANIMATION_USER_DATA_KEY,
-  LEG_RIG_USER_DATA_KEY,
-  applyLegRig,
-  createLegRig,
-  type LegRig
-} from './entity/legWalkAnimation'
+import { LEG_ANIMATION_USER_DATA_KEY, LEG_RIG_USER_DATA_KEY, applyLegRig, createLegRig, type LegRig } from './entity/legWalkAnimation'
 import { disposeObject, loadNearestFilterTexture, loadTexture, loadThreeJsTextureFromUrl } from './threeJsUtils'
 import { armorModel, armorTextures, elytraTexture } from './entity/armorModels'
 import { WorldRendererThree } from './worldRendererThree'

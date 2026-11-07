@@ -52,7 +52,12 @@ test('calculateLegSwing follows vanilla gait and is zero at rest', () => {
 })
 
 test('assignLegPhases alternates bipeds and pairs quadruped diagonals', () => {
-  expect(assignLegPhases([{ x: -1.9, z: 0 }, { x: 1.9, z: 0 }])).toEqual([Math.PI, 0])
+  expect(
+    assignLegPhases([
+      { x: -1.9, z: 0 },
+      { x: 1.9, z: 0 }
+    ])
+  ).toEqual([Math.PI, 0])
   // leg0..leg3 as hind-right, hind-left, front-right, front-left
   const quad = assignLegPhases([
     { x: -4, z: 7 },
@@ -81,7 +86,11 @@ test('bedrock legs rotate about their own pivot even when parented to an offset 
     const pivot = new THREE.Vector3(...(leg.pivot as [number, number, number]))
     const expectedAngle = calculateLegSwing(0.4 * Math.PI, 1, rig.legs[i].phase)
     const foot = new THREE.Vector3(pivot.x, pivot.y - 12, pivot.z)
-    const expected = foot.clone().sub(pivot).applyAxisAngle(new THREE.Vector3(1, 0, 0), expectedAngle).add(pivot)
+    const expected = foot
+      .clone()
+      .sub(pivot)
+      .applyAxisAngle(new THREE.Vector3(1, 0, 0), expectedAngle)
+      .add(pivot)
     mesh.getVertexPosition(i, vertex).multiplyScalar(16)
     expect(close(vertex, expected), `leg ${i}`).toBe(true)
     // the pivot itself never moves

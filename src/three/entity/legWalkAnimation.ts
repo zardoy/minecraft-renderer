@@ -8,15 +8,7 @@ export const LEG_SWING_FREQUENCY = 0.6662
 export const LEG_SWING_AMPLITUDE = 1.4
 
 /** Entities whose legs are not driven by ground walking (fly, hop, swim or use bespoke animations). */
-const LEG_ANIMATION_EXCLUDED = new Set([
-  'armor_stand',
-  'axolotl',
-  'ender_dragon',
-  'frog',
-  'parrot',
-  'rabbit',
-  'turtle'
-])
+const LEG_ANIMATION_EXCLUDED = new Set(['armor_stand', 'axolotl', 'ender_dragon', 'frog', 'parrot', 'rabbit', 'turtle'])
 
 const LEG_NAME_PATTERN = /leg/i
 
