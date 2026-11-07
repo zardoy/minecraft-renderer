@@ -72,6 +72,18 @@ export const defaultWorldRendererConfig = {
   sunShadowsDistance: 64,
   /** Screen-space antialiasing of the world frame (one extra full-screen pass when on). */
   antialiasing: 'off' as 'off' | 'fxaa',
+  // Post effects (all cost a few full-screen passes when on, nothing when off)
+  /** Glow around light emitting blocks (torches, lava, glowstone...). */
+  bloom: false,
+  colorGrading: 'off' as 'off' | 'warm' | 'cinematic' | 'vivid',
+  /** Light shafts from the sun through gaps in terrain and clouds. */
+  godRays: false,
+  vignette: false,
+  underwaterWobble: false,
+  /** Shimmer above lava and fire on screen, in the nether and while burning. */
+  heatHaze: false,
+  /** Camera motion blur. */
+  motionBlur: false,
   /** World Y of the cloud layer (vanilla overworld: 192 since 1.18, 128 before). */
   cloudHeight: 192,
   renderEntities: true,

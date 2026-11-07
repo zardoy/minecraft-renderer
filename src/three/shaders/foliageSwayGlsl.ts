@@ -68,12 +68,12 @@ vec3 foliageSwayOffset(vec2 atlasUv, vec3 relativePos) {
 #endif
 
 #ifdef WAVING_FOLIAGE_CUBE
-/** One texel per 12-bit tile index (tilesPerRow wide), r = 1 for leaves. */
-uniform sampler2D u_leafMask;
+/** Tile flags (see blockEffects.ts buildTileFlags): one texel per 12-bit tile index, r = leaves. */
+uniform sampler2D u_tileFlags;
 
 vec3 leafSwayOffset(int texIndex, vec3 relativePos) {
-    int maskWidth = textureSize(u_leafMask, 0).x;
-    if (maskWidth < 2 || texelFetch(u_leafMask, ivec2(texIndex % maskWidth, texIndex / maskWidth), 0).r < 0.5) return vec3(0.0);
+    int maskWidth = textureSize(u_tileFlags, 0).x;
+    if (maskWidth < 2 || texelFetch(u_tileFlags, ivec2(texIndex % maskWidth, texIndex / maskWidth), 0).r < 0.5) return vec3(0.0);
     vec3 p = swayWorldPos(relativePos);
     vec2 wind = windOffset(p) * ${glslFloat(LEAF_AMPLITUDE)};
     float bob = sin(SWAY_TAU / ${glslFloat(SWAY_PERIOD)} * 9.0 * (p.x + p.z));

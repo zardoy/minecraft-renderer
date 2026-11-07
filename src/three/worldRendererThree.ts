@@ -6,7 +6,8 @@ import { Biome } from 'minecraft-data'
 import { DisplayWorldOptions, GraphicsInitOptions } from '../graphicsBackend/types'
 import { AnimatedBlockTextures, createAnimatedBlockTextures } from './blockAnimations'
 import { BlockEffects } from './blockEffects'
-import { PostProcessing } from './postProcessing'
+import { needsBlockEmission, POST_EFFECTS_OFF, PostProcessing, type PostEffectSettings, type PostFrameInfo } from './postProcessing'
+import { sunDirectionFromTime, sunShadowStrength } from './sunShadowMath'
 import { sectionPos } from '../lib/simpleUtils'
 import { WorldRendererCommon } from '../lib/worldrendererCommon'
 import { calculateSkyLightSimple } from '../lib/skyLight'
@@ -102,8 +103,10 @@ export class WorldRendererThree extends WorldRendererCommon {
   blockAnimations?: AnimatedBlockTextures
   /** Optional chunk shader effects (waving foliage...), survives world resets unlike chunkMeshManager */
   readonly blockEffects = new BlockEffects()
-  /** Screen-space effects (FXAA), no-op while off */
+  /** Screen-space effects (FXAA, bloom, grading...), no-op while all are off */
   readonly postProcessing = new PostProcessing()
+  private readonly postEffectSettings: PostEffectSettings = { ...POST_EFFECTS_OFF }
+  private postFrameInfo?: PostFrameInfo
   cursorBlock: CursorBlock
   onRender: Array<(deltaTime: number) => void> = []
   private lastRenderTime = 0
@@ -725,7 +728,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     texture.generateMipmaps = false
     this.material.map = texture
     this.setupBlockAnimations(texture, resources)
-    this.blockEffects.setLeafMaskFromAtlas(resources.blocksAtlasJson)
+    this.blockEffects.setTileFlagsFromAtlas(resources.blocksAtlasJson)
     this.chunkMeshManager.syncCubeShaderUniforms()
     this.chunkMeshManager.syncLegacyShaderUniforms()
 
@@ -1476,8 +1479,14 @@ export class WorldRendererThree extends WorldRendererCommon {
       globalLegacyBlendBuffer.uploadDirtyIndexRange()
     }
     this.blockAnimations?.update(this.renderer, start, this.worldRendererConfig.animatedTextures)
-    this.postProcessing.begin(this.renderer, this.worldRendererConfig.antialiasing)
-    this.renderer.render(this.scene, cam)
+    const postEffects = this.syncPostEffectSettings()
+    this.blockEffects.setBlockEmission(needsBlockEmission(postEffects))
+    if (this.postProcessing.begin(this.renderer, postEffects)) {
+      this.renderer.render(this.scene, cam)
+      this.postProcessing.afterWorld(this.renderer, this.updatePostFrameInfo(cam, start))
+    } else {
+      this.renderer.render(this.scene, cam)
+    }
 
     if (
       this.displayOptions.inWorldRenderingConfig.showHand &&
@@ -1520,6 +1529,47 @@ export class WorldRendererThree extends WorldRendererCommon {
       loadedTextureCount: this.renderer.info.memory.textures,
       fps: this.lastFps
     })
+  }
+
+  private syncPostEffectSettings(): PostEffectSettings {
+    const cfg = this.worldRendererConfig
+    const s = this.postEffectSettings
+    s.antialiasing = cfg.antialiasing
+    s.bloom = cfg.bloom
+    s.colorGrading = cfg.colorGrading
+    s.godRays = cfg.godRays
+    s.vignette = cfg.vignette
+    s.underwaterWobble = cfg.underwaterWobble
+    s.heatHaze = cfg.heatHaze
+    s.motionBlur = cfg.motionBlur
+    return s
+  }
+
+  private updatePostFrameInfo(camera: THREE.PerspectiveCamera, nowMs: number): PostFrameInfo {
+    const cfg = this.worldRendererConfig
+    const info = (this.postFrameInfo ??= {
+      camera,
+      cameraWorldPosition: { x: 0, y: 0, z: 0 },
+      timeSeconds: 0,
+      inWater: false,
+      inNether: false,
+      onFire: false,
+      sunDirection: new THREE.Vector3(),
+      sunStrength: 0
+    })
+    info.camera = camera
+    const e = camera.matrixWorld.elements
+    info.cameraWorldPosition.x = this.sceneOrigin.toWorldX(e[12]!)
+    info.cameraWorldPosition.y = this.sceneOrigin.toWorldY(e[13]!)
+    info.cameraWorldPosition.z = this.sceneOrigin.toWorldZ(e[14]!)
+    info.timeSeconds = nowMs / 1000
+    info.inWater = this.playerStateReactive.inWater
+    info.onFire = this.playerStateReactive.onFire
+    info.inNether = cfg.cardinalLight === 'nether'
+    sunDirectionFromTime(this.timeOfTheDay, info.sunDirection)
+    const hasSun = cfg.defaultSkybox && !info.inNether
+    info.sunStrength = hasSun ? sunShadowStrength(info.sunDirection.y) : 0
+    return info
   }
 
   renderHead(position: Vec3, rotation: number, isWall: boolean, blockEntity) {

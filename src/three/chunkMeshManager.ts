@@ -315,7 +315,7 @@ export class ChunkMeshManager {
   private getLegacyShaderMaterial(): THREE.ShaderMaterial {
     if (!this.legacyShaderMaterial) {
       this.legacyShaderMaterial = createLegacyBlockMaterial()
-      this.worldRenderer.blockEffects.register(this.legacyShaderMaterial, 'legacy')
+      this.worldRenderer.blockEffects.register(this.legacyShaderMaterial, 'legacyBlended')
       this.syncLegacyShaderUniforms()
     }
     return this.legacyShaderMaterial
@@ -341,7 +341,7 @@ export class ChunkMeshManager {
   private getGlobalLegacyBlendShaderMaterial(): THREE.ShaderMaterial {
     if (!this.globalLegacyBlendShaderMaterial) {
       this.globalLegacyBlendShaderMaterial = createGlobalLegacyBlendMaterial()
-      this.worldRenderer.blockEffects.register(this.globalLegacyBlendShaderMaterial, 'legacy')
+      this.worldRenderer.blockEffects.register(this.globalLegacyBlendShaderMaterial, 'legacyBlended')
       this.syncLegacyShaderUniforms()
     }
     return this.globalLegacyBlendShaderMaterial

@@ -50,6 +50,13 @@ export const RENDERER_DEFAULT_OPTIONS = {
   sunShadows: 'off' as 'off' | 'normal' | 'soft',
   sunShadowsDistance: 64,
   antialiasing: 'off' as 'off' | 'fxaa',
+  bloom: false as boolean,
+  colorGrading: 'off' as 'off' | 'warm' | 'cinematic' | 'vivid',
+  godRays: false as boolean,
+  vignette: false as boolean,
+  underwaterWobble: false as boolean,
+  heatHaze: false as boolean,
+  motionBlur: false as boolean,
   defaultSkybox: true as boolean,
   menuBackgroundMode: MB.mode,
   menuBackgroundMinecraftTextures: MB.minecraftTextures as boolean,
@@ -214,6 +221,39 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
       ['fxaa', 'FXAA']
     ]
   },
+  bloom: {
+    text: 'Bloom',
+    tooltip: 'Glow around light emitting blocks (torches, lava, glowstone...). Several extra passes.'
+  },
+  colorGrading: {
+    text: 'Color grading',
+    tooltip: 'Film-like tone curve and colour look for the whole image.',
+    possibleValues: [
+      ['off', 'Off'],
+      ['warm', 'Warm'],
+      ['cinematic', 'Cinematic'],
+      ['vivid', 'Vivid']
+    ]
+  },
+  godRays: {
+    text: 'God rays',
+    tooltip: 'Light shafts from the sun through gaps in terrain and clouds.'
+  },
+  vignette: {
+    text: 'Vignette'
+  },
+  underwaterWobble: {
+    text: 'Underwater wobble',
+    tooltip: 'Wavy view while under water.'
+  },
+  heatHaze: {
+    text: 'Heat haze',
+    tooltip: 'Shimmer above lava and fire, in the nether and while burning.'
+  },
+  motionBlur: {
+    text: 'Motion blur',
+    tooltip: 'Blur when the camera moves or turns.'
+  },
   sunShadowsDistance: {
     text: 'Shadow distance',
     tooltip: 'Blocks around you that receive sun shadows. Larger distances make shadows blurrier.',
@@ -350,6 +390,13 @@ export const RENDERER_RENDER_GUI_SECTIONS: ReadonlyArray<{
       'sunShadows',
       'sunShadowsDistance',
       'antialiasing',
+      'bloom',
+      'colorGrading',
+      'godRays',
+      'vignette',
+      'underwaterWobble',
+      'heatHaze',
+      'motionBlur',
       'defaultSkybox',
       'disableBlockEntityTextures',
       'showChunkBorders',

@@ -1,30 +1,47 @@
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
-import { BlockEffects, buildLeafTileMask, swayOriginMod, wrapSwayTime } from '../blockEffects'
+import { BlockEffects, buildTileFlags, swayOriginMod, TILE_FLAG, tileFlagsForTexture, wrapSwayTime } from '../blockEffects'
 import { WavingGrassModule } from '../modules/wavingGrass'
 import { createCubeBlockMaterial, cubeBlockVertexShader } from '../shaders/cubeBlockShader'
 import { createGlobalLegacyBlockMaterial } from '../shaders/legacyBlockShader'
 import { defaultWorldRendererConfig } from '../../graphicsBackend/config'
 
-describe('buildLeafTileMask', () => {
-  it('marks the shader cube tile index of every leaves texture', () => {
-    const mask = buildLeafTileMask({
+describe('buildTileFlags', () => {
+  it('marks the shader cube tile index of leaves and light sources', () => {
+    const tile = 16 / 1024
+    const flags = buildTileFlags({
       width: 1024,
       height: 1024,
+      suSv: tile,
       textures: {
-        oak_leaves: { u: 32 / 1024, v: 16 / 1024 }, // col 2, row 1
+        oak_leaves: { u: 2 * tile, v: tile }, // col 2, row 1
+        lava_still: { u: 3 * tile, v: 0 },
         stone: { u: 0, v: 0 }
       }
     })!
-    expect(mask.width).toBe(64)
-    expect(mask.height).toBe(64)
-    expect(mask.data[1 * 64 + 2]).toBe(255)
-    expect(mask.data[0]).toBe(0)
-    expect(mask.data.reduce((a, b) => a + (b ? 1 : 0), 0)).toBe(1)
+    expect(flags.width).toBe(64)
+    expect(flags.height).toBe(64)
+    const at = (col: number, row: number, channel: number) => flags.data[(row * 64 + col) * 4 + channel]
+    expect(at(2, 1, TILE_FLAG.leaves)).toBe(255)
+    expect(at(2, 1, TILE_FLAG.emissive)).toBe(0)
+    expect(at(3, 0, TILE_FLAG.emissive)).toBe(255)
+    expect(at(3, 0, TILE_FLAG.hot)).toBe(255)
+    expect(at(0, 0, TILE_FLAG.leaves) + at(0, 0, TILE_FLAG.emissive)).toBe(0)
   })
 
-  it('gives up on atlases that cannot use the shader cube layout', () => {
-    expect(buildLeafTileMask({ width: 4096, height: 4096, textures: {} })).toBeUndefined()
+  it('covers every cell of larger textures', () => {
+    const flags = buildTileFlags({ width: 64, height: 64, textures: { glowstone: { u: 0, v: 0, su: 0.5, sv: 0.5 } } })!
+    expect(flags.data[(1 * 4 + 1) * 4 + TILE_FLAG.emissive]).toBe(255)
+    expect(flags.data[(2 * 4 + 2) * 4 + TILE_FLAG.emissive]).toBe(0)
+  })
+
+  it('knows light sources and hot surfaces by texture name', () => {
+    expect(tileFlagsForTexture('torch')).toEqual([TILE_FLAG.emissive])
+    expect(tileFlagsForTexture('torch_on')).toEqual([TILE_FLAG.emissive])
+    expect(tileFlagsForTexture('fire_0')).toEqual([TILE_FLAG.emissive, TILE_FLAG.hot])
+    expect(tileFlagsForTexture('ochre_froglight_side')).toEqual([TILE_FLAG.emissive])
+    expect(tileFlagsForTexture('redstone_lamp')).toEqual([])
+    expect(tileFlagsForTexture('stone')).toEqual([])
   })
 })
 
@@ -82,13 +99,29 @@ describe('BlockEffects', () => {
     expect(material.defines.WAVING_FOLIAGE).toBeUndefined()
   })
 
-  it('leaf mask texture follows the atlas', () => {
+  it('tile flags texture follows the atlas', () => {
     const effects = new BlockEffects()
-    effects.setLeafMaskFromAtlas({ width: 1024, height: 1024, textures: { birch_leaves: { u: 0, v: 0 } } })
-    const texture = effects.uniforms.u_leafMask.value as THREE.DataTexture
+    effects.setTileFlagsFromAtlas({ width: 1024, height: 1024, textures: { birch_leaves: { u: 0, v: 0 } } })
+    const texture = effects.uniforms.u_tileFlags.value as THREE.DataTexture
     expect(texture.image.width).toBe(64)
-    effects.setLeafMaskFromAtlas(undefined)
-    expect(effects.uniforms.u_leafMask.value).toBeNull()
+    effects.setTileFlagsFromAtlas(undefined)
+    expect(effects.uniforms.u_tileFlags.value).toBeNull()
+  })
+
+  it('encodes emission only on materials drawn without blending', () => {
+    const effects = new BlockEffects()
+    const cube = createCubeBlockMaterial()
+    const opaque = createGlobalLegacyBlockMaterial()
+    const blended = createGlobalLegacyBlockMaterial()
+    effects.register(cube, 'cube')
+    effects.register(opaque, 'legacy')
+    effects.register(blended, 'legacyBlended')
+    effects.setBlockEmission(true)
+    expect(cube.defines.BLOCK_EMISSION).toBe('')
+    expect(opaque.defines.BLOCK_EMISSION).toBe('')
+    expect(blended.defines.BLOCK_EMISSION).toBeUndefined()
+    effects.setWavingFoliage(true)
+    expect(blended.defines.WAVING_FOLIAGE_LEGACY).toBe('')
   })
 })
 

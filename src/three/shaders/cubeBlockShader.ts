@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { APPLY_LIGHTMAP_GLSL, DEFAULT_LIGHTMAP_PARAMS, type BlockLightmapParams } from '../../lib/blockEntityLighting'
 import { FOLIAGE_SWAY_GLSL } from './foliageSwayGlsl'
 import { CUBE_SHADOW_CASTER_FRAGMENT, SUN_SHADOW_FRAGMENT_GLSL, SUN_SHADOW_VERTEX_GLSL } from './sunShadowGlsl'
+import { BLOCK_EMISSION_GLSL } from './blockEmissionGlsl'
 
 export type { BlockLightmapParams }
 
@@ -323,6 +324,7 @@ void applyFog() {
 
 ${APPLY_LIGHTMAP_GLSL}
 ${SUN_SHADOW_FRAGMENT_GLSL}
+${BLOCK_EMISSION_GLSL}
 
 const vec3 FACE_NORMAL[6] = vec3[6](
     vec3(0.0, 1.0, 0.0),  // UP
@@ -399,6 +401,9 @@ void main() {
 
     // Opaque full cubes: always alpha 1 (legacy uses cutout material; avoids seeing blocks behind)
     FragColor = vec4(baseColor.rgb * tint * brightness, 1.0);
+#ifdef BLOCK_EMISSION
+    FragColor.a = blockEmissionAlpha(tileOrigin / 16, baseColor.rgb * tint);
+#endif
     applyFog();
     writeLogDepth();
 }

@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { APPLY_LIGHTMAP_GLSL, DEFAULT_LIGHTMAP_PARAMS, type BlockLightmapParams } from '../../lib/blockEntityLighting'
 import { FOLIAGE_SWAY_GLSL } from './foliageSwayGlsl'
 import { LEGACY_SHADOW_CASTER_FRAGMENT, SUN_SHADOW_FRAGMENT_GLSL, SUN_SHADOW_VERTEX_GLSL } from './sunShadowGlsl'
+import { BLOCK_EMISSION_GLSL } from './blockEmissionGlsl'
 
 export type RenderOrigin = { x: number; y: number; z: number }
 
@@ -136,6 +137,7 @@ void applyFog() {
 
 ${APPLY_LIGHTMAP_GLSL}
 ${SUN_SHADOW_FRAGMENT_GLSL}
+${BLOCK_EMISSION_GLSL}
 
 void main() {
     vec4 texColor = texture(u_atlas, v_uv);
@@ -153,6 +155,9 @@ void main() {
     }
 
     FragColor = vec4(rgb, alpha);
+#ifdef BLOCK_EMISSION
+    FragColor.a = blockEmissionAlpha(ivec2(floor(v_uv * vec2(textureSize(u_atlas, 0)) / 16.0)), texColor.rgb * vColor);
+#endif
     applyFog();
     writeLogDepth();
 }

@@ -157,6 +157,13 @@ export function applyRendererOptions(appViewer: AppViewer, o: RendererStorageOpt
   cfg.sunShadows = o.sunShadows
   cfg.sunShadowsDistance = o.sunShadowsDistance
   cfg.antialiasing = o.antialiasing
+  cfg.bloom = o.bloom
+  cfg.colorGrading = o.colorGrading
+  cfg.godRays = o.godRays
+  cfg.vignette = o.vignette
+  cfg.underwaterWobble = o.underwaterWobble
+  cfg.heatHaze = o.heatHaze
+  cfg.motionBlur = o.motionBlur
   cfg.defaultSkybox = o.defaultSkybox
   cfg.fov = o.fov
   cfg.shaderCubeDebugMode = rendererShaderCubeDebugModeToValue(o.rendererShaderCubeDebugMode)
