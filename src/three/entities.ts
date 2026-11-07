@@ -58,6 +58,13 @@ import {
   type HorseHeadRig
 } from './entity/horseHeadAnimation'
 import { WalkingGeneralSwing } from './entity/animations'
+import {
+  LEG_ANIMATION_USER_DATA_KEY,
+  LEG_RIG_USER_DATA_KEY,
+  applyLegRig,
+  createLegRig,
+  type LegRig
+} from './entity/legWalkAnimation'
 import { disposeObject, loadNearestFilterTexture, loadTexture, loadThreeJsTextureFromUrl } from './threeJsUtils'
 import { armorModel, armorTextures, elytraTexture } from './entity/armorModels'
 import { WorldRendererThree } from './worldRendererThree'
@@ -591,16 +598,25 @@ export class Entities {
 
       const horseHeadRig = entity.userData[HORSE_HEAD_RIG_USER_DATA_KEY] as HorseHeadRig | undefined
       const horseAnimation = entity.userData[HORSE_HEAD_ANIMATION_USER_DATA_KEY] as HorseHeadAnimationState | undefined
+      let limbAnimation: ReturnType<typeof updateHorseHeadAnimationFrame> | undefined
       if (horseHeadRig && horseAnimation) {
-        const animation = updateHorseHeadAnimationFrame(horseAnimation, dt)
+        limbAnimation = updateHorseHeadAnimationFrame(horseAnimation, dt)
         const pose = calculateHorseHeadPose({
           entityPitch: entity.userData._horseHeadPitch ?? 0,
           headYaw: entity.userData._horseHeadYaw ?? entity.userData._horseBodyYaw ?? 0,
           bodyYaw: entity.userData._horseBodyYaw ?? 0,
-          limbSwing: animation.limbSwing,
-          limbSwingAmount: animation.limbSwingAmount
+          limbSwing: limbAnimation.limbSwing,
+          limbSwingAmount: limbAnimation.limbSwingAmount
         })
         applyHorseHeadPose(horseHeadRig, pose)
+      }
+
+      const legRig = entity.userData[LEG_RIG_USER_DATA_KEY] as LegRig | undefined
+      const legAnimation = entity.userData[LEG_ANIMATION_USER_DATA_KEY] as HorseHeadAnimationState | undefined
+      if (legRig && legAnimation) {
+        // Horses share one state between head and legs, it must only be advanced once per frame.
+        limbAnimation ??= updateHorseHeadAnimationFrame(legAnimation, dt)
+        applyLegRig(legRig, limbAnimation.limbSwing, limbAnimation.limbSwingAmount)
       }
 
       if (!isPlayerEntity && playerObject) {
@@ -1186,6 +1202,8 @@ export class Entities {
       e.userData._rotTween?.stop()
       e.userData[HORSE_HEAD_ANIMATION_USER_DATA_KEY] = undefined
       e.userData[HORSE_HEAD_RIG_USER_DATA_KEY] = undefined
+      e.userData[LEG_ANIMATION_USER_DATA_KEY] = undefined
+      e.userData[LEG_RIG_USER_DATA_KEY] = undefined
       const boatMesh = e.children.find(c => c.name === 'mesh')
       if (boatMesh) disposeBoatWaterPatch(boatMesh)
       if (e.additionalCleanup) e.additionalCleanup()
@@ -1318,6 +1336,11 @@ export class Entities {
       if (horseHeadRig) {
         e.userData[HORSE_HEAD_RIG_USER_DATA_KEY] = horseHeadRig
         e.userData[HORSE_HEAD_ANIMATION_USER_DATA_KEY] = createHorseHeadAnimationState()
+      }
+      const legRig = isPlayerModel ? undefined : createLegRig(mesh, entity.name)
+      if (legRig) {
+        e.userData[LEG_RIG_USER_DATA_KEY] = legRig
+        e.userData[LEG_ANIMATION_USER_DATA_KEY] = e.userData[HORSE_HEAD_ANIMATION_USER_DATA_KEY] ?? createHorseHeadAnimationState()
       }
     } else {
       mesh = e.children.find(c => c.name === 'mesh')
@@ -1595,7 +1618,7 @@ export class Entities {
           })
           .start()
       }
-      const horseAnimation = e.userData[HORSE_HEAD_ANIMATION_USER_DATA_KEY] as HorseHeadAnimationState | undefined
+      const horseAnimation = (e.userData[HORSE_HEAD_ANIMATION_USER_DATA_KEY] ?? e.userData[LEG_ANIMATION_USER_DATA_KEY]) as HorseHeadAnimationState | undefined
       if (!headRotationOnly && horseAnimation && Number.isFinite(entity.position.x) && Number.isFinite(entity.position.z)) {
         setHorseHeadAnimationPosition(horseAnimation, entity.position)
       }
