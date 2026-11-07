@@ -47,6 +47,8 @@ export const RENDERER_DEFAULT_OPTIONS = {
   starfieldRendering: true as boolean,
   cloudsRendering: true as boolean,
   wavingFoliage: false as boolean,
+  sunShadows: 'off' as 'off' | 'normal' | 'soft',
+  sunShadowsDistance: 64,
   defaultSkybox: true as boolean,
   menuBackgroundMode: MB.mode,
   menuBackgroundMinecraftTextures: MB.minecraftTextures as boolean,
@@ -194,6 +196,22 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
     text: 'Waving foliage',
     tooltip: 'Grass, flowers, crops and leaves sway in the wind.'
   },
+  sunShadows: {
+    text: 'Sun shadows',
+    tooltip: 'Shadows cast by blocks in daylight. Soft uses a wider, smoother filter (more GPU work).',
+    possibleValues: [
+      ['off', 'Off'],
+      ['normal', 'Normal'],
+      ['soft', 'Soft']
+    ]
+  },
+  sunShadowsDistance: {
+    text: 'Shadow distance',
+    tooltip: 'Blocks around you that receive sun shadows. Larger distances make shadows blurrier.',
+    min: 16,
+    max: 128,
+    unit: ' blocks'
+  },
   defaultSkybox: {
     text: 'Default skybox'
   },
@@ -320,6 +338,8 @@ export const RENDERER_RENDER_GUI_SECTIONS: ReadonlyArray<{
       'starfieldRendering',
       'cloudsRendering',
       'wavingFoliage',
+      'sunShadows',
+      'sunShadowsDistance',
       'defaultSkybox',
       'disableBlockEntityTextures',
       'showChunkBorders',

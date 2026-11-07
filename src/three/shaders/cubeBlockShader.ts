@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { APPLY_LIGHTMAP_GLSL, DEFAULT_LIGHTMAP_PARAMS, type BlockLightmapParams } from '../../lib/blockEntityLighting'
 import { FOLIAGE_SWAY_GLSL } from './foliageSwayGlsl'
+import { CUBE_SHADOW_CASTER_FRAGMENT, SUN_SHADOW_FRAGMENT_GLSL, SUN_SHADOW_VERTEX_GLSL } from './sunShadowGlsl'
 
 export type { BlockLightmapParams }
 
@@ -113,6 +114,14 @@ out float vFogDepth;
 // projectionMatrix / modelViewMatrix: injected by Three.js ShaderMaterial (do not redeclare)
 
 ${FOLIAGE_SWAY_GLSL}
+${SUN_SHADOW_VERTEX_GLSL}
+
+#ifdef SUN_SHADOWS
+const vec3 SHADOW_FACE_NORMAL[6] = vec3[6](
+    vec3(0.0, 1.0, 0.0), vec3(0.0, -1.0, 0.0), vec3(1.0, 0.0, 0.0),
+    vec3(-1.0, 0.0, 0.0), vec3(0.0, 0.0, 1.0), vec3(0.0, 0.0, -1.0)
+);
+#endif
 
 // BASE, DU, DV per face (UP=0, DOWN=1, EAST=2, WEST=3, SOUTH=4, NORTH=5)
 // position = BASE[faceId] + u * DU[faceId] + v * DV[faceId]
@@ -229,8 +238,15 @@ ${faceUvGlsl}
 #ifdef WAVING_FOLIAGE_CUBE
     relativePos += leafSwayOffset(v_texIndex, relativePos);
 #endif
+#ifdef SHADOW_CASTER
+    gl_Position = u_lightViewProj * vec4(shadowSpacePos(relativePos), 1.0);
+    return;
+#endif
     vec4 mvPosition = modelViewMatrix * vec4(relativePos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
+#ifdef SUN_SHADOWS
+    writeSunShadowVaryings(relativePos, SHADOW_FACE_NORMAL[faceId]);
+#endif
 
 #ifdef USE_LOGARITHMIC_DEPTH_BUFFER
     // Mirrors three.js logdepthbuf_vertex chunk (EXT path: fragment writes gl_FragDepth).
@@ -306,6 +322,7 @@ void applyFog() {
 }
 
 ${APPLY_LIGHTMAP_GLSL}
+${SUN_SHADOW_FRAGMENT_GLSL}
 
 const vec3 FACE_NORMAL[6] = vec3[6](
     vec3(0.0, 1.0, 0.0),  // UP
@@ -369,7 +386,12 @@ void main() {
     // Tint from palette (256x1 RGBA texture, index 0 = white [1,1,1])
     vec3 tint = texelFetch(u_tintPalette, ivec2(v_tintIndex, 0), 0).rgb;
 
-    float L = max(v_blockLight, min(v_skyLight, u_skyLevel));
+    float sky = min(v_skyLight, u_skyLevel);
+#ifdef SUN_SHADOWS
+    // The sun path is the XY plane: north/south faces are exactly side-on to it all day, keep them half lit.
+    sky = shadowedSkyLight(sky, smoothstep(-0.15, 0.15, dot(FACE_NORMAL[v_faceId], u_sunDir)));
+#endif
+    float L = max(v_blockLight, sky);
     float Lm = applyLightmap(L);
     float aoFactor = mix(0.8 * v_ao + 0.2, v_ao, u_shadingTheme);
     float side     = sideShadingFromFaceId(v_faceId, u_shadingTheme, u_cardinalLight);
@@ -419,6 +441,29 @@ export function createCubeBlockMaterial(): THREE.ShaderMaterial {
     glslVersion: THREE.GLSL3,
     // Required for Three.js to inject \`#define USE_FOG\` (and refresh fog uniforms).
     fog: true
+  })
+}
+
+/**
+ * Depth-only variant for the sun shadow pass. Shares atlas and camera-origin uniform objects with the colour
+ * material (whatever the camera is, the caster positions cancel it out), `lightViewProj` is the shadow camera.
+ */
+export function createCubeShadowCasterMaterial(source: THREE.ShaderMaterial, lightViewProj: { value: THREE.Matrix4 }): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    vertexShader,
+    fragmentShader: CUBE_SHADOW_CASTER_FRAGMENT,
+    uniforms: {
+      u_atlas: source.uniforms.u_atlas!,
+      u_sectionOriginRel: source.uniforms.u_sectionOriginRel!,
+      u_originDelta: source.uniforms.u_originDelta!,
+      u_cameraOriginFrac: source.uniforms.u_cameraOriginFrac!,
+      u_lightViewProj: lightViewProj
+    },
+    defines: { SHADOW_CASTER: '' },
+    side: THREE.DoubleSide,
+    blending: THREE.NoBlending,
+    glslVersion: THREE.GLSL3,
+    fog: false
   })
 }
 

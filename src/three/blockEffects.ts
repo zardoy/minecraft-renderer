@@ -4,6 +4,8 @@ import { SWAY_PERIOD, SWAY_TIME_PERIOD } from './shaders/foliageSwayGlsl'
 /** Which block shader family a material belongs to (decides the defines it gets). */
 export type BlockMaterialKind = 'cube' | 'legacy'
 
+export type SunShadowsMode = 'off' | 'normal' | 'soft'
+
 type AtlasJson = {
   width: number
   height: number
@@ -52,11 +54,19 @@ export class BlockEffects {
   readonly uniforms = {
     u_swayTime: { value: 0 },
     u_swayOriginMod: { value: new THREE.Vector3() },
-    u_leafMask: { value: null as THREE.Texture | null }
+    u_leafMask: { value: null as THREE.Texture | null },
+    // Sun shadows, written by the sunShadows module (see shaders/sunShadowGlsl.ts)
+    u_shadowMap: { value: null as THREE.DepthTexture | null },
+    u_shadowMatrix: { value: new THREE.Matrix4() },
+    u_shadowParams: { value: new THREE.Vector4() },
+    u_shadowBias: { value: new THREE.Vector2() },
+    u_shadowNormalOffset: { value: 0 },
+    u_sunDir: { value: new THREE.Vector3(0, 1, 0) }
   }
 
   private readonly materials = new Map<THREE.ShaderMaterial, BlockMaterialKind>()
   private wavingFoliage = false
+  private sunShadows: SunShadowsMode = 'off'
   private leafMaskTexture: THREE.DataTexture | null = null
 
   /** Call for every block material once it is created. */
@@ -77,6 +87,16 @@ export class BlockEffects {
   setWavingFoliage(enabled: boolean): void {
     if (this.wavingFoliage === enabled) return
     this.wavingFoliage = enabled
+    this.refreshDefines()
+  }
+
+  getSunShadows(): SunShadowsMode {
+    return this.sunShadows
+  }
+
+  setSunShadows(mode: SunShadowsMode): void {
+    if (this.sunShadows === mode) return
+    this.sunShadows = mode
     this.refreshDefines()
   }
 
@@ -126,6 +146,8 @@ export class BlockEffects {
     set('WAVING_FOLIAGE', this.wavingFoliage)
     set('WAVING_FOLIAGE_LEGACY', this.wavingFoliage && kind === 'legacy')
     set('WAVING_FOLIAGE_CUBE', this.wavingFoliage && kind === 'cube')
+    set('SUN_SHADOWS', this.sunShadows !== 'off')
+    set('SUN_SHADOWS_SOFT', this.sunShadows === 'soft')
     material.defines = defines
   }
 }

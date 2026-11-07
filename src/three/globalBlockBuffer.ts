@@ -46,6 +46,18 @@ export type GlobalBlockBufferShaderData = {
   count: number
 }
 
+/** Sort by start and merge physically adjacent ranges (never bridges gaps). */
+export function mergeAdjacentSpans(spans: CubeDrawSpan[]): CubeDrawSpan[] {
+  spans.sort((a, b) => a.start - b.start)
+  const merged: CubeDrawSpan[] = []
+  for (const span of spans) {
+    const last = merged.at(-1)
+    if (last && last.start + last.count === span.start) last.count += span.count
+    else merged.push({ ...span })
+  }
+  return merged
+}
+
 /**
  * Single GPU instanced mesh for all shader-cube faces in the world.
  * Camera-relative positioning via u_originDelta + u_sectionOriginRel; no sceneOrigin tracking.
@@ -107,21 +119,41 @@ export class GlobalBlockBuffer {
     scene.add(this.mesh)
 
     this.mesh.onAfterRender = (renderer, _scene, _camera, _geometry, material) => {
-      if (this.visibleSpans.length === 0) return
-      const shaderMaterial = material as THREE.ShaderMaterial
-      const gl = renderer.getContext() as WebGL2RenderingContext
-      if (!this.multiDrawCaps) {
-        this.multiDrawCaps = detectMultiDrawCaps(gl)
-        logMultiDrawTierOnce(this.multiDrawCaps.tier, this.debugOverlay)
-      }
-      drawCubeSpans(
-        gl,
-        this.multiDrawCaps,
-        this.visibleSpans,
-        this._drawScratch,
-        this.multiDrawCaps.tier === 'C' ? (g, spans) => this.drawTierCSpans(g, spans, renderer, shaderMaterial) : undefined
-      )
+      this.drawSpans(renderer, material as THREE.ShaderMaterial, this.visibleSpans)
     }
+  }
+
+  /**
+   * Issue draws for `spans` with the program three just bound (call from onAfterRender of a mesh using this geometry).
+   * Used by the main mesh and by extra passes (sun shadows) that render the same buffer with another material.
+   */
+  drawSpans(renderer: THREE.WebGLRenderer, material: THREE.ShaderMaterial, spans: readonly CubeDrawSpan[]): void {
+    if (spans.length === 0) return
+    const gl = renderer.getContext() as WebGL2RenderingContext
+    if (!this.multiDrawCaps) {
+      this.multiDrawCaps = detectMultiDrawCaps(gl)
+      logMultiDrawTierOnce(this.multiDrawCaps.tier, this.debugOverlay)
+    }
+    drawCubeSpans(
+      gl,
+      this.multiDrawCaps,
+      spans,
+      this._drawScratch,
+      this.multiDrawCaps.tier === 'C' ? (g, s) => this.drawTierCSpans(g, s, renderer, material) : undefined
+    )
+  }
+
+  /** Drawable spans of the sections accepted by `include` (fully uploaded ones only), adjacent slots merged. */
+  collectSectionSpans(include: (sectionKey: string) => boolean): CubeDrawSpan[] {
+    const spans: CubeDrawSpan[] = []
+    for (const key of this.sectionSlots.keys()) {
+      if (!include(key)) continue
+      const start = this.getSectionDrawStart(key)
+      const count = this.getSectionDrawCount(key)
+      if (start === undefined || !count) continue
+      spans.push({ start, count })
+    }
+    return mergeAdjacentSpans(spans)
   }
 
   setDebugOverlay(enabled: boolean): void {

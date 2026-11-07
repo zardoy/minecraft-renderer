@@ -66,6 +66,10 @@ export const defaultWorldRendererConfig = {
   clouds: true,
   /** Grass, flowers, crops and leaves sway in the wind (vertex shader only, no remesh to toggle). */
   wavingFoliage: false,
+  /** Sun shadows on chunk geometry: `soft` uses a wider filter. Off at night and outside the overworld. */
+  sunShadows: 'off' as 'off' | 'normal' | 'soft',
+  /** Blocks around the camera that receive sun shadows (16-128). */
+  sunShadowsDistance: 64,
   /** World Y of the cloud layer (vanilla overworld: 192 since 1.18, 128 before). */
   cloudHeight: 192,
   renderEntities: true,

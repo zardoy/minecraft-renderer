@@ -154,6 +154,8 @@ export function applyRendererOptions(appViewer: AppViewer, o: RendererStorageOpt
   cfg.starfield = o.starfieldRendering
   cfg.clouds = o.cloudsRendering
   cfg.wavingFoliage = o.wavingFoliage
+  cfg.sunShadows = o.sunShadows
+  cfg.sunShadowsDistance = o.sunShadowsDistance
   cfg.defaultSkybox = o.defaultSkybox
   cfg.fov = o.fov
   cfg.shaderCubeDebugMode = rendererShaderCubeDebugModeToValue(o.rendererShaderCubeDebugMode)
