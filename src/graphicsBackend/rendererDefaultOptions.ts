@@ -55,6 +55,7 @@ export const RENDERER_DEFAULT_OPTIONS = {
   menuBackgroundV2CameraSpeed: MB.v2CameraSpeedPercent,
   menuBackgroundV2BlockSpeed: MB.v2BlockSpeedPercent,
   rendererFuturisticReveal: false as boolean,
+  rendererSmartCull: true as boolean,
   rendererPerfDebugOverlay: false as boolean,
   disableBlockEntityTextures: false as boolean,
   rendererMesher: 'wasm' as RendererMesherPipeline,
@@ -195,6 +196,10 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
   rendererFuturisticReveal: {
     text: 'Futuristic world reveal'
   },
+  rendererSmartCull: {
+    text: 'Smart Cull',
+    tooltip: 'Skip drawing blocks and entities in sections the camera cannot see into. Big GPU saving underground and in dense worlds.'
+  },
   rendererPerfDebugOverlay: {
     text: 'Performance debug overlay'
   },
@@ -329,7 +334,8 @@ export const RENDERER_RENDER_GUI_SECTIONS: ReadonlyArray<{
       'fov',
       'keepChunksDistance',
       'highlightBlockColor',
-      'clipWorldBelowY'
+      'clipWorldBelowY',
+      'rendererSmartCull'
     ]
   },
   {
