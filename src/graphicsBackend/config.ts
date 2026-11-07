@@ -65,9 +65,9 @@ export const defaultWorldRendererConfig = {
   defaultSkybox: true,
   clouds: true,
   /** Grass, flowers, crops and leaves sway in the wind (vertex shader only, no remesh to toggle). */
-  wavingGrass: false,
+  wavingGrass: true,
   /** Sun shadows on chunk geometry: `soft` uses a wider filter. Off at night and outside the overworld. */
-  sunShadows: 'off' as 'off' | 'normal' | 'soft',
+  sunShadows: 'normal' as 'off' | 'normal' | 'soft',
   /** Blocks around the camera that receive sun shadows (16-128). */
   sunShadowsDistance: 64,
   /** Screen-space antialiasing of the world frame (one extra full-screen pass when on). */

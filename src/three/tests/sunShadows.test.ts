@@ -124,12 +124,14 @@ describe('caster selection', () => {
 })
 
 describe('SunShadowsModule', () => {
-  it('is off by default and does no GPU work while disabled', () => {
-    expect(RENDERER_DEFAULT_OPTIONS.sunShadows).toBe('off')
-    expect(RENDERER_DEFAULT_OPTIONS.wavingGrass).toBe(false)
+  it('defaults to normal (cheap mode) and does no GPU work while disabled', () => {
+    expect(RENDERER_DEFAULT_OPTIONS.sunShadows).toBe('normal')
+    expect(RENDERER_DEFAULT_OPTIONS.wavingGrass).toBe(true)
     const blockEffects = new BlockEffects()
     const worldRenderer = { blockEffects, timeOfTheDay: 6000, worldRendererConfig: { ...defaultWorldRendererConfig } }
     const module = new SunShadowsModule(worldRenderer as any)
+    expect(module.autoEnableCheck()).toBe(true)
+    worldRenderer.worldRendererConfig.sunShadows = 'off'
     expect(module.autoEnableCheck()).toBe(false)
     // never touches the renderer (there is none in this fake) while disabled
     module.update(0)

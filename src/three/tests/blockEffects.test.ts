@@ -137,11 +137,11 @@ describe('WavingGrassModule', () => {
     return { module: new WavingGrassModule(worldRenderer as any), blockEffects, worldRenderer }
   }
 
-  it('is off by default and follows the option', () => {
+  it('is on by default and follows the option', () => {
     const { module, worldRenderer } = createModule()
-    expect(module.autoEnableCheck()).toBe(false)
-    worldRenderer.worldRendererConfig.wavingGrass = true
     expect(module.autoEnableCheck()).toBe(true)
+    worldRenderer.worldRendererConfig.wavingGrass = false
+    expect(module.autoEnableCheck()).toBe(false)
   })
 
   it('enable / disable / dispose switch the shader effect', () => {
