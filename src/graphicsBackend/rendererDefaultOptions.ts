@@ -49,6 +49,7 @@ export const RENDERER_DEFAULT_OPTIONS = {
   wavingGrass: false as boolean,
   sunShadows: 'off' as 'off' | 'normal' | 'soft',
   sunShadowsDistance: 64,
+  antialiasing: 'off' as 'off' | 'fxaa',
   defaultSkybox: true as boolean,
   menuBackgroundMode: MB.mode,
   menuBackgroundMinecraftTextures: MB.minecraftTextures as boolean,
@@ -205,6 +206,14 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
       ['soft', 'Soft']
     ]
   },
+  antialiasing: {
+    text: 'Antialiasing',
+    tooltip: 'Smooths jagged block edges (FXAA). Slightly softens textures.',
+    possibleValues: [
+      ['off', 'Off'],
+      ['fxaa', 'FXAA']
+    ]
+  },
   sunShadowsDistance: {
     text: 'Shadow distance',
     tooltip: 'Blocks around you that receive sun shadows. Larger distances make shadows blurrier.',
@@ -340,6 +349,7 @@ export const RENDERER_RENDER_GUI_SECTIONS: ReadonlyArray<{
       'wavingGrass',
       'sunShadows',
       'sunShadowsDistance',
+      'antialiasing',
       'defaultSkybox',
       'disableBlockEntityTextures',
       'showChunkBorders',

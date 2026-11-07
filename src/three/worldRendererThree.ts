@@ -6,6 +6,7 @@ import { Biome } from 'minecraft-data'
 import { DisplayWorldOptions, GraphicsInitOptions } from '../graphicsBackend/types'
 import { AnimatedBlockTextures, createAnimatedBlockTextures } from './blockAnimations'
 import { BlockEffects } from './blockEffects'
+import { PostProcessing } from './postProcessing'
 import { sectionPos } from '../lib/simpleUtils'
 import { WorldRendererCommon } from '../lib/worldrendererCommon'
 import { calculateSkyLightSimple } from '../lib/skyLight'
@@ -101,6 +102,8 @@ export class WorldRendererThree extends WorldRendererCommon {
   blockAnimations?: AnimatedBlockTextures
   /** Optional chunk shader effects (waving foliage...), survives world resets unlike chunkMeshManager */
   readonly blockEffects = new BlockEffects()
+  /** Screen-space effects (FXAA), no-op while off */
+  readonly postProcessing = new PostProcessing()
   cursorBlock: CursorBlock
   onRender: Array<(deltaTime: number) => void> = []
   private lastRenderTime = 0
@@ -1473,6 +1476,7 @@ export class WorldRendererThree extends WorldRendererCommon {
       globalLegacyBlendBuffer.uploadDirtyIndexRange()
     }
     this.blockAnimations?.update(this.renderer, start, this.worldRendererConfig.animatedTextures)
+    this.postProcessing.begin(this.renderer, this.worldRendererConfig.antialiasing)
     this.renderer.render(this.scene, cam)
 
     if (
@@ -1496,6 +1500,7 @@ export class WorldRendererThree extends WorldRendererCommon {
 
     this.waypoints.render()
     this.fireworks.update()
+    this.postProcessing.end(this.renderer)
 
     for (const onRender of this.onRender) {
       onRender(deltaTime)
@@ -1675,6 +1680,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.blockAnimations?.dispose()
     this.disposeModules()
     this.blockEffects.dispose()
+    this.postProcessing.dispose()
     this.fireworksLegacy.destroy()
     super.destroy()
     this.skyboxRenderer.dispose()

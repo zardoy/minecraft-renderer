@@ -156,6 +156,7 @@ export function applyRendererOptions(appViewer: AppViewer, o: RendererStorageOpt
   cfg.wavingGrass = o.wavingGrass
   cfg.sunShadows = o.sunShadows
   cfg.sunShadowsDistance = o.sunShadowsDistance
+  cfg.antialiasing = o.antialiasing
   cfg.defaultSkybox = o.defaultSkybox
   cfg.fov = o.fov
   cfg.shaderCubeDebugMode = rendererShaderCubeDebugModeToValue(o.rendererShaderCubeDebugMode)

@@ -70,6 +70,8 @@ export const defaultWorldRendererConfig = {
   sunShadows: 'off' as 'off' | 'normal' | 'soft',
   /** Blocks around the camera that receive sun shadows (16-128). */
   sunShadowsDistance: 64,
+  /** Screen-space antialiasing of the world frame (one extra full-screen pass when on). */
+  antialiasing: 'off' as 'off' | 'fxaa',
   /** World Y of the cloud layer (vanilla overworld: 192 since 1.18, 128 before). */
   cloudHeight: 192,
   renderEntities: true,
