@@ -753,14 +753,18 @@ export class WorldRendererThree extends WorldRendererCommon {
   }
 
   timeUpdated(newTime: number): void {
-    // Update starfield module with time
-    const starfieldModule = this.getModule<any>('starfield')
-    if (starfieldModule?.updateTimeOfDay) {
-      starfieldModule.updateTimeOfDay(newTime)
+    for (const module of Object.values(this.modules)) {
+      ;(module.controller as { updateTimeOfDay?: (time: number) => void }).updateTimeOfDay?.(newTime)
     }
 
     this.skyboxRenderer.updateTime(newTime)
     this.syncSkyLevelFromTime(newTime)
+  }
+
+  moonPhaseUpdated(phase: number): void {
+    for (const module of Object.values(this.modules)) {
+      ;(module.controller as { updateMoonPhase?: (phase: number) => void }).updateMoonPhase?.(phase)
+    }
   }
 
   private syncSkyLevelFromTime(timeOfDay: number): void {
@@ -1365,7 +1369,7 @@ export class WorldRendererThree extends WorldRendererCommon {
 
     // Update skybox position to follow camera
     const cameraPos = this.getCameraPosition()
-    this.skyboxRenderer.update(cameraPos, this.viewDistance)
+    this.skyboxRenderer.update(cameraPos, this.viewDistance, deltaTime)
 
     this.updateSmoothFov()
     if (sizeChanged) {

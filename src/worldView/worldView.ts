@@ -202,6 +202,9 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
     if (bot?.time?.timeOfDay !== undefined) {
       this.emit('time', bot.time.timeOfDay)
     }
+    if (typeof bot?.time?.moonPhase === 'number') {
+      this.emit('moonPhase', bot.time.moonPhase)
+    }
     if (bot?.entity) {
       this.emit('playerEntity', bot.entity)
     }

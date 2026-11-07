@@ -29,6 +29,23 @@ export const getCelestialAngle = (timeOfDay: number): number => {
 }
 
 /**
+ * Vanilla `DimensionType.timeOfDay`: 0 = noon (sun overhead), 0.25 = sunset, 0.5 = midnight,
+ * ~0.78 at tick 0 (sunrise). Drives sun/moon placement and sky/cloud brightness.
+ */
+export const vanillaCelestialAngle = (timeOfDay: number): number => {
+  const t = timeOfDay / 24_000 - 0.25
+  const d = t - Math.floor(t)
+  const e = 0.5 - Math.cos(d * Math.PI) / 2
+  return (d * 2 + e) / 3
+}
+
+/** Vanilla daylight factor (0 at night, 1 at day) used to tint clouds and celestial bodies. */
+export const vanillaDayBrightness = (celestialAngle: number): number => {
+  const b = Math.cos(celestialAngle * Math.PI * 2) * 2 + 0.5
+  return Math.max(0, Math.min(1, b))
+}
+
+/**
  * Calculate sky light level (0-15) based on time of day in ticks.
  * Matches Minecraft vanilla behavior.
  *

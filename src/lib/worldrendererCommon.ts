@@ -903,6 +903,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
   timeUpdated?(newTime: number): void
 
+  moonPhaseUpdated?(phase: number): void
+
   /** Called when day-cycle sky-light bucket changes; Three.js overrides to remesh. */
   protected onDayCycleSkyLightChanged?(_skyLight: number): void
 
@@ -1387,6 +1389,15 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
           this.sendWorkers({ config: { skyLight } } as WorkerSend)
         }
         this.onDayCycleSkyLightChanged?.(skyLight)
+      },
+      signal
+    )
+
+    bindAbortableListener(
+      worldEmitter,
+      'moonPhase',
+      phase => {
+        this.moonPhaseUpdated?.(phase)
       },
       signal
     )
