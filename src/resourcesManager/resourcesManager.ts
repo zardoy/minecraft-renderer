@@ -15,6 +15,7 @@ import { isWebWorker } from '../three/documentRenderer'
 import { ItemsRenderer } from 'mc-assets/dist/itemsRenderer'
 import { getLoadedItemDefinitionsStore } from 'mc-assets/dist/stores'
 import { sanitizeWorkerEventArgs } from '../lib/workerMessageSanitize'
+import { BlockAnimationAssets, loadBlockAnimationAssets } from '../three/blockAnimationsAssets'
 
 type ResourceManagerEvents = {
   assetsTexturesUpdated: () => void
@@ -65,6 +66,10 @@ export class LoadedResourcesTransferrable {
     blocks?: { tileSize: number | undefined; textures: Record<string, HTMLImageElement> }
     armor?: { tileSize: number | undefined; textures: Record<string, HTMLImageElement> }
   } = {}
+  /** Frames of animated block textures. Loaded on the main thread: the three worker bundle stubs mc-assets imports, so it has to receive them */
+  blockAnimationAssets?: BlockAnimationAssets
+  /** Block textures in the atlas that are not vanilla (resource pack, seasonal): vanilla animations must not be applied to them. customTextures are not transferred, so names are kept here */
+  replacedBlockTextures: string[] = []
   guiAtlas: { json: any; image: ImageBitmap } | null = null
   guiAtlasVersion = 0
 
@@ -323,13 +328,16 @@ export class ResourcesManager extends (EventEmitter as new () => TypedEmitter<Re
     const blocksAssetsParser = new AtlasParser(this.sourceBlocksAtlases, blocksAtlasLatest, blocksAtlasLegacy)
 
     const customBlockTextures = Object.keys(resources.customTextures.blocks?.textures ?? {})
+    const replacedBlockTextures = new Set<string>()
     console.time('createBlocksAtlas')
     const { atlas: blocksAtlas, canvas: blocksCanvas } = await blocksAssetsParser.makeNewAtlas(
       resources.texturesVersion,
       textureName => {
         if (this.currentConfig!.includeOnlyBlocks && !this.currentConfig!.includeOnlyBlocks.includes(textureName)) return false
         const texture = resources.customTextures.blocks?.textures[textureName]
-        return blockTexturesChanges[textureName] ?? texture
+        const replacement = blockTexturesChanges[textureName] ?? texture
+        if (replacement) replacedBlockTextures.add(textureName)
+        return replacement
       },
       undefined,
       undefined,
@@ -341,6 +349,11 @@ export class ResourcesManager extends (EventEmitter as new () => TypedEmitter<Re
     console.timeEnd('createBlocksAtlas')
 
     this.blocksAtlasParser = new AtlasParser({ latest: blocksAtlas }, blocksCanvas.toDataURL())
+    resources.replacedBlockTextures = [...replacedBlockTextures]
+    resources.blockAnimationAssets = await loadBlockAnimationAssets().catch(err => {
+      console.warn('Animated block textures are disabled:', err)
+      return undefined
+    })
     resources.blocksAtlasImage = await createImageBitmap(blocksCanvas)
     resources.blocksAtlasJson = this.blocksAtlasParser.atlas.latest
 

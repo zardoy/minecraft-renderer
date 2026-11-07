@@ -30,6 +30,11 @@ export const defaultWorldRendererConfig = {
   /** 0=off, 1=holes red, 2=tileIndex, 3=faceId colors, 4=atlas alpha */
   shaderCubeDebugMode: 0,
   mesherWorkers: 1,
+  /**
+   * Animated block textures (water, lava, fire, portals...). `basic` switches frames,
+   * `smooth` also blends frames of animations that request it (command blocks, magma...) like vanilla.
+   */
+  animatedTextures: 'smooth' as 'off' | 'basic' | 'smooth',
   addChunksBatchWaitTime: 200,
   _experimentalSmoothChunkLoading: true,
   _renderByChunks: false,

@@ -4,6 +4,7 @@ import nbt from 'prismarine-nbt'
 import * as tweenJs from '@tweenjs/tween.js'
 import { Biome } from 'minecraft-data'
 import { DisplayWorldOptions, GraphicsInitOptions } from '../graphicsBackend/types'
+import { AnimatedBlockTextures, createAnimatedBlockTextures } from './blockAnimations'
 import { sectionPos } from '../lib/simpleUtils'
 import { WorldRendererCommon } from '../lib/worldrendererCommon'
 import { calculateSkyLightSimple } from '../lib/skyLight'
@@ -96,6 +97,7 @@ export class WorldRendererThree extends WorldRendererCommon {
   cameraGroupVr?: THREE.Object3D
   material = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, alphaTest: 0.1 })
   itemsTexture!: THREE.Texture
+  blockAnimations?: AnimatedBlockTextures
   cursorBlock: CursorBlock
   onRender: Array<(deltaTime: number) => void> = []
   private lastRenderTime = 0
@@ -713,7 +715,10 @@ export class WorldRendererThree extends WorldRendererCommon {
     const texture = loadThreeJsTextureFromBitmap(resources.blocksAtlasImage!)
     texture.needsUpdate = true
     texture.flipY = false
+    // nearest filtering never samples mipmaps, but three would regenerate them for the whole atlas on every animated texture update
+    texture.generateMipmaps = false
     this.material.map = texture
+    this.setupBlockAnimations(texture, resources)
     this.chunkMeshManager.syncCubeShaderUniforms()
     this.chunkMeshManager.syncLegacyShaderUniforms()
 
@@ -734,6 +739,26 @@ export class WorldRendererThree extends WorldRendererCommon {
     if (Object.keys(this.loadedChunks).length > 0) {
       console.log('rerendering chunks because of texture update')
       this.rerenderAllChunks()
+    }
+  }
+
+  private setupBlockAnimations(atlasTexture: THREE.Texture, resources: NonNullable<typeof this.resourcesManager.currentResources>) {
+    this.blockAnimations?.dispose()
+    this.blockAnimations = undefined
+    if (!resources.blockAnimationAssets) return
+    try {
+      const { animations, framesImage } = resources.blockAnimationAssets
+      const replaced = new Set(resources.replacedBlockTextures)
+      this.blockAnimations = createAnimatedBlockTextures({
+        atlasTexture,
+        atlasJson: resources.blocksAtlasJson,
+        version: resources.texturesVersion,
+        animations,
+        framesImage,
+        skip: name => replaced.has(name)
+      })
+    } catch (err) {
+      console.warn('Animated block textures are disabled:', err)
     }
   }
 
@@ -1443,6 +1468,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     if (!didBlendAllAttrUpload && globalLegacyBlendBuffer?.hasPendingIndexUploads()) {
       globalLegacyBlendBuffer.uploadDirtyIndexRange()
     }
+    this.blockAnimations?.update(this.renderer, start, this.worldRendererConfig.animatedTextures)
     this.renderer.render(this.scene, cam)
 
     if (
@@ -1642,6 +1668,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.pendingSectionUpdates.clear()
     this.pendingSectionBufferStartTimes.clear()
     this.chunkMeshManager.dispose()
+    this.blockAnimations?.dispose()
     this.disposeModules()
     this.fireworksLegacy.destroy()
     super.destroy()

@@ -40,20 +40,30 @@ function meshAllBlocks(version: string) {
 
 // TODO resolve creaking_heart issue (1.21.3)
 const KNOWN_MISSING_BLOCKS = ['structure_void']
+// meshes every block of a version: takes seconds, and more as mc-assets adds models (more blocks render instead of being skipped)
+const MESH_ALL_BLOCKS_TIMEOUT = 60_000
 // pinned: the data of a released version doesn't grow new blocks, so what renders here must keep rendering
 const pinnedVersion = '1.21.8'
 
-test(`Blocks of ${pinnedVersion} that rendered keep rendering`, () => {
-  const { missingBlocks, erroredBlocks } = meshAllBlocks(pinnedVersion)
-  // fixing a block (it renders now) is fine, only blocks that stopped rendering fail
-  expect(missingBlocks.filter(name => !KNOWN_MISSING_BLOCKS.includes(name))).toEqual([])
-  expect(erroredBlocks).toEqual([])
-})
+test(
+  `Blocks of ${pinnedVersion} that rendered keep rendering`,
+  () => {
+    const { missingBlocks, erroredBlocks } = meshAllBlocks(pinnedVersion)
+    // fixing a block (it renders now) is fine, only blocks that stopped rendering fail
+    expect(missingBlocks.filter(name => !KNOWN_MISSING_BLOCKS.includes(name))).toEqual([])
+    expect(erroredBlocks).toEqual([])
+  },
+  MESH_ALL_BLOCKS_TIMEOUT
+)
 
-test('Newest version: no block fails to mesh', () => {
-  const { missingBlocks, erroredBlocks } = meshAllBlocks(lastVersion)
-  console.log('Checked blocks of version', lastVersion)
-  // visibility only, e.g. new block entities that need a custom model in mc-assets
-  if (missingBlocks.length > 0) console.warn(`Blocks of ${lastVersion} that render nothing:`, missingBlocks.join(', '))
-  expect(erroredBlocks).toEqual([])
-})
+test(
+  'Newest version: no block fails to mesh',
+  () => {
+    const { missingBlocks, erroredBlocks } = meshAllBlocks(lastVersion)
+    console.log('Checked blocks of version', lastVersion)
+    // visibility only, e.g. new block entities that need a custom model in mc-assets
+    if (missingBlocks.length > 0) console.warn(`Blocks of ${lastVersion} that render nothing:`, missingBlocks.join(', '))
+    expect(erroredBlocks).toEqual([])
+  },
+  MESH_ALL_BLOCKS_TIMEOUT
+)
