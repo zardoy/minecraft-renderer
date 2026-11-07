@@ -3,30 +3,28 @@ import cloudsPng from 'mc-assets/dist/other-textures/latest/environment/clouds.p
 import type { WorldRendererThree } from '../worldRendererThree'
 import type { RendererModuleController, RendererModuleManifest } from '../rendererModuleSystem'
 import { vanillaCelestialAngle, vanillaDayBrightness } from '../../lib/skyLight'
+import { loadCloudCover } from '../cloudCover'
+import { buildCloudGeometry, CLOUD_CELL_SIZE, type CloudCover } from '../cloudGeometry'
 
-// Vanilla: clouds.png is 256×256, each texel a 12×12 block cell, slab 4 blocks thick.
-const CELL_SIZE = 12
-const TEXTURE_CELLS = 256
-const PATTERN_PERIOD = CELL_SIZE * TEXTURE_CELLS
-const THICKNESS = 4
 /** Vanilla drifts the pattern 0.03 blocks per tick (20 TPS) toward -X. */
 const DRIFT_BLOCKS_PER_SECOND = 0.03 * 20
 /** Vanilla offsets the slab bottom by +0.33 from the dimension's cloud height. */
 const HEIGHT_BIAS = 0.33
 const MIN_RADIUS = 256
-const MAX_RADIUS = 768
+const MAX_RADIUS = 576
 const OPACITY = 0.8
-/** Vanilla shades the underside darker than the top. */
-const BOTTOM_SHADE = 0.7
 
 const threeVersion = parseInt(THREE.REVISION.replaceAll(/\D+/g, ''), 10)
 
 const vertexShader = /* glsl */ `
   #include <common>
   #include <logdepthbuf_pars_vertex>
+  attribute float shade;
   varying vec2 vLocal;
+  varying float vShade;
   void main() {
     vLocal = (modelMatrix * vec4(position, 1.0)).xz;
+    vShade = shade;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     #include <logdepthbuf_vertex>
   }
@@ -35,32 +33,39 @@ const vertexShader = /* glsl */ `
 const fragmentShader = /* glsl */ `
   #include <common>
   #include <logdepthbuf_pars_fragment>
-  uniform sampler2D map;
-  uniform vec2 patternOffset;
   uniform vec3 color;
   uniform float opacity;
   uniform float fadeStart;
   uniform float fadeEnd;
   varying vec2 vLocal;
+  varying float vShade;
   void main() {
     #include <logdepthbuf_fragment>
-    float cover = texture2D(map, (vLocal + patternOffset) / ${PATTERN_PERIOD.toFixed(1)}).a;
-    if (cover < 0.5) discard;
     float alpha = opacity * (1.0 - smoothstep(fadeStart, fadeEnd, length(vLocal)));
     if (alpha <= 0.0) discard;
-    gl_FragColor = vec4(color, alpha);
+    gl_FragColor = vec4(color * vShade, alpha);
     #include <tonemapping_fragment>
     #include <${threeVersion >= 154 ? 'colorspace_fragment' : 'encodings_fragment'}>
   }
 `
 
 /**
- * Flat "fast graphics" clouds: one camera-following quad, the cloud mask is sampled from
- * vanilla clouds.png in the fragment shader, so there is no per-cell geometry to rebuild
- * as the player moves or the pattern drifts.
+ * Vanilla "fancy" clouds: a 4-block-thick slab of 12×12 cells taken from clouds.png, with real top,
+ * bottom and side faces. The cells around the camera are rebuilt only when the camera or the drifting
+ * pattern crosses a cell boundary; everything finer than that is a mesh position offset.
+ * A colour-less depth pre-pass over the same geometry keeps overlapping faces from blending twice.
  */
 export class CloudsModule implements RendererModuleController {
-  private mesh?: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>
+  private readonly group = new THREE.Group()
+  private readonly uniforms = {
+    color: { value: new THREE.Color(1, 1, 1) },
+    opacity: { value: OPACITY },
+    fadeStart: { value: MIN_RADIUS * 0.55 },
+    fadeEnd: { value: MIN_RADIUS }
+  }
+  private meshes?: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>[]
+  private cover?: CloudCover
+  private builtKey = ''
   private enabled = false
   private drift = 0
   private timeOfDay: number
@@ -68,19 +73,20 @@ export class CloudsModule implements RendererModuleController {
 
   constructor(private readonly worldRenderer: WorldRendererThree) {
     this.timeOfDay = worldRenderer.timeOfTheDay
+    this.group.name = 'clouds'
   }
 
   enable(): void {
     if (this.enabled) return
     this.enabled = true
-    if (!this.mesh) this.create()
-    this.mesh!.visible = true
+    if (!this.meshes) this.create()
+    this.group.visible = true
   }
 
   disable(): void {
     if (!this.enabled) return
     this.enabled = false
-    if (this.mesh) this.mesh.visible = false
+    this.group.visible = false
   }
 
   autoEnableCheck(): boolean {
@@ -93,78 +99,96 @@ export class CloudsModule implements RendererModuleController {
   }
 
   render?: (deltaTime: number) => void = deltaTime => {
-    this.drift = (this.drift + deltaTime * DRIFT_BLOCKS_PER_SECOND) % PATTERN_PERIOD
+    // Not wrapped: cell indices wrap in the lookup, and wrapping here would force a rebuild.
+    this.drift += deltaTime * DRIFT_BLOCKS_PER_SECOND
   }
 
   dispose(): void {
-    if (!this.mesh) return
-    this.worldRenderer.scene.remove(this.mesh)
-    this.mesh.geometry.dispose()
-    this.mesh.material.uniforms.map.value?.dispose()
-    this.mesh.material.dispose()
-    this.mesh = undefined
+    if (!this.meshes) return
+    this.worldRenderer.scene.remove(this.group)
+    this.meshes[0].geometry.dispose()
+    for (const mesh of this.meshes) mesh.material.dispose()
+    this.meshes = undefined
+    this.cover = undefined
+    this.builtKey = ''
   }
 
   private create(): void {
-    const map = new THREE.TextureLoader().load(cloudsPng)
-    map.wrapS = THREE.RepeatWrapping
-    map.wrapT = THREE.RepeatWrapping
-    map.magFilter = THREE.NearestFilter
-    map.minFilter = THREE.NearestFilter
-    map.generateMipmaps = false
-    // Keep png row 0 at -Z like vanilla's texture-to-world mapping.
-    map.flipY = false
-
-    const material = new THREE.ShaderMaterial({
-      uniforms: {
-        map: { value: map },
-        patternOffset: { value: new THREE.Vector2() },
-        color: { value: new THREE.Color(1, 1, 1) },
-        opacity: { value: OPACITY },
-        fadeStart: { value: MIN_RADIUS * 0.55 },
-        fadeEnd: { value: MIN_RADIUS }
-      },
+    const shared = {
+      uniforms: this.uniforms,
       vertexShader,
       fragmentShader,
-      transparent: true,
-      depthWrite: false,
-      depthTest: true,
       side: THREE.DoubleSide,
+      transparent: true,
       forceSinglePass: true
-    })
+    }
+    const main = new THREE.ShaderMaterial({ ...shared, depthWrite: false })
+    // Same program, so its depth matches the main pass exactly.
+    const depthOnly = new THREE.ShaderMaterial({ ...shared, depthWrite: true, colorWrite: false })
 
-    const geometry = new THREE.PlaneGeometry(2, 2)
-    geometry.rotateX(-Math.PI / 2)
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3))
 
-    const mesh = new THREE.Mesh(geometry, material)
-    mesh.name = 'clouds'
-    mesh.frustumCulled = false
     // After sun/moon (-2) and stars (-1), before other transparents so water/glass composite on top.
-    mesh.renderOrder = -0.5
-    mesh.onBeforeRender = () => this.syncToCamera(mesh)
-    this.mesh = mesh
-    this.worldRenderer.scene.add(mesh)
+    const passes: [THREE.ShaderMaterial, number][] = [
+      [depthOnly, -0.6],
+      [main, -0.5]
+    ]
+    this.meshes = passes.map(([material, renderOrder]) => {
+      const mesh = new THREE.Mesh(geometry, material)
+      mesh.frustumCulled = false
+      mesh.renderOrder = renderOrder
+      this.group.add(mesh)
+      return mesh
+    })
+    // The depth pre-pass is drawn first, so syncing there positions both passes.
+    this.meshes[0].onBeforeRender = () => this.syncToCamera()
+    this.worldRenderer.scene.add(this.group)
+
+    loadCloudCover(cloudsPng).then(
+      cover => {
+        this.cover = cover
+      },
+      error => console.warn('Failed to load clouds.png, clouds will not render', error)
+    )
   }
 
-  private syncToCamera(mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>): void {
+  private rebuild(centerX: number, centerZ: number, radiusCells: number): void {
+    const data = buildCloudGeometry(this.cover!, centerX, centerZ, radiusCells)
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute('position', new THREE.BufferAttribute(data.positions, 3))
+    geometry.setAttribute('shade', new THREE.BufferAttribute(data.shades, 1))
+    geometry.setIndex(new THREE.BufferAttribute(data.indices, 1))
+
+    const meshes = this.meshes!
+    const old = meshes[0].geometry
+    for (const mesh of meshes) mesh.geometry = geometry
+    old.dispose()
+  }
+
+  private syncToCamera(): void {
     const { sceneOrigin, viewDistance, worldRendererConfig } = this.worldRenderer
-    const { uniforms } = mesh.material
 
     const radius = THREE.MathUtils.clamp(viewDistance * 16 * 2, MIN_RADIUS, MAX_RADIUS)
-    uniforms.fadeStart.value = radius * 0.55
-    uniforms.fadeEnd.value = radius
+    this.uniforms.fadeStart.value = radius * 0.55
+    this.uniforms.fadeEnd.value = radius
 
-    // Show the slab bottom from below and its top from above, like a 4-block-thick cloud.
+    // Pattern space is world space shifted by the drift, so world x = pattern x - drift.
+    const centerX = Math.floor((sceneOrigin.x + this.drift) / CLOUD_CELL_SIZE)
+    const centerZ = Math.floor(sceneOrigin.z / CLOUD_CELL_SIZE)
+    if (this.cover) {
+      const radiusCells = Math.ceil(radius / CLOUD_CELL_SIZE)
+      const key = `${centerX},${centerZ},${radiusCells}`
+      if (key !== this.builtKey) {
+        this.builtKey = key
+        this.rebuild(centerX, centerZ, radiusCells)
+      }
+    }
+
+    // Compute in doubles so the GPU only ever sees camera-relative offsets.
     const bottom = worldRendererConfig.cloudHeight + HEIGHT_BIAS
-    const fromBelow = sceneOrigin.y < bottom + THICKNESS / 2
-    const planeY = fromBelow ? bottom : bottom + THICKNESS
-    mesh.position.set(0, planeY - sceneOrigin.y, 0)
-    mesh.scale.set(radius, 1, radius)
-    mesh.updateMatrixWorld()
-
-    // Wrap on the CPU in doubles so the shader never sees large world coordinates.
-    const wrap = (v: number) => ((v % PATTERN_PERIOD) + PATTERN_PERIOD) % PATTERN_PERIOD
-    uniforms.patternOffset.value.set(wrap(sceneOrigin.x + this.drift), wrap(sceneOrigin.z))
+    this.group.position.set(centerX * CLOUD_CELL_SIZE - this.drift - sceneOrigin.x, bottom - sceneOrigin.y, centerZ * CLOUD_CELL_SIZE - sceneOrigin.z)
+    this.group.updateMatrixWorld(true)
 
     const day = vanillaDayBrightness(vanillaCelestialAngle(this.timeOfDay))
     let r = day * 0.9 + 0.1
@@ -177,9 +201,8 @@ export class CloudsModule implements RendererModuleController {
       g = g * 0.05 + grey * 0.95
       b = b * 0.05 + grey * 0.95
     }
-    const shade = fromBelow ? BOTTOM_SHADE : 1
-    this.linearColor.setRGB(r * shade, g * shade, b * shade, THREE.SRGBColorSpace)
-    uniforms.color.value.copy(this.linearColor)
+    this.linearColor.setRGB(r, g, b, THREE.SRGBColorSpace)
+    this.uniforms.color.value.copy(this.linearColor)
   }
 }
 
