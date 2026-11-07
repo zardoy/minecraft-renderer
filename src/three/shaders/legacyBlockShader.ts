@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { APPLY_LIGHTMAP_GLSL, DEFAULT_LIGHTMAP_PARAMS, type BlockLightmapParams } from '../../lib/blockEntityLighting'
+import { FOLIAGE_SWAY_GLSL } from './foliageSwayGlsl'
 
 export type RenderOrigin = { x: number; y: number; z: number }
 
@@ -49,8 +50,13 @@ out float vFragDepth;
 out float vFogDepth;
 #endif
 
+${FOLIAGE_SWAY_GLSL}
+
 void main() {
     vec3 relativePos = modelMatrix[3].xyz + u_originDelta + position - u_cameraOriginFrac;
+#ifdef WAVING_FOLIAGE_LEGACY
+    relativePos += foliageSwayOffset(uv, relativePos);
+#endif
     vec4 mvPosition = viewMatrix * vec4(relativePos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
 
@@ -161,8 +167,13 @@ out float vFragDepth;
 out float vFogDepth;
 #endif
 
+${FOLIAGE_SWAY_GLSL}
+
 void main() {
     vec3 relativePos = a_origin + u_originDelta + position - u_cameraOriginFrac;
+#ifdef WAVING_FOLIAGE_LEGACY
+    relativePos += foliageSwayOffset(uv, relativePos);
+#endif
     vec4 mvPosition = viewMatrix * vec4(relativePos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
 

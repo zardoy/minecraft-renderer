@@ -8,6 +8,7 @@ vi.mock('../entity/EntityMesh', () => ({
 import { ChunkMeshManager } from '../chunkMeshManager'
 import type { GlobalLegacyBuffer } from '../globalLegacyBuffer'
 import type { WorldRendererThree } from '../worldRendererThree'
+import { BlockEffects } from '../blockEffects'
 import type { MesherGeometryOutput } from '../../mesher-shared/shared'
 
 function makeQuadArrays() {
@@ -147,6 +148,7 @@ function createManager(): ChunkMeshManager {
       removeAndUntrackAll: () => {}
     },
     blockEntities: {},
+    blockEffects: new BlockEffects(),
     worldRendererConfig: {}
   } as unknown as WorldRendererThree
   return new ChunkMeshManager(worldRenderer, scene, material, 256, 1)

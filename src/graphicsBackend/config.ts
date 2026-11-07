@@ -64,6 +64,8 @@ export const defaultWorldRendererConfig = {
   starfield: true,
   defaultSkybox: true,
   clouds: true,
+  /** Grass, flowers, crops and leaves sway in the wind (vertex shader only, no remesh to toggle). */
+  wavingFoliage: false,
   /** World Y of the cloud layer (vanilla overworld: 192 since 1.18, 128 before). */
   cloudHeight: 192,
   renderEntities: true,

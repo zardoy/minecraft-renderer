@@ -5,6 +5,7 @@ import { rainManifest } from './rain'
 import { sciFiWorldRevealManifest } from './sciFiWorldReveal'
 import { starfieldManifest } from './starfield'
 import { sunMoonManifest } from './sunMoon'
+import { wavingFoliageManifest } from './wavingFoliage'
 
 export const BUILTIN_MODULES = {
   starfield: starfieldManifest,
@@ -13,5 +14,6 @@ export const BUILTIN_MODULES = {
   futuristicReveal: sciFiWorldRevealManifest,
   rain: rainManifest,
   cameraBobbing: cameraBobbingManifest,
-  blockBreakParticles: blockBreakParticlesManifest
+  blockBreakParticles: blockBreakParticlesManifest,
+  wavingFoliage: wavingFoliageManifest
 }

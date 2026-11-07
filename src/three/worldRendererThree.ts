@@ -5,6 +5,7 @@ import * as tweenJs from '@tweenjs/tween.js'
 import { Biome } from 'minecraft-data'
 import { DisplayWorldOptions, GraphicsInitOptions } from '../graphicsBackend/types'
 import { AnimatedBlockTextures, createAnimatedBlockTextures } from './blockAnimations'
+import { BlockEffects } from './blockEffects'
 import { sectionPos } from '../lib/simpleUtils'
 import { WorldRendererCommon } from '../lib/worldrendererCommon'
 import { calculateSkyLightSimple } from '../lib/skyLight'
@@ -98,6 +99,8 @@ export class WorldRendererThree extends WorldRendererCommon {
   material = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, alphaTest: 0.1 })
   itemsTexture!: THREE.Texture
   blockAnimations?: AnimatedBlockTextures
+  /** Optional chunk shader effects (waving foliage...), survives world resets unlike chunkMeshManager */
+  readonly blockEffects = new BlockEffects()
   cursorBlock: CursorBlock
   onRender: Array<(deltaTime: number) => void> = []
   private lastRenderTime = 0
@@ -719,6 +722,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     texture.generateMipmaps = false
     this.material.map = texture
     this.setupBlockAnimations(texture, resources)
+    this.blockEffects.setLeafMaskFromAtlas(resources.blocksAtlasJson)
     this.chunkMeshManager.syncCubeShaderUniforms()
     this.chunkMeshManager.syncLegacyShaderUniforms()
 
@@ -1670,6 +1674,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.chunkMeshManager.dispose()
     this.blockAnimations?.dispose()
     this.disposeModules()
+    this.blockEffects.dispose()
     this.fireworksLegacy.destroy()
     super.destroy()
     this.skyboxRenderer.dispose()

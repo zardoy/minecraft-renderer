@@ -153,6 +153,7 @@ export function applyRendererOptions(appViewer: AppViewer, o: RendererStorageOpt
   cfg.shadingTheme = o.vanillaLook ? 'vanilla' : 'high-contrast'
   cfg.starfield = o.starfieldRendering
   cfg.clouds = o.cloudsRendering
+  cfg.wavingFoliage = o.wavingFoliage
   cfg.defaultSkybox = o.defaultSkybox
   cfg.fov = o.fov
   cfg.shaderCubeDebugMode = rendererShaderCubeDebugModeToValue(o.rendererShaderCubeDebugMode)

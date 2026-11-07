@@ -315,6 +315,7 @@ export class ChunkMeshManager {
   private getLegacyShaderMaterial(): THREE.ShaderMaterial {
     if (!this.legacyShaderMaterial) {
       this.legacyShaderMaterial = createLegacyBlockMaterial()
+      this.worldRenderer.blockEffects.register(this.legacyShaderMaterial, 'legacy')
       this.syncLegacyShaderUniforms()
     }
     return this.legacyShaderMaterial
@@ -323,6 +324,7 @@ export class ChunkMeshManager {
   private getGlobalLegacyShaderMaterial(): THREE.ShaderMaterial {
     if (!this.globalLegacyShaderMaterial) {
       this.globalLegacyShaderMaterial = createGlobalLegacyBlockMaterial()
+      this.worldRenderer.blockEffects.register(this.globalLegacyShaderMaterial, 'legacy')
       this.syncLegacyShaderUniforms()
     }
     return this.globalLegacyShaderMaterial
@@ -339,6 +341,7 @@ export class ChunkMeshManager {
   private getGlobalLegacyBlendShaderMaterial(): THREE.ShaderMaterial {
     if (!this.globalLegacyBlendShaderMaterial) {
       this.globalLegacyBlendShaderMaterial = createGlobalLegacyBlendMaterial()
+      this.worldRenderer.blockEffects.register(this.globalLegacyBlendShaderMaterial, 'legacy')
       this.syncLegacyShaderUniforms()
     }
     return this.globalLegacyBlendShaderMaterial
@@ -707,6 +710,7 @@ export class ChunkMeshManager {
 
   setLegacyCameraOrigin(x: number, y: number, z: number): void {
     const R = this.renderOrigin
+    this.worldRenderer.blockEffects.setRenderOrigin(R)
     setLegacyCameraOrigin(this.getLegacyShaderMaterial(), R, x, y, z)
     setLegacyCameraOrigin(this.getGlobalLegacyShaderMaterial(), R, x, y, z)
     setLegacyCameraOrigin(this.getGlobalLegacyBlendShaderMaterial(), R, x, y, z)
@@ -736,6 +740,7 @@ export class ChunkMeshManager {
     if (!this.isShaderCubesGpuEnabled()) return null
     if (!this.cubeShaderMaterial) {
       this.cubeShaderMaterial = createCubeBlockMaterial()
+      this.worldRenderer.blockEffects.register(this.cubeShaderMaterial, 'cube')
       this.syncCubeShaderUniforms()
       const cfg = this.worldRenderer.worldRendererConfig
       setCubeShadingTheme(this.cubeShaderMaterial, cfg.shadingTheme, cfg.cardinalLight)
@@ -1796,6 +1801,9 @@ export class ChunkMeshManager {
     this.globalLegacyBuffer = null
     this.globalLegacyBlendBuffer?.dispose()
     this.globalLegacyBlendBuffer = null
+    for (const material of [this.cubeShaderMaterial, this.legacyShaderMaterial, this.globalLegacyShaderMaterial, this.globalLegacyBlendShaderMaterial]) {
+      if (material) this.worldRenderer.blockEffects.unregister(material)
+    }
     this.cubeShaderMaterial?.dispose()
     this.cubeShaderMaterial = null
     this.legacyShaderMaterial?.dispose()

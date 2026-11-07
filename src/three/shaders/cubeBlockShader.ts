@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { APPLY_LIGHTMAP_GLSL, DEFAULT_LIGHTMAP_PARAMS, type BlockLightmapParams } from '../../lib/blockEntityLighting'
+import { FOLIAGE_SWAY_GLSL } from './foliageSwayGlsl'
 
 export type { BlockLightmapParams }
 
@@ -110,6 +111,8 @@ out float vFogDepth;
 #endif
 
 // projectionMatrix / modelViewMatrix: injected by Three.js ShaderMaterial (do not redeclare)
+
+${FOLIAGE_SWAY_GLSL}
 
 // BASE, DU, DV per face (UP=0, DOWN=1, EAST=2, WEST=3, SOUTH=4, NORTH=5)
 // position = BASE[faceId] + u * DU[faceId] + v * DV[faceId]
@@ -223,6 +226,9 @@ ${faceUvGlsl}
     vec3 facePos = BASE[faceId] + u * DU[faceId] + v * DV[faceId];
     vec3 blockLocal = vec3(float(lx), float(ly), float(lz));
     vec3 relativePos = sectionBase + u_originDelta + facePos + blockLocal - u_cameraOriginFrac;
+#ifdef WAVING_FOLIAGE_CUBE
+    relativePos += leafSwayOffset(v_texIndex, relativePos);
+#endif
     vec4 mvPosition = modelViewMatrix * vec4(relativePos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
 
