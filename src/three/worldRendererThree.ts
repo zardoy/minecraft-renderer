@@ -215,7 +215,7 @@ export class WorldRendererThree extends WorldRendererCommon {
       getLightmapParams: () => this.chunkMeshManager.getLightmapParams(),
       getColumnRevision: (cx, cz) => this.rendererLightCache.getColumnRevision(cx, cz),
       getGlobalRevision: () => this.rendererLightCache.getGlobalRevision(),
-      lightingEnabled: () => this.worldRendererConfig.enableLighting !== false
+      lightingEnabled: () => this.worldRendererConfig.enableLighting !== false && this.worldRendererConfig.enableEntityLighting !== false
     })
     this.onRenderDistanceChanged = viewDistance => {
       this.chunkMeshManager.updateViewDistance(viewDistance)

@@ -61,6 +61,8 @@ export const defaultWorldRendererConfig = {
   dayCycle: true,
   smoothLighting: true,
   enableLighting: true,
+  /** Entity shading is on unless the entity lighting option is turned off. Block lighting stays on enableLighting. */
+  enableEntityLighting: true,
   starfield: true,
   defaultSkybox: true,
   clouds: true,
