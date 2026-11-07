@@ -1328,7 +1328,7 @@ export class WorldRendererThree extends WorldRendererCommon {
 
     // Update skybox position to follow camera
     const cameraPos = this.getCameraPosition()
-    this.skyboxRenderer.update(cameraPos, this.viewDistance)
+    this.skyboxRenderer.update(cameraPos, this.viewDistance, deltaTime)
 
     this.updateSmoothFov()
     if (sizeChanged) {
