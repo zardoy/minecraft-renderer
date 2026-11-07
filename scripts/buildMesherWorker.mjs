@@ -81,7 +81,7 @@ const buildOptions = createWorkerBuildOptions({
     entryPoints: [
       path.join(rootDir, './src/wasm-mesher/worker/mesherWasm.ts'),
       path.join(rootDir, './src/mesher-legacy/mesher.ts'),
-      path.join(rootDir, './src/wasm-mesher/worker/lightOwnerWorker.ts')
+      path.join(rootDir, './src/lighting/owner/lightOwnerWorker.ts')
     ],
     plugins: [wasmPlugin]
   }

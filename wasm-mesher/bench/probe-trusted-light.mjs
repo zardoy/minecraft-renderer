@@ -1,4 +1,4 @@
-// Run after pnpm build:wasm: node wasm-mesher/tests/probe-trusted-light.mjs [columns]
+// Run after pnpm build:wasm: node wasm-mesher/bench/probe-trusted-light.mjs [columns]
 import { readFileSync } from 'node:fs'
 import { performance } from 'node:perf_hooks'
 import { initSync, JsLightEngine } from '../../src/wasm-mesher/runtime-build/wasm_mesher.js'

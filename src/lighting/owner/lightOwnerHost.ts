@@ -1,4 +1,4 @@
-import { RendererLightCache } from './rendererLightCache'
+import { RendererLightCache } from '../cache/rendererLightCache'
 
 export type LightPublicationSection = {
   sx: number
@@ -138,9 +138,9 @@ async function createWasmLightBackend(worldMinY: number, worldHeight: number): P
   const { readFileSync } = await import('node:fs')
   const { dirname, join } = await import('node:path')
   const { fileURLToPath } = await import('node:url')
-  const wasmModule = await import('../wasm-mesher/runtime-build/wasm_mesher.js')
+  const wasmModule = await import('../../wasm-mesher/runtime-build/wasm_mesher.js')
   const wasmDir = dirname(fileURLToPath(import.meta.url))
-  const wasmBytes = readFileSync(join(wasmDir, '../wasm-mesher/runtime-build/wasm_mesher_bg.wasm'))
+  const wasmBytes = readFileSync(join(wasmDir, '../../wasm-mesher/runtime-build/wasm_mesher_bg.wasm'))
   try {
     if (typeof wasmModule.initSync === 'function') {
       wasmModule.initSync(wasmBytes)

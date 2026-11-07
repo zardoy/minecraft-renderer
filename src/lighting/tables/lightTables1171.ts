@@ -1,4 +1,4 @@
-import artifact from '../lib/lightTables1171.generated.json'
+import artifact from './lightTables1171.generated.json'
 
 export const LIGHT_TABLES_MC_VERSION = '1.17.1' as const
 
@@ -19,7 +19,7 @@ export type LightTables1171 = {
 /**
  * 1.17.1 light tables for `set_light_tables`.
  *
- * Emission is evaluated from the vendored vanilla 1.17.1 Blocks.java snapshot
+ * Emission is evaluated from the pinned vanilla 1.17.1 Blocks.java (see scripts/generate-light-tables-1171.mjs)
  * (WORLD_VERSION 2730), mapped onto minecraft-data stateIds.
  * `opacity` is raw getLightBlock (air 0, water/leaves 1, solid cube 15).
  * `occupancy` is 2×2×2 face-occlusion for slabs/stairs; full cubes stay 0

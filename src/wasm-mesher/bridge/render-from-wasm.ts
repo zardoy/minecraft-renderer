@@ -2,7 +2,7 @@
 // This file takes WASM output and generates full Three.js buffer geometry
 
 import * as THREE from 'three'
-import { isClientLightProbeBlock } from '../../lib/clientLightProbe'
+import { isClientLightProbeBlock } from '../../lighting/debug/clientLightProbe'
 import worldBlockProviderModule, { WorldBlockProvider } from 'mc-assets/dist/worldBlockProvider'
 import blocksAtlasesJson from 'mc-assets/dist/blocksAtlases.json'
 import blockStatesModels from 'mc-assets/dist/blockStatesModels.json'

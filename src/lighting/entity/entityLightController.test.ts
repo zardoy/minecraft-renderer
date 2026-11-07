@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
 import { blockEntityBrightness, DEFAULT_LIGHTMAP_PARAMS } from '../../lib/blockEntityLighting'
-import { EntityLightController, entityProbeBlock, resolveEntityLightOverride } from '../entityLightController'
+import { EntityLightController, entityProbeBlock, resolveEntityLightOverride } from './entityLightController'
 
 const nightSky = 4 / 15
 

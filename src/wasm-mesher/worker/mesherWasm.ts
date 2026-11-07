@@ -1,5 +1,5 @@
 import { Vec3 } from 'vec3'
-import { setClientLightProbePositions } from '../../lib/clientLightProbe'
+import { setClientLightProbePositions } from '../../lighting/debug/clientLightProbe'
 import { convertChunkToWasm, getBlockMeta, getGlobalPaletteBits, type ChunkConversionResult } from '../bridge/convertChunk'
 import { extractColumnHeightmap, splitColumnWasmOutputToSections } from '../bridge/render-from-wasm'
 import { createGeometryIndexArray } from '../bridge/geometryIndices'
@@ -14,7 +14,7 @@ import { collectBlockEntityMetadata, type SignMeta, type HeadMeta, type BannerMe
 import { SectionRequestTracker } from './mesherWasmRequestTracker'
 import { dropRawMapChunkOnLightOnlyReload, sectionYsForLightColumnDirty } from './mesherWasmLightDirty'
 import { applyOwnerPublicationToColumnCaches, applyRawLightPacketToCaches, ownerDeltaSectionWorldYs, revertDisplayToIncoming } from './mesherWasmOwnerLight'
-import { INITIAL_TOPOLOGY_REVISION, snapshotMeshVersions, validateOwnerPublicationMessage } from '../../lib/clientLightVersions'
+import { INITIAL_TOPOLOGY_REVISION, snapshotMeshVersions, validateOwnerPublicationMessage } from '../../lighting/versioning/clientLightVersions'
 import { provenMeshLightVersion } from './mesherLightDependencies'
 import { BULK_MESH_INTERVAL_MS, createMeshTickScheduler } from './mesherWasmTickSchedule'
 import {
@@ -53,7 +53,7 @@ import {
   isClientLightTraceArmed,
   isClientLightTraceEnabled,
   postClientLightTrace
-} from '../../lib/clientLightTrace'
+} from '../../lighting/debug/clientLightTrace'
 
 let wasm: typeof import('../runtime-build/wasm_mesher.js') | null = null
 let wasmInitialized = false

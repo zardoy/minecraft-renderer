@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { RendererLightCache } from './rendererLightCache'
+import { RendererLightCache } from '../cache/rendererLightCache'
 import { applyLightPublication, LightOwnerHost, type LightPublication } from './lightOwnerHost'
 
 function packedNibble(value: number): Uint8Array {

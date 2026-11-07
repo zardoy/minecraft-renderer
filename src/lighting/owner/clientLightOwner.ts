@@ -12,25 +12,25 @@
 
 import Chunks from 'prismarine-chunk'
 import { Vec3 } from 'vec3'
-import { RendererLightCache } from './rendererLightCache'
+import { RendererLightCache } from '../cache/rendererLightCache'
 import { applyLightPublication, sectionIndexToWorldOrigin, type LightOwnerEvent, type LightPublication, type PublicationGate } from './lightOwnerHost'
-import { buildLightTables1171, LIGHT_TABLES_MC_VERSION } from './lightTables1171'
+import { buildLightTables1171, LIGHT_TABLES_MC_VERSION } from '../tables/lightTables1171'
 import {
   comparableNow,
   ingestRemoteClientLightTraceMessage,
   isClientLightTraceEnabled,
   isClientLightTraceMessage,
   recordClientLightTrace
-} from '../lib/clientLightTrace'
+} from '../debug/clientLightTrace'
 import {
   shouldAcceptVersionedMesh,
   validateOwnerPublicationMessage,
   type MeshGeometryMode,
   type MeshSectionLightRequirement as VersionedMeshRequirement
-} from '../lib/clientLightVersions'
+} from '../versioning/clientLightVersions'
 
-export { packUnpackedLightSection, unpackPackedLightSection } from '../mesher-shared/lightNibblePack'
-export { eventsFromParsedUpdateLight } from '../wasm-mesher/worker/updateLightToOwnerEvents'
+export { packUnpackedLightSection, unpackPackedLightSection } from '../../mesher-shared/lightNibblePack'
+export { eventsFromParsedUpdateLight } from './updateLightToOwnerEvents'
 
 export const LIGHT_OWNER_WORKER_SCRIPT = 'lightOwnerWorker.js'
 

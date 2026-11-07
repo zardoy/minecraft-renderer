@@ -32,7 +32,7 @@ import { releaseVehiclePassengerPosition } from './entity/vehiclePassengerRender
 import { updateVehiclePassengerPositions as applyVehiclePassengerPositions } from './entity/vehiclePassengerUpdate'
 import { applyNetworkHeadPitch, storeNetworkHeadPitch, storeNetworkHeadYaw } from './entity/networkHeadPitchRendering'
 import { processRemoteBoatPassengerRotations, type RemoteBoatPassengerEntity } from './entity/remoteBoatPassengerRotation'
-import { isClientLightTraceEnabled, recordClientLightTrace } from '../lib/clientLightTrace'
+import { isClientLightTraceEnabled, recordClientLightTrace } from '../lighting/debug/clientLightTrace'
 import {
   ENTITY_TWEEN_DURATION_MS,
   applyLocalHorseCameraYawLock,
@@ -61,7 +61,7 @@ import { WalkingGeneralSwing } from './entity/animations'
 import { disposeObject, loadNearestFilterTexture, loadTexture, loadThreeJsTextureFromUrl } from './threeJsUtils'
 import { armorModel, armorTextures, elytraTexture } from './entity/armorModels'
 import { WorldRendererThree } from './worldRendererThree'
-import type { EntityLightMeta } from './entityLightController'
+import type { EntityLightMeta } from '../lighting/entity/entityLightController'
 import { IndexedData } from 'minecraft-data'
 import { ItemSpecificContextProperties } from '../playerState/types'
 

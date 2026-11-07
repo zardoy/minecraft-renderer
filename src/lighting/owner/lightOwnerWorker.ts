@@ -5,7 +5,7 @@
  * Messages arriving before init completes are queued.
  */
 
-import type { LightOwnerEvent, LightPublication } from '../../three/lightOwnerHost'
+import type { LightOwnerEvent, LightPublication } from './lightOwnerHost'
 import { eventsFromWasmUpdateLight } from './updateLightToOwnerEvents'
 import {
   CLIENT_LIGHT_TRACE_MESSAGE,
@@ -14,7 +14,7 @@ import {
   isClientLightTraceArmed,
   isClientLightTraceEnabled,
   postClientLightTrace
-} from '../../lib/clientLightTrace'
+} from '../debug/clientLightTrace'
 
 type WasmEngine = {
   readonly fallbackRelights?: number
@@ -63,7 +63,7 @@ async function handle(data: any) {
   if (!data || typeof data !== 'object') return
   switch (data.type) {
     case 'init': {
-      wasm = await import('../runtime-build/wasm_mesher.js')
+      wasm = await import('../../wasm-mesher/runtime-build/wasm_mesher.js')
       await wasm.default('/wasm_mesher_bg.wasm')
       const Engine = (wasm as unknown as { JsLightEngine: new (minY: number, height: number) => WasmEngine }).JsLightEngine
       worldMinY = data.worldMinY ?? 0

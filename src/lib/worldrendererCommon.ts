@@ -1,6 +1,6 @@
 /* eslint-disable guard-for-in */
 import { EventEmitter } from 'events'
-import { setClientLightProbePositions, isClientLightProbeSection } from './clientLightProbe'
+import { setClientLightProbePositions, isClientLightProbeSection } from '../lighting/debug/clientLightProbe'
 import { Vec3 } from 'vec3'
 import TypedEmitter from 'typed-emitter'
 import { WorldBlockProvider } from 'mc-assets/dist/worldBlockProvider'
@@ -34,7 +34,7 @@ import { PlayerStateReactive } from '../playerState/playerState'
 import { IndexedData } from 'minecraft-data'
 import { WorldRendererConfig } from '../graphicsBackend/config'
 import { CameraCollisionBlockCache } from '../three/cameraCollisionBlockCache'
-import { RendererLightCache } from '../three/rendererLightCache'
+import { RendererLightCache } from '../lighting/cache/rendererLightCache'
 import {
   bumpClientLightTraceSessionEpoch,
   currentClientLightTraceIds,
@@ -47,7 +47,7 @@ import {
   nextClientLightRequestId,
   recordClientLightTrace,
   setClientLightTraceConfigListener
-} from './clientLightTrace'
+} from '../lighting/debug/clientLightTrace'
 import {
   ClientLightOwnerSession,
   LIGHT_OWNER_WORKER_SCRIPT,
@@ -59,7 +59,7 @@ import {
   shouldSpawnClientLightOwner,
   skyLightEnabledFromRendererState,
   type OwnerPublicationApplyResult
-} from '../three/clientLightOwner'
+} from '../lighting/owner/clientLightOwner'
 import {
   INITIAL_TOPOLOGY_REVISION,
   isOwnerGeometryLightStale,
@@ -67,7 +67,7 @@ import {
   shouldDispatchCoveringRemesh,
   validateMeshResultVersions,
   type MeshSectionLightRequirement
-} from './clientLightVersions'
+} from '../lighting/versioning/clientLightVersions'
 import type { FeedChunkPacketPayload } from '../worldView/types'
 
 function mod(x, n) {

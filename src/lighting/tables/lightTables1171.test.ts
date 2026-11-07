@@ -1,9 +1,6 @@
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import MinecraftData from 'minecraft-data'
-import { buildVanillaLightTables1171 } from '../../scripts/generate-light-tables-1171.mjs'
+import { buildVanillaLightTables1171, readCachedBlocksJava } from '../../../scripts/generate-light-tables-1171.mjs'
 import { buildLightTables1171 } from './lightTables1171'
 
 const mcData = MinecraftData('1.17.1')
@@ -114,9 +111,11 @@ describe('buildLightTables1171', () => {
     expect(sawLitCandle).toBe(true)
   })
 
-  it('regenerates the committed artifact from vendored 1.17.1 Blocks.java', () => {
-    const java = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../lib/vanilla-1.17.1/Blocks.java'), 'utf8')
-    const fresh = buildVanillaLightTables1171(java)
+  // Blocks.java is not vendored. `node scripts/generate-light-tables-1171.mjs` downloads and caches the pinned file;
+  // without the cache (or a BLOCKS_JAVA path) this check is skipped so tests never hit the network.
+  const cachedBlocksJava = readCachedBlocksJava()
+  it.skipIf(!cachedBlocksJava)('regenerates the committed artifact from the pinned 1.17.1 Blocks.java', () => {
+    const fresh = buildVanillaLightTables1171(cachedBlocksJava!)
     const tables = buildLightTables1171()
     expect(fresh.vanillaCommit).toBe('72447031d70fca0cfc9087de2704da83bc12fa79')
     expect(fresh.vanillaWorldVersion).toBe(2730)

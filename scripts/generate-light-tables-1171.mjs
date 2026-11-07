@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import MinecraftData from 'minecraft-data'
@@ -10,8 +11,38 @@ const FACE_PROPS = ['down', 'east', 'north', 'south', 'up', 'west']
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, '..')
-const blocksJavaPath = join(root, 'src/lib/vanilla-1.17.1/Blocks.java')
-const outPath = join(root, 'src/lib/lightTables1171.generated.json')
+const outPath = join(root, 'src/lighting/tables/lightTables1171.generated.json')
+
+// Vanilla 1.17.1 (WORLD_VERSION 2730) block registry. Emission numbers come from Blocks.java lightLevel(...) on this
+// exact commit; do not swap in a newer tree. minecraft-data is only used to map block name + properties to stateId.
+// The file is downloaded on demand (and cached, gitignored) instead of being vendored into the repo.
+export const BLOCKS_JAVA_URL = `https://raw.githubusercontent.com/MCFireworkDev/MinecraftDeobfuscated-Mojang/${VANILLA_COMMIT}/minecraft/src/net/minecraft/world/level/block/Blocks.java`
+export const BLOCKS_JAVA_SHA256 = '6a409fc4fdb3654e254a89e2672fdd0de7e76098c4847bbe737566018cc668da'
+export const blocksJavaCachePath = join(root, '.cache/vanilla-1.17.1/Blocks.java')
+
+function verifyBlocksJava(text) {
+  const sha = createHash('sha256').update(text).digest('hex')
+  if (sha !== BLOCKS_JAVA_SHA256) throw new Error(`Blocks.java sha256 mismatch: expected ${BLOCKS_JAVA_SHA256}, got ${sha}`)
+  return text
+}
+
+/** Cached Blocks.java if present (or BLOCKS_JAVA env path), without touching the network. */
+export function readCachedBlocksJava() {
+  const path = process.env.BLOCKS_JAVA || blocksJavaCachePath
+  return existsSync(path) ? verifyBlocksJava(readFileSync(path, 'utf8')) : undefined
+}
+
+/** Cached Blocks.java, downloading it from the pinned commit first when missing. */
+export async function loadBlocksJava() {
+  const cached = readCachedBlocksJava()
+  if (cached) return cached
+  const res = await fetch(BLOCKS_JAVA_URL)
+  if (!res.ok) throw new Error(`Failed to download ${BLOCKS_JAVA_URL}: ${res.status}`)
+  const text = verifyBlocksJava(await res.text())
+  mkdirSync(dirname(blocksJavaCachePath), { recursive: true })
+  writeFileSync(blocksJavaCachePath, text)
+  return text
+}
 
 export function matchParens(text, openIdx) {
   let depth = 0
@@ -252,7 +283,7 @@ function toArtifact(tables) {
 
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]
 if (isMain) {
-  const blocksJava = readFileSync(blocksJavaPath, 'utf8')
+  const blocksJava = await loadBlocksJava()
   const tables = buildVanillaLightTables1171(blocksJava)
   writeFileSync(outPath, `${JSON.stringify(toArtifact(tables), null, 2)}\n`)
   console.log(`wrote ${outPath} states=${tables.emission.length}`)

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import Chunks from 'prismarine-chunk'
 import MinecraftData from 'minecraft-data'
 import { Vec3 } from 'vec3'
-import { RENDERER_LIGHT_BYTES_PER_SECTION, RendererLightCache } from '../rendererLightCache'
+import { RENDERER_LIGHT_BYTES_PER_SECTION, RendererLightCache } from './rendererLightCache'
 
 const VERSION = '1.16.5'
 

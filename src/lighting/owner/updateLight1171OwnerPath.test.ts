@@ -2,9 +2,9 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { RendererLightCache } from '../../three/rendererLightCache'
-import { applyLightPublication } from '../../three/lightOwnerHost'
-import { isLightSectionPresent, mergeUpdateLight, parsedUpdateLightFromWasm, worldSectionMaskBit } from './mesherWasmLightMerge'
+import { RendererLightCache } from '../cache/rendererLightCache'
+import { applyLightPublication } from './lightOwnerHost'
+import { isLightSectionPresent, mergeUpdateLight, parsedUpdateLightFromWasm, worldSectionMaskBit } from '../../wasm-mesher/worker/mesherWasmLightMerge'
 
 const NUM_SECTIONS = 16
 
@@ -16,8 +16,8 @@ function packedNibble(value: number): Uint8Array {
 describe('1.17.1 fixture owner path (scenario б)', () => {
   it('keeps an omitted neighbor after the captured empty-block packet', async () => {
     const wasmDir = dirname(fileURLToPath(import.meta.url))
-    const wasmModule = await import('../runtime-build/wasm_mesher.js')
-    const wasmBytes = readFileSync(join(wasmDir, '../runtime-build/wasm_mesher_bg.wasm'))
+    const wasmModule = await import('../../wasm-mesher/runtime-build/wasm_mesher.js')
+    const wasmBytes = readFileSync(join(wasmDir, '../../wasm-mesher/runtime-build/wasm_mesher_bg.wasm'))
     try {
       wasmModule.initSync(wasmBytes)
     } catch {

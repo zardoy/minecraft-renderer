@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { faceNeighborKeys, pendingSectionGroups, selectReadySectionFlushes, selectReadySectionUpdates } from '../pendingSectionFlush'
+import { faceNeighborKeys, pendingSectionGroups, selectReadySectionFlushes, selectReadySectionUpdates } from './pendingSectionFlush'
 
 const SECTION_HEIGHT = 16
 const MAX_BUFFER_MS = 500

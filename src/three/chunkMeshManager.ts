@@ -34,7 +34,7 @@ import { disposeObject } from './threeJsUtils'
 import { getBannerTexture, createBannerMesh, releaseBannerTexture } from './bannerRenderer'
 import { getSignTexture, releaseSignTexture, disposeAllSignTextures } from './signTextureCache'
 import { BlockEntityLightRegistry } from '../lib/blockEntityLightRegistry'
-import { isClientLightTraceEnabled, recordClientLightTraceGpuSample } from '../lib/clientLightTrace'
+import { isClientLightTraceEnabled, recordClientLightTraceGpuSample } from '../lighting/debug/clientLightTrace'
 import { SectionOcclusionCull, hsvToRgb } from './occlusion/sectionOcclusionCull'
 
 export interface ChunkMeshPool {

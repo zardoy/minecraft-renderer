@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from 'vitest'
 import Chunks from 'prismarine-chunk'
 import MinecraftData from 'minecraft-data'
 import { Vec3 } from 'vec3'
-import { RendererLightCache } from './rendererLightCache'
-import { defaultWorldRendererConfig } from '../graphicsBackend/config'
+import { RendererLightCache } from '../cache/rendererLightCache'
+import { defaultWorldRendererConfig } from '../../graphicsBackend/config'
 import { LightOwnerHost, type LightPublication, type PublicationGate } from './lightOwnerHost'
-import { maskBitSet, worldSectionMaskBit, type ParsedUpdateLight } from '../wasm-mesher/worker/mesherWasmLightMerge'
+import { maskBitSet, worldSectionMaskBit, type ParsedUpdateLight } from '../../wasm-mesher/worker/mesherWasmLightMerge'
 import {
   applyOwnerPublicationToRenderer,
   blockChangeEvent,

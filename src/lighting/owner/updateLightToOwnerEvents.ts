@@ -1,6 +1,6 @@
-import { maskBitGet, parsedUpdateLightFromWasm, type ParsedUpdateLight } from './mesherWasmLightMerge'
+import { maskBitGet, parsedUpdateLightFromWasm, type ParsedUpdateLight } from '../../wasm-mesher/worker/mesherWasmLightMerge'
 import { packUnpackedLightSection } from '../../mesher-shared/lightNibblePack'
-import type { LightOwnerEvent } from '../../three/lightOwnerHost'
+import type { LightOwnerEvent } from './lightOwnerHost'
 
 export function eventsFromParsedUpdateLight(parsed: ParsedUpdateLight, worldMinY: number): LightOwnerEvent[] {
   const sx = parsed.x

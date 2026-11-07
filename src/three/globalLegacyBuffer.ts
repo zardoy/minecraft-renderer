@@ -9,7 +9,7 @@ import {
   type LegacyMultiDrawScratch
 } from './legacyMultiDraw'
 import { computeCameraRelativeUniforms, type RenderOrigin } from './shaders/legacyBlockShader'
-import { isClientLightTraceEnabled, recordClientLightTrace, recordClientLightTraceGpuSample } from '../lib/clientLightTrace'
+import { isClientLightTraceEnabled, recordClientLightTrace, recordClientLightTraceGpuSample } from '../lighting/debug/clientLightTrace'
 
 const VERTS_PER_QUAD = 4
 const INDICES_PER_QUAD = 6
