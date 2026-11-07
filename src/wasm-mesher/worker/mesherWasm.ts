@@ -176,6 +176,7 @@ let config = defaultMesherConfig
 let version = '1.16.5'
 let world: World // chunkKey -> chunk data
 let dirtySections = new Map<string, number>()
+let viewerChunk: { x: number; z: number } | null = null
 const urgentSections = new Set<string>()
 const dirtyLightMeta = new Map<string, { lightPublicationVersion?: number; worldGeneration?: number }>()
 const dirtyTraceMeta = new Map<string, { clientLightRequestId?: number; clientLightEditSeq?: number; clientLightSessionEpoch?: number }>()
@@ -958,6 +959,10 @@ const handleMessage = async (data: any) => {
   }
 
   switch (data.type) {
+    case 'viewerChunkPosition': {
+      viewerChunk = { x: data.x, z: data.z }
+      break
+    }
     case 'clientLightProbe': {
       setClientLightProbePositions(data.points)
       break
@@ -1434,7 +1439,7 @@ async function processColumnTickInner() {
   // coords — the same units used by section keys). This guarantees a
   // single WASM call per column per tick even when multiple section keys
   // of the same column are dirty.
-  const { selected: groups, remaining } = selectColumnGroupsForTick(dirtySections, urgentSections)
+  const { selected: groups, remaining } = selectColumnGroupsForTick(dirtySections, urgentSections, undefined, viewerChunk)
   dirtySections.clear()
   for (const [key, count] of remaining) dirtySections.set(key, count)
   const selectedUrgent = new Set<string>()
