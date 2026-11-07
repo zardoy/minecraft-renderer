@@ -1,5 +1,15 @@
 import { proxy } from 'valtio'
-import type { GameMode, HandItemBlock, BlocksShapes, BlockShape, MovementState, CameraPerspective, Team, ItemSpecificContextProperties } from './types'
+import type {
+  GameMode,
+  HandItemBlock,
+  BlocksShapes,
+  BlockShape,
+  MovementState,
+  CameraPerspective,
+  Team,
+  ItemSpecificContextProperties,
+  UseItemSession
+} from './types'
 
 // edit src/mineflayer/playerState.ts for implementation of player state from mineflayer
 export const getInitialPlayerState = () =>
@@ -41,6 +51,7 @@ export const getInitialPlayerState = () =>
     bob: 0,
     prevBob: 0,
     itemUsageTicks: 0,
+    itemUseSession: undefined as UseItemSession | undefined,
     username: '',
     onlineMode: false,
     /** Dimension ambient lighting preset (e.g. nether) — from login/respawn dimension data when available */

@@ -78,9 +78,30 @@ interface BreakParticle {
 const MAX_PARTICLES = 512
 const TICK_RATE = 1 / 20
 
+// LivingEntity.spawnItemParticles uses entity-local +Z forward. Three.js cameras look down -Z.
+const _itemParticleOffset = new THREE.Vector3()
+const _itemParticleVel = new THREE.Vector3()
+const _itemParticleQuat = new THREE.Quaternion()
+
+function vanillaItemParticleMotion(camQuat: THREE.Quaternion): { px: number; py: number; pz: number; xd: number; yd: number; zd: number } {
+  const localX = (Math.random() - 0.5) * 0.3
+  const localY = -Math.random() * 0.6 - 0.3
+  _itemParticleOffset.set(localX, localY, -0.6).applyQuaternion(camQuat)
+  _itemParticleVel.set((Math.random() - 0.5) * 0.1, Math.random() * 0.1 + 0.1, 0).applyQuaternion(camQuat)
+  return {
+    px: _itemParticleOffset.x,
+    py: _itemParticleOffset.y,
+    pz: _itemParticleOffset.z,
+    xd: _itemParticleVel.x,
+    yd: _itemParticleVel.y + 0.05,
+    zd: _itemParticleVel.z
+  }
+}
+
 export class BlockBreakParticlesModule implements RendererModuleController {
   private particles: BreakParticle[] = []
   private sharedMaterial?: THREE.MeshBasicMaterial
+  private itemMaterial?: THREE.MeshBasicMaterial
   private enabled = false
   private tickAccumulator = 0
   private nextParticleIndex = 0
@@ -108,6 +129,8 @@ export class BlockBreakParticlesModule implements RendererModuleController {
     this.particles = []
     this.sharedMaterial?.dispose()
     this.sharedMaterial = undefined
+    this.itemMaterial?.dispose()
+    this.itemMaterial = undefined
     this.nextParticleIndex = 0
   }
 
@@ -158,6 +181,44 @@ export class BlockBreakParticlesModule implements RendererModuleController {
           this.createParticle(px, py, pz, xd, yd, zd, maxAge, texInfo, floorMap, worldX, worldZ, 1.0, tintColor)
         }
       }
+    }
+  }
+  /**
+   * Reuse the existing block-particle pool and physics for vanilla item-use
+   * effects, but sample the item atlas and assign its material per particle.
+   * Item atlas keys are currently the bare item name (for example "bread");
+   * namespaced/prefixed fallbacks are retained for resource-pack variants.
+   * Spawn pose matches LivingEntity.spawnItemParticles: 0.6 blocks along look,
+   * with a downward local offset toward the held item.
+   */
+  spawnItemParticles(worldX: number, worldY: number, worldZ: number, itemName: string, particleCount: number, floorMap?: number[]): void {
+    if (!this.enabled || particleCount <= 0 || !this.ensureItemMaterial()) return
+
+    const texInfo = this.resolveItemTexture(itemName)
+    if (!texInfo) return
+
+    const particleFloorMap = floorMap ?? new Array<number>(25).fill(Math.floor(worldY) - 20)
+    this.worldRenderer.camera.updateMatrixWorld()
+    const camQuat = this.worldRenderer.camera.getWorldQuaternion(_itemParticleQuat)
+    for (let i = 0; i < particleCount; i++) {
+      const motion = vanillaItemParticleMotion(camQuat)
+      const maxAge = Math.floor(4 / (Math.random() * 0.9 + 0.1))
+      this.createParticle(
+        worldX + motion.px,
+        worldY + motion.py,
+        worldZ + motion.pz,
+        motion.xd,
+        motion.yd,
+        motion.zd,
+        maxAge,
+        texInfo,
+        particleFloorMap,
+        worldX,
+        worldZ,
+        0.6,
+        [1, 1, 1],
+        this.itemMaterial
+      )
     }
   }
 
@@ -276,7 +337,8 @@ export class BlockBreakParticlesModule implements RendererModuleController {
     blockX: number,
     blockZ: number,
     scaleFactor = 1.0,
-    tintColor: [number, number, number] = [1, 1, 1]
+    tintColor: [number, number, number] = [1, 1, 1],
+    material?: THREE.MeshBasicMaterial
   ): void {
     this.ensureMaterial()
 
@@ -289,6 +351,7 @@ export class BlockBreakParticlesModule implements RendererModuleController {
         particle = this.recycleOldest()
       }
     }
+    particle.mesh.material = material ?? this.sharedMaterial!
 
     const randomU = Math.floor(Math.random() * 4)
     const randomV = Math.floor(Math.random() * 4)
@@ -423,6 +486,24 @@ export class BlockBreakParticlesModule implements RendererModuleController {
 
     return null
   }
+  private resolveItemTexture(itemName: string): { u: number; v: number; su: number; sv: number } | null {
+    const resources = this.worldRenderer.resourcesManager.currentResources
+    const atlasJson = resources?.itemsAtlasJson
+    if (!atlasJson) return null
+
+    const normalizedName = itemName.replace(/^minecraft:/, '')
+    const textures = atlasJson.textures
+    // Vanilla's item atlas uses bare names. Prefix/version fallbacks cover
+    // known resource-pack layouts; model indirection is outside this API.
+    const candidateKeys = [normalizedName, `item/${normalizedName}`, `items/${normalizedName}`]
+    for (const key of candidateKeys) {
+      if (textures[key]) return this.extractUV(textures[key], atlasJson)
+    }
+    for (const key of Object.keys(textures)) {
+      if (key.endsWith(`/${normalizedName}`)) return this.extractUV(textures[key], atlasJson)
+    }
+    return null
+  }
 
   private extractUV(
     texInfo: { u: number; v: number; su?: number; sv?: number },
@@ -456,6 +537,22 @@ export class BlockBreakParticlesModule implements RendererModuleController {
       transparent: true,
       alphaTest: 0.1
     })
+  }
+  private ensureItemMaterial(): boolean {
+    const atlasTexture = this.worldRenderer.itemsTexture
+    if (!atlasTexture) return false
+    if (this.itemMaterial) {
+      this.itemMaterial.map = atlasTexture
+      this.itemMaterial.needsUpdate = true
+      return true
+    }
+    this.itemMaterial = new THREE.MeshBasicMaterial({
+      map: atlasTexture,
+      vertexColors: true,
+      transparent: true,
+      alphaTest: 0.1
+    })
+    return true
   }
 }
 
