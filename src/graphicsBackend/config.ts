@@ -53,6 +53,9 @@ export const defaultWorldRendererConfig = {
   enableLighting: true,
   starfield: true,
   defaultSkybox: true,
+  clouds: true,
+  /** World Y of the cloud layer (vanilla overworld: 192 since 1.18, 128 before). */
+  cloudHeight: 192,
   renderEntities: true,
   extraBlockRenderers: true,
   foreground: true,
