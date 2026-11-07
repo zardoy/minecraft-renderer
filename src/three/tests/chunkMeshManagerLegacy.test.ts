@@ -119,6 +119,7 @@ function makeInvalidBlendGeometry(): MesherGeometryOutput {
 type ManagerOptions = {
   revealDefer?: boolean
   shaderCubes?: boolean
+  nearReveal?: boolean
   finishedChunks?: Record<string, boolean>
 }
 
@@ -179,6 +180,30 @@ function drainCubeUploads(manager: ChunkMeshManager): void {
   while (gb.hasPendingUploads()) gb.uploadDirtyRange()
 }
 
+test('ChunkMeshManager: missing nearer column blocks only during expected grace', () => {
+  vi.useFakeTimers()
+  try {
+    const manager = createManager({ nearReveal: true, finishedChunks: { '32,0': true } })
+    const section = new THREE.Object3D()
+    section.visible = false
+    manager.sectionObjects['32,0,0'] = section as (typeof manager.sectionObjects)[string]
+    manager.waitingChunksToDisplay['32,0'] = ['32,0,0']
+
+    manager.finishChunkDisplay('32,0')
+    expect(manager.pendingNearReveal.has('32,0')).toBe(true)
+    expect(section.visible).toBe(false)
+    vi.advanceTimersByTime(1499)
+    expect(section.visible).toBe(false)
+    vi.advanceTimersByTime(51)
+    expect(manager.pendingNearReveal.has('32,0')).toBe(false)
+    expect(section.visible).toBe(true)
+    expect(vi.getTimerCount()).toBe(0)
+  } finally {
+    vi.clearAllTimers()
+    vi.useRealTimers()
+  }
+})
+
 function createManager(opts: ManagerOptions = {}): ChunkMeshManager {
   const scene = new THREE.Scene()
   const material = new THREE.MeshBasicMaterial()
@@ -196,7 +221,10 @@ function createManager(opts: ManagerOptions = {}): ChunkMeshManager {
       removeAndUntrackAll: () => {}
     },
     blockEntities: {},
-    worldRendererConfig: opts.shaderCubes ? { wasmMesher: true } : {},
+    worldRendererConfig: opts.shaderCubes || opts.nearReveal ? { wasmMesher: true } : {},
+    viewerChunkPosition: opts.nearReveal ? { x: 0, z: 0 } : undefined,
+    viewDistance: 9,
+    loadedChunks: opts.nearReveal ? { '32,0': true } : {},
     displayOptions: { inWorldRenderingConfig: {} },
     finishedChunks: opts.finishedChunks ?? (opts.shaderCubes ? { '0,0': true } : {})
   } as unknown as WorldRendererThree

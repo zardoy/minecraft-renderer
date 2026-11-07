@@ -8,6 +8,26 @@ function dirtyOf(keys: string[]): Map<string, number> {
 }
 
 describe('selectColumnGroupsForTick', () => {
+  test('viewer selects the four nearest bulk columns, leaving the farthest', () => {
+    const dirty = dirtyOf(['160,64,0', '64,64,0', '0,64,0', '16,64,16', '-32,64,0', '48,64,0'])
+    const { selected, remaining } = selectColumnGroupsForTick(dirty, new Set(), 4, { x: 0, z: 0 })
+    expect(selected.map(group => `${group.x},${group.z}`)).toEqual(['0,0', '16,16', '-32,0', '48,0'])
+    expect([...remaining.keys()]).toEqual(['64,64,0', '160,64,0'])
+  })
+
+  test('equal viewer distances keep insertion order', () => {
+    const dirty = dirtyOf(['16,64,0', '0,64,-16', '-16,64,0', '0,64,16'])
+    const { selected } = selectColumnGroupsForTick(dirty, new Set(), 2, { x: 0, z: 0 })
+    expect(selected.map(group => `${group.x},${group.z}`)).toEqual(['16,0', '0,-16'])
+  })
+
+  test('viewer leaves urgent columns first, uncapped and in insertion order', () => {
+    const dirty = dirtyOf(['160,64,0', '0,64,0', '320,64,0', '16,64,0'])
+    const { selected, remaining } = selectColumnGroupsForTick(dirty, new Set(['160,64,0', '320,64,0']), 1, { x: 0, z: 0 })
+    expect(selected.map(group => `${group.x},${group.z}`)).toEqual(['160,0', '320,0', '0,0'])
+    expect([...remaining.keys()]).toEqual(['16,64,0'])
+  })
+
   test('urgent columns are selected before bulk columns', () => {
     const dirty = dirtyOf(['160,64,0', '0,64,0', '32,64,0'])
     const urgent = new Set(['0,64,0'])

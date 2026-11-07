@@ -1267,7 +1267,7 @@ export class ChunkMeshManager {
    *
    * Two regimes by `ageMs` (time spent in `pendingNearReveal`):
    * - Within `EXPECTED_NEAR_GRACE_MS`: nearer columns in the circle that are
-   *   loaded but not finished block (far worker beats near worker).
+   *   in render range block unless finished, even if they have not arrived.
    * - After grace: only actually-loaded-but-not-finished columns block,
    *   so a never-arriving column does not freeze the view.
    */
@@ -1300,7 +1300,6 @@ export class ChunkMeshManager {
           const oz = (playerCz + dCz) << 4
           const otherKey = `${ox},${oz}`
           if (otherKey === chunkKey) continue
-          if (!loadedChunks[otherKey]) continue
           if (!finishedChunks[otherKey]) return true
         }
       }
@@ -1323,11 +1322,49 @@ export class ChunkMeshManager {
     const timer = setTimeout(() => {
       this.nearRevealTimers.delete(chunkKey)
       if (!this.pendingNearReveal.has(chunkKey)) return
-      console.warn(`[chunk-reveal] safety timeout for ${chunkKey} — a nearer pending column never finished, force-revealing`)
+      console.warn(
+        `[chunk-reveal] safety timeout for ${chunkKey} — a nearer pending column never finished, force-revealing. Blocker: ${this.describeNearerBlocker(chunkKey)}`
+      )
       this.flushChunkDisplay(chunkKey)
       this.tryRevealPending()
     }, ChunkMeshManager.NEAR_REVEAL_TIMEOUT_MS)
     this.nearRevealTimers.set(chunkKey, timer)
+  }
+
+  /**
+   * Diagnostics for the safety-timeout warning: the nearest loaded-but-unfinished
+   * column closer than `chunkKey`, with its unfinished sections and their
+   * outstanding mesher request counts (`y:count`; `y:0` = no request
+   * outstanding yet still not finished, e.g. a rejected/lost finish).
+   */
+  private describeNearerBlocker(chunkKey: string): string {
+    const wr = this.worldRenderer
+    const viewer = wr.viewerChunkPosition
+    if (!viewer) return 'no viewer position'
+    const playerCx = Math.floor(viewer.x / 16)
+    const playerCz = Math.floor(viewer.z / 16)
+    const dist = (key: string) => {
+      const [x, z] = key.split(',').map(Number)
+      return ((x >> 4) - playerCx) ** 2 + ((z >> 4) - playerCz) ** 2
+    }
+    const myDist = dist(chunkKey)
+    let blocker: string | undefined
+    for (const otherKey in wr.loadedChunks) {
+      if (otherKey === chunkKey || wr.finishedChunks[otherKey]) continue
+      const d = dist(otherKey)
+      if (d < myDist && (blocker === undefined || d < dist(blocker))) blocker = otherKey
+    }
+    if (!blocker) return 'none loaded (blocked only by not-yet-arrived columns)'
+    const [bx, bz] = blocker.split(',')
+    const sectionHeight = wr.getSectionHeight?.() ?? 16
+    const unfinished: string[] = []
+    for (let y = wr.worldMinYRender; y < (wr.worldSizeParams?.worldHeight ?? 0); y += sectionHeight) {
+      const key = `${bx},${y},${bz}`
+      if (!wr.finishedSections?.[key]) unfinished.push(`${y}:${wr.sectionsWaiting?.get(key) ?? 0}`)
+    }
+    const now = Date.now()
+    const loads = (wr.columnLoadLog?.get(blocker) ?? []).map(l => `${((now - l.time) / 1000).toFixed(1)}s ago${l.light ? ' (light)' : ''}`)
+    return `${blocker} (dist² ${dist(blocker)} vs ${myDist}), unfinished sections y:waiting = [${unfinished.join(' ')}], loaded: [${loads.join(', ')}]`
   }
 
   private clearNearRevealTimer(chunkKey: string): void {

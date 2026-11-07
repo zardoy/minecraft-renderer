@@ -29,13 +29,18 @@ export function groupDirtySectionsByColumn(dirtySections: Iterable<[string, numb
 export function selectColumnGroupsForTick(
   dirtySections: Map<string, number>,
   urgentKeys: Set<string>,
-  bulkLimit = BULK_COLUMNS_PER_TICK
+  bulkLimit = BULK_COLUMNS_PER_TICK,
+  viewer?: { x: number; z: number } | null
 ): { selected: ColumnTickGroup[]; remaining: Map<string, number> } {
   const urgent: ColumnTickGroup[] = []
   const bulk: ColumnTickGroup[] = []
   for (const group of groupDirtySectionsByColumn(dirtySections)) {
     if (group.sections.some(section => urgentKeys.has(section.key))) urgent.push(group)
     else bulk.push(group)
+  }
+  if (viewer) {
+    const distance = (group: ColumnTickGroup) => ((group.x >> 4) - viewer.x) ** 2 + ((group.z >> 4) - viewer.z) ** 2
+    bulk.sort((a, b) => distance(a) - distance(b))
   }
   const selected = [...urgent, ...bulk.slice(0, bulkLimit)]
   const remaining = new Map<string, number>()
