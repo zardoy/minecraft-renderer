@@ -1,6 +1,21 @@
 /* tslint:disable */
 /* eslint-disable */
 
+export class JsLightEngine {
+  free(): void;
+  [Symbol.dispose](): void;
+  pushEvent(event: any): void;
+  getSkyLight(x: number, y: number, z: number): number;
+  getBlockLight(x: number, y: number, z: number): number;
+  setLightTables(emission: Uint8Array, opacity: Uint8Array): void;
+  setOcclusionTable(occupancy: Uint8Array): void;
+  setSkyLightEnabled(enabled: boolean): void;
+  pollCompletedPublication(): any;
+  step(budget_ms: number): boolean;
+  constructor(world_min_y: number, world_height: number);
+  readonly fallbackRelights: number;
+}
+
 /**
  * Compute wireframe edge positions from a triangle mesh.
  *
@@ -209,11 +224,11 @@ export function parseMapChunkV18Plus(raw_packet: Uint8Array, num_sections: numbe
  * `raw_packet` includes the leading packet-id varint (we skip it).
  * `num_sections` should match the column the light is for (16 in 1.17).
  *
- * Returns `{ x, z, skyLight: Uint8Array(num_sections * 4096),
- *            blockLight: Uint8Array(num_sections * 4096), bytesRead }`.
- * Layout matches the existing 1.18+ light arrays
- * (`x + z*16 + y_abs*256`); the JS-side worker reorders into per-section
- * stack via the same path used for 1.18+ raw map_chunk parsing.
+ * Returns `{ x, z, trustEdges, skyLight, blockLight, skyLightMask,
+ *            emptySkyLightMask, blockLightMask, emptyBlockLightMask,
+ *            skyBelow?, skyAbove?, blockBelow?, blockAbove?, bytesRead }`.
+ * World arrays are `num_sections * 4096` (`x + z*16 + y_abs*256`).
+ * Omitted sections are left 0 and are not authoritative — use the masks.
  */
 export function parseUpdateLightV17(raw_packet: Uint8Array, num_sections: number): any;
 
@@ -226,6 +241,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
+  readonly __wbg_jslightengine_free: (a: number, b: number) => void;
   readonly computeWireframeEdges: (a: number, b: number, c: number, d: number) => [number, number];
   readonly computeWireframeEdgesU16: (a: number, b: number, c: number, d: number) => [number, number];
   readonly generateGeometryFromDump118: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number, i1: number, j1: number, k1: number) => any;
@@ -235,6 +251,16 @@ export interface InitOutput {
   readonly generateGeometryFromParsedV16V17Multi: (a: any, b: number, c: number, d: number, e: number, f: number, g: any, h: number, i: any, j: any, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number) => any;
   readonly generate_geometry: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number) => any;
   readonly generate_geometry_multi: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number) => any;
+  readonly jslightengine_fallbackRelights: (a: number) => number;
+  readonly jslightengine_getBlockLight: (a: number, b: number, c: number, d: number) => number;
+  readonly jslightengine_getSkyLight: (a: number, b: number, c: number, d: number) => number;
+  readonly jslightengine_js_new: (a: number, b: number) => number;
+  readonly jslightengine_pollCompletedPublication: (a: number) => any;
+  readonly jslightengine_pushEvent: (a: number, b: any) => void;
+  readonly jslightengine_setLightTables: (a: number, b: number, c: number, d: number, e: number) => void;
+  readonly jslightengine_setOcclusionTable: (a: number, b: number, c: number) => void;
+  readonly jslightengine_setSkyLightEnabled: (a: number, b: number) => void;
+  readonly jslightengine_step: (a: number, b: number) => number;
   readonly parseChunkDump118: (a: number, b: number, c: number, d: number, e: number) => any;
   readonly parseChunkDump118FullColumn: (a: number, b: number, c: number, d: number, e: number) => any;
   readonly parseChunkDump118FullColumnAll: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number) => any;

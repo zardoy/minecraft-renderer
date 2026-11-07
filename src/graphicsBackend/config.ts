@@ -42,6 +42,11 @@ export const defaultWorldRendererConfig = {
    * remeshing (change worker). When true, initial chunk meshing is
    * distributed only across workers[0 .. n-2]. */
   dedicatedChangeWorker: false,
+  /**
+   * Dedicated WASM light-owner worker. Default OFF: wiring exists so a
+   * human can flip this for live 1.17.1 runs. Do not enable for players.
+   */
+  enableClientLightOwner: false,
 
   // Rendering engine settings
   /** Face shading: vanilla Minecraft vs higher-contrast client look */

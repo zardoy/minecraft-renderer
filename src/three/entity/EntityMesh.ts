@@ -535,6 +535,7 @@ export class EntityMesh {
                     controller.playAnimation(gltf.animations[0].name, loop)
                   }
                 }
+                worldRenderer?.entities.onEntityMeshReady(this.mesh)
               })
               .catch(err => {
                 console.error('Failed to load GLTF model:', err)

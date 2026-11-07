@@ -7,9 +7,9 @@
 // redundant conversions.
 //
 // Correctness invariants:
-// - Cache value MUST NOT be mutated by consumers. The `ChunkConversionResult`
-//   typed arrays are used as `set()` SOURCES (and as wasm INPUTS) in the
-//   mesher tick, never as destinations, so the read-only contract holds.
+// - Block arrays are patched only by patchConversionBlock. Light arrays may
+//   receive the current display overlay before meshing. Other consumers must
+//   not mutate cache values. WASM receives the resulting arrays as inputs.
 // - Identity-based key validation: a hit is served only when the stored
 //   chunk reference is `===` the live `world.getColumn(x,z)` reference, so a
 //   replaced column (via `world.addColumn`) can never accidentally serve
@@ -17,8 +17,8 @@
 //   skipped (defense in depth).
 // - In-place mutation of an existing column object (e.g. via
 //   `world.setBlockStateId` from a `blockUpdate` message) preserves identity
-//   but changes content. The `blockUpdate` handler explicitly invalidates
-//   the affected `(chunkX, chunkZ)` to handle this.
+//   but changes content. The `blockUpdate` handler patches the cached state
+//   and count, or invalidates when it cannot patch safely.
 
 import type { ChunkConversionResult } from '../bridge/convertChunk'
 
@@ -121,6 +121,17 @@ export function setConversionCacheLimit(n: number): void {
 
 export function getConversionCacheLimit(): number {
   return activeLimit
+}
+
+/** Patch a live column without discarding its converted topology or metadata. */
+export function patchConversionBlock(x: number, z: number, chunkRef: any, blockX: number, blockY: number, blockZ: number, stateId: number): boolean {
+  const e = cache.get(keyOf(x, z))
+  if (!e || e.chunkRef !== chunkRef || blockY < e.worldMinY || blockY >= e.worldMaxY) return false
+  const index = blockX - x + (blockZ - z) * 16 + (blockY - e.worldMinY) * 256
+  const old = e.result.blockStates[index]!
+  e.result.blockStates[index] = stateId
+  e.result.blockCount += Number(stateId !== 0) - Number(old !== 0)
+  return true
 }
 
 export function invalidateConversion(x: number, z: number): boolean {

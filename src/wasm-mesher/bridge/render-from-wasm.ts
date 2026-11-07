@@ -2,6 +2,7 @@
 // This file takes WASM output and generates full Three.js buffer geometry
 
 import * as THREE from 'three'
+import { isClientLightProbeBlock } from '../../lighting/debug/clientLightProbe'
 import worldBlockProviderModule, { WorldBlockProvider } from 'mc-assets/dist/worldBlockProvider'
 import blocksAtlasesJson from 'mc-assets/dist/blocksAtlases.json'
 import blockStatesModels from 'mc-assets/dist/blockStatesModels.json'
@@ -691,7 +692,26 @@ export function renderWasmOutputToGeometry(
           },
           shaderWordBuffer
         )
-        if (emitted) continue
+        if (emitted) {
+          if (isClientLightProbeBlock(bx, by, bz)) {
+            console.log('[lightProbe:shaderCube]', {
+              time: Date.now(),
+              position: [bx, by, bz],
+              blockStateId,
+              name: prismBlock.name,
+              useModelLighting: false,
+              wasmSky: block.sky_light_data?.map(values => [...values]),
+              visibleFaces: block.visible_faces,
+              jsNeighborSky: Object.fromEntries(
+                Object.entries(elemFaces).map(([face, info]) => [
+                  face,
+                  world?.getChannelLightNorm(new Vec3(bx, by, bz).offset(info.dir[0], info.dir[1], info.dir[2])).sky
+                ])
+              )
+            })
+          }
+          continue
+        }
       }
     }
 
@@ -841,6 +861,20 @@ export function renderWasmOutputToGeometry(
           const tint = getTint(matchingEFace, cachedModel.blockName, cachedModel.blockProps, biome, world)
 
           const useModelLighting = (!cachedModel.isCube || globalMatrix != null) && world
+          if (isClientLightProbeBlock(bx, by, bz)) {
+            console.log('[lightProbe:face]', {
+              time: Date.now(),
+              position: [bx, by, bz],
+              faceName,
+              blockStateId,
+              name: prismBlock.name,
+              isCube: cachedModel.isCube,
+              rotated: globalMatrix != null,
+              useModelLighting: Boolean(useModelLighting),
+              wasmSky: skyValuesRaw ? [...skyValuesRaw] : null,
+              jsNeighborSky: world?.getChannelLightNorm(new Vec3(bx, by, bz).offset(...transformedDirI)).sky
+            })
+          }
           const baseChannels = useModelLighting
             ? world.getChannelLightNorm(new Vec3(bx, by, bz).offset(transformedDirI[0], transformedDirI[1], transformedDirI[2]))
             : null
@@ -920,6 +954,17 @@ export function renderWasmOutputToGeometry(
             tgtCol.push(tintAo[0], tintAo[1], tintAo[2])
             tgtSky.push(skyLightNorm)
             tgtBlock.push(blockLightNorm)
+            if (isClientLightProbeBlock(bx, by, bz)) {
+              console.log('[lightProbe:vertex]', {
+                time: Date.now(),
+                position: [bx, by, bz],
+                faceName,
+                cornerIdx,
+                useModelLighting: Boolean(useModelLighting),
+                skyLightNorm,
+                blockLightNorm
+              })
+            }
 
             const baseu = (pos[3] - 0.5) * uvcs - (pos[4] - 0.5) * uvsn + 0.5
             const basev = (pos[3] - 0.5) * uvsn + (pos[4] - 0.5) * uvcs + 0.5

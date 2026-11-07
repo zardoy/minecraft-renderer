@@ -3,6 +3,7 @@ export type PendingChunkMessage = {
   z: number
   chunk: any
   customBlockModels?: any
+  isLightUpdate?: boolean
 }
 
 export class PendingChunkBuffer {
