@@ -37,7 +37,10 @@ function frameInfo(overrides: Partial<PostFrameInfo> = {}): PostFrameInfo {
 
 describe('defaults', () => {
   it('every post effect is off by default and off never touches the renderer', () => {
-    for (const key of ['antialiasing', 'colorGrading'] as const) expect(RENDERER_DEFAULT_OPTIONS[key]).toBe('off')
+    expect(RENDERER_DEFAULT_OPTIONS.antialiasing).toBe('off')
+    // the warm look is in the block shaders, it never needs the post pipeline
+    expect(RENDERER_DEFAULT_OPTIONS.colorGrading).toBe('warm')
+    expect(usesPostProcessing(settings({}))).toBe(false)
     for (const key of ['bloom', 'godRays', 'vignette', 'motionBlur'] as const) {
       expect(RENDERER_DEFAULT_OPTIONS[key]).toBe(false)
     }
@@ -68,10 +71,10 @@ describe('pass sequence', () => {
     expect(calls).toHaveLength(3)
   })
 
-  it('grading + fxaa: final pass into a target, then fxaa', () => {
+  it('vignette + fxaa: final pass into a target, then fxaa', () => {
     const post = new PostProcessing()
     const { renderer, calls } = fakeRenderer(100, 100)
-    post.begin(renderer, settings({ antialiasing: 'fxaa', colorGrading: 'warm', vignette: true }))
+    post.begin(renderer, settings({ antialiasing: 'fxaa', vignette: true }))
     post.end(renderer)
     expect(calls).toEqual(['target 100x100', 'target 100x100', 'draw final', 'canvas', 'draw fxaa'])
   })

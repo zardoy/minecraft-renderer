@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { SWAY_PERIOD, SWAY_TIME_PERIOD } from './shaders/foliageSwayGlsl'
+import { COLOR_GRADING_PRESETS, type ColorGradingPreset } from './colorGrading'
 
 /**
  * Which block shader family a material belongs to (decides the defines it gets). `legacyBlended` materials draw with
@@ -85,13 +86,22 @@ export class BlockEffects {
     u_shadowParams: { value: new THREE.Vector4() },
     u_shadowBias: { value: new THREE.Vector2() },
     u_shadowNormalOffset: { value: 0 },
-    u_sunDir: { value: new THREE.Vector3(0, 1, 0) }
+    u_sunDir: { value: new THREE.Vector3(0, 1, 0) },
+    // Colour grading, see colorGrading.ts
+    u_gradeExposure: { value: 1 },
+    u_gradeContrast: { value: 1 },
+    u_gradeSaturation: { value: 1 },
+    u_gradeFilmic: { value: 0 },
+    u_gradeTint: { value: new THREE.Vector3(1, 1, 1) },
+    u_gradeShadowTint: { value: new THREE.Vector3() },
+    u_gradeHighlightTint: { value: new THREE.Vector3(1, 1, 1) }
   }
 
   private readonly materials = new Map<THREE.ShaderMaterial, BlockMaterialKind>()
   private wavingFoliage = false
   private sunShadows: SunShadowsMode = 'off'
   private blockEmission = false
+  private colorGrading: ColorGradingPreset = 'off'
   private tileFlagsTexture: THREE.DataTexture | null = null
 
   /** Call for every block material once it is created. */
@@ -123,6 +133,29 @@ export class BlockEffects {
     if (this.sunShadows === mode) return
     this.sunShadows = mode
     this.refreshDefines()
+  }
+
+  getColorGrading(): ColorGradingPreset {
+    return this.colorGrading
+  }
+
+  /** Switching between looks only writes uniforms; the shader is recompiled just when grading turns on or off. */
+  setColorGrading(preset: ColorGradingPreset): void {
+    if (this.colorGrading === preset) return
+    const wasOn = this.colorGrading !== 'off'
+    this.colorGrading = preset
+    if (preset !== 'off') {
+      const p = COLOR_GRADING_PRESETS[preset]
+      const u = this.uniforms
+      u.u_gradeExposure.value = p.exposure
+      u.u_gradeContrast.value = p.contrast
+      u.u_gradeSaturation.value = p.saturation
+      u.u_gradeFilmic.value = p.filmic
+      u.u_gradeTint.value.set(...p.tint)
+      u.u_gradeShadowTint.value.set(...p.shadowTint)
+      u.u_gradeHighlightTint.value.set(...p.highlightTint)
+    }
+    if (wasOn !== (preset !== 'off')) this.refreshDefines()
   }
 
   isBlockEmissionEnabled(): boolean {
@@ -185,6 +218,7 @@ export class BlockEffects {
     set('WAVING_FOLIAGE', this.wavingFoliage)
     set('WAVING_FOLIAGE_LEGACY', this.wavingFoliage && kind !== 'cube')
     set('WAVING_FOLIAGE_CUBE', this.wavingFoliage && kind === 'cube')
+    set('BLOCK_GRADING', this.colorGrading !== 'off')
     set('SUN_SHADOWS', this.sunShadows !== 'off')
     set('SUN_SHADOWS_SOFT', this.sunShadows === 'soft')
     set('BLOCK_EMISSION', this.blockEmission && kind !== 'legacyBlended')

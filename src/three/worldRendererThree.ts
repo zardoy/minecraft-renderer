@@ -1481,6 +1481,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.blockAnimations?.update(this.renderer, start, this.worldRendererConfig.animatedTextures)
     const postEffects = this.syncPostEffectSettings()
     this.blockEffects.setBlockEmission(needsBlockEmission(postEffects))
+    this.blockEffects.setColorGrading(this.worldRendererConfig.colorGrading)
     if (this.postProcessing.begin(this.renderer, postEffects)) {
       this.renderer.render(this.scene, cam)
       this.postProcessing.afterWorld(this.renderer, this.updatePostFrameInfo(cam))
@@ -1536,7 +1537,6 @@ export class WorldRendererThree extends WorldRendererCommon {
     const s = this.postEffectSettings
     s.antialiasing = cfg.antialiasing
     s.bloom = cfg.bloom
-    s.colorGrading = cfg.colorGrading
     s.godRays = cfg.godRays
     s.vignette = cfg.vignette
     s.motionBlur = cfg.motionBlur

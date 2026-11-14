@@ -51,7 +51,7 @@ export const RENDERER_DEFAULT_OPTIONS = {
   sunShadowsDistance: 64,
   antialiasing: 'off' as 'off' | 'fxaa',
   bloom: false as boolean,
-  colorGrading: 'off' as 'off' | 'warm' | 'cinematic' | 'vivid',
+  colorGrading: 'warm' as 'off' | 'warm' | 'cinematic' | 'vivid',
   godRays: false as boolean,
   vignette: false as boolean,
   motionBlur: false as boolean,
@@ -225,7 +225,7 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
   },
   colorGrading: {
     text: 'Color grading',
-    tooltip: 'Film-like tone curve and colour look for the whole image.',
+    tooltip: 'Film-like tone curve and colour look for world blocks (done in the block shaders, no extra cost).',
     possibleValues: [
       ['off', 'Off'],
       ['warm', 'Warm'],

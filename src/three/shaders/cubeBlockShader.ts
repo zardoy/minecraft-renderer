@@ -3,6 +3,7 @@ import { APPLY_LIGHTMAP_GLSL, DEFAULT_LIGHTMAP_PARAMS, type BlockLightmapParams 
 import { FOLIAGE_SWAY_GLSL } from './foliageSwayGlsl'
 import { CUBE_SHADOW_CASTER_FRAGMENT, SUN_SHADOW_FRAGMENT_GLSL, SUN_SHADOW_VERTEX_GLSL } from './sunShadowGlsl'
 import { BLOCK_EMISSION_GLSL } from './blockEmissionGlsl'
+import { COLOR_GRADING_GLSL } from '../colorGrading'
 
 export type { BlockLightmapParams }
 
@@ -325,6 +326,7 @@ void applyFog() {
 ${APPLY_LIGHTMAP_GLSL}
 ${SUN_SHADOW_FRAGMENT_GLSL}
 ${BLOCK_EMISSION_GLSL}
+${COLOR_GRADING_GLSL}
 
 const vec3 FACE_NORMAL[6] = vec3[6](
     vec3(0.0, 1.0, 0.0),  // UP
@@ -403,6 +405,9 @@ void main() {
     FragColor = vec4(baseColor.rgb * tint * brightness, 1.0);
 #ifdef BLOCK_EMISSION
     FragColor.a = blockEmissionAlpha(tileOrigin / 16, baseColor.rgb * tint);
+#endif
+#ifdef BLOCK_GRADING
+    FragColor.rgb = colorGrade(FragColor.rgb);
 #endif
     applyFog();
     writeLogDepth();

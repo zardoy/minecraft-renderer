@@ -4,23 +4,19 @@ import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js'
 import {
   BLOOM_PREFILTER_FRAGMENT,
   BLUR_FRAGMENT,
-  COLOR_GRADING_PRESETS,
   DOWNSAMPLE_FRAGMENT,
   FINAL_FRAGMENT,
   FULLSCREEN_VERTEX,
   GOD_RAYS_FRAGMENT,
-  WORLD_COMPOSITE_FRAGMENT,
-  type ColorGradingPreset
+  WORLD_COMPOSITE_FRAGMENT
 } from './shaders/postEffectsGlsl'
 
 export type AntialiasingMode = 'off' | 'fxaa'
-export type { ColorGradingPreset }
 
 export type PostEffectSettings = {
   antialiasing: AntialiasingMode
   /** Glow around light emitting blocks (needs the block shaders to write emission, see BlockEffects.setBlockEmission). */
   bloom: boolean
-  colorGrading: ColorGradingPreset
   godRays: boolean
   vignette: boolean
   motionBlur: boolean
@@ -29,7 +25,6 @@ export type PostEffectSettings = {
 export const POST_EFFECTS_OFF: PostEffectSettings = {
   antialiasing: 'off',
   bloom: false,
-  colorGrading: 'off',
   godRays: false,
   vignette: false,
   motionBlur: false
@@ -46,11 +41,10 @@ export type PostFrameInfo = {
   sunStrength: number
 }
 
-export const usesPostProcessing = (s: PostEffectSettings) =>
-  s.antialiasing !== 'off' || s.bloom || s.colorGrading !== 'off' || s.godRays || s.vignette || s.motionBlur
+export const usesPostProcessing = (s: PostEffectSettings) => s.antialiasing !== 'off' || s.bloom || s.godRays || s.vignette || s.motionBlur
 
 /** Effects of the final pass (whole frame, hand included). */
-const usesFinalPass = (s: PostEffectSettings) => s.colorGrading !== 'off' || s.vignette
+const usesFinalPass = (s: PostEffectSettings) => s.vignette
 
 /** The block shaders must write light emission into the frame alpha. */
 export const needsBlockEmission = (s: PostEffectSettings) => s.bloom
@@ -353,27 +347,9 @@ export class PostProcessing {
     const final = this.material('final', FINAL_FRAGMENT, {
       tSource: { value: null },
       aspect: { value: 1 },
-      exposure: { value: 1 },
-      contrast: { value: 1 },
-      saturation: { value: 1 },
-      filmic: { value: 0 },
-      tint: { value: new THREE.Vector3(1, 1, 1) },
-      shadowTint: { value: new THREE.Vector3() },
-      highlightTint: { value: new THREE.Vector3(1, 1, 1) },
       vignette: { value: 0.35 }
     })
-    setDefines(final, { GRADING: s.colorGrading !== 'off', VIGNETTE: s.vignette })
-    if (s.colorGrading !== 'off') {
-      const preset = COLOR_GRADING_PRESETS[s.colorGrading]
-      const u = final.uniforms
-      u.exposure!.value = preset.exposure
-      u.contrast!.value = preset.contrast
-      u.saturation!.value = preset.saturation
-      u.filmic!.value = preset.filmic
-      u.tint!.value.set(...preset.tint)
-      u.shadowTint!.value.set(...preset.shadowTint)
-      u.highlightTint!.value.set(...preset.highlightTint)
-    }
+    setDefines(final, { VIGNETTE: s.vignette })
     return final
   }
 

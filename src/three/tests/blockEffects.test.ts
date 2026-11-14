@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 import { BlockEffects, buildTileFlags, swayOriginMod, TILE_FLAG, tileFlagsForTexture, wrapSwayTime } from '../blockEffects'
 import { WavingGrassModule } from '../modules/wavingGrass'
+import { COLOR_GRADING_PRESETS, colorGradeCpu } from '../colorGrading'
 import { createCubeBlockMaterial, cubeBlockVertexShader } from '../shaders/cubeBlockShader'
 import { createGlobalLegacyBlockMaterial } from '../shaders/legacyBlockShader'
 import { defaultWorldRendererConfig } from '../../graphicsBackend/config'
@@ -152,5 +153,55 @@ describe('WavingGrassModule', () => {
     module.enable()
     module.dispose()
     expect(blockEffects.isWavingFoliageEnabled()).toBe(false)
+  })
+})
+
+describe('block colour grading', () => {
+  it('compiles the grade only while on, and switching looks only writes uniforms', () => {
+    const effects = new BlockEffects()
+    const cube = createCubeBlockMaterial()
+    const blended = createGlobalLegacyBlockMaterial()
+    effects.register(cube, 'cube')
+    effects.register(blended, 'legacyBlended')
+    expect(cube.defines.BLOCK_GRADING).toBeUndefined()
+
+    effects.setColorGrading('warm')
+    expect(cube.defines.BLOCK_GRADING).toBe('')
+    expect(blended.defines.BLOCK_GRADING).toBe('')
+    expect(effects.uniforms.u_gradeTint.value.toArray()).toEqual(COLOR_GRADING_PRESETS.warm.tint)
+
+    const version = cube.version
+    effects.setColorGrading('cinematic')
+    expect(cube.version).toBe(version)
+    expect(effects.uniforms.u_gradeContrast.value).toBe(COLOR_GRADING_PRESETS.cinematic.contrast)
+
+    effects.setColorGrading('off')
+    expect(cube.defines.BLOCK_GRADING).toBeUndefined()
+  })
+
+  it('grade functions behave: warm pushes red up and blue down, results stay in range', () => {
+    const [r, g, b] = colorGradeCpu([0.5, 0.5, 0.5], COLOR_GRADING_PRESETS.warm)
+    expect(r).toBeGreaterThan(b)
+    expect(r).toBeGreaterThan(g)
+    for (const preset of Object.values(COLOR_GRADING_PRESETS)) {
+      for (const c of [0, 0.2, 0.5, 1]) {
+        for (const v of colorGradeCpu([c, c, c], preset)) {
+          expect(v).toBeGreaterThanOrEqual(0)
+          expect(v).toBeLessThanOrEqual(1)
+        }
+      }
+    }
+  })
+
+  it('vivid raises saturation and keeps grey grey', () => {
+    const spread = (c: number[]) => Math.max(...c) - Math.min(...c)
+    expect(spread(colorGradeCpu([0.8, 0.4, 0.3], COLOR_GRADING_PRESETS.vivid))).toBeGreaterThan(spread([0.8, 0.4, 0.3]))
+    expect(spread(colorGradeCpu([0.5, 0.5, 0.5], COLOR_GRADING_PRESETS.vivid))).toBeLessThan(0.01)
+  })
+
+  it('cube shader applies it before fog', () => {
+    const src = createCubeBlockMaterial().fragmentShader
+    expect(src.indexOf('colorGrade(FragColor.rgb)')).toBeGreaterThan(-1)
+    expect(src.indexOf('colorGrade(FragColor.rgb)')).toBeLessThan(src.lastIndexOf('applyFog();'))
   })
 })

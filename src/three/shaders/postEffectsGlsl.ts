@@ -178,8 +178,8 @@ void main() {
 `
 
 /**
- * Final pass over the whole frame (world + hand): colour grading with a filmic tone curve, and vignette.
- * Defines: GRADING, VIGNETTE. With neither it is a plain copy.
+ * Final pass over the whole frame (world + hand): vignette. Without it a plain copy.
+ * Defines: VIGNETTE.
  */
 export const FINAL_FRAGMENT = /* glsl */ `
 precision highp float;
@@ -188,38 +188,12 @@ uniform float aspect;
 in vec2 vUv;
 out vec4 outColor;
 
-#ifdef GRADING
-uniform float exposure;
-uniform float contrast;
-uniform float saturation;
-uniform float filmic;      // 0 = linear, 1 = full filmic curve
-uniform vec3 tint;         // white balance multiplier
-uniform vec3 shadowTint;   // added in the dark tones
-uniform vec3 highlightTint; // multiplier in the bright tones
-
-// Filmic curve: rational fit of the ACES reference tone curve (Narkowicz 2015), maps 0..~1.5 into 0..1.
-vec3 filmicCurve(vec3 x) {
-    return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
-}
-#endif
-
 #ifdef VIGNETTE
 uniform float vignette;
 #endif
 
 void main() {
     vec3 color = texture(tSource, vUv).rgb;
-#ifdef GRADING
-    color *= tint;
-    color = mix(color, filmicCurve(color * exposure), filmic);
-    float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
-    color = mix(vec3(luma), color, saturation);
-    color = (color - 0.5) * contrast + 0.5;
-    float tone = smoothstep(0.0, 1.0, luma);
-    color += shadowTint * (1.0 - tone);
-    color *= mix(vec3(1.0), highlightTint, tone);
-    color = clamp(color, 0.0, 1.0);
-#endif
 #ifdef VIGNETTE
     vec2 d = (vUv - 0.5) * vec2(aspect, 1.0);
     color *= 1.0 - vignette * smoothstep(0.35, 0.95, length(d));
@@ -227,47 +201,3 @@ void main() {
     outColor = vec4(color, 1.0);
 }
 `
-
-export type ColorGradingPreset = 'off' | 'warm' | 'cinematic' | 'vivid'
-
-type GradingParams = {
-  exposure: number
-  contrast: number
-  saturation: number
-  filmic: number
-  tint: [number, number, number]
-  shadowTint: [number, number, number]
-  highlightTint: [number, number, number]
-}
-
-export const COLOR_GRADING_PRESETS: Record<Exclude<ColorGradingPreset, 'off'>, GradingParams> = {
-  // Golden sunlight: warmer white balance, slightly richer colours, gentle filmic roll-off.
-  warm: {
-    exposure: 1.25,
-    contrast: 1.04,
-    saturation: 1.1,
-    filmic: 0.6,
-    tint: [1.06, 1, 0.9],
-    shadowTint: [0, 0.005, 0.02],
-    highlightTint: [1.03, 1, 0.94]
-  },
-  // Teal shadows, warm highlights, more contrast, a bit less saturation.
-  cinematic: {
-    exposure: 1.3,
-    contrast: 1.12,
-    saturation: 0.92,
-    filmic: 1,
-    tint: [1.02, 1, 0.97],
-    shadowTint: [-0.01, 0.012, 0.03],
-    highlightTint: [1.05, 1, 0.92]
-  },
-  vivid: {
-    exposure: 1.15,
-    contrast: 1.08,
-    saturation: 1.28,
-    filmic: 0.35,
-    tint: [1, 1, 1],
-    shadowTint: [0, 0, 0],
-    highlightTint: [1, 1, 1]
-  }
-}

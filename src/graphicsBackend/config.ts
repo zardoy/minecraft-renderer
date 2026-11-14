@@ -75,7 +75,8 @@ export const defaultWorldRendererConfig = {
   // Post effects (all cost a few full-screen passes when on, nothing when off)
   /** Glow around light emitting blocks (torches, lava, glowstone...). */
   bloom: false,
-  colorGrading: 'off' as 'off' | 'warm' | 'cinematic' | 'vivid',
+  /** Colour look of world blocks, done in the block shaders (no extra pass, safe on phones). */
+  colorGrading: 'warm' as 'off' | 'warm' | 'cinematic' | 'vivid',
   /** Light shafts from the sun through gaps in terrain and clouds. */
   godRays: false,
   vignette: false,
