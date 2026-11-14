@@ -133,8 +133,13 @@ export type ShadowRerenderState = {
   renderedAt: number
 }
 
-/** Sun movement that requires a new map; shadows move by tan(0.25°) ≈ 0.4% of the caster height per update. */
-export const SHADOW_SUN_ANGLE_EPSILON_DEG = 0.25
+/**
+ * Sun movement that requires a new map. With smooth time (see smoothTimeOfDay.ts) the sun moves ~0.3° per second, so
+ * this is a new map ~5 times a second, each step moves a long shadow by well under a block.
+ */
+export const SHADOW_SUN_ANGLE_EPSILON_DEG = 0.06
+/** Never re-render for the sun more often than this (fast time: sleeping, /time add), the shadow just steps then. */
+export const SHADOW_SUN_MIN_INTERVAL_MS = 150
 /** Chunks keep streaming in while exploring, re-render for them at most this often. */
 export const SHADOW_GEOMETRY_THROTTLE_MS = 500
 
@@ -151,6 +156,6 @@ export function shadowNeedsRerender(
 ): boolean {
   if (!previous) return true
   if (previous.key !== frameKey) return true
-  if (angleBetweenDeg(previous.sunDir, sunDir) > SHADOW_SUN_ANGLE_EPSILON_DEG) return true
+  if (angleBetweenDeg(previous.sunDir, sunDir) > SHADOW_SUN_ANGLE_EPSILON_DEG && now - previous.renderedAt >= SHADOW_SUN_MIN_INTERVAL_MS) return true
   return previous.geometryVersion !== geometryVersion && now - previous.renderedAt >= SHADOW_GEOMETRY_THROTTLE_MS
 }

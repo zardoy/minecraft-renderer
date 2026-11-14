@@ -8,6 +8,7 @@ import type { LegacyDrawSpan } from '../legacyMultiDraw'
 import { createCubeShadowCasterMaterial } from '../shaders/cubeBlockShader'
 import { createGlobalLegacyShadowCasterMaterial } from '../shaders/legacyBlockShader'
 import type { SunShadowsMode } from '../blockEffects'
+import { SmoothTimeOfDay } from '../smoothTimeOfDay'
 import {
   computeShadowFrame,
   parseSectionKey,
@@ -41,7 +42,7 @@ export function resolveShadowDistance(value: number): number {
  */
 export class SunShadowsModule implements RendererModuleController {
   private enabled = false
-  private timeOfDay: number
+  private readonly timeOfDay = new SmoothTimeOfDay()
   private target?: THREE.WebGLRenderTarget
   private readonly shadowScene = new THREE.Scene()
   // three needs a camera to render, the casters project with u_lightViewProj and are never frustum culled.
@@ -57,7 +58,7 @@ export class SunShadowsModule implements RendererModuleController {
   renderCount = 0
 
   constructor(private readonly worldRenderer: WorldRendererThree) {
-    this.timeOfDay = worldRenderer.timeOfTheDay
+    this.timeOfDay.update(worldRenderer.timeOfTheDay, performance.now())
   }
 
   enable(): void {
@@ -82,7 +83,7 @@ export class SunShadowsModule implements RendererModuleController {
   }
 
   updateTimeOfDay(time: number): void {
-    this.timeOfDay = time
+    this.timeOfDay.update(time, performance.now())
   }
 
   render = (): void => {
@@ -103,7 +104,7 @@ export class SunShadowsModule implements RendererModuleController {
 
     const cfg = this.worldRenderer.worldRendererConfig
     const hasSun = cfg.defaultSkybox && cfg.cardinalLight !== 'nether'
-    sunDirectionFromTime(this.timeOfDay, this.sunDir)
+    sunDirectionFromTime(this.timeOfDay.get(now), this.sunDir)
     const strength = hasSun ? sunShadowStrength(this.sunDir.y) : 0
     const params = effects.uniforms.u_shadowParams.value
     if (strength <= 0 || this.worldRenderer.renderer.xr.isPresenting) {

@@ -7,6 +7,7 @@ import {
   sectionCastsIntoRange,
   shadowNeedsRerender,
   SHADOW_GEOMETRY_THROTTLE_MS,
+  SHADOW_SUN_MIN_INTERVAL_MS,
   sunDirectionFromTime,
   sunShadowStrength
 } from '../sunShadowMath'
@@ -96,8 +97,30 @@ describe('re-render decisions', () => {
   })
 
   it('ignores tiny sun movement but follows a noticeable one', () => {
-    expect(shadowNeedsRerender(previous, 'k', sunDirectionFromTime(3001), 'g1', 1001)).toBe(false)
-    expect(shadowNeedsRerender(previous, 'k', sunDirectionFromTime(3100), 'g1', 1001)).toBe(true)
+    // 1 tick is 0.015 degrees, 8 ticks 0.12
+    expect(shadowNeedsRerender(previous, 'k', sunDirectionFromTime(3001), 'g1', 1000 + SHADOW_SUN_MIN_INTERVAL_MS)).toBe(false)
+    expect(shadowNeedsRerender(previous, 'k', sunDirectionFromTime(3008), 'g1', 1000 + SHADOW_SUN_MIN_INTERVAL_MS)).toBe(true)
+  })
+
+  it('re-renders for the sun at most every SHADOW_SUN_MIN_INTERVAL_MS, however fast time runs', () => {
+    const fast = sunDirectionFromTime(3600)
+    expect(shadowNeedsRerender(previous, 'k', fast, 'g1', 1000 + SHADOW_SUN_MIN_INTERVAL_MS - 1)).toBe(false)
+    expect(shadowNeedsRerender(previous, 'k', fast, 'g1', 1000 + SHADOW_SUN_MIN_INTERVAL_MS)).toBe(true)
+  })
+
+  it('stays at about 5 map renders a second at normal day speed (what smooth shadows cost)', () => {
+    // 20 ticks per second of real time, a frame every 16 ms
+    let state: Parameters<typeof shadowNeedsRerender>[0]
+    let renders = 0
+    for (let ms = 0; ms < 10_000; ms += 16) {
+      const sun = sunDirectionFromTime(3000 + (ms / 1000) * 20)
+      if (shadowNeedsRerender(state, 'k', sun, 'g1', ms)) {
+        renders++
+        state = { key: 'k', sunDir: sun.clone(), geometryVersion: 'g1', renderedAt: ms }
+      }
+    }
+    expect(renders / 10).toBeGreaterThan(3)
+    expect(renders / 10).toBeLessThan(7)
   })
 
   it('throttles geometry changes', () => {
