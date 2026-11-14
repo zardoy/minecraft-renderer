@@ -55,6 +55,7 @@ function makeSession() {
       onMessage = handler
       return worker as unknown as Worker
     },
+    version: '1.17.1',
     worldMinY: 0,
     worldHeight: 256,
     skyLightEnabled: true,
@@ -68,14 +69,16 @@ describe('client light owner flag', () => {
     expect(shouldSpawnClientLightOwner(defaultWorldRendererConfig, '1.17.1')).toBe(false)
   })
 
-  it('spawns only when the flag is true and the session is 1.17.1', () => {
+  it('spawns only when the flag is true and the session version has light tables (1.17+)', () => {
     expect(shouldSpawnClientLightOwner({ enableClientLightOwner: true }, '1.17.1')).toBe(true)
     expect(shouldSpawnClientLightOwner({ enableClientLightOwner: false }, '1.17.1')).toBe(false)
     expect(shouldSpawnClientLightOwner({}, '1.17.1')).toBe(false)
     expect(shouldSpawnClientLightOwner({ enableClientLightOwner: true }, '1.16.5')).toBe(false)
-    expect(shouldSpawnClientLightOwner({ enableClientLightOwner: true }, '1.18.2')).toBe(false)
+    expect(shouldSpawnClientLightOwner({ enableClientLightOwner: true }, '1.18.2')).toBe(true)
+    expect(shouldSpawnClientLightOwner({ enableClientLightOwner: true }, '1.21.4')).toBe(true)
     expect(clientLightOwnerVersionBlockReason('1.17.1')).toBeNull()
-    expect(clientLightOwnerVersionBlockReason('1.16.5')).toMatch(/1\.17\.1/)
+    expect(clientLightOwnerVersionBlockReason('1.20.1')).toBeNull()
+    expect(clientLightOwnerVersionBlockReason('1.16.5')).toMatch(/1\.17 or newer/)
   })
 })
 
@@ -149,6 +152,7 @@ describe('owner step scheduling', () => {
           onMessage = handler
           return worker as unknown as Worker
         },
+        version: '1.17.1',
         worldMinY: 0,
         worldHeight: 256,
         skyLightEnabled: true,

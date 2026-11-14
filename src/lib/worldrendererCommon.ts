@@ -34,6 +34,7 @@ import { IndexedData } from 'minecraft-data'
 import { WorldRendererConfig } from '../graphicsBackend/config'
 import { CameraCollisionBlockCache } from '../three/cameraCollisionBlockCache'
 import { RendererLightCache } from '../lighting/cache/rendererLightCache'
+import { resolveLightingMode, type LightingDebugInfo } from '../lighting/lightingDebugInfo'
 import { ClientLightCoordinator, type ClientLightHost } from '../lighting/coordinator/clientLightCoordinator'
 import {
   bumpClientLightTraceSessionEpoch,
@@ -404,6 +405,19 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
   getClientLightOwnerFailureReason(): string | null {
     return this.lightCoordinator.getFailureReason()
+  }
+
+  /** Lighting mode and the light at a world position, for the F3 debug overlay (see `formatLightingLine`). */
+  getLightingDebugInfo(x: number, y: number, z: number): LightingDebugInfo {
+    const config = this.worldRendererConfig
+    const running = this.hasClientLightOwner()
+    const raw = this.rendererLightCache.getRawLight(Math.floor(x), Math.floor(y), Math.floor(z))
+    return {
+      mode: resolveLightingMode(config.enableLighting, running),
+      block: raw?.block,
+      sky: raw?.sky,
+      clientEngineUnavailableReason: config.enableClientLightOwner === true && !running ? this.getClientLightOwnerFailureReason() : null
+    }
   }
 
   columnIncarnationFor(columnKey: string): number {

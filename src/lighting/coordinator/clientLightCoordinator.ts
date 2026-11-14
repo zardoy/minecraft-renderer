@@ -145,6 +145,7 @@ export class ClientLightCoordinator {
     this.failureReason = null
     this.session = new ClientLightOwnerSession(this.host.rendererLightCache, {
       createWorker: onMessage => this.host.createLightOwnerWorker(onMessage),
+      version,
       worldMinY: this.host.worldSizeParams.minY,
       worldHeight: this.host.worldSizeParams.worldHeight,
       skyLightEnabled: skyLightEnabledFromRendererState(this.host.playerStateReactive),
