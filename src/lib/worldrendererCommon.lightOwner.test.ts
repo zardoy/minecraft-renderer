@@ -163,14 +163,14 @@ describe('WorldRendererCommon client light owner spawn', () => {
     expect(renderer.hasClientLightOwner()).toBe(false)
   })
 
-  test('flag-on on a non-1.17.1 session does not load the 1.17.1 tables', () => {
+  test('flag-on on a session older than 1.17 does not start the owner (no light tables)', () => {
     const renderer = createRenderer(true, 1, '1.16.5')
     renderer.initWorkers(1)
     expect(renderer.workers).toHaveLength(1)
     expect(constructedScripts.every(script => script !== LIGHT_OWNER_WORKER_SCRIPT)).toBe(true)
     expect(renderer.getClientLightOwnerWorker()).toBeNull()
     expect(renderer.hasClientLightOwner()).toBe(false)
-    expect(renderer.getClientLightOwnerFailureReason()).toMatch(/1\.17\.1/)
+    expect(renderer.getClientLightOwnerFailureReason()).toMatch(/1\.17 or newer/)
   })
 
   test('flag-on initWorkers spawns a dedicated owner, not a mesh worker', () => {

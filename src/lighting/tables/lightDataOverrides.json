@@ -1,0 +1,28 @@
+{
+  "_comment": "Light data that minecraft-data (emitLight / filterLight per block) cannot express or has wrong. emissionRules: block light depends on block state. emissionRuleSuffixes: same, matched by block name suffix (candle colours). overrides: per-block fixes with an optional version range, applied last (see lightTablesRuntime.ts).",
+  "emissionRules": {
+    "furnace": { "type": "lit", "value": 13 },
+    "blast_furnace": { "type": "lit", "value": 13 },
+    "smoker": { "type": "lit", "value": 13 },
+    "redstone_ore": { "type": "lit", "value": 9 },
+    "deepslate_redstone_ore": { "type": "lit", "value": 9 },
+    "redstone_lamp": { "type": "lit", "value": 15 },
+    "redstone_torch": { "type": "lit", "value": 7 },
+    "redstone_wall_torch": { "type": "lit", "value": 7 },
+    "campfire": { "type": "lit", "value": 15 },
+    "soul_campfire": { "type": "lit", "value": 10 },
+    "candle": { "type": "candle" },
+    "candle_cake": { "type": "lit", "value": 3 },
+    "light": { "type": "light" },
+    "cave_vines": { "type": "berries", "value": 14 },
+    "cave_vines_plant": { "type": "berries", "value": 14 },
+    "glow_lichen": { "type": "anyFace", "value": 7 },
+    "respawn_anchor": { "type": "respawnAnchor" },
+    "sea_pickle": { "type": "seaPickle" }
+  },
+  "emissionRuleSuffixes": {
+    "_candle": { "type": "candle" },
+    "_candle_cake": { "type": "lit", "value": 3 }
+  },
+  "overrides": []
+}

@@ -14,7 +14,7 @@ import Chunks from 'prismarine-chunk'
 import { Vec3 } from 'vec3'
 import { RendererLightCache } from '../cache/rendererLightCache'
 import { applyLightPublication, sectionIndexToWorldOrigin, type LightOwnerEvent, type LightPublication, type PublicationGate } from './lightOwnerHost'
-import { buildLightTables1171, LIGHT_TABLES_MC_VERSION } from '../tables/lightTables1171'
+import { loadLightTables, RUNTIME_LIGHT_TABLES_MIN_VERSION, supportsRuntimeLightTables } from '../tables/lightTablesRuntime'
 import {
   comparableNow,
   ingestRemoteClientLightTraceMessage,
@@ -36,14 +36,14 @@ export const LIGHT_OWNER_WORKER_SCRIPT = 'lightOwnerWorker.js'
 
 export type ClientLightOwnerLifecycle = 'starting' | 'ready' | 'failed'
 
-/** Owner tables are the 1.17.1 registry. Another session version must not start the worker. */
+/** The owner needs light tables for the session version (see lightTablesRuntime.ts), older versions must not start the worker. */
 export function shouldSpawnClientLightOwner(config: { enableClientLightOwner?: boolean }, version: string): boolean {
-  return config.enableClientLightOwner === true && version === LIGHT_TABLES_MC_VERSION
+  return config.enableClientLightOwner === true && supportsRuntimeLightTables(version)
 }
 
 export function clientLightOwnerVersionBlockReason(version: string): string | null {
-  if (version === LIGHT_TABLES_MC_VERSION) return null
-  return `client light owner supports ${LIGHT_TABLES_MC_VERSION} only (session ${version})`
+  if (supportsRuntimeLightTables(version)) return null
+  return `client light owner needs Minecraft ${RUNTIME_LIGHT_TABLES_MIN_VERSION} or newer (session ${version})`
 }
 
 /** Sky engine on unless the dimension already reported no skylight (nether/end). */
@@ -338,8 +338,8 @@ export function applyOwnerPublicationToRenderer(
   }
 }
 
-export function loadDefaultOwnerLightTables(): { emission: Uint8Array; opacity: Uint8Array; occupancy: Uint8Array } {
-  const tables = buildLightTables1171()
+export function loadOwnerLightTables(version: string): { emission: Uint8Array; opacity: Uint8Array; occupancy: Uint8Array } {
+  const tables = loadLightTables(version)
   return { emission: tables.emission, opacity: tables.opacity, occupancy: tables.occupancy }
 }
 
@@ -357,6 +357,8 @@ export class ClientLightOwnerSession {
     private readonly cache: RendererLightCache,
     opts: {
       createWorker: (onMessage: (data: any) => void) => Worker
+      /** Minecraft version of the session, selects the light tables */
+      version: string
       worldMinY: number
       worldHeight: number
       skyLightEnabled: boolean
@@ -373,8 +375,8 @@ export class ClientLightOwnerSession {
       this.fail(event?.message || 'light owner worker error')
     }
     this.worker.postMessage({ type: 'init', worldMinY: opts.worldMinY, worldHeight: opts.worldHeight })
-    // 1.17.1 state ids. `shouldSpawnClientLightOwner` refuses every other session version before this runs.
-    const tables = loadDefaultOwnerLightTables()
+    // State ids of the session version. `shouldSpawnClientLightOwner` refuses unsupported versions before this runs.
+    const tables = loadOwnerLightTables(opts.version)
     this.worker.postMessage({ type: 'setLightTables', emission: tables.emission, opacity: tables.opacity, occupancy: tables.occupancy })
     this.worker.postMessage({ type: 'setSkyLightEnabled', enabled: opts.skyLightEnabled })
   }
