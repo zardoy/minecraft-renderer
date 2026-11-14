@@ -161,8 +161,6 @@ export function applyRendererOptions(appViewer: AppViewer, o: RendererStorageOpt
   cfg.colorGrading = o.colorGrading
   cfg.godRays = o.godRays
   cfg.vignette = o.vignette
-  cfg.underwaterWobble = o.underwaterWobble
-  cfg.heatHaze = o.heatHaze
   cfg.motionBlur = o.motionBlur
   cfg.defaultSkybox = o.defaultSkybox
   cfg.fov = o.fov

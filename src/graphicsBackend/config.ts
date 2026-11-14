@@ -79,9 +79,6 @@ export const defaultWorldRendererConfig = {
   /** Light shafts from the sun through gaps in terrain and clouds. */
   godRays: false,
   vignette: false,
-  underwaterWobble: false,
-  /** Shimmer above lava and fire on screen, in the nether and while burning. */
-  heatHaze: false,
   /** Camera motion blur. */
   motionBlur: false,
   /** World Y of the cloud layer (vanilla overworld: 192 since 1.18, 128 before). */

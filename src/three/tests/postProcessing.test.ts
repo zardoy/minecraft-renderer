@@ -28,10 +28,7 @@ function frameInfo(overrides: Partial<PostFrameInfo> = {}): PostFrameInfo {
   return {
     camera,
     cameraWorldPosition: { x: 0, y: 64, z: 0 },
-    timeSeconds: 1,
     inWater: false,
-    inNether: false,
-    onFire: false,
     sunDirection: new THREE.Vector3(0, 0.5, -1).normalize(),
     sunStrength: 1,
     ...overrides
@@ -41,7 +38,7 @@ function frameInfo(overrides: Partial<PostFrameInfo> = {}): PostFrameInfo {
 describe('defaults', () => {
   it('every post effect is off by default and off never touches the renderer', () => {
     for (const key of ['antialiasing', 'colorGrading'] as const) expect(RENDERER_DEFAULT_OPTIONS[key]).toBe('off')
-    for (const key of ['bloom', 'godRays', 'vignette', 'underwaterWobble', 'heatHaze', 'motionBlur'] as const) {
+    for (const key of ['bloom', 'godRays', 'vignette', 'motionBlur'] as const) {
       expect(RENDERER_DEFAULT_OPTIONS[key]).toBe(false)
     }
     expect(usesPostProcessing(POST_EFFECTS_OFF)).toBe(false)
@@ -53,10 +50,9 @@ describe('defaults', () => {
     expect(calls).toEqual([])
   })
 
-  it('block emission is only needed by bloom and heat haze', () => {
+  it('block emission is only needed by bloom', () => {
     expect(needsBlockEmission(settings({ antialiasing: 'fxaa', godRays: true, motionBlur: true }))).toBe(false)
     expect(needsBlockEmission(settings({ bloom: true }))).toBe(true)
-    expect(needsBlockEmission(settings({ heatHaze: true }))).toBe(true)
   })
 })
 

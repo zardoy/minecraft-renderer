@@ -25,7 +25,6 @@ describe('buildTileFlags', () => {
     expect(at(2, 1, TILE_FLAG.leaves)).toBe(255)
     expect(at(2, 1, TILE_FLAG.emissive)).toBe(0)
     expect(at(3, 0, TILE_FLAG.emissive)).toBe(255)
-    expect(at(3, 0, TILE_FLAG.hot)).toBe(255)
     expect(at(0, 0, TILE_FLAG.leaves) + at(0, 0, TILE_FLAG.emissive)).toBe(0)
   })
 
@@ -35,10 +34,10 @@ describe('buildTileFlags', () => {
     expect(flags.data[(2 * 4 + 2) * 4 + TILE_FLAG.emissive]).toBe(0)
   })
 
-  it('knows light sources and hot surfaces by texture name', () => {
+  it('knows light sources by texture name', () => {
     expect(tileFlagsForTexture('torch')).toEqual([TILE_FLAG.emissive])
     expect(tileFlagsForTexture('torch_on')).toEqual([TILE_FLAG.emissive])
-    expect(tileFlagsForTexture('fire_0')).toEqual([TILE_FLAG.emissive, TILE_FLAG.hot])
+    expect(tileFlagsForTexture('fire_0')).toEqual([TILE_FLAG.emissive])
     expect(tileFlagsForTexture('ochre_froglight_side')).toEqual([TILE_FLAG.emissive])
     expect(tileFlagsForTexture('redstone_lamp')).toEqual([])
     expect(tileFlagsForTexture('stone')).toEqual([])

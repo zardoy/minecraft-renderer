@@ -1483,7 +1483,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.blockEffects.setBlockEmission(needsBlockEmission(postEffects))
     if (this.postProcessing.begin(this.renderer, postEffects)) {
       this.renderer.render(this.scene, cam)
-      this.postProcessing.afterWorld(this.renderer, this.updatePostFrameInfo(cam, start))
+      this.postProcessing.afterWorld(this.renderer, this.updatePostFrameInfo(cam))
     } else {
       this.renderer.render(this.scene, cam)
     }
@@ -1539,21 +1539,16 @@ export class WorldRendererThree extends WorldRendererCommon {
     s.colorGrading = cfg.colorGrading
     s.godRays = cfg.godRays
     s.vignette = cfg.vignette
-    s.underwaterWobble = cfg.underwaterWobble
-    s.heatHaze = cfg.heatHaze
     s.motionBlur = cfg.motionBlur
     return s
   }
 
-  private updatePostFrameInfo(camera: THREE.PerspectiveCamera, nowMs: number): PostFrameInfo {
+  private updatePostFrameInfo(camera: THREE.PerspectiveCamera): PostFrameInfo {
     const cfg = this.worldRendererConfig
     const info = (this.postFrameInfo ??= {
       camera,
       cameraWorldPosition: { x: 0, y: 0, z: 0 },
-      timeSeconds: 0,
       inWater: false,
-      inNether: false,
-      onFire: false,
       sunDirection: new THREE.Vector3(),
       sunStrength: 0
     })
@@ -1562,12 +1557,9 @@ export class WorldRendererThree extends WorldRendererCommon {
     info.cameraWorldPosition.x = this.sceneOrigin.toWorldX(e[12]!)
     info.cameraWorldPosition.y = this.sceneOrigin.toWorldY(e[13]!)
     info.cameraWorldPosition.z = this.sceneOrigin.toWorldZ(e[14]!)
-    info.timeSeconds = nowMs / 1000
     info.inWater = this.playerStateReactive.inWater
-    info.onFire = this.playerStateReactive.onFire
-    info.inNether = cfg.cardinalLight === 'nether'
     sunDirectionFromTime(this.timeOfTheDay, info.sunDirection)
-    const hasSun = cfg.defaultSkybox && !info.inNether
+    const hasSun = cfg.defaultSkybox && cfg.cardinalLight !== 'nether'
     info.sunStrength = hasSun ? sunShadowStrength(info.sunDirection.y) : 0
     return info
   }

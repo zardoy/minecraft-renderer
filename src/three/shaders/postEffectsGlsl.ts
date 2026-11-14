@@ -14,9 +14,9 @@ void main() {
 `
 
 const DECODE_EMISSION = /* glsl */ `
-// Inverse of blockEmissionGlsl.ts: alpha → emission 0..1 (hot surfaces live below 0.5).
+// Inverse of blockEmissionGlsl.ts: alpha → emission 0..1.
 float decodeEmission(float a) {
-    return a < 0.5 ? clamp(1.0 - a / ${EMISSION_SCALE.toFixed(2)}, 0.0, 1.0) : clamp((1.0 - a) / ${EMISSION_SCALE.toFixed(2)}, 0.0, 1.0);
+    return clamp((1.0 - a) / ${EMISSION_SCALE.toFixed(2)}, 0.0, 1.0);
 }
 `
 
@@ -109,23 +109,15 @@ void main() {
 export const MOTION_BLUR_SAMPLES = 8
 
 /**
- * World composite: distortion (underwater wobble, heat haze), camera motion blur, bloom and god rays.
- * Defines: DISTORTION, MOTION_BLUR, BLOOM, GOD_RAYS.
+ * World composite: camera motion blur, bloom and god rays. Defines: MOTION_BLUR, BLOOM, GOD_RAYS.
  */
 export const WORLD_COMPOSITE_FRAGMENT = /* glsl */ `
 precision highp float;
 uniform sampler2D tScene;
 uniform sampler2D tDepth;
 uniform vec2 sceneTexel;
-uniform float time;
 in vec2 vUv;
 out vec4 outColor;
-
-#ifdef DISTORTION
-uniform float wobble;      // underwater, 0..1
-uniform float heatGlobal;  // nether / on fire, 0..1
-uniform float heatLocal;   // above hot surfaces on screen, 0..1 (0 = off)
-#endif
 
 #ifdef MOTION_BLUR
 uniform mat4 viewToPrevClip;
@@ -151,28 +143,6 @@ float noise(vec2 p) {
 
 void main() {
     vec2 uv = vUv;
-
-#ifdef DISTORTION
-    vec2 offset = vec2(0.0);
-    if (wobble > 0.0) {
-        offset += wobble * 0.004 * vec2(sin(uv.y * 24.0 + time * 1.7), cos(uv.x * 19.0 + time * 1.3));
-    }
-    float heat = heatGlobal;
-    if (heatLocal > 0.0) {
-        // Rising air: look a little below this pixel for hot surfaces (alpha band < 0.5).
-        float hot = 0.0;
-        for (int i = 1; i <= 4; i++) {
-            hot = max(hot, step(texture(tScene, uv - vec2(0.0, 0.012 * float(i))).a, 0.499) * (1.0 - 0.18 * float(i)));
-        }
-        heat = max(heat, hot * heatLocal);
-    }
-    if (heat > 0.0) {
-        offset.x += heat * 0.0025 * sin(uv.y * 90.0 + time * 6.0) * sin(uv.x * 37.0 + time * 2.3);
-        offset.y += heat * 0.0015 * sin(uv.x * 70.0 - time * 5.0);
-    }
-    uv = clamp(uv + offset, sceneTexel, 1.0 - sceneTexel);
-#endif
-
     vec3 color;
 #ifdef MOTION_BLUR
     // Reproject this pixel with the previous camera (world assumed static) to get its screen velocity.

@@ -19,19 +19,16 @@ type AtlasJson = {
 /** Grid of the tile flags texture, in atlas pixels. Shader cubes use 16px tiles, so a cell is one cube tile index. */
 export const TILE_FLAG_CELL = 16
 /** Tile flag channels (RGBA8, 255 = set). */
-export const TILE_FLAG = { leaves: 0, emissive: 1, hot: 2 } as const
+export const TILE_FLAG = { leaves: 0, emissive: 1 } as const
 
 /** Light sources: their bright texels glow with bloom. Latest and pre-flattening texture names. */
 const EMISSIVE_TEXTURE =
   /^(glowstone|sea_lantern|shroomlight|lava_(still|flow)|magma(_block)?|(soul_)?fire_[01]|fire_layer_[01]|(soul_|redstone_)?torch(_on)?|(soul_)?lantern|jack_o_lantern|pumpkin_face_on|redstone_lamp_on|beacon|end_rod|glow_lichen|\w+_froglight(_side|_top)?|(soul_)?campfire_fire|crying_obsidian|respawn_anchor_top|(blast_)?furnace_front_on|smoker_front_on|(nether_)?portal|amethyst_cluster|sea_pickle|ochre_froglight\w*)$/
-/** Hot surfaces: heat haze shimmers above them. */
-const HOT_TEXTURE = /^(lava_(still|flow)|magma(_block)?|(soul_)?fire_[01]|fire_layer_[01]|(soul_)?campfire_fire)$/
 
 export function tileFlagsForTexture(name: string): number[] {
   const flags: number[] = []
   if (name.includes('leaves')) flags.push(TILE_FLAG.leaves)
   if (EMISSIVE_TEXTURE.test(name)) flags.push(TILE_FLAG.emissive)
-  if (HOT_TEXTURE.test(name)) flags.push(TILE_FLAG.hot)
   return flags
 }
 

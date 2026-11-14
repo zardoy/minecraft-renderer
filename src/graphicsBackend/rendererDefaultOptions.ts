@@ -54,8 +54,6 @@ export const RENDERER_DEFAULT_OPTIONS = {
   colorGrading: 'off' as 'off' | 'warm' | 'cinematic' | 'vivid',
   godRays: false as boolean,
   vignette: false as boolean,
-  underwaterWobble: false as boolean,
-  heatHaze: false as boolean,
   motionBlur: false as boolean,
   defaultSkybox: true as boolean,
   menuBackgroundMode: MB.mode,
@@ -242,14 +240,6 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
   vignette: {
     text: 'Vignette'
   },
-  underwaterWobble: {
-    text: 'Underwater wobble',
-    tooltip: 'Wavy view while under water.'
-  },
-  heatHaze: {
-    text: 'Heat haze',
-    tooltip: 'Shimmer above lava and fire, in the nether and while burning.'
-  },
   motionBlur: {
     text: 'Motion blur',
     tooltip: 'Blur when the camera moves or turns.'
@@ -394,8 +384,6 @@ export const RENDERER_RENDER_GUI_SECTIONS: ReadonlyArray<{
       'colorGrading',
       'godRays',
       'vignette',
-      'underwaterWobble',
-      'heatHaze',
       'motionBlur',
       'defaultSkybox',
       'disableBlockEntityTextures',

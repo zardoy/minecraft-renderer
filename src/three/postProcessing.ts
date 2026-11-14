@@ -23,9 +23,6 @@ export type PostEffectSettings = {
   colorGrading: ColorGradingPreset
   godRays: boolean
   vignette: boolean
-  underwaterWobble: boolean
-  /** Shimmer above lava / fire on screen (needs block emission too), in the nether and while burning. */
-  heatHaze: boolean
   motionBlur: boolean
 }
 
@@ -35,8 +32,6 @@ export const POST_EFFECTS_OFF: PostEffectSettings = {
   colorGrading: 'off',
   godRays: false,
   vignette: false,
-  underwaterWobble: false,
-  heatHaze: false,
   motionBlur: false
 }
 
@@ -45,23 +40,20 @@ export type PostFrameInfo = {
   camera: THREE.PerspectiveCamera
   /** World position of the camera in float64 (scene coordinates are rebased). */
   cameraWorldPosition: { x: number; y: number; z: number }
-  timeSeconds: number
   inWater: boolean
-  inNether: boolean
-  onFire: boolean
   /** World direction towards the sun and how strongly it shines (0 at night / no sky). */
   sunDirection: THREE.Vector3
   sunStrength: number
 }
 
 export const usesPostProcessing = (s: PostEffectSettings) =>
-  s.antialiasing !== 'off' || s.bloom || s.colorGrading !== 'off' || s.godRays || s.vignette || s.underwaterWobble || s.heatHaze || s.motionBlur
+  s.antialiasing !== 'off' || s.bloom || s.colorGrading !== 'off' || s.godRays || s.vignette || s.motionBlur
 
 /** Effects of the final pass (whole frame, hand included). */
 const usesFinalPass = (s: PostEffectSettings) => s.colorGrading !== 'off' || s.vignette
 
 /** The block shaders must write light emission into the frame alpha. */
-export const needsBlockEmission = (s: PostEffectSettings) => s.bloom || s.heatHaze
+export const needsBlockEmission = (s: PostEffectSettings) => s.bloom
 
 type PassMaterial = THREE.ShaderMaterial & { uniforms: Record<string, THREE.IUniform> }
 
@@ -164,12 +156,9 @@ export class PostProcessing {
   afterWorld(renderer: THREE.WebGLRenderer, frame: PostFrameInfo): void {
     if (!this.active) return
     const s = this.settings
-    const heatGlobal = s.heatHaze ? Math.max(frame.inNether ? 0.35 : 0, frame.onFire ? 1 : 0) : 0
-    const wobble = s.underwaterWobble && frame.inWater ? 1 : 0
     const rays = s.godRays && !frame.inWater && frame.sunStrength > 0 ? this.sunScreenPosition(frame) : undefined
     const blur = s.motionBlur ? this.motionBlurMatrix(frame) : undefined
-    const distortion = wobble > 0 || heatGlobal > 0 || s.heatHaze
-    if (!s.bloom && !rays && !blur && !distortion) return
+    if (!s.bloom && !rays && !blur) return
 
     const scene = this.scene!
     this.world ??= colorTarget(scene.width, scene.height, true)
@@ -179,10 +168,6 @@ export class PostProcessing {
       tScene: { value: null },
       tDepth: { value: null },
       sceneTexel: { value: new THREE.Vector2() },
-      time: { value: 0 },
-      wobble: { value: 0 },
-      heatGlobal: { value: 0 },
-      heatLocal: { value: 0 },
       viewToPrevClip: { value: new THREE.Matrix4() },
       projectionScale: { value: new THREE.Vector2() },
       logFar: { value: 1 },
@@ -193,15 +178,11 @@ export class PostProcessing {
       tRays: { value: null },
       raysColor: { value: new THREE.Color() }
     })
-    setDefines(composite, { DISTORTION: distortion, MOTION_BLUR: !!blur, BLOOM: s.bloom, GOD_RAYS: !!rays })
+    setDefines(composite, { MOTION_BLUR: !!blur, BLOOM: s.bloom, GOD_RAYS: !!rays })
     const u = composite.uniforms
     u.tScene!.value = scene.texture
     u.tDepth!.value = scene.depthTexture
     u.sceneTexel!.value.set(1 / scene.width, 1 / scene.height)
-    u.time!.value = frame.timeSeconds % 3600
-    u.wobble!.value = wobble
-    u.heatGlobal!.value = heatGlobal
-    u.heatLocal!.value = s.heatHaze ? 1 : 0
 
     if (s.bloom) this.renderBloom(renderer)
     if (blur) {
