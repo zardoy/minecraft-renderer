@@ -1,5 +1,9 @@
 import * as THREE from 'three'
 import { APPLY_LIGHTMAP_GLSL, DEFAULT_LIGHTMAP_PARAMS, type BlockLightmapParams } from '../../lib/blockEntityLighting'
+import { FOLIAGE_SWAY_GLSL } from './foliageSwayGlsl'
+import { LEGACY_SHADOW_CASTER_FRAGMENT, SUN_SHADOW_FRAGMENT_GLSL, SUN_SHADOW_VERTEX_GLSL } from './sunShadowGlsl'
+import { BLOCK_EMISSION_GLSL } from './blockEmissionGlsl'
+import { COLOR_GRADING_GLSL } from '../colorGrading'
 
 export type RenderOrigin = { x: number; y: number; z: number }
 
@@ -49,10 +53,24 @@ out float vFragDepth;
 out float vFogDepth;
 #endif
 
+${FOLIAGE_SWAY_GLSL}
+${SUN_SHADOW_VERTEX_GLSL}
+
 void main() {
     vec3 relativePos = modelMatrix[3].xyz + u_originDelta + position - u_cameraOriginFrac;
+#ifdef WAVING_FOLIAGE_LEGACY
+    relativePos += foliageSwayOffset(uv, relativePos);
+#endif
+#ifdef SHADOW_CASTER
+    v_uv = uv;
+    gl_Position = u_lightViewProj * vec4(shadowSpacePos(relativePos), 1.0);
+    return;
+#endif
     vec4 mvPosition = viewMatrix * vec4(relativePos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
+#ifdef SUN_SHADOWS
+    writeSunShadowVaryings(relativePos, vec3(0.0));
+#endif
 
     vColor = color;
     v_uv = uv;
@@ -119,10 +137,17 @@ void applyFog() {
 }
 
 ${APPLY_LIGHTMAP_GLSL}
+${SUN_SHADOW_FRAGMENT_GLSL}
+${BLOCK_EMISSION_GLSL}
+${COLOR_GRADING_GLSL}
 
 void main() {
     vec4 texColor = texture(u_atlas, v_uv);
-    float L = max(v_blockLight, min(v_skyLight, u_skyLevel));
+    float sky = min(v_skyLight, u_skyLevel);
+#ifdef SUN_SHADOWS
+    sky = shadowedSkyLight(sky, 1.0);
+#endif
+    float L = max(v_blockLight, sky);
     float Lm = applyLightmap(L);
     vec3 rgb = texColor.rgb * vColor * Lm;
     float alpha = texColor.a;
@@ -132,6 +157,12 @@ void main() {
     }
 
     FragColor = vec4(rgb, alpha);
+#ifdef BLOCK_EMISSION
+    FragColor.a = blockEmissionAlpha(ivec2(floor(v_uv * vec2(textureSize(u_atlas, 0)) / 16.0)), texColor.rgb * vColor);
+#endif
+#ifdef BLOCK_GRADING
+    FragColor.rgb = colorGrade(FragColor.rgb);
+#endif
     applyFog();
     writeLogDepth();
 }
@@ -161,10 +192,24 @@ out float vFragDepth;
 out float vFogDepth;
 #endif
 
+${FOLIAGE_SWAY_GLSL}
+${SUN_SHADOW_VERTEX_GLSL}
+
 void main() {
     vec3 relativePos = a_origin + u_originDelta + position - u_cameraOriginFrac;
+#ifdef WAVING_FOLIAGE_LEGACY
+    relativePos += foliageSwayOffset(uv, relativePos);
+#endif
+#ifdef SHADOW_CASTER
+    v_uv = uv;
+    gl_Position = u_lightViewProj * vec4(shadowSpacePos(relativePos), 1.0);
+    return;
+#endif
     vec4 mvPosition = viewMatrix * vec4(relativePos, 1.0);
     gl_Position = projectionMatrix * mvPosition;
+#ifdef SUN_SHADOWS
+    writeSunShadowVaryings(relativePos, vec3(0.0));
+#endif
 
     vColor = color;
     v_uv = uv;
@@ -232,6 +277,26 @@ export function createGlobalLegacyBlendMaterial(): THREE.ShaderMaterial {
     vertexColors: true,
     glslVersion: THREE.GLSL3,
     fog: true
+  })
+}
+
+/** Depth-only variant of the global opaque legacy material for the sun shadow pass (see createCubeShadowCasterMaterial). */
+export function createGlobalLegacyShadowCasterMaterial(source: THREE.ShaderMaterial, lightViewProj: { value: THREE.Matrix4 }): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    vertexShader: globalVertexShader,
+    fragmentShader: LEGACY_SHADOW_CASTER_FRAGMENT,
+    uniforms: {
+      u_atlas: source.uniforms.u_atlas!,
+      u_originDelta: source.uniforms.u_originDelta!,
+      u_cameraOriginFrac: source.uniforms.u_cameraOriginFrac!,
+      u_lightViewProj: lightViewProj
+    },
+    defines: { SHADOW_CASTER: '' },
+    side: THREE.DoubleSide,
+    blending: THREE.NoBlending,
+    vertexColors: true,
+    glslVersion: THREE.GLSL3,
+    fog: false
   })
 }
 

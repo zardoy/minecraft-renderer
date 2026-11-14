@@ -66,6 +66,24 @@ export const defaultWorldRendererConfig = {
   starfield: true,
   defaultSkybox: true,
   clouds: true,
+  /** Grass, flowers, crops and leaves sway in the wind (vertex shader only, no remesh to toggle). */
+  wavingGrass: true,
+  /** Sun shadows on chunk geometry: `soft` uses a wider filter. Off at night and outside the overworld. */
+  sunShadows: 'normal' as 'off' | 'normal' | 'soft',
+  /** Blocks around the camera that receive sun shadows (16-128). */
+  sunShadowsDistance: 64,
+  /** Screen-space antialiasing of the world frame (one extra full-screen pass when on). */
+  antialiasing: 'off' as 'off' | 'fxaa',
+  // Post effects (all cost a few full-screen passes when on, nothing when off)
+  /** Glow around light emitting blocks (torches, lava, glowstone...). */
+  bloom: false,
+  /** Colour look of world blocks, done in the block shaders (no extra pass, safe on phones). */
+  colorGrading: 'warm' as 'off' | 'warm' | 'cinematic' | 'vivid',
+  /** Light shafts from the sun through gaps in terrain and clouds. */
+  godRays: false,
+  vignette: false,
+  /** Camera motion blur. */
+  motionBlur: false,
   /** World Y of the cloud layer (vanilla overworld: 192 since 1.18, 128 before). */
   cloudHeight: 192,
   renderEntities: true,
