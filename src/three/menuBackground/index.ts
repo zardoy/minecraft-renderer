@@ -22,11 +22,17 @@ export {
   RENDERER_DEFAULT_OPTIONS,
   RENDERER_OPTIONS_META,
   RENDERER_RENDER_GUI_SECTIONS,
+  RENDERER_EFFECT_OPTION_KEYS,
+  RENDERER_VISUAL_PROFILES,
+  detectVisualProfile,
   migrateRendererOptions,
   rendererShaderCubeDebugModeToValue
 } from '../../graphicsBackend/rendererDefaultOptions'
 export type {
   RendererDefaultOptionKey,
+  RendererEffectOptionKey,
+  RendererEffectOptions,
+  RendererVisualProfileId,
   RendererMesherPipeline,
   RendererShaderCubeDebugMode,
   RendererOptionMeta,

@@ -95,6 +95,85 @@ export type RendererDefaultOptionKey = keyof typeof RENDERER_DEFAULT_OPTIONS
 /** App options storage shape for renderer-owned keys. */
 export type RendererStorageOptions = typeof RENDERER_DEFAULT_OPTIONS
 
+/** Visual effect options in the order a live tuning UI lists them. */
+export const RENDERER_EFFECT_OPTION_KEYS = [
+  'wavingGrass',
+  'colorGrading',
+  'sunShadows',
+  'sunShadowsDistance',
+  'antialiasing',
+  'bloom',
+  'godRays',
+  'vignette',
+  'motionBlur'
+] as const satisfies readonly RendererDefaultOptionKey[]
+
+export type RendererEffectOptionKey = (typeof RENDERER_EFFECT_OPTION_KEYS)[number]
+export type RendererEffectOptions = Pick<RendererStorageOptions, RendererEffectOptionKey>
+export type RendererVisualProfileId = 'vanilla' | 'default' | 'maximum'
+
+/**
+ * One-click presets of the visual effects. `default` is what a fresh install gets (cheap enough for phones).
+ * `maximum` is for desktop GPUs: everything but motion blur, which is a matter of taste and stays a manual toggle.
+ */
+export const RENDERER_VISUAL_PROFILES: Record<RendererVisualProfileId, { label: string; description: string; options: RendererEffectOptions }> = {
+  vanilla: {
+    label: 'Vanilla',
+    description: 'All visual effects off',
+    options: {
+      wavingGrass: false,
+      colorGrading: 'off',
+      sunShadows: 'off',
+      sunShadowsDistance: 64,
+      antialiasing: 'off',
+      bloom: false,
+      godRays: false,
+      vignette: false,
+      motionBlur: false
+    }
+  },
+  default: {
+    label: 'Default',
+    description: 'Cheap effects: waving grass, warm colours, sun shadows',
+    options: {
+      wavingGrass: RENDERER_DEFAULT_OPTIONS.wavingGrass,
+      colorGrading: RENDERER_DEFAULT_OPTIONS.colorGrading,
+      sunShadows: RENDERER_DEFAULT_OPTIONS.sunShadows,
+      sunShadowsDistance: RENDERER_DEFAULT_OPTIONS.sunShadowsDistance,
+      antialiasing: RENDERER_DEFAULT_OPTIONS.antialiasing,
+      bloom: RENDERER_DEFAULT_OPTIONS.bloom,
+      godRays: RENDERER_DEFAULT_OPTIONS.godRays,
+      vignette: RENDERER_DEFAULT_OPTIONS.vignette,
+      motionBlur: RENDERER_DEFAULT_OPTIONS.motionBlur
+    }
+  },
+  maximum: {
+    label: 'Maximum',
+    description: 'Everything on for desktop GPUs (soft shadows, FXAA, bloom, god rays), no motion blur',
+    options: {
+      wavingGrass: true,
+      colorGrading: 'warm',
+      sunShadows: 'soft',
+      sunShadowsDistance: 64,
+      antialiasing: 'fxaa',
+      bloom: true,
+      godRays: true,
+      vignette: true,
+      motionBlur: false
+    }
+  }
+}
+
+/** The profile the given options match exactly, undefined when they are custom. */
+export function detectVisualProfile(options: Partial<RendererEffectOptions>): RendererVisualProfileId | undefined {
+  for (const [id, profile] of Object.entries(RENDERER_VISUAL_PROFILES) as Array<
+    [RendererVisualProfileId, (typeof RENDERER_VISUAL_PROFILES)[RendererVisualProfileId]]
+  >) {
+    if (RENDERER_EFFECT_OPTION_KEYS.every(key => options[key] === profile.options[key])) return id
+  }
+  return undefined
+}
+
 /**
  * Migrate persisted / legacy option keys into current {@link RENDERER_DEFAULT_OPTIONS} shape.
  * Call when loading saved settings (safe to run on every load).
