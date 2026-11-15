@@ -38,6 +38,19 @@ export const delayedIterator = async <T>(arr: T[], delay: number, exec: (item: T
   }
 }
 
+/**
+ * Run `fn` on the next animation frame, or after ~one frame where
+ * `requestAnimationFrame` is unavailable (workers in some browsers, Node tests).
+ */
+const scheduleNextFrame = (fn: () => void): { cancel: () => void } => {
+  if (typeof requestAnimationFrame === 'function') {
+    const id = requestAnimationFrame(fn)
+    return { cancel: () => cancelAnimationFrame(id) }
+  }
+  const id = setTimeout(fn, 16)
+  return { cancel: () => clearTimeout(id) }
+}
+
 type WorkerWorldViewBridge = {
   activeWorldView: WorldViewWorker
   handler: (event: MessageEvent) => void
@@ -116,6 +129,9 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
   loadedChunks: Record<ChunkPosKey, boolean> = {}
   private columnUnloadEpoch = new Map<string, number>()
   private geometryReload?: Promise<void>
+  /** Columns queued by `queueLightRemesh`, reloaded at most once per frame. */
+  private pendingLightRemesh = new Set<ChunkPosKey>()
+  private lightRemeshFlush?: { cancel: () => void }
   inLoading = false
   chunkReceiveTimes: number[] = []
   lastChunkReceiveTime = 0
@@ -148,6 +164,7 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
   ) {
     super()
     this.lastPos = new Vec3(0, 0, 0).update(position)
+    this.on('end', () => this.cancelPendingLightRemesh())
   }
 
   /**
@@ -326,6 +343,39 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
     return false
   }
 
+  /**
+   * Request a light-only reload of a loaded column (e.g. after `update_light`).
+   *
+   * Servers often send several light packets for the same column within one
+   * frame, and every `loadChunk` re-serializes the whole column and remeshes
+   * all of its sections. Requests are therefore coalesced: each column is
+   * reloaded at most once per frame, reading its latest state at flush time.
+   * Columns that are unloaded (or still waiting for the spiral load) by then
+   * are skipped, so a queued request never resurrects an unloaded column.
+   */
+  queueLightRemesh(x: number, z: number): void {
+    this.pendingLightRemesh.add(`${x},${z}`)
+    this.lightRemeshFlush ??= scheduleNextFrame(() => this.flushLightRemesh())
+  }
+
+  /** Drop queued light reloads and cancel the scheduled flush. */
+  cancelPendingLightRemesh(): void {
+    this.pendingLightRemesh.clear()
+    this.lightRemeshFlush?.cancel()
+    this.lightRemeshFlush = undefined
+  }
+
+  private flushLightRemesh(): void {
+    this.lightRemeshFlush = undefined
+    const keys = [...this.pendingLightRemesh]
+    this.pendingLightRemesh.clear()
+    for (const key of keys) {
+      if (!this.loadedChunks[key] || this.waitingSpiralChunksLoad[key]) continue
+      const [x, z] = key.split(',').map(Number)
+      void this.loadChunk({ x, z }, true, 'update_light')
+    }
+  }
+
   reloadColumnGeometry(): Promise<void> {
     this.geometryReload ??= this.runColumnGeometryReload().finally(() => {
       this.geometryReload = undefined
@@ -382,6 +432,7 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
   unloadChunk(pos: { x: number; z: number }): void {
     const key = `${pos.x},${pos.z}`
     this.columnUnloadEpoch.set(key, (this.columnUnloadEpoch.get(key) ?? 0) + 1)
+    this.pendingLightRemesh.delete(key)
     this.emit('unloadChunk', { x: pos.x, z: pos.z })
     delete this.loadedChunks[`${pos.x},${pos.z}`]
     delete this.debugChunksInfo[`${pos.x},${pos.z}`]
