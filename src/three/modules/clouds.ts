@@ -54,6 +54,11 @@ const fragmentShader = /* glsl */ `
  * bottom and side faces. The cells around the camera are rebuilt only when the camera or the drifting
  * pattern crosses a cell boundary; everything finer than that is a mesh position offset.
  * A colour-less depth pre-pass over the same geometry keeps overlapping faces from blending twice.
+ *
+ * The geometry is only ever swapped between frames (in `render`, after the frame was drawn). Doing it while a frame is
+ * being rendered (`onBeforeRender`) makes three.js draw the geometry it queued for that frame, which was just
+ * disposed, so the clouds vanished for one frame at every cell boundary. The layer position is derived from the cell the
+ * installed geometry was built around, so geometry and position always match.
  */
 export class CloudsModule implements RendererModuleController {
   private readonly group = new THREE.Group()
@@ -66,6 +71,9 @@ export class CloudsModule implements RendererModuleController {
   private meshes?: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>[]
   private cover?: CloudCover
   private builtKey = ''
+  /** Cell the installed geometry is centred on (its vertices are relative to it). */
+  private builtCenterX = 0
+  private builtCenterZ = 0
   private enabled = false
   private drift = 0
   private timeOfDay: number
@@ -98,9 +106,11 @@ export class CloudsModule implements RendererModuleController {
     this.timeOfDay = time
   }
 
+  /** After the frame was drawn: advance the drift and re-centre the geometry if a cell boundary was crossed. */
   render?: (deltaTime: number) => void = deltaTime => {
     // Not wrapped: cell indices wrap in the lookup, and wrapping here would force a rebuild.
     this.drift += deltaTime * DRIFT_BLOCKS_PER_SECOND
+    this.recenterGeometry()
   }
 
   dispose(): void {
@@ -111,6 +121,8 @@ export class CloudsModule implements RendererModuleController {
     this.meshes = undefined
     this.cover = undefined
     this.builtKey = ''
+    this.builtCenterX = 0
+    this.builtCenterZ = 0
   }
 
   private create(): void {
@@ -166,28 +178,43 @@ export class CloudsModule implements RendererModuleController {
     old.dispose()
   }
 
-  private syncToCamera(): void {
-    const { sceneOrigin, viewDistance, worldRendererConfig } = this.worldRenderer
+  /** Fade radius in blocks, the clouds are built (and faded out) up to it. */
+  private cloudRadius(): number {
+    return THREE.MathUtils.clamp(this.worldRenderer.viewDistance * 16 * 2, MIN_RADIUS, MAX_RADIUS)
+  }
 
-    const radius = THREE.MathUtils.clamp(viewDistance * 16 * 2, MIN_RADIUS, MAX_RADIUS)
-    this.uniforms.fadeStart.value = radius * 0.55
-    this.uniforms.fadeEnd.value = radius
-
+  /** Rebuild the geometry when the camera or the drifting pattern left the cell it is centred on. Only call between frames. */
+  private recenterGeometry(): void {
+    if (!this.cover || !this.meshes) return
+    const { sceneOrigin } = this.worldRenderer
     // Pattern space is world space shifted by the drift, so world x = pattern x - drift.
     const centerX = Math.floor((sceneOrigin.x + this.drift) / CLOUD_CELL_SIZE)
     const centerZ = Math.floor(sceneOrigin.z / CLOUD_CELL_SIZE)
-    if (this.cover) {
-      const radiusCells = Math.ceil(radius / CLOUD_CELL_SIZE)
-      const key = `${centerX},${centerZ},${radiusCells}`
-      if (key !== this.builtKey) {
-        this.builtKey = key
-        this.rebuild(centerX, centerZ, radiusCells)
-      }
-    }
+    const radiusCells = Math.ceil(this.cloudRadius() / CLOUD_CELL_SIZE)
+    const key = `${centerX},${centerZ},${radiusCells}`
+    if (key === this.builtKey) return
+    this.builtKey = key
+    this.builtCenterX = centerX
+    this.builtCenterZ = centerZ
+    this.rebuild(centerX, centerZ, radiusCells)
+  }
 
-    // Compute in doubles so the GPU only ever sees camera-relative offsets.
+  /** Runs while a frame is being rendered: must not touch the geometry, only uniforms and the layer position. */
+  private syncToCamera(): void {
+    const { sceneOrigin, worldRendererConfig } = this.worldRenderer
+
+    const radius = this.cloudRadius()
+    this.uniforms.fadeStart.value = radius * 0.55
+    this.uniforms.fadeEnd.value = radius
+
+    // Compute in doubles so the GPU only ever sees camera-relative offsets. The cell is the one the installed geometry
+    // was built around, which may lag the camera by a frame, the geometry covers far more than that.
     const bottom = worldRendererConfig.cloudHeight + HEIGHT_BIAS
-    this.group.position.set(centerX * CLOUD_CELL_SIZE - this.drift - sceneOrigin.x, bottom - sceneOrigin.y, centerZ * CLOUD_CELL_SIZE - sceneOrigin.z)
+    this.group.position.set(
+      this.builtCenterX * CLOUD_CELL_SIZE - this.drift - sceneOrigin.x,
+      bottom - sceneOrigin.y,
+      this.builtCenterZ * CLOUD_CELL_SIZE - sceneOrigin.z
+    )
     this.group.updateMatrixWorld(true)
 
     const day = vanillaDayBrightness(vanillaCelestialAngle(this.timeOfDay))
