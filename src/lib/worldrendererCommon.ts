@@ -94,6 +94,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
   // loading sections (chunks)
   sectionsWaiting = new Map<string, number>()
+  /** Diagnostics: last few `addColumn` calls per chunk key (time + whether it was a light update). */
+  columnLoadLog = new Map<string, Array<{ time: number; light: boolean }>>()
 
   queuedChunks = new Set<string>()
   queuedFunctions = [] as Array<() => void>
@@ -512,6 +514,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   }
   private clearMesherPendingState() {
     this.sectionsWaiting.clear()
+    this.columnLoadLog.clear()
     this.toWorkerMessagesQueue = {}
     this.queueAwaited = false
     this.messageQueue = []
@@ -937,6 +940,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     if (gridX !== this.lastViewerChunkGridX || gridZ !== this.lastViewerChunkGridZ) {
       this.lastViewerChunkGridX = gridX
       this.lastViewerChunkGridZ = gridZ
+      this.sendWorkers({ type: 'viewerChunkPosition', x: gridX, z: gridZ } as WorkerSend)
       this.onViewerChunkPositionChanged()
     }
   }
@@ -1039,6 +1043,9 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       })
     }
 
+    if (this.lastViewerChunkGridX !== undefined && this.lastViewerChunkGridZ !== undefined) {
+      this.sendWorkers({ type: 'viewerChunkPosition', x: this.lastViewerChunkGridX, z: this.lastViewerChunkGridZ } as WorkerSend)
+    }
     this.logWorkerWork('# mesherData sent')
     console.log('textures loaded')
   }
@@ -1073,6 +1080,10 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.updateChunksStats()
 
     const chunkKey = `${x},${z}`
+    const loadLog = this.columnLoadLog.get(chunkKey) ?? []
+    loadLog.push({ time: Date.now(), light: !!isLightUpdate })
+    if (loadLog.length > 6) loadLog.shift()
+    this.columnLoadLog.set(chunkKey, loadLog)
     const customBlockModels = this.protocolCustomBlocks.get(chunkKey)
 
     for (const worker of this.workers) {
@@ -1139,6 +1150,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
   removeColumn(x, z, opts?: { preserveClientLight?: boolean }) {
     delete this.loadedChunks[`${x},${z}`]
+    this.columnLoadLog.delete(`${x},${z}`)
     // Cancel any pending heightmap debounce for this chunk
     const debounceKey = `${x},${z}`
     const pendingTimer = this.heightmapDebounceTimers.get(debounceKey)
