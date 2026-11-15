@@ -183,15 +183,35 @@ export class GlobalLegacyBuffer {
     scene.add(this.mesh)
     this.syncDefaultDrawGroups()
 
-    this.mesh.onAfterRender = (renderer, _scene, _camera, _geometry, material) => {
-      if (this.visibleIndexSpans.length === 0) return
-      const gl = renderer.getContext() as WebGL2RenderingContext
-      if (!this.multiDrawCaps) {
-        this.multiDrawCaps = detectLegacyMultiDrawCaps(gl)
-        logLegacyMultiDrawTierOnce(this.multiDrawCaps.tier, this.debugOverlay)
-      }
-      drawLegacySpans(gl, this.multiDrawCaps, this.visibleIndexSpans, this._drawScratch)
+    this.mesh.onAfterRender = renderer => {
+      this.drawIndexSpans(renderer, this.visibleIndexSpans)
     }
+  }
+
+  /** Issue indexed draws for `spans` with the program three just bound (see GlobalBlockBuffer.drawSpans). */
+  drawIndexSpans(renderer: THREE.WebGLRenderer, spans: readonly LegacyDrawSpan[]): void {
+    if (spans.length === 0) return
+    const gl = renderer.getContext() as WebGL2RenderingContext
+    if (!this.multiDrawCaps) {
+      this.multiDrawCaps = detectLegacyMultiDrawCaps(gl)
+      logLegacyMultiDrawTierOnce(this.multiDrawCaps.tier, this.debugOverlay)
+    }
+    drawLegacySpans(gl, this.multiDrawCaps, spans, this._drawScratch)
+  }
+
+  /** Drawable index spans of the sections accepted by `include` (fully uploaded ones only), adjacent slots merged. */
+  collectSectionIndexSpans(include: (sectionKey: string) => boolean): LegacyDrawSpan[] {
+    const quads: Array<{ start: number; count: number }> = []
+    for (const key of this.sectionSlots.keys()) {
+      if (!include(key)) continue
+      const start = this.getSectionDrawStart(key)
+      const count = this.getSectionDrawCount(key)
+      if (start === undefined || !count) continue
+      quads.push({ start, count })
+    }
+    quads.sort((a, b) => a.start - b.start)
+    this.mergeOpaqueSpans(quads)
+    return quads.map(q => ({ indexStart: q.start * INDICES_PER_QUAD, indexCount: q.count * INDICES_PER_QUAD }))
   }
 
   setDebugOverlay(enabled: boolean): void {

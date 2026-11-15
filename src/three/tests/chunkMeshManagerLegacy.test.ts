@@ -7,6 +7,7 @@ vi.mock('../entity/EntityMesh', () => ({
 
 import { ChunkMeshManager } from '../chunkMeshManager'
 import type { WorldRendererThree } from '../worldRendererThree'
+import { BlockEffects } from '../blockEffects'
 import type { MesherGeometryOutput } from '../../mesher-shared/shared'
 import { renderWasmOutputToGeometry } from '../../wasm-mesher/bridge/render-from-wasm'
 
@@ -221,6 +222,7 @@ function createManager(opts: ManagerOptions = {}): ChunkMeshManager {
       removeAndUntrackAll: () => {}
     },
     blockEntities: {},
+    blockEffects: new BlockEffects(),
     worldRendererConfig: opts.shaderCubes || opts.nearReveal ? { wasmMesher: true } : {},
     viewerChunkPosition: opts.nearReveal ? { x: 0, z: 0 } : undefined,
     viewDistance: 9,

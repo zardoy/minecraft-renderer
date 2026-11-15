@@ -10,6 +10,7 @@ import { MesherGeometryOutput, HighestBlockInfo } from './shared'
 import { collectBlockEntityMetadata } from './blockEntityMetadata'
 import { preflatBlockCalculation, resolveBlockPropertiesForMeshing } from './blockPropertiesForMeshing'
 import { faceIsCulled, roundCardinalDir } from './faceOcclusion'
+import { foliageSwayBase, foliageSwayLevel, isFoliageBlockName, tagFoliageUv } from './foliageSway'
 import { getOccludingBlockMeta } from './occludingBlocks'
 import { packVisibilitySet, VisGraph } from './visGraph'
 
@@ -278,6 +279,7 @@ function renderElement(
   biome: string
 ) {
   const position = cursor
+  const swayBase = isFoliageBlockName(block.name) ? foliageSwayBase(block.name, block.getProperties(), isCube(block)) : -1
   // const key = `${position.x},${position.y},${position.z}`
   // if (!globalThis.allowedBlocks.includes(key)) return
   // eslint-disable-next-line guard-for-in
@@ -370,8 +372,9 @@ function renderElement(
 
         const baseu = (pos[3] - 0.5) * uvcs - (pos[4] - 0.5) * uvsn + 0.5
         const basev = (pos[3] - 0.5) * uvsn + (pos[4] - 0.5) * uvcs + 0.5
-        const finalU = baseu * su + u
-        const finalV = basev * sv + v
+        const [tagu, tagv] = tagFoliageUv(baseu, basev, foliageSwayLevel(swayBase, vertex[1]!))
+        const finalU = tagu * su + u
+        const finalV = tagv * sv + v
         tsLog(
           `[TS]       UV: cornerUV=[${pos[3]},${pos[4]}], baseUV=[${baseu.toFixed(6)},${basev.toFixed(6)}], finalUV=[${finalU.toFixed(6)},${finalV.toFixed(6)}], texture=[u=${u},v=${v},su=${su},sv=${sv}], rotation=${r}`
         )

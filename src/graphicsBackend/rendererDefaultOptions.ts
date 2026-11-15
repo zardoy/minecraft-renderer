@@ -46,6 +46,15 @@ export const RENDERER_DEFAULT_OPTIONS = {
   rendererMeshersCountOverride: null as number | null,
   starfieldRendering: true as boolean,
   cloudsRendering: true as boolean,
+  wavingGrass: true as boolean,
+  sunShadows: 'normal' as 'off' | 'normal' | 'soft',
+  sunShadowsDistance: 64,
+  antialiasing: 'off' as 'off' | 'fxaa',
+  bloom: false as boolean,
+  colorGrading: 'warm' as 'off' | 'warm' | 'cinematic' | 'vivid',
+  godRays: false as boolean,
+  vignette: false as boolean,
+  motionBlur: false as boolean,
   defaultSkybox: true as boolean,
   menuBackgroundMode: MB.mode,
   menuBackgroundMinecraftTextures: MB.minecraftTextures as boolean,
@@ -86,6 +95,85 @@ export type RendererDefaultOptionKey = keyof typeof RENDERER_DEFAULT_OPTIONS
 
 /** App options storage shape for renderer-owned keys. */
 export type RendererStorageOptions = typeof RENDERER_DEFAULT_OPTIONS
+
+/** Visual effect options in the order a live tuning UI lists them. */
+export const RENDERER_EFFECT_OPTION_KEYS = [
+  'wavingGrass',
+  'colorGrading',
+  'sunShadows',
+  'sunShadowsDistance',
+  'antialiasing',
+  'bloom',
+  'godRays',
+  'vignette',
+  'motionBlur'
+] as const satisfies readonly RendererDefaultOptionKey[]
+
+export type RendererEffectOptionKey = (typeof RENDERER_EFFECT_OPTION_KEYS)[number]
+export type RendererEffectOptions = Pick<RendererStorageOptions, RendererEffectOptionKey>
+export type RendererVisualProfileId = 'vanilla' | 'default' | 'maximum'
+
+/**
+ * One-click presets of the visual effects. `default` is what a fresh install gets (cheap enough for phones).
+ * `maximum` is for desktop GPUs: everything but motion blur, which is a matter of taste and stays a manual toggle.
+ */
+export const RENDERER_VISUAL_PROFILES: Record<RendererVisualProfileId, { label: string; description: string; options: RendererEffectOptions }> = {
+  vanilla: {
+    label: 'Vanilla',
+    description: 'All visual effects off',
+    options: {
+      wavingGrass: false,
+      colorGrading: 'off',
+      sunShadows: 'off',
+      sunShadowsDistance: 64,
+      antialiasing: 'off',
+      bloom: false,
+      godRays: false,
+      vignette: false,
+      motionBlur: false
+    }
+  },
+  default: {
+    label: 'Default',
+    description: 'Cheap effects: waving grass, warm colours, sun shadows',
+    options: {
+      wavingGrass: RENDERER_DEFAULT_OPTIONS.wavingGrass,
+      colorGrading: RENDERER_DEFAULT_OPTIONS.colorGrading,
+      sunShadows: RENDERER_DEFAULT_OPTIONS.sunShadows,
+      sunShadowsDistance: RENDERER_DEFAULT_OPTIONS.sunShadowsDistance,
+      antialiasing: RENDERER_DEFAULT_OPTIONS.antialiasing,
+      bloom: RENDERER_DEFAULT_OPTIONS.bloom,
+      godRays: RENDERER_DEFAULT_OPTIONS.godRays,
+      vignette: RENDERER_DEFAULT_OPTIONS.vignette,
+      motionBlur: RENDERER_DEFAULT_OPTIONS.motionBlur
+    }
+  },
+  maximum: {
+    label: 'Maximum',
+    description: 'Everything on for desktop GPUs (soft shadows, FXAA, bloom, god rays), no motion blur',
+    options: {
+      wavingGrass: true,
+      colorGrading: 'warm',
+      sunShadows: 'soft',
+      sunShadowsDistance: 64,
+      antialiasing: 'fxaa',
+      bloom: true,
+      godRays: true,
+      vignette: true,
+      motionBlur: false
+    }
+  }
+}
+
+/** The profile the given options match exactly, undefined when they are custom. */
+export function detectVisualProfile(options: Partial<RendererEffectOptions>): RendererVisualProfileId | undefined {
+  for (const [id, profile] of Object.entries(RENDERER_VISUAL_PROFILES) as Array<
+    [RendererVisualProfileId, (typeof RENDERER_VISUAL_PROFILES)[RendererVisualProfileId]]
+  >) {
+    if (RENDERER_EFFECT_OPTION_KEYS.every(key => options[key] === profile.options[key])) return id
+  }
+  return undefined
+}
 
 /**
  * Migrate persisted / legacy option keys into current {@link RENDERER_DEFAULT_OPTIONS} shape.
@@ -189,6 +277,59 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
   },
   cloudsRendering: {
     text: 'Clouds'
+  },
+  wavingGrass: {
+    text: 'Waving grass',
+    tooltip: 'Grass, flowers, crops and leaves sway in the wind.'
+  },
+  sunShadows: {
+    text: 'Sun shadows',
+    tooltip: 'Shadows cast by blocks in daylight. Soft uses a wider, smoother filter (more GPU work).',
+    possibleValues: [
+      ['off', 'Off'],
+      ['normal', 'Normal'],
+      ['soft', 'Soft']
+    ]
+  },
+  antialiasing: {
+    text: 'Antialiasing',
+    tooltip: 'Smooths jagged block edges (FXAA). Slightly softens textures.',
+    possibleValues: [
+      ['off', 'Off'],
+      ['fxaa', 'FXAA']
+    ]
+  },
+  bloom: {
+    text: 'Bloom',
+    tooltip: 'Glow around light emitting blocks (torches, lava, glowstone...). Several extra passes.'
+  },
+  colorGrading: {
+    text: 'Color grading',
+    tooltip: 'Film-like tone curve and colour look for world blocks (done in the block shaders, no extra cost).',
+    possibleValues: [
+      ['off', 'Off'],
+      ['warm', 'Warm'],
+      ['cinematic', 'Cinematic'],
+      ['vivid', 'Vivid']
+    ]
+  },
+  godRays: {
+    text: 'God rays',
+    tooltip: 'Light shafts from the sun through gaps in terrain and clouds.'
+  },
+  vignette: {
+    text: 'Vignette'
+  },
+  motionBlur: {
+    text: 'Motion blur',
+    tooltip: 'Blur when the camera moves or turns.'
+  },
+  sunShadowsDistance: {
+    text: 'Shadow distance',
+    tooltip: 'Blocks around you that receive sun shadows. Larger distances make shadows blurrier.',
+    min: 16,
+    max: 128,
+    unit: ' blocks'
   },
   defaultSkybox: {
     text: 'Default skybox'
@@ -319,6 +460,15 @@ export const RENDERER_RENDER_GUI_SECTIONS: ReadonlyArray<{
       'rendererWorldPerformance',
       'starfieldRendering',
       'cloudsRendering',
+      'wavingGrass',
+      'sunShadows',
+      'sunShadowsDistance',
+      'antialiasing',
+      'bloom',
+      'colorGrading',
+      'godRays',
+      'vignette',
+      'motionBlur',
       'defaultSkybox',
       'disableBlockEntityTextures',
       'showChunkBorders',

@@ -84,11 +84,20 @@ export {
   RENDERER_DEFAULT_OPTIONS,
   RENDERER_OPTIONS_META,
   RENDERER_RENDER_GUI_SECTIONS,
+  RENDERER_EFFECT_OPTION_KEYS,
+  RENDERER_VISUAL_PROFILES,
+  detectVisualProfile,
   MENU_BACKGROUND_OPTION_DEFAULTS,
   MENU_BACKGROUND_MOTION_DEFAULTS,
   menuBackgroundSpeedToMultiplier
 } from './three/menuBackground'
-export type { RendererDefaultOptionKey, RendererOptionMeta } from './three/menuBackground'
+export type {
+  RendererDefaultOptionKey,
+  RendererEffectOptionKey,
+  RendererEffectOptions,
+  RendererOptionMeta,
+  RendererVisualProfileId
+} from './three/menuBackground'
 
 // F3 debug overlay: lighting mode and light at a position (`world.getLightingDebugInfo(x, y, z)`)
 export { formatLightingLine, lightingModeLabel, resolveLightingMode } from './lighting/lightingDebugInfo'

@@ -18,6 +18,7 @@ import type { World } from '../../mesher-shared/world'
 import { resolveBlockPropertiesForMeshing } from '../../mesher-shared/blockPropertiesForMeshing'
 import { isSemiTransparentBlockName } from '../../mesher-shared/models'
 import { faceIsCulled } from '../../mesher-shared/faceOcclusion'
+import { foliageSwayBase, foliageSwayLevel, tagFoliageUv } from '../../mesher-shared/foliageSway'
 import { buildShaderCubesFromWords, getShaderCubeResources, tryBuildShaderCubeInstances } from './shaderCubeBridge'
 import { appendGeometryIndices } from './geometryIndices'
 import { getSideShading, vertexLightFromAo } from '../../mesher-shared/vertexShading'
@@ -755,6 +756,8 @@ export function renderWasmOutputToGeometry(
       }
     }
 
+    const swayBase = foliageSwayBase(cachedModel.blockName, cachedModel.blockProps, cachedModel.isCube)
+
     for (const modelVars of models ?? []) {
       const model = modelVars[0]
       if (!model) continue
@@ -968,8 +971,9 @@ export function renderWasmOutputToGeometry(
 
             const baseu = (pos[3] - 0.5) * uvcs - (pos[4] - 0.5) * uvsn + 0.5
             const basev = (pos[3] - 0.5) * uvsn + (pos[4] - 0.5) * uvcs + 0.5
-            const finalU = baseu * su + u
-            const finalV = basev * sv + v
+            const [tagu, tagv] = tagFoliageUv(baseu, basev, foliageSwayLevel(swayBase, vertex[1]!))
+            const finalU = tagu * su + u
+            const finalV = tagv * sv + v
             tgtUv.push(finalU, finalV)
           }
 
