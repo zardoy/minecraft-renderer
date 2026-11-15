@@ -98,3 +98,7 @@ export type {
   RendererOptionMeta,
   RendererVisualProfileId
 } from './three/menuBackground'
+
+// F3 debug overlay: lighting mode and light at a position (`world.getLightingDebugInfo(x, y, z)`)
+export { formatLightingLine, lightingModeLabel, resolveLightingMode } from './lighting/lightingDebugInfo'
+export type { LightingDebugInfo, LightingMode } from './lighting/lightingDebugInfo'

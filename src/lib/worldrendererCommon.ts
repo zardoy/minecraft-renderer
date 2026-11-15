@@ -34,6 +34,7 @@ import { IndexedData } from 'minecraft-data'
 import { WorldRendererConfig } from '../graphicsBackend/config'
 import { CameraCollisionBlockCache } from '../three/cameraCollisionBlockCache'
 import { RendererLightCache } from '../lighting/cache/rendererLightCache'
+import { resolveLightingMode, type LightingDebugInfo } from '../lighting/lightingDebugInfo'
 import { ClientLightCoordinator, type ClientLightHost } from '../lighting/coordinator/clientLightCoordinator'
 import {
   bumpClientLightTraceSessionEpoch,
@@ -93,6 +94,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
   // loading sections (chunks)
   sectionsWaiting = new Map<string, number>()
+  /** Diagnostics: last few `addColumn` calls per chunk key (time + whether it was a light update). */
+  columnLoadLog = new Map<string, Array<{ time: number; light: boolean }>>()
 
   queuedChunks = new Set<string>()
   queuedFunctions = [] as Array<() => void>
@@ -406,6 +409,19 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     return this.lightCoordinator.getFailureReason()
   }
 
+  /** Lighting mode and the light at a world position, for the F3 debug overlay (see `formatLightingLine`). */
+  getLightingDebugInfo(x: number, y: number, z: number): LightingDebugInfo {
+    const config = this.worldRendererConfig
+    const running = this.hasClientLightOwner()
+    const raw = this.rendererLightCache.getRawLight(Math.floor(x), Math.floor(y), Math.floor(z))
+    return {
+      mode: resolveLightingMode(config.enableLighting, running),
+      block: raw?.block,
+      sky: raw?.sky,
+      clientEngineUnavailableReason: config.enableClientLightOwner === true && !running ? this.getClientLightOwnerFailureReason() : null
+    }
+  }
+
   columnIncarnationFor(columnKey: string): number {
     return this.lightCoordinator.columnIncarnationFor(columnKey)
   }
@@ -498,6 +514,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   }
   private clearMesherPendingState() {
     this.sectionsWaiting.clear()
+    this.columnLoadLog.clear()
     this.toWorkerMessagesQueue = {}
     this.queueAwaited = false
     this.messageQueue = []
@@ -923,6 +940,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     if (gridX !== this.lastViewerChunkGridX || gridZ !== this.lastViewerChunkGridZ) {
       this.lastViewerChunkGridX = gridX
       this.lastViewerChunkGridZ = gridZ
+      this.sendWorkers({ type: 'viewerChunkPosition', x: gridX, z: gridZ } as WorkerSend)
       this.onViewerChunkPositionChanged()
     }
   }
@@ -1025,6 +1043,9 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       })
     }
 
+    if (this.lastViewerChunkGridX !== undefined && this.lastViewerChunkGridZ !== undefined) {
+      this.sendWorkers({ type: 'viewerChunkPosition', x: this.lastViewerChunkGridX, z: this.lastViewerChunkGridZ } as WorkerSend)
+    }
     this.logWorkerWork('# mesherData sent')
     console.log('textures loaded')
   }
@@ -1059,6 +1080,10 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.updateChunksStats()
 
     const chunkKey = `${x},${z}`
+    const loadLog = this.columnLoadLog.get(chunkKey) ?? []
+    loadLog.push({ time: Date.now(), light: !!isLightUpdate })
+    if (loadLog.length > 6) loadLog.shift()
+    this.columnLoadLog.set(chunkKey, loadLog)
     const customBlockModels = this.protocolCustomBlocks.get(chunkKey)
 
     for (const worker of this.workers) {
@@ -1125,6 +1150,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
   removeColumn(x, z, opts?: { preserveClientLight?: boolean }) {
     delete this.loadedChunks[`${x},${z}`]
+    this.columnLoadLog.delete(`${x},${z}`)
     // Cancel any pending heightmap debounce for this chunk
     const debounceKey = `${x},${z}`
     const pendingTimer = this.heightmapDebounceTimers.get(debounceKey)

@@ -132,6 +132,7 @@ export function applyRendererOptions(appViewer: AppViewer, o: RendererStorageOpt
   cfg.futuristicReveal = o.rendererFuturisticReveal
   applyMesherWorkersPreset(appViewer, o, wasmActive)
   cfg.renderEntities = o.renderEntities
+  cfg.enableEntityLighting = o.entityLighting
   applyStatsVisible(appViewer, o, ctx)
   applyFpsLimit(appViewer, o, ctx.windowFocused !== false)
 

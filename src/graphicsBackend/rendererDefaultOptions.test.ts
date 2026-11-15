@@ -22,21 +22,24 @@ describe('migrateRendererOptions', () => {
 })
 
 describe('newer-version lighting defaults', () => {
-  it('keeps lighting opt-in on 1.13+', () => {
-    expect(RENDERER_DEFAULT_OPTIONS.newVersionsLighting).toBe(false)
-    expect(resolveEnableLighting(RENDERER_DEFAULT_OPTIONS.newVersionsLighting, true)).toBe(false)
-  })
-
   it.each([false, true])('preserves a saved lighting preference (%s)', value => {
     const saved: Record<string, unknown> = { newVersionsLighting: value }
     migrateRendererOptions(saved)
     expect(saved.newVersionsLighting).toBe(value)
   })
 
+  it('does not migrate old world-lighting settings into entity lighting', () => {
+    const saved: Record<string, unknown> = { newVersionsLighting: true }
+    migrateRendererOptions(saved)
+    expect(saved.newVersionsLighting).toBe(true)
+    expect(saved).not.toHaveProperty('entityLighting')
+  })
+
   it('does not invent a stored value when the key was never saved', () => {
     const saved: Record<string, unknown> = {}
     migrateRendererOptions(saved)
     expect(saved).not.toHaveProperty('newVersionsLighting')
+    expect(saved).not.toHaveProperty('entityLighting')
   })
 })
 

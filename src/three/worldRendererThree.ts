@@ -224,7 +224,7 @@ export class WorldRendererThree extends WorldRendererCommon {
       getLightmapParams: () => this.chunkMeshManager.getLightmapParams(),
       getColumnRevision: (cx, cz) => this.rendererLightCache.getColumnRevision(cx, cz),
       getGlobalRevision: () => this.rendererLightCache.getGlobalRevision(),
-      lightingEnabled: () => this.worldRendererConfig.enableLighting !== false
+      lightingEnabled: () => this.worldRendererConfig.enableLighting !== false && this.worldRendererConfig.enableEntityLighting !== false
     })
     this.onRenderDistanceChanged = viewDistance => {
       this.chunkMeshManager.updateViewDistance(viewDistance)
@@ -1028,7 +1028,10 @@ export class WorldRendererThree extends WorldRendererCommon {
 
       const decision = this.lightCoordinator.evaluateOwnerGeometry(data)
       if (!decision.accepted || data.geometry?.hadErrors) {
-        this.lightCoordinator.noteRejectedOwnerGeometry(data.key, undefined, { expectLaterFinished: true })
+        // A live owner will publish a replacement mesh. A plain mesher error will not, and
+        // swallowing its sectionFinished leaves the column unfinished forever.
+        const expectLaterFinished = !decision.accepted && this.lightCoordinator.isSessionLive()
+        this.lightCoordinator.noteRejectedOwnerGeometry(data.key, undefined, { expectLaterFinished })
         return
       }
       this.lightCoordinator.acknowledgeAcceptedTopology(data)

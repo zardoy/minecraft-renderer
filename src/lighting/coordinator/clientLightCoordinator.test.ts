@@ -35,10 +35,10 @@ describe('ClientLightCoordinator', () => {
   })
 
   test('explains why the owner did not start when the version gate refuses it', () => {
-    const { coordinator } = createHost({ version: '1.20.4', worldRendererConfig: { ...defaultWorldRendererConfig, enableClientLightOwner: true } })
+    const { coordinator } = createHost({ version: '1.16.5', worldRendererConfig: { ...defaultWorldRendererConfig, enableClientLightOwner: true } })
     coordinator.maybeSpawn()
     expect(coordinator.isSessionLive()).toBe(false)
-    expect(coordinator.getFailureReason()).toContain('1.17.1')
+    expect(coordinator.getFailureReason()).toContain('1.17 or newer')
   })
 
   test('a block change bumps the touched section and an edge neighbour, and tracks the edit', () => {

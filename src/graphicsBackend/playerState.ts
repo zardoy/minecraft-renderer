@@ -4,6 +4,7 @@
 
 import { proxy } from 'valtio'
 import { PlayerStateReactive } from '../playerState/playerState'
+import type { UseItemSession } from '../playerState/types'
 
 /**
  * Get initial player state with default values.
@@ -30,6 +31,7 @@ export const getInitialPlayerState = (): PlayerStateReactive =>
     bob: 0,
     prevBob: 0,
     itemUsageTicks: 0,
+    itemUseSession: undefined as UseItemSession | undefined,
     username: '',
     onlineMode: false,
     cardinalLight: 'default',

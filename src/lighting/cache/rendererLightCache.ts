@@ -231,6 +231,18 @@ export class RendererLightCache {
     return { changed: true, revision }
   }
 
+  /** Raw 0..15 block and sky light, undefined while the section is not loaded (for F3, `getLight` is display normalised). */
+  getRawLight(x: number, y: number, z: number): RendererLightSample | undefined {
+    if (y < this.worldMinY || y >= this.worldMaxY) return undefined
+    const sx = alignSection(x)
+    const sy = alignSection(y)
+    const sz = alignSection(z)
+    const data = this.sections.get(sectionKey(sx, sy, sz))
+    if (!data) return undefined
+    const packed = data[blockIndex(localCoord(x), y - sy, localCoord(z))] ?? 0
+    return { block: packed >> 4, sky: packed & 0x0f }
+  }
+
   getLight(x: number, y: number, z: number): RendererLightSample {
     if (y < this.worldMinY || y >= this.worldMaxY) return { ...FULLBRIGHT }
     const sx = alignSection(x)

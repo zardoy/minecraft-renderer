@@ -1,3 +1,5 @@
+import { loseWebGLContext } from './webglLifecycle'
+
 export const loadScript = async function (scriptSrc: string, highPriority = true): Promise<HTMLScriptElement> {
   const existingScript = document.querySelector<HTMLScriptElement>(`script[src="${scriptSrc}"]`)
   if (existingScript) {
@@ -28,13 +30,16 @@ export const loadScript = async function (scriptSrc: string, highPriority = true
 
 const detectFullOffscreenCanvasSupport = () => {
   if (typeof OffscreenCanvas === 'undefined') return false
+  let gl: WebGL2RenderingContext | WebGLRenderingContext | null = null
   try {
     const canvas = new OffscreenCanvas(1, 1)
     // Try to get a WebGL context - this will fail on iOS where only 2D is supported (iOS 16)
-    const gl = canvas.getContext('webgl2') || canvas.getContext('webgl')
+    gl = canvas.getContext('webgl2') || canvas.getContext('webgl')
     return gl !== null
   } catch (e) {
     return false
+  } finally {
+    loseWebGLContext(gl)
   }
 }
 

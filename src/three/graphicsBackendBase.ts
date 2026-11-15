@@ -12,6 +12,7 @@ import { createWorkerProxy, restoreTransferred } from '../lib/workerProxy'
 import { ResourcesManager } from '../resourcesManager'
 import { FrameTimingCollector } from '../lib/frameTimingCollector'
 import { WorldRendererThree } from './worldRendererThree'
+import type { BlockBreakParticlesModule } from './modules/blockBreakParticles'
 import { DocumentRenderer, isWebWorker, ThreeRendererMainData } from './documentRenderer'
 import { MenuBackgroundRenderer } from './menuBackground'
 import type { MenuBackgroundOptions } from './menuBackground/types'
@@ -72,11 +73,15 @@ export const getBackendMethods = (worldRenderer: WorldRendererThree): any => {
     // Rain methods
     setRain: worldRenderer.setRain.bind(worldRenderer),
     spawnBlockBreakParticles(x: number, y: number, z: number, blockName: string, floorMap: number[], biomeName?: string) {
-      const module = worldRenderer.getModule<import('./modules/blockBreakParticles').BlockBreakParticlesModule>('blockBreakParticles')
+      const module = worldRenderer.getModule<BlockBreakParticlesModule>('blockBreakParticles')
       module?.spawnBlockBreakParticles(x, y, z, blockName, floorMap, biomeName)
     },
+    spawnItemParticles(x: number, y: number, z: number, itemName: string, particleCount: number, floorMap?: number[]) {
+      const module = worldRenderer.getModule<BlockBreakParticlesModule>('blockBreakParticles')
+      module?.spawnItemParticles(x, y, z, itemName, particleCount, floorMap)
+    },
     spawnBlockCrackParticle(x: number, y: number, z: number, face: number, blockName: string, floorMap: number[], biomeName?: string) {
-      const module = worldRenderer.getModule<import('./modules/blockBreakParticles').BlockBreakParticlesModule>('blockBreakParticles')
+      const module = worldRenderer.getModule<BlockBreakParticlesModule>('blockBreakParticles')
       module?.spawnCrackParticle(x, y, z, face, blockName, floorMap, biomeName)
     },
     async loadGeometryExport(exportData: any) {
