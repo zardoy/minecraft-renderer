@@ -168,7 +168,16 @@ void main() {
 #endif
 
 #ifdef BLOOM
-    color += bloomIntensity * (texture(tBloomHalf, uv).rgb + 1.5 * texture(tBloomQuarter, uv).rgb);
+    vec3 glow = bloomIntensity * (0.85 * texture(tBloomHalf, uv).rgb + 1.0 * texture(tBloomQuarter, uv).rgb);
+    // keep the glow colourful and warm instead of washing out to white
+    float glowLuma = dot(glow, vec3(0.2126, 0.7152, 0.0722));
+    glow = mix(vec3(glowLuma), glow, 1.2);
+    color += glow;
+    // soft shoulder on the brightest channel: highlights roll off but keep their hue. Per-channel clipping turned
+    // bright emitters (glowstone, sea lanterns) into flat white and lost their texture
+    float peak = max(color.r, max(color.g, color.b));
+    const float KNEE = 0.85;
+    if (peak > KNEE) color *= (KNEE + (1.0 - KNEE) * (1.0 - exp(-(peak - KNEE) / (1.0 - KNEE)))) / peak;
 #endif
 #ifdef GOD_RAYS
     color += raysColor * texture(tRays, uv).r;
