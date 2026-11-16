@@ -5,6 +5,7 @@ import {
   RENDERER_DEFAULT_OPTIONS,
   RENDERER_EFFECT_OPTION_KEYS,
   RENDERER_OPTIONS_META,
+  RENDERER_PERFORMANCE_NOTE,
   RENDERER_VISUAL_PROFILES,
   resolveEnableLighting
 } from './rendererDefaultOptions'
@@ -78,6 +79,21 @@ describe('visual profiles', () => {
     const vanilla = RENDERER_VISUAL_PROFILES.vanilla.options
     expect([vanilla.wavingGrass, vanilla.bloom, vanilla.godRays, vanilla.vignette, vanilla.motionBlur]).toEqual([false, false, false, false, false])
     expect([vanilla.sunShadows, vanilla.antialiasing, vanilla.colorGrading]).toEqual(['off', 'off', 'off'])
+  })
+
+  it('vanilla is also the vanilla face shading, the other profiles keep the client shading', () => {
+    expect(RENDERER_VISUAL_PROFILES.vanilla.options.vanillaLook).toBe(true)
+    expect(RENDERER_VISUAL_PROFILES.default.options.vanillaLook).toBe(RENDERER_DEFAULT_OPTIONS.vanillaLook)
+    expect(RENDERER_VISUAL_PROFILES.maximum.options.vanillaLook).toBe(false)
+  })
+
+  it('every effect option has a short performance note', () => {
+    for (const key of RENDERER_EFFECT_OPTION_KEYS) {
+      const note = RENDERER_OPTIONS_META[key]?.performance
+      expect(note, key).toBeTruthy()
+      expect(note!.length, `${key} note is short`).toBeLessThan(120)
+    }
+    expect(RENDERER_PERFORMANCE_NOTE).toContain('Apple M5')
   })
 
   it('maximum turns on the heavy effects except motion blur', () => {
