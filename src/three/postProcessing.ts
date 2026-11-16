@@ -168,7 +168,7 @@ export class PostProcessing {
       blurScale: { value: MOTION_BLUR_SHUTTER },
       tBloomHalf: { value: null },
       tBloomQuarter: { value: null },
-      bloomIntensity: { value: 0.9 },
+      bloomIntensity: { value: 0.75 },
       tRays: { value: null },
       raysColor: { value: new THREE.Color() }
     })

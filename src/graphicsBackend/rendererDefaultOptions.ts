@@ -9,6 +9,24 @@ import {
 import { MENU_BACKGROUND_OPTION_DEFAULTS } from '../three/menuBackground/config'
 import type { RendererGpuPreference } from '../three/menuBackground/gpuPreference'
 
+export type RendererPerformanceLevel = 'free' | 'light' | 'moderate' | 'heavy'
+
+export const RENDERER_PERFORMANCE_LEVEL_LABELS: Record<RendererPerformanceLevel, string> = {
+  free: 'Free',
+  light: 'Light',
+  moderate: 'Moderate',
+  heavy: 'Heavy'
+}
+
+export type RendererOptionPerformance = {
+  /** What it costs when turned on. Also shown while it is off, so the cost is visible before enabling it. */
+  level: RendererPerformanceLevel
+  /** Why it costs that, shown after the level word. Short: it is two lines in a small panel. */
+  note: string
+  /** Cost of a specific choice that differs from `level` (soft sun shadows). Keys are option values. */
+  levelByValue?: Record<string, RendererPerformanceLevel>
+}
+
 export type RendererOptionMeta = {
   possibleValues?: string[] | Array<[string, string]>
   isCustomInput?: boolean
@@ -17,6 +35,8 @@ export type RendererOptionMeta = {
   unit?: string
   text?: string
   tooltip?: string
+  /** What the option costs in performance, for UIs that show it next to the control. */
+  performance?: RendererOptionPerformance
   requiresRestart?: boolean
   requiresChunksReload?: boolean
 }
@@ -100,6 +120,7 @@ export type RendererStorageOptions = typeof RENDERER_DEFAULT_OPTIONS
 export const RENDERER_EFFECT_OPTION_KEYS = [
   'wavingGrass',
   'colorGrading',
+  'vanillaLook',
   'sunShadows',
   'sunShadowsDistance',
   'antialiasing',
@@ -120,10 +141,11 @@ export type RendererVisualProfileId = 'vanilla' | 'default' | 'maximum'
 export const RENDERER_VISUAL_PROFILES: Record<RendererVisualProfileId, { label: string; description: string; options: RendererEffectOptions }> = {
   vanilla: {
     label: 'Vanilla',
-    description: 'All visual effects off',
+    description: 'All visual effects off, vanilla face shading',
     options: {
       wavingGrass: false,
       colorGrading: 'off',
+      vanillaLook: true,
       sunShadows: 'off',
       sunShadowsDistance: 64,
       antialiasing: 'off',
@@ -139,6 +161,7 @@ export const RENDERER_VISUAL_PROFILES: Record<RendererVisualProfileId, { label: 
     options: {
       wavingGrass: RENDERER_DEFAULT_OPTIONS.wavingGrass,
       colorGrading: RENDERER_DEFAULT_OPTIONS.colorGrading,
+      vanillaLook: RENDERER_DEFAULT_OPTIONS.vanillaLook,
       sunShadows: RENDERER_DEFAULT_OPTIONS.sunShadows,
       sunShadowsDistance: RENDERER_DEFAULT_OPTIONS.sunShadowsDistance,
       antialiasing: RENDERER_DEFAULT_OPTIONS.antialiasing,
@@ -154,6 +177,7 @@ export const RENDERER_VISUAL_PROFILES: Record<RendererVisualProfileId, { label: 
     options: {
       wavingGrass: true,
       colorGrading: 'warm',
+      vanillaLook: false,
       sunShadows: 'soft',
       sunShadowsDistance: 64,
       antialiasing: 'fxaa',
@@ -164,6 +188,16 @@ export const RENDERER_VISUAL_PROFILES: Record<RendererVisualProfileId, { label: 
     }
   }
 }
+
+/** Cost level of an option for its current value (what turning it on costs while it is off), undefined without a note. */
+export function rendererOptionPerformanceLevel(key: RendererDefaultOptionKey, value: unknown): RendererPerformanceLevel | undefined {
+  const performance = RENDERER_OPTIONS_META[key]?.performance
+  if (!performance) return undefined
+  return performance.levelByValue?.[String(value)] ?? performance.level
+}
+
+/** Footer for UIs that show the `performance` notes: where the numbers come from. */
+export const RENDERER_PERFORMANCE_NOTE = 'Costs measured on an Apple M5. Older GPUs and phones pay more, mostly for shadows and anything full-screen.'
 
 /** The profile the given options match exactly, undefined when they are custom. */
 export function detectVisualProfile(options: Partial<RendererEffectOptions>): RendererVisualProfileId | undefined {
@@ -280,11 +314,17 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
   },
   wavingGrass: {
     text: 'Waving grass',
-    tooltip: 'Grass, flowers, crops and leaves sway in the wind.'
+    tooltip: 'Grass, flowers, crops and leaves sway in the wind.',
+    performance: { level: 'free', note: 'Plants move in the vertex shader.' }
   },
   sunShadows: {
     text: 'Sun shadows',
     tooltip: 'Shadows cast by blocks in daylight. Soft uses a wider, smoother filter (more GPU work).',
+    performance: {
+      level: 'light',
+      levelByValue: { soft: 'moderate' },
+      note: 'Normal +0.3 ms GPU, soft +3 ms (16 lookups per pixel instead of 4). The shadow map is redrawn about 5 times a second.'
+    },
     possibleValues: [
       ['off', 'Off'],
       ['normal', 'Normal'],
@@ -294,6 +334,10 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
   antialiasing: {
     text: 'Antialiasing',
     tooltip: 'Smooths jagged block edges (FXAA). Slightly softens textures.',
+    performance: {
+      level: 'light',
+      note: 'One full-screen pass: +0.3 ms at 1080p, about +3 ms at 4K. Slightly softens textures.'
+    },
     possibleValues: [
       ['off', 'Off'],
       ['fxaa', 'FXAA']
@@ -301,11 +345,13 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
   },
   bloom: {
     text: 'Bloom',
-    tooltip: 'Glow around light emitting blocks (torches, lava, glowstone...). Several extra passes.'
+    tooltip: 'Glow around light emitting blocks (torches, lava, glowstone...). Several extra passes.',
+    performance: { level: 'moderate', note: 'About 8 extra passes: +0.5 ms at 1080p, about +4 ms at 4K.' }
   },
   colorGrading: {
     text: 'Color grading',
     tooltip: 'Film-like tone curve and colour look for world blocks (done in the block shaders, no extra cost).',
+    performance: { level: 'free', note: 'A few shader operations per block pixel.' },
     possibleValues: [
       ['off', 'Off'],
       ['warm', 'Warm'],
@@ -315,18 +361,22 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
   },
   godRays: {
     text: 'God rays',
-    tooltip: 'Light shafts from the sun through gaps in terrain and clouds.'
+    tooltip: 'Light shafts from the sun through gaps in terrain and clouds.',
+    performance: { level: 'light', note: 'Free while the sun is off screen, up to +2 ms with the sun in view.' }
   },
   vignette: {
-    text: 'Vignette'
+    text: 'Vignette',
+    performance: { level: 'free', note: 'Darkens the screen edges.' }
   },
   motionBlur: {
     text: 'Motion blur',
-    tooltip: 'Blur when the camera moves or turns.'
+    tooltip: 'Blur when the camera moves or turns.',
+    performance: { level: 'light', note: '+0.2 ms while turning at 1080p, about +3 ms at 4K. Free while standing still.' }
   },
   sunShadowsDistance: {
     text: 'Shadow distance',
     tooltip: 'Blocks around you that receive sun shadows. Larger distances make shadows blurrier.',
+    performance: { level: 'light', note: 'Farther is blurrier, and soft shadows get much slower with it (128 blocks: +12 ms).' },
     min: 16,
     max: 128,
     unit: ' blocks'
@@ -388,7 +438,8 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
   },
   vanillaLook: {
     text: 'Vanilla shading',
-    tooltip: 'On: Minecraft-style face shading. Off: higher-contrast client shading.'
+    tooltip: 'On: Minecraft-style face shading. Off: higher-contrast client shading.',
+    performance: { level: 'free', note: 'Only changes how block faces are shaded.' }
   },
   smoothLighting: {},
   newVersionsLighting: {
