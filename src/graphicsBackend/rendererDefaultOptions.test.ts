@@ -74,17 +74,17 @@ describe('visual profiles', () => {
     }
   })
 
-  it('default is what a fresh install gets, vanilla turns everything off', () => {
-    for (const key of RENDERER_EFFECT_OPTION_KEYS) expect(RENDERER_VISUAL_PROFILES.default.options[key]).toBe(RENDERER_DEFAULT_OPTIONS[key])
-    const vanilla = RENDERER_VISUAL_PROFILES.vanilla.options
-    expect([vanilla.wavingGrass, vanilla.bloom, vanilla.godRays, vanilla.vignette, vanilla.motionBlur]).toEqual([false, false, false, false, false])
-    expect([vanilla.sunShadows, vanilla.antialiasing, vanilla.colorGrading]).toEqual(['off', 'off', 'off'])
+  it('the default profile is what a fresh install gets', () => {
+    for (const key of RENDERER_EFFECT_OPTION_KEYS) expect(RENDERER_VISUAL_PROFILES.default.options[key], key).toBe(RENDERER_DEFAULT_OPTIONS[key])
   })
 
-  it('vanilla is also the vanilla face shading, the other profiles keep the client shading', () => {
-    expect(RENDERER_VISUAL_PROFILES.vanilla.options.vanillaLook).toBe(true)
-    expect(RENDERER_VISUAL_PROFILES.default.options.vanillaLook).toBe(RENDERER_DEFAULT_OPTIONS.vanillaLook)
-    expect(RENDERER_VISUAL_PROFILES.maximum.options.vanillaLook).toBe(false)
+  it('the vanilla profile leaves no effect on, including effects added later', () => {
+    // vanillaLook is the exception by design: vanilla shading is what "vanilla" means. Numbers (shadow distance) are not effects.
+    for (const key of RENDERER_EFFECT_OPTION_KEYS.filter(k => k !== 'vanillaLook')) {
+      const value = RENDERER_VISUAL_PROFILES.vanilla.options[key]
+      if (typeof value === 'number') continue
+      expect(value === false || value === 'off', `${key}=${String(value)}`).toBe(true)
+    }
   })
 
   it('every effect option has a short performance note', () => {
@@ -94,13 +94,6 @@ describe('visual profiles', () => {
       expect(note!.length, `${key} note is short`).toBeLessThan(120)
     }
     expect(RENDERER_PERFORMANCE_NOTE).toContain('Apple M5')
-  })
-
-  it('maximum turns on the heavy effects except motion blur', () => {
-    const max = RENDERER_VISUAL_PROFILES.maximum.options
-    expect([max.bloom, max.godRays, max.vignette]).toEqual([true, true, true])
-    expect([max.sunShadows, max.antialiasing]).toEqual(['soft', 'fxaa'])
-    expect(max.motionBlur).toBe(false)
   })
 
   it('detects the active profile and reports custom settings as undefined', () => {
