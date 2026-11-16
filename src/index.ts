@@ -85,7 +85,9 @@ export {
   RENDERER_OPTIONS_META,
   RENDERER_RENDER_GUI_SECTIONS,
   RENDERER_EFFECT_OPTION_KEYS,
+  RENDERER_PERFORMANCE_LEVEL_LABELS,
   RENDERER_PERFORMANCE_NOTE,
+  rendererOptionPerformanceLevel,
   RENDERER_VISUAL_PROFILES,
   detectVisualProfile,
   MENU_BACKGROUND_OPTION_DEFAULTS,
@@ -96,6 +98,8 @@ export type {
   RendererDefaultOptionKey,
   RendererEffectOptionKey,
   RendererEffectOptions,
+  RendererOptionPerformance,
+  RendererPerformanceLevel,
   RendererOptionMeta,
   RendererVisualProfileId
 } from './three/menuBackground'

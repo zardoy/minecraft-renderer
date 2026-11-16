@@ -5,7 +5,9 @@ import {
   RENDERER_DEFAULT_OPTIONS,
   RENDERER_EFFECT_OPTION_KEYS,
   RENDERER_OPTIONS_META,
+  RENDERER_PERFORMANCE_LEVEL_LABELS,
   RENDERER_PERFORMANCE_NOTE,
+  rendererOptionPerformanceLevel,
   RENDERER_VISUAL_PROFILES,
   resolveEnableLighting
 } from './rendererDefaultOptions'
@@ -87,13 +89,30 @@ describe('visual profiles', () => {
     }
   })
 
-  it('every effect option has a short performance note', () => {
+  it('every effect option has a performance level and a short note, and its per value levels are real choices', () => {
     for (const key of RENDERER_EFFECT_OPTION_KEYS) {
-      const note = RENDERER_OPTIONS_META[key]?.performance
-      expect(note, key).toBeTruthy()
-      expect(note!.length, `${key} note is short`).toBeLessThan(120)
+      const performance = RENDERER_OPTIONS_META[key]?.performance
+      expect(performance, key).toBeTruthy()
+      expect(Object.keys(RENDERER_PERFORMANCE_LEVEL_LABELS), key).toContain(performance!.level)
+      expect(performance!.note.length, `${key} note is short`).toBeLessThan(150)
+      const choices = RENDERER_OPTIONS_META[key]?.possibleValues?.map(v => (Array.isArray(v) ? v[0] : v))
+      for (const [value, level] of Object.entries(performance!.levelByValue ?? {})) {
+        expect(choices, `${key} has a choice ${value}`).toContain(value)
+        expect(Object.keys(RENDERER_PERFORMANCE_LEVEL_LABELS)).toContain(level)
+      }
     }
     expect(RENDERER_PERFORMANCE_NOTE).toContain('Apple M5')
+  })
+
+  it('the cost level is what the option costs on, a choice that costs more has its own level', () => {
+    // off still shows the cost of turning it on, so it is visible before enabling
+    expect(rendererOptionPerformanceLevel('sunShadows', 'off')).toBe('light')
+    expect(rendererOptionPerformanceLevel('sunShadows', 'normal')).toBe('light')
+    expect(rendererOptionPerformanceLevel('sunShadows', 'soft')).toBe('moderate')
+    expect(rendererOptionPerformanceLevel('bloom', false)).toBe('moderate')
+    expect(rendererOptionPerformanceLevel('bloom', true)).toBe('moderate')
+    expect(rendererOptionPerformanceLevel('antialiasing', 'off')).toBe('light')
+    expect(rendererOptionPerformanceLevel('rendererMesher', 'wasm')).toBeUndefined()
   })
 
   it('detects the active profile and reports custom settings as undefined', () => {
