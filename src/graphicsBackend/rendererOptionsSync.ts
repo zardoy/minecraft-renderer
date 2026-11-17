@@ -133,6 +133,7 @@ export function applyRendererOptions(appViewer: AppViewer, o: RendererStorageOpt
   applyMesherWorkersPreset(appViewer, o, wasmActive)
   cfg.renderEntities = o.renderEntities
   cfg.enableEntityLighting = o.entityLighting
+  cfg.animatedTextures = o.animatedTextures
   applyStatsVisible(appViewer, o, ctx)
   applyFpsLimit(appViewer, o, ctx.windowFocused !== false)
 
