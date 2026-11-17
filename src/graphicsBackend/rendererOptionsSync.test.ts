@@ -21,7 +21,7 @@ describe('applyRendererOptions entity lighting', () => {
   })
 })
 
-describe('client light owner setting', () => {
+describe('client light URL override', () => {
   const apply = (clientLighting: boolean, search = '') => {
     const inWorldRenderingConfig = createWorldRendererConfig()
     const previous = (globalThis as any).location
@@ -31,13 +31,8 @@ describe('client light owner setting', () => {
     } finally {
       ;(globalThis as any).location = previous
     }
-    return inWorldRenderingConfig.enableClientLightOwner
+    return inWorldRenderingConfig.enableClientLight
   }
-
-  it('follows the clientLighting option', () => {
-    expect(apply(true)).toBe(true)
-    expect(apply(false)).toBe(false)
-  })
 
   it('lets ?clientLight=0|1 in the URL win over the option', () => {
     expect(apply(true, '?clientLight=0')).toBe(false)

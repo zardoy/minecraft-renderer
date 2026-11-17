@@ -103,13 +103,13 @@ export class AppViewer {
       ...defaultWorldRendererConfig,
       ...options.rendererConfig
     })
-    // `?clientLight=0|1` forces the client light owner off / on (live testing). An explicit code override wins; without a browser
+    // `?clientLight=0|1` forces client light off / on (live testing). An explicit code override wins; without a browser
     // location this is a no-op (unit tests keep testing the default). Spawn still requires session version 1.17 or newer
     // (`shouldSpawnClientLightOwner`); other versions keep server light.
-    if (options.rendererConfig?.enableClientLightOwner === undefined && typeof location !== 'undefined') {
+    if (options.rendererConfig?.enableClientLight === undefined && typeof location !== 'undefined') {
       try {
         const forced = clientLightUrlOverride()
-        if (forced !== undefined) this.inWorldRenderingConfig.enableClientLightOwner = forced
+        if (forced !== undefined) this.inWorldRenderingConfig.enableClientLight = forced
       } catch {
         // ignore malformed URL in non-browser runtimes
       }

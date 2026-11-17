@@ -449,7 +449,8 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
   },
   clientLighting: {
     text: 'Client lighting (1.17+)',
-    tooltip: 'Computes block and sky light in the browser, so placed and broken blocks light up at once and sun shadows read correctly. Off uses the light the server sends.'
+    tooltip:
+      'Computes block and sky light in the browser, so placed and broken blocks light up at once and sun shadows read correctly. Off uses the light the server sends.'
   },
   entityLighting: {
     text: 'Entity lighting',

@@ -48,10 +48,10 @@ export const defaultWorldRendererConfig = {
    * distributed only across workers[0 .. n-2]. */
   dedicatedChangeWorker: false,
   /**
-   * Dedicated WASM light-owner worker: computes block and sky light in the browser (Minecraft 1.17+; older versions keep the
+   * Client light: a dedicated WASM worker computes block and sky light in the browser (Minecraft 1.17+; older versions keep the
    * server's light). Follows the `clientLighting` option, `?clientLight=0|1` in the page URL overrides it.
    */
-  enableClientLightOwner: true,
+  enableClientLight: true,
 
   // Rendering engine settings
   /** Face shading: vanilla Minecraft vs higher-contrast client look */

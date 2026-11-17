@@ -136,7 +136,7 @@ export class ClientLightCoordinator {
     if (this.session) return
     const { worldRendererConfig, version } = this.host
     if (!shouldSpawnClientLightOwner(worldRendererConfig, version)) {
-      if (worldRendererConfig.enableClientLightOwner === true) {
+      if (worldRendererConfig.enableClientLight === true) {
         this.failureReason = clientLightOwnerVersionBlockReason(version)
       }
       return

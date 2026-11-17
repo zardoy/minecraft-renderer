@@ -141,7 +141,7 @@ export function applyRendererOptions(appViewer: AppViewer, o: RendererStorageOpt
   applyMesherWorkersPreset(appViewer, o, wasmActive)
   cfg.renderEntities = o.renderEntities
   cfg.enableEntityLighting = o.entityLighting
-  cfg.enableClientLightOwner = clientLightUrlOverride() ?? o.clientLighting
+  cfg.enableClientLight = clientLightUrlOverride() ?? o.clientLighting
   applyStatsVisible(appViewer, o, ctx)
   applyFpsLimit(appViewer, o, ctx.windowFocused !== false)
 

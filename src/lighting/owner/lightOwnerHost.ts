@@ -78,8 +78,8 @@ export function applyLightPublication(
   return { applied: true, lastVersion: publication.publicationVersion, acceptedGeneration: publication.worldGeneration }
 }
 
-/** Production spawn stays behind `enableClientLightOwner` (default off). */
-export const CLIENT_LIGHT_OWNER_FLAG = 'enableClientLightOwner' as const
+/** The client light worker is spawned only when `enableClientLight` is on (default on, the `clientLighting` option). */
+export const CLIENT_LIGHT_OWNER_FLAG = 'enableClientLight' as const
 
 export class LightOwnerHost {
   private lastVersion = 0

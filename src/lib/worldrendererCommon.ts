@@ -418,7 +418,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       mode: resolveLightingMode(config.enableLighting, running),
       block: raw?.block,
       sky: raw?.sky,
-      clientEngineUnavailableReason: config.enableClientLightOwner === true && !running ? this.getClientLightOwnerFailureReason() : null
+      clientEngineUnavailableReason: config.enableClientLight === true && !running ? this.getClientLightOwnerFailureReason() : null
     }
   }
 
@@ -637,7 +637,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     )
     this.valtioUnsubs.push(
       this.onReactiveConfigUpdated(
-        'enableClientLightOwner',
+        'enableClientLight',
         enabled => {
           if (enabled) this.lightCoordinator.maybeSpawn()
           else this.lightCoordinator.terminate()

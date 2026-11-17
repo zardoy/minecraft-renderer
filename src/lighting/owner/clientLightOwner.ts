@@ -1,6 +1,6 @@
 /**
- * Production wiring for the dedicated WASM light-owner, behind
- * `enableClientLightOwner` (default OFF).
+ * Production wiring for client light: the dedicated WASM worker that owns (is the only writer of) the world's light data, behind
+ * `enableClientLight` (default on, the `clientLighting` option).
  *
  * Product forks (matches §10, simpler option):
  * - `ingestBlockSection` is sent from the main thread from prismarine column
@@ -37,8 +37,8 @@ export const LIGHT_OWNER_WORKER_SCRIPT = 'lightOwnerWorker.js'
 export type ClientLightOwnerLifecycle = 'starting' | 'ready' | 'failed'
 
 /** The owner needs light tables for the session version (see lightTablesRuntime.ts), older versions must not start the worker. */
-export function shouldSpawnClientLightOwner(config: { enableClientLightOwner?: boolean }, version: string): boolean {
-  return config.enableClientLightOwner === true && supportsRuntimeLightTables(version)
+export function shouldSpawnClientLightOwner(config: { enableClientLight?: boolean }, version: string): boolean {
+  return config.enableClientLight === true && supportsRuntimeLightTables(version)
 }
 
 export function clientLightOwnerVersionBlockReason(version: string): string | null {
