@@ -335,7 +335,8 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
   },
   animatedTextures: {
     text: 'Animated blocks',
-    tooltip: 'Animated block textures such as water, lava, fire and portals. Basic switches frames, smooth also blends them like vanilla. Off keeps the first frame of each.',
+    tooltip:
+      'Animated block textures such as water, lava, fire and portals. Basic switches frames, smooth also blends them like vanilla. Off keeps the first frame of each.',
     possibleValues: [
       ['off', 'Off'],
       ['basic', 'Basic'],

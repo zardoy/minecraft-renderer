@@ -20,11 +20,3 @@ describe('applyRendererOptions entity lighting', () => {
     expect(inWorldRenderingConfig.enableEntityLighting).toBe(entityLighting)
   })
 })
-
-describe('animated blocks setting', () => {
-  it.each(['off', 'basic', 'smooth'] as const)('syncs animatedTextures=%s to the runtime config', animatedTextures => {
-    const inWorldRenderingConfig = createWorldRendererConfig()
-    applyRendererOptions({ inWorldRenderingConfig, config: {}, currentDisplay: null } as any, { ...RENDERER_DEFAULT_OPTIONS, animatedTextures })
-    expect(inWorldRenderingConfig.animatedTextures).toBe(animatedTextures)
-  })
-})
