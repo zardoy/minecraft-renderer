@@ -142,6 +142,7 @@ export function applyRendererOptions(appViewer: AppViewer, o: RendererStorageOpt
   cfg.renderEntities = o.renderEntities
   cfg.enableEntityLighting = o.entityLighting
   cfg.enableClientLight = clientLightUrlOverride() ?? o.clientLighting
+  cfg.animatedTextures = o.animatedTextures
   applyStatsVisible(appViewer, o, ctx)
   applyFpsLimit(appViewer, o, ctx.windowFocused !== false)
 
