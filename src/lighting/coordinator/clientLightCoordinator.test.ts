@@ -27,7 +27,7 @@ function createHost(overrides: Partial<ClientLightHost> = {}) {
 
 describe('ClientLightCoordinator', () => {
   test('stays inert and accepts geometry while the owner is disabled', () => {
-    const { coordinator } = createHost()
+    const { coordinator } = createHost({ worldRendererConfig: { ...defaultWorldRendererConfig, enableClientLight: false } })
     coordinator.maybeSpawn()
     expect(coordinator.isSessionLive()).toBe(false)
     expect(coordinator.hasOwner()).toBe(false)
@@ -35,7 +35,7 @@ describe('ClientLightCoordinator', () => {
   })
 
   test('explains why the owner did not start when the version gate refuses it', () => {
-    const { coordinator } = createHost({ version: '1.16.5', worldRendererConfig: { ...defaultWorldRendererConfig, enableClientLightOwner: true } })
+    const { coordinator } = createHost({ version: '1.16.5', worldRendererConfig: { ...defaultWorldRendererConfig, enableClientLight: true } })
     coordinator.maybeSpawn()
     expect(coordinator.isSessionLive()).toBe(false)
     expect(coordinator.getFailureReason()).toContain('1.17 or newer')

@@ -73,7 +73,7 @@ function createRenderer(enableOwner = false, workerCount = 2, version = '1.17.1'
   const displayOptions: DisplayWorldOptions = {
     version,
     worldView: Object.assign(new EventEmitter(), { reloadLoadedChunks: vi.fn(async () => {}) }) as unknown as DisplayWorldOptions['worldView'],
-    inWorldRenderingConfig: proxy({ ...defaultWorldRendererConfig, mesherWorkers: workerCount, enableClientLightOwner: enableOwner }),
+    inWorldRenderingConfig: proxy({ ...defaultWorldRendererConfig, mesherWorkers: workerCount, enableClientLight: enableOwner }),
     playerStateReactive: getInitialPlayerState(),
     rendererState,
     nonReactiveState: {

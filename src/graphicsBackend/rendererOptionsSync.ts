@@ -15,6 +15,14 @@ import { setSkinsConfig } from '../lib/utils/skins'
 
 export type { RendererStorageOptions } from './rendererDefaultOptions'
 
+/** `?clientLight=1` / `?clientLight=0` in the page URL forces the client light owner on / off, whatever the setting says (live testing). */
+export function clientLightUrlOverride(search = typeof location === 'undefined' ? '' : location.search): boolean | undefined {
+  const value = new URLSearchParams(search).get('clientLight')
+  if (value === '1') return true
+  if (value === '0') return false
+  return undefined
+}
+
 export interface ApplyRendererOptionsContext {
   isSafari?: boolean
   isCypress?: boolean
@@ -133,6 +141,7 @@ export function applyRendererOptions(appViewer: AppViewer, o: RendererStorageOpt
   applyMesherWorkersPreset(appViewer, o, wasmActive)
   cfg.renderEntities = o.renderEntities
   cfg.enableEntityLighting = o.entityLighting
+  cfg.enableClientLight = clientLightUrlOverride() ?? o.clientLighting
   cfg.animatedTextures = o.animatedTextures
   applyStatsVisible(appViewer, o, ctx)
   applyFpsLimit(appViewer, o, ctx.windowFocused !== false)

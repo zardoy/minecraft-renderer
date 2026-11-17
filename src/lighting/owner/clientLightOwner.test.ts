@@ -65,17 +65,13 @@ function makeSession() {
 }
 
 describe('client light owner flag', () => {
-  it('does not spawn the owner for the default config on 1.17.1', () => {
-    expect(shouldSpawnClientLightOwner(defaultWorldRendererConfig, '1.17.1')).toBe(false)
-  })
-
   it('spawns only when the flag is true and the session version has light tables (1.17+)', () => {
-    expect(shouldSpawnClientLightOwner({ enableClientLightOwner: true }, '1.17.1')).toBe(true)
-    expect(shouldSpawnClientLightOwner({ enableClientLightOwner: false }, '1.17.1')).toBe(false)
+    expect(shouldSpawnClientLightOwner({ enableClientLight: true }, '1.17.1')).toBe(true)
+    expect(shouldSpawnClientLightOwner({ enableClientLight: false }, '1.17.1')).toBe(false)
     expect(shouldSpawnClientLightOwner({}, '1.17.1')).toBe(false)
-    expect(shouldSpawnClientLightOwner({ enableClientLightOwner: true }, '1.16.5')).toBe(false)
-    expect(shouldSpawnClientLightOwner({ enableClientLightOwner: true }, '1.18.2')).toBe(true)
-    expect(shouldSpawnClientLightOwner({ enableClientLightOwner: true }, '1.21.4')).toBe(true)
+    expect(shouldSpawnClientLightOwner({ enableClientLight: true }, '1.16.5')).toBe(false)
+    expect(shouldSpawnClientLightOwner({ enableClientLight: true }, '1.18.2')).toBe(true)
+    expect(shouldSpawnClientLightOwner({ enableClientLight: true }, '1.21.4')).toBe(true)
     expect(clientLightOwnerVersionBlockReason('1.17.1')).toBeNull()
     expect(clientLightOwnerVersionBlockReason('1.20.1')).toBeNull()
     expect(clientLightOwnerVersionBlockReason('1.16.5')).toMatch(/1\.17 or newer/)

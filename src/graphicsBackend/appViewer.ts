@@ -25,6 +25,7 @@ import { WorldView, WorldProvider, WorldViewWorker } from '../worldView'
 import { getInitialPlayerState } from './playerState'
 import { defaultWorldRendererConfig, defaultGraphicsBackendConfig, getDefaultRendererState, WorldRendererConfig } from './config'
 import { maybeEnableClientLightTraceFromLocation } from '../lighting/debug/clientLightTrace'
+import { clientLightUrlOverride } from './rendererOptionsSync'
 import { PlayerStateReactive } from '../playerState/playerState'
 import { ResourcesManager, ResourcesManagerTransferred } from '../resourcesManager'
 import { preloadMesherWorkerScript } from './preloadWorkers'
@@ -102,15 +103,13 @@ export class AppViewer {
       ...defaultWorldRendererConfig,
       ...options.rendererConfig
     })
-    // Manual live-test hatch: `?clientLight=1` sets `enableClientLightOwner`. Spawn still
-    // requires session version 1.17 or newer (`shouldSpawnClientLightOwner`); other versions keep
-    // server light. An explicit code override always wins; without a browser location this
-    // is a no-op (unit tests keep testing the default).
-    if (options.rendererConfig?.enableClientLightOwner === undefined && typeof location !== 'undefined') {
+    // `?clientLight=0|1` forces client light off / on (live testing). An explicit code override wins; without a browser
+    // location this is a no-op (unit tests keep testing the default). Spawn still requires session version 1.17 or newer
+    // (`shouldSpawnClientLightOwner`); other versions keep server light.
+    if (options.rendererConfig?.enableClientLight === undefined && typeof location !== 'undefined') {
       try {
-        if (new URLSearchParams(location.search).get('clientLight') === '1') {
-          this.inWorldRenderingConfig.enableClientLightOwner = true
-        }
+        const forced = clientLightUrlOverride()
+        if (forced !== undefined) this.inWorldRenderingConfig.enableClientLight = forced
       } catch {
         // ignore malformed URL in non-browser runtimes
       }

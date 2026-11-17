@@ -97,7 +97,8 @@ export const RENDERER_DEFAULT_OPTIONS = {
   backgroundRendering: '20fps' as 'full' | '20fps' | '5fps',
   vanillaLook: false as boolean,
   smoothLighting: true as boolean,
-  newVersionsLighting: false as boolean,
+  newVersionsLighting: true as boolean,
+  clientLighting: true as boolean,
   entityLighting: true as boolean,
   vrSupport: true as boolean,
   vrPageGameRendering: false as boolean,
@@ -458,6 +459,11 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
     text: 'Lighting in newer versions',
     tooltip: 'Block and sky lighting for 1.13+. Off renders the world fullbright.'
   },
+  clientLighting: {
+    text: 'Client lighting (1.17+)',
+    tooltip:
+      'Computes block and sky light in the browser, so placed and broken blocks light up at once and sun shadows read correctly. Off uses the light the server sends.'
+  },
   entityLighting: {
     text: 'Entity lighting',
     tooltip: 'Light entities from block and sky light. Requires world lighting to be enabled; off keeps entities fullbright.'
@@ -540,6 +546,7 @@ export const RENDERER_RENDER_GUI_SECTIONS: ReadonlyArray<{
       'smoothLighting',
       'vanillaLook',
       'newVersionsLighting',
+      'clientLighting',
       'entityLighting',
       'dayCycleAndLighting',
       'loadPlayerSkins',
