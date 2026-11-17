@@ -27,7 +27,7 @@ function createHost(overrides: Partial<ClientLightHost> = {}) {
 
 describe('ClientLightCoordinator', () => {
   test('stays inert and accepts geometry while the owner is disabled', () => {
-    const { coordinator } = createHost()
+    const { coordinator } = createHost({ worldRendererConfig: { ...defaultWorldRendererConfig, enableClientLightOwner: false } })
     coordinator.maybeSpawn()
     expect(coordinator.isSessionLive()).toBe(false)
     expect(coordinator.hasOwner()).toBe(false)

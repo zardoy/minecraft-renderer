@@ -65,8 +65,10 @@ function makeSession() {
 }
 
 describe('client light owner flag', () => {
-  it('does not spawn the owner for the default config on 1.17.1', () => {
-    expect(shouldSpawnClientLightOwner(defaultWorldRendererConfig, '1.17.1')).toBe(false)
+  it('spawns the owner for the default config on 1.17+ and keeps older versions on server light', () => {
+    expect(shouldSpawnClientLightOwner(defaultWorldRendererConfig, '1.17.1')).toBe(true)
+    expect(shouldSpawnClientLightOwner(defaultWorldRendererConfig, '1.20.1')).toBe(true)
+    expect(shouldSpawnClientLightOwner(defaultWorldRendererConfig, '1.16.5')).toBe(false)
   })
 
   it('spawns only when the flag is true and the session version has light tables (1.17+)', () => {
