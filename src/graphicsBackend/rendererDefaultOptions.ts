@@ -67,6 +67,8 @@ export const RENDERER_DEFAULT_OPTIONS = {
   starfieldRendering: true as boolean,
   cloudsRendering: true as boolean,
   wavingGrass: true as boolean,
+  /** Animated block textures (water, lava, fire, portals...): off keeps the first frame, basic switches frames, smooth also blends them like vanilla */
+  animatedTextures: 'smooth' as 'off' | 'basic' | 'smooth',
   sunShadows: 'normal' as 'off' | 'normal' | 'soft',
   sunShadowsDistance: 64,
   antialiasing: 'off' as 'off' | 'fxaa',
@@ -331,6 +333,15 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
       ['soft', 'Soft']
     ]
   },
+  animatedTextures: {
+    text: 'Animated blocks',
+    tooltip: 'Animated block textures such as water, lava, fire and portals. Basic switches frames, smooth also blends them like vanilla. Off keeps the first frame of each.',
+    possibleValues: [
+      ['off', 'Off'],
+      ['basic', 'Basic'],
+      ['smooth', 'Smooth']
+    ]
+  },
   antialiasing: {
     text: 'Antialiasing',
     tooltip: 'Smooths jagged block edges (FXAA). Slightly softens textures.',
@@ -512,6 +523,7 @@ export const RENDERER_RENDER_GUI_SECTIONS: ReadonlyArray<{
       'starfieldRendering',
       'cloudsRendering',
       'wavingGrass',
+      'animatedTextures',
       'sunShadows',
       'sunShadowsDistance',
       'antialiasing',
