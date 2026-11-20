@@ -57,7 +57,10 @@ export function shouldAcceptVersionedMesh(
       if (required == null) return true
       if (mesh.lightPublicationVersion == null) return false
     } else if (isUnversionedMesh(mesh)) {
-      return false
+      // No light is required for this section, so there is no newer light this mesh could undo. Rejecting it left the section unfinished
+      // for good: its sectionFinished counts as rejected, and with no requirement no covering remesh is ever dispatched (seen as a chunk that
+      // never loads; the mesher sends such a mesh when it meshes a section again after the dirty request's version stamp was used).
+      return required == null
     }
   } else if (isUnversionedMesh(mesh)) {
     return true
