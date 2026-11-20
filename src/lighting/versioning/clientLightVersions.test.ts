@@ -17,6 +17,11 @@ describe('shouldAcceptVersionedMesh', () => {
     expect(shouldAcceptVersionedMesh({}, required, { ownerManaged: false })).toBe(true)
   })
 
+  test('owner-managed path accepts unversioned geometry of a section that requires no light (else the section never finishes)', () => {
+    expect(shouldAcceptVersionedMesh({}, null, { ownerManaged: true })).toBe(true)
+    expect(shouldAcceptVersionedMesh({}, undefined, { ownerManaged: true })).toBe(true)
+  })
+
   test('owner-managed path rejects unversioned geometry as current', () => {
     expect(shouldAcceptVersionedMesh({}, required, { ownerManaged: true })).toBe(false)
     expect(shouldAcceptVersionedMesh({ meshMode: 'legacyBootstrap' }, required, { ownerManaged: true })).toBe(false)
