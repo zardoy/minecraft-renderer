@@ -9,7 +9,7 @@ import { EventEmitter } from 'events'
 import { Vec3 } from 'vec3'
 import TypedEmitter from 'typed-emitter'
 import type { WorldViewEvents, ChunkPosKey, WorldSizeParams } from './types'
-import { generateSpiralMatrix } from '../lib/spiral'
+import { ColumnLoadQueue, type ColumnPos } from './columnLoadQueue'
 import { sanitizeWorkerEventArgs } from '../lib/workerMessageSanitize'
 
 /**
@@ -120,23 +120,28 @@ export interface WorldProvider {
  * - Loading/unloading chunks based on view distance
  * - Emitting block updates to the renderer
  * - Managing loaded chunks state
- * - Spiral chunk loading for optimal player experience
+ * - Giving new columns to the renderer nearest first (see `ColumnLoadQueue`), whatever order they arrive in
  */
 export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldViewEvents>) {
-  spiralNumber = 0
-  gotPanicLastTime = false
-  panicChunksReload = () => {}
+  /** Columns given to the renderer. */
   loadedChunks: Record<ChunkPosKey, boolean> = {}
+  /** Order in which arrived columns go to the renderer. `pumpColumns` is the only place that gives it a new column. */
+  readonly columnQueue = new ColumnLoadQueue()
+  private pumpTimer?: ReturnType<typeof setTimeout>
+  private pumpAt = 0
+  private pumping = false
+  private pumpAgain = false
+  private loadedAllWaiters: Array<() => void> = []
   private columnUnloadEpoch = new Map<string, number>()
   private geometryReload?: Promise<void>
   /** Columns queued by `queueLightRemesh`, reloaded at most once per frame. */
   private pendingLightRemesh = new Set<ChunkPosKey>()
   private lightRemeshFlush?: { cancel: () => void }
+  /** Columns in view are still being given to the renderer. */
   inLoading = false
   chunkReceiveTimes: number[] = []
   lastChunkReceiveTime = 0
   public lastChunkReceiveTimeAvg = 0
-  panicTimeout?: ReturnType<typeof setTimeout>
   readonly lastPos: Vec3
   eventListeners: Record<string, any> = {}
   debugChunksInfo: Record<
@@ -150,9 +155,14 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
     }
   > = {}
 
+  /**
+   * The nearest column that has not arrived while others wait for it (debug screens). Calling it reports the column as arrived; it is kept
+   * for clients that resolve it from their `chunkColumnLoad` handler.
+   */
   waitingSpiralChunksLoad: Record<ChunkPosKey, (value: boolean) => void> = {}
 
-  addWaitTime = 1
+  /** @deprecated unused: columns are given out as soon as their turn comes */
+  addWaitTime = 0
   keepChunksDistance = 0
   isPlayground = false
   allowPositionUpdate = true
@@ -229,72 +239,117 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
     // Emit block entities if not in offscreen/worker context
     this.emitterGotConnected(bot)
 
-    const [botX, botZ] = chunkPos(pos)
-    const positions = generateSpiralMatrix(this.viewDistance).map(([x, z]) => new Vec3((botX + x) * 16, 0, (botZ + z) * 16))
-
     this.lastPos.update(pos)
-    await this._loadChunks(positions, pos)
+    const [botX, botZ] = chunkPos(pos)
+    await this.recenter(botX, botZ)
   }
 
-  chunkProgress(): void {
-    if (this.panicTimeout) clearTimeout(this.panicTimeout)
-    if (this.chunkReceiveTimes.length >= 5) {
-      const avgReceiveTime = this.chunkReceiveTimes.reduce((a, b) => a + b, 0) / this.chunkReceiveTimes.length
-      this.lastChunkReceiveTimeAvg = avgReceiveTime
-      const timeoutDelay = avgReceiveTime * 2 + 1000
-
-      if (this.panicTimeout) clearTimeout(this.panicTimeout)
-
-      this.panicTimeout = setTimeout(() => {
-        if (!this.gotPanicLastTime && this.inLoading) {
-          console.warn('Chunk loading seems stuck, triggering panic reload')
-          this.gotPanicLastTime = true
-          this.panicChunksReload()
-        }
-      }, timeoutDelay)
-    }
-  }
-
-  async _loadChunks(positions: Vec3[], centerPos: Vec3): Promise<void> {
-    this.spiralNumber++
-    const { spiralNumber } = this
-
-    // Stop loading previous chunks
-    for (const pos of Object.keys(this.waitingSpiralChunksLoad)) {
-      this.waitingSpiralChunksLoad[pos](false)
-      delete this.waitingSpiralChunksLoad[pos]
-    }
-
-    let continueLoading = true
+  /** Walk columns from this chunk; resolves once every column in view is given to the renderer (or given up on). */
+  private async recenter(chunkX: number, chunkZ: number): Promise<void> {
+    this.columnQueue.setCenter(chunkX, chunkZ, this.viewDistance, Date.now())
     this.inLoading = true
-
-    await delayedIterator(positions, this.addWaitTime, async pos => {
-      if (!continueLoading || this.loadedChunks[`${pos.x},${pos.z}`]) return
-
-      // Wait for chunk to be available from server
-      if (!this.world.getColumnAt(pos)) {
-        continueLoading = await new Promise<boolean>(resolve => {
-          this.waitingSpiralChunksLoad[`${pos.x},${pos.z}`] = resolve
-        })
-      }
-      if (!continueLoading) return
-      await this.loadChunk(pos, undefined, `spiral ${spiralNumber} from ${centerPos.x},${centerPos.z}`)
-      this.chunkProgress()
-    })
-
-    if (spiralNumber !== this.spiralNumber) return
-
-    if (this.panicTimeout) clearTimeout(this.panicTimeout)
-    this.inLoading = false
-    this.gotPanicLastTime = false
-    this.chunkReceiveTimes = []
-    this.lastChunkReceiveTime = 0
+    const loaded = new Promise<void>(resolve => this.loadedAllWaiters.push(resolve))
+    this.requestPump()
+    await loaded
   }
 
   /**
-   * Load a chunk at the given position.
+   * The world has data for this column now (the server sent it). A column already shown is updated at once; a new one waits for its turn
+   * in `columnQueue`, so columns appear nearest first and never in the order the server sends them.
    */
-  async loadChunk(pos: { x: number; z: number; y?: number }, isLightUpdate = false, reason = 'spiral'): Promise<boolean> {
+  columnArrived(pos: { x: number; z: number }): void {
+    const key = `${pos.x},${pos.z}`
+    this.columnQueue.arrived(key, Date.now())
+    if (this.loadedChunks[key]) {
+      void this.emitColumn(pos, false, 'sent again')
+      return
+    }
+    this.requestPump()
+  }
+
+  private requestPump(at = Date.now()): void {
+    if (this.pumpTimer !== undefined) {
+      if (this.pumpAt <= at) return
+      clearTimeout(this.pumpTimer)
+    }
+    this.pumpAt = at
+    this.pumpTimer = setTimeout(
+      () => {
+        this.pumpTimer = undefined
+        void this.pumpColumns()
+      },
+      Math.max(0, at - Date.now())
+    )
+  }
+
+  /**
+   * Give the renderer every column whose turn has come, in `columnQueue` order. Not split over several tasks: handing a column over is
+   * cheap, and a continuation queued behind the renderer's own work (mesh results) came back hundreds of ms later.
+   */
+  private async pumpColumns(): Promise<void> {
+    if (this.pumping) {
+      this.pumpAgain = true
+      return
+    }
+    this.pumping = true
+    try {
+      for (;;) {
+        const step = this.columnQueue.next(
+          Date.now(),
+          column => this.isColumnReceived(column),
+          key => !!this.loadedChunks[key]
+        )
+        this.waitingSpiralChunksLoad = {}
+        if (step.kind === 'emit') {
+          const taken = await this.emitColumn(step, false, 'in order')
+          if (!taken && !this.loadedChunks[step.key]) this.columnQueue.reject(step.key)
+          continue
+        }
+        if (step.kind === 'done') {
+          this.inLoading = false
+          for (const resolve of this.loadedAllWaiters.splice(0)) resolve()
+          return
+        }
+        const { front } = step
+        if (front) this.waitingSpiralChunksLoad[front.key] = () => this.columnArrived(front)
+        if (step.kind === 'wait') this.requestPump(step.at)
+        return
+      }
+    } finally {
+      this.pumping = false
+      if (this.pumpAgain) {
+        this.pumpAgain = false
+        this.requestPump()
+      }
+    }
+  }
+
+  private isColumnReceived(column: ColumnPos): boolean {
+    // the playground marks a column it has no data for as loaded (empty) instead of waiting for it
+    if (this.isPlayground) return true
+    return !!this.world.getColumnAt(new Vec3(column.x, 0, column.z))
+  }
+
+  /** Note a column's arrival time (average shown on the chunks debug screen). */
+  chunkProgress(): void {
+    if (this.chunkReceiveTimes.length >= 5) {
+      this.lastChunkReceiveTimeAvg = this.chunkReceiveTimes.reduce((a, b) => a + b, 0) / this.chunkReceiveTimes.length
+    }
+  }
+
+  /**
+   * Send a column to the renderer again (light update, reload). A column the renderer does not have yet only joins `columnQueue` (it
+   * appears in its turn, nearest first) and this resolves false.
+   */
+  async loadChunk(pos: { x: number; z: number; y?: number }, isLightUpdate = false, reason = 'reload'): Promise<boolean> {
+    if (!this.loadedChunks[`${pos.x},${pos.z}`]) {
+      this.columnArrived(pos)
+      return false
+    }
+    return this.emitColumn(pos, isLightUpdate, reason)
+  }
+
+  private async emitColumn(pos: { x: number; z: number; y?: number }, isLightUpdate: boolean, reason: string): Promise<boolean> {
     const key = `${pos.x},${pos.z}`
     const epoch = this.columnUnloadEpoch.get(key) ?? 0
     const [botX, botZ] = chunkPos(this.lastPos)
@@ -384,10 +439,7 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
   }
 
   private async runColumnGeometryReload(): Promise<void> {
-    const coords = Object.keys(this.loadedChunks)
-      .filter(key => this.loadedChunks[key])
-      .map(key => key.split(',').map(Number) as [number, number])
-    coords.sort(([ax, az], [bx, bz]) => (ax - this.lastPos.x) ** 2 + (az - this.lastPos.z) ** 2 - (bx - this.lastPos.x) ** 2 - (bz - this.lastPos.z) ** 2)
+    const coords = this.loadedColumnsNearestFirst()
     for (const [x, z] of coords) this.emit('unloadChunk', { x, z, preserveClientLight: true })
     for (const [x, z] of coords) {
       const key = `${x},${z}`
@@ -409,11 +461,17 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
    * Re-fetch and re-emit every loaded chunk (e.g. after mesher workers are recreated).
    */
   async reloadLoadedChunks(): Promise<void> {
-    const coords = Object.keys(this.loadedChunks)
-    for (const key of coords) {
-      const [x, z] = key.split(',').map(Number)
+    for (const [x, z] of this.loadedColumnsNearestFirst()) {
       await this.loadChunk({ x, z }, false, 'mesher-reconfigure')
     }
+  }
+
+  private loadedColumnsNearestFirst(): Array<[number, number]> {
+    const coords = Object.keys(this.loadedChunks)
+      .filter(key => this.loadedChunks[key])
+      .map(key => key.split(',').map(Number) as [number, number])
+    const { x: px, z: pz } = this.lastPos
+    return coords.sort(([ax, az], [bx, bz]) => (ax - px) ** 2 + (az - pz) ** 2 - (bx - px) ** 2 - (bz - pz) ** 2)
   }
 
   /**
@@ -518,17 +576,9 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
         this.unloadChunk(p)
       }
 
-      // Load new chunks
-      const positions = generateSpiralMatrix(this.viewDistance)
-        .map(([x, z]) => {
-          const newPos = new Vec3((botX + x) * 16, 0, (botZ + z) * 16)
-          if (!this.loadedChunks[`${newPos.x},${newPos.z}`]) return newPos
-          return undefined!
-        })
-        .filter(a => !!a)
-
       this.lastPos.update(pos)
-      void this._loadChunks(positions, pos)
+      // new columns in view, nearest first from here
+      void this.recenter(botX, botZ)
     } else {
       this.emit('chunkPosUpdate', { pos })
       this.lastPos.update(pos)

@@ -181,10 +181,12 @@ function drainCubeUploads(manager: ChunkMeshManager): void {
   while (gb.hasPendingUploads()) gb.uploadDirtyRange()
 }
 
-test('ChunkMeshManager: missing nearer column blocks only during expected grace', () => {
+test('ChunkMeshManager: a far column is shown only after the nearer loaded column finishes, however long that takes', () => {
   vi.useFakeTimers()
   try {
     const manager = createManager({ nearReveal: true, finishedChunks: { '32,0': true } })
+    const world = (manager as unknown as { worldRenderer: { loadedChunks: Record<string, boolean>; finishedChunks: Record<string, boolean> } }).worldRenderer
+    world.loadedChunks['16,0'] = true
     const section = new THREE.Object3D()
     section.visible = false
     manager.sectionObjects['32,0,0'] = section as (typeof manager.sectionObjects)[string]
@@ -193,9 +195,11 @@ test('ChunkMeshManager: missing nearer column blocks only during expected grace'
     manager.finishChunkDisplay('32,0')
     expect(manager.pendingNearReveal.has('32,0')).toBe(true)
     expect(section.visible).toBe(false)
-    vi.advanceTimersByTime(1499)
+    vi.advanceTimersByTime(60_000)
     expect(section.visible).toBe(false)
-    vi.advanceTimersByTime(51)
+
+    world.finishedChunks['16,0'] = true
+    manager.finishChunkDisplay('16,0')
     expect(manager.pendingNearReveal.has('32,0')).toBe(false)
     expect(section.visible).toBe(true)
     expect(vi.getTimerCount()).toBe(0)
@@ -203,6 +207,16 @@ test('ChunkMeshManager: missing nearer column blocks only during expected grace'
     vi.clearAllTimers()
     vi.useRealTimers()
   }
+})
+
+test('ChunkMeshManager: a nearer column the renderer does not have does not hide a finished one', () => {
+  const manager = createManager({ nearReveal: true, finishedChunks: { '32,0': true } })
+  const section = new THREE.Object3D()
+  section.visible = false
+  manager.sectionObjects['32,0,0'] = section as (typeof manager.sectionObjects)[string]
+  manager.waitingChunksToDisplay['32,0'] = ['32,0,0']
+  manager.finishChunkDisplay('32,0')
+  expect(section.visible).toBe(true)
 })
 
 function createManager(opts: ManagerOptions = {}): ChunkMeshManager {
