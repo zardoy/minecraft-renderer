@@ -1,5 +1,4 @@
-import Chunks from 'prismarine-chunk'
-import { Vec3 } from 'vec3'
+import { fillSectionStates, parseColumn } from '../lib/columnSectionStates'
 import { getCameraCollisionSolidityTable, isStateIdSolidForCameraCollision } from './cameraCollisionSolidity'
 
 /** 16³ blocks per section; 1 bit per block. */
@@ -41,18 +40,19 @@ const isBitsetEmpty = (bits: SectionBitset) => {
  */
 export class CameraCollisionBlockCache {
   private readonly sections = new Map<string, SectionBitset>()
-  private Chunk: ReturnType<typeof Chunks>
+  private readonly scratchStates = new Uint16Array(4096)
+  private version: string
   private solidityTable: Uint8Array
   private worldMinY = 0
   private worldMaxY = 256
 
   constructor(version: string) {
-    this.Chunk = Chunks(version) as ReturnType<typeof Chunks>
+    this.version = version
     this.solidityTable = getCameraCollisionSolidityTable(version)
   }
 
   setVersion(version: string) {
-    this.Chunk = Chunks(version) as ReturnType<typeof Chunks>
+    this.version = version
     this.solidityTable = getCameraCollisionSolidityTable(version)
     this.sections.clear()
   }
@@ -84,37 +84,28 @@ export class CameraCollisionBlockCache {
     }
   }
 
-  ingestColumn(chunkX: number, chunkZ: number, chunkJson: unknown) {
-    const chunk = this.Chunk.fromJson(chunkJson as Parameters<ReturnType<typeof Chunks>['fromJson']>[0]) as unknown as {
-      getBlockStateId: (pos: Vec3) => number
-    }
-    const pos = new Vec3(0, 0, 0)
-
-    for (let y = this.worldMinY; y < this.worldMaxY; y++) {
-      pos.y = y
-      const sy = alignSection(y)
-      const ly = y - sy
-      for (let lz = 0; lz < 16; lz++) {
-        pos.z = lz
-        const wz = chunkZ + lz
-        const sz = alignSection(wz)
-        const lzLocal = wz - sz
-        for (let lx = 0; lx < 16; lx++) {
-          pos.x = lx
-          const stateId = chunk.getBlockStateId(pos) || 0
-          if (!isStateIdSolidForCameraCollision(stateId, this.solidityTable)) continue
-
-          const wx = chunkX + lx
-          const sx = alignSection(wx)
-          const key = sectionKey(sx, sy, sz)
-          let bits = this.sections.get(key)
-          if (!bits) {
-            bits = new Uint32Array(WORDS_PER_SECTION)
-            this.sections.set(key, bits)
-          }
-          setBit(bits, blockBitIndex(wx - sx, ly, lzLocal), true)
+  /** `chunk` is the column JSON or the column already parsed (`addColumn` parses it once for every consumer). */
+  ingestColumn(chunkX: number, chunkZ: number, chunk: unknown) {
+    const column = parseColumn(this.version, chunk)
+    const sx = alignSection(chunkX)
+    const sz = alignSection(chunkZ)
+    const table = this.solidityTable
+    const states = this.scratchStates
+    for (let sy = alignSection(this.worldMinY); sy < this.worldMaxY; sy += 16) {
+      const key = sectionKey(sx, sy, sz)
+      states.fill(0)
+      let bits: SectionBitset | undefined
+      if (fillSectionStates(column, sy, states)) {
+        for (let i = 0; i < 4096; i++) {
+          const stateId = states[i]!
+          if (stateId === 0 || table[stateId] !== 1) continue
+          bits ??= new Uint32Array(WORDS_PER_SECTION)
+          // the state index is x + z * 16 + y * 256, the same order as the bitset
+          bits[i >>> 5]! |= 1 << (i & 31)
         }
       }
+      if (bits) this.sections.set(key, bits)
+      else this.sections.delete(key)
     }
   }
 

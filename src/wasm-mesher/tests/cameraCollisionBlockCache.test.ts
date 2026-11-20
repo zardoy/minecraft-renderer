@@ -79,3 +79,19 @@ test('CameraCollisionBlockCache: clear and setWorldBounds drop all sections', ()
   cache.setWorldBounds(-64, 320)
   expect(cache.getAllocatedSectionCount()).toBe(0)
 })
+
+test('CameraCollisionBlockCache: a column at negative coordinates, re-sent without its blocks, leaves no solids behind', () => {
+  const cache = new CameraCollisionBlockCache(VERSION)
+  cache.setWorldBounds(0, 256)
+  const chunk = makeChunkWithStoneFloor(10)
+  cache.ingestColumn(-16, -32, chunk.toJson())
+  expect(cache.isSolidBlock(-16 + 3, 10, -32 + 5)).toBe(true)
+  expect(cache.isSolidBlock(-1, 10, -17)).toBe(true)
+  expect(cache.isSolidBlock(0, 10, -32)).toBe(false)
+  expect(cache.isSolidBlock(-16 + 3, 11, -32 + 5)).toBe(false)
+
+  const Chunk = Chunks(VERSION) as any
+  cache.ingestColumn(-16, -32, new Chunk(undefined as any).toJson())
+  expect(cache.isSolidBlock(-16 + 3, 10, -32 + 5)).toBe(false)
+  expect(cache.getAllocatedSectionCount()).toBe(0)
+})

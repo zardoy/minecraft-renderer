@@ -280,7 +280,8 @@ describe('WorldRendererCommon client light owner spawn', () => {
           publication: {
             worldGeneration: 1,
             publicationVersion: version,
-            sections: [{ sx: 0, sy: 4, sz: 0, blockLight: new Uint8Array(2048) }]
+            // different light on every version: an unchanged republish is not remeshed (see the test below)
+            sections: [{ sx: 0, sy: 4, sz: 0, blockLight: new Uint8Array(2048).fill(version) }]
           }
         }
       } as MessageEvent)
@@ -319,6 +320,49 @@ describe('WorldRendererCommon client light owner spawn', () => {
     const afterCommit = dirties()
     expect(afterCommit.length).toBeGreaterThan(0)
     expect(afterCommit.every((message: { urgent?: boolean }) => message.urgent !== true)).toBe(true)
+  })
+
+  test('republished light that did not change is not remeshed, changed light is', () => {
+    const renderer = createRenderer(true, 1)
+    renderer.initWorkers(1)
+    renderer.forceCallFromMesherReplayer = true
+    renderer.neighborChunkUpdates = false
+    renderer.loadedChunks['0,0'] = true
+    const owner = renderer.getClientLightOwnerWorker() as { onmessage: ((event: MessageEvent) => void) | null }
+    owner.onmessage?.({ data: { type: 'ready' } } as MessageEvent)
+    const mesh = renderer.workers[0] as { postMessage: ReturnType<typeof vi.fn> }
+    // like the engine: its own dirty list (world origins), here the section and its +x neighbour, sent with every publication
+    const publish = (version: number, light: number) => {
+      owner.onmessage?.({
+        data: {
+          type: 'publication',
+          publication: {
+            worldGeneration: 1,
+            publicationVersion: version,
+            sections: [{ sx: 0, sy: 4, sz: 0, blockLight: new Uint8Array(2048).fill(light) }],
+            dirtyMeshSections: new Int32Array([0, 64, 0, 16, 64, 0])
+          }
+        }
+      } as MessageEvent)
+    }
+    const dirties = () => mesh.postMessage.mock.calls.map(call => call[0]).filter((message: { type?: string }) => message?.type === 'dirty')
+
+    publish(1, 0x11)
+    expect(dirties().length).toBeGreaterThan(0)
+    // the engine's list is kept as is when the light changed (not widened to every neighbour)
+    expect(new Set(dirties().map((message: { x: number; y: number; z: number }) => `${message.x},${message.y},${message.z}`))).toEqual(
+      new Set(['0,64,0', '16,64,0'])
+    )
+    // the engine publishes a section again on every step that touches it: the same light must not swap meshes again
+    mesh.postMessage.mockClear()
+    publish(2, 0x11)
+    publish(3, 0x11)
+    expect(dirties()).toHaveLength(0)
+    // the mesh workers still get the light, so their copies stay current
+    expect(mesh.postMessage.mock.calls.some(call => call[0]?.type === 'applyOwnerLightPublication')).toBe(true)
+    mesh.postMessage.mockClear()
+    publish(4, 0x22)
+    expect(dirties().length).toBeGreaterThan(0)
   })
 
   test('a second urgent edit in the throttle window is dispatched immediately', () => {

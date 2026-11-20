@@ -10,8 +10,7 @@
  *   the_nether / the_end / !has_skylight. That drives `setSkyLightEnabled`.
  */
 
-import Chunks from 'prismarine-chunk'
-import { Vec3 } from 'vec3'
+import { fillSectionStates, parseColumn, type ParsedColumn } from '../../lib/columnSectionStates'
 import { RendererLightCache } from '../cache/rendererLightCache'
 import { applyLightPublication, sectionIndexToWorldOrigin, type LightOwnerEvent, type LightPublication, type PublicationGate } from './lightOwnerHost'
 import { loadLightTables, RUNTIME_LIGHT_TABLES_MIN_VERSION, supportsRuntimeLightTables } from '../tables/lightTablesRuntime'
@@ -83,6 +82,24 @@ export function dirtyMeshSectionsFromChangedLight(
     }
   }
   return out
+}
+
+/** Neighbourhoods of the changed sections, plus those of the unchanged ones that `keep` asks for. */
+export function dirtyForPublication(
+  changed: Array<{ sx: number; sy: number; sz: number }>,
+  published: Array<{ sx: number; sy: number; sz: number }>,
+  keep?: (key: string) => boolean
+): Array<{ sx: number; sy: number; sz: number }> {
+  const dirty = dirtyMeshSectionsFromChangedLight(changed, { coords: 'world' })
+  if (!keep || changed.length === published.length) return dirty
+  const seen = new Set(dirty.map(section => meshSectionKey(section.sx, section.sy, section.sz)))
+  for (const section of dirtyMeshSectionsFromChangedLight(published, { coords: 'world' })) {
+    const key = meshSectionKey(section.sx, section.sy, section.sz)
+    if (seen.has(key) || !keep(key)) continue
+    seen.add(key)
+    dirty.push(section)
+  }
+  return dirty
 }
 
 export type MeshSectionLightRequirement = VersionedMeshRequirement
@@ -176,17 +193,12 @@ export function eventsFromColumnLoad(opts: {
   version: string
   worldMinY: number
   worldHeight: number
+  /** light the column arrived with, given to the engine as trusted server light so the column is not relit (see `trustColumnLight`) */
+  trustedLight?: Array<{ sy: number; block: Uint8Array; sky: Uint8Array }>
 }): LightOwnerEvent[] {
-  const Chunk = Chunks(opts.version) as ReturnType<typeof Chunks>
-  let column: { getBlockStateId: (pos: Vec3) => number }
+  let column: ParsedColumn
   try {
-    if (opts.chunkJson && typeof (opts.chunkJson as { getBlockStateId?: unknown }).getBlockStateId === 'function') {
-      column = opts.chunkJson as { getBlockStateId: (pos: Vec3) => number }
-    } else {
-      column = Chunk.fromJson(opts.chunkJson as Parameters<ReturnType<typeof Chunks>['fromJson']>[0]) as unknown as {
-        getBlockStateId: (pos: Vec3) => number
-      }
-    }
+    column = parseColumn(opts.version, opts.chunkJson)
   } catch {
     return []
   }
@@ -194,6 +206,11 @@ export function eventsFromColumnLoad(opts: {
   const sx = Math.floor(opts.chunkX / 16)
   const sz = Math.floor(opts.chunkZ / 16)
   const events: LightOwnerEvent[] = []
+  // before the blocks: a column with trusted light is marked server-lit, and its block sections then publish without a relight
+  for (const section of opts.trustedLight ?? []) {
+    events.push({ type: 'serverLight', sx, sy: section.sy, sz, channel: 'block', kind: 'data', trusted: true, data: section.block })
+    events.push({ type: 'serverLight', sx, sy: section.sy, sz, channel: 'sky', kind: 'data', trusted: true, data: section.sky })
+  }
   const worldMaxY = opts.worldMinY + opts.worldHeight
   for (let y0 = opts.worldMinY; y0 < worldMaxY; y0 += 16) {
     const states = new Uint16Array(4096)
@@ -203,66 +220,6 @@ export function eventsFromColumnLoad(opts: {
     events.push({ type: 'setAvailability', sx, sy, sz, availability: 'loaded' })
   }
   return events
-}
-
-type SectionLike = {
-  palette?: number[] | null
-  data?: { get: (index: number) => number }
-  isEmpty?: () => boolean
-  getBlock?: (pos: { x: number; y: number; z: number }) => number
-}
-
-function sectionAt(column: object, y0: number): SectionLike | null | undefined {
-  const withGet = column as { getSection?: (pos: { x: number; y: number; z: number }) => SectionLike | null }
-  if (typeof withGet.getSection === 'function') {
-    return withGet.getSection({ x: 0, y: y0, z: 0 })
-  }
-  const withArray = column as { sections?: Array<SectionLike | null>; minY?: number }
-  if (Array.isArray(withArray.sections)) {
-    return withArray.sections[(y0 - (withArray.minY ?? 0)) >> 4]
-  }
-  return undefined
-}
-
-function fillSectionStates(column: { getBlockStateId: (pos: Vec3) => number }, y0: number, states: Uint16Array) {
-  const section = sectionAt(column, y0)
-  if (section === null) {
-    return
-  }
-  if (section && typeof section.isEmpty === 'function' && section.isEmpty()) {
-    return
-  }
-  if (section && Array.isArray(section.palette) && section.palette.length === 1) {
-    const only = section.palette[0] || 0
-    if (only !== 0) states.fill(only)
-    return
-  }
-  if (section?.data && typeof section.data.get === 'function') {
-    const palette = section.palette
-    for (let i = 0; i < 4096; i++) {
-      let stateId = section.data.get(i)
-      if (palette) stateId = palette[stateId]
-      states[i] = stateId || 0
-    }
-    return
-  }
-  const pos = new Vec3(0, y0, 0)
-  for (let ly = 0; ly < 16; ly++) {
-    pos.y = y0 + ly
-    for (let lz = 0; lz < 16; lz++) {
-      pos.z = lz
-      for (let lx = 0; lx < 16; lx++) {
-        pos.x = lx
-        let stateId = 0
-        try {
-          stateId = column.getBlockStateId(pos) || 0
-        } catch {
-          stateId = 0
-        }
-        states[lx + lz * 16 + ly * 256] = stateId
-      }
-    }
-  }
 }
 
 export type OwnerWorkerLightMessage = {
@@ -285,7 +242,9 @@ export function applyOwnerPublicationToRenderer(
   cache: RendererLightCache,
   publication: LightPublication,
   gate: PublicationGate,
-  coords: 'world' | 'section-index' = 'section-index'
+  coords: 'world' | 'section-index' = 'section-index',
+  /** Sections remeshed even when their light did not change (a player edit waits for the publication that covers it). */
+  keepRepublishedSection?: (key: string) => boolean
 ): OwnerPublicationApplyResult {
   const checked = validateOwnerPublicationMessage(publication)
   if (!checked.ok) {
@@ -317,18 +276,27 @@ export function applyOwnerPublicationToRenderer(
       skyLight: section.skyLight
     }
   })
+  // Only sections whose light really changed in the renderer's copy are remeshed (with their neighbours, which sample it at the borders).
+  // The engine publishes a section again on every step that touches it, and on a section's first delivery it marks all 26 neighbours dirty
+  // even when the light equals what the mesher already had (sky 15 above the terrain, or the column's own trusted light): remeshing those
+  // swapped identical meshes over and over (flicker and several times the mesh work after a load and while moving).
+  const needed = dirtyForPublication(result.changedSections ?? worldSections, worldSections, keepRepublishedSection)
+  let dirtyMeshSections = needed
+  const engineDirty = publication.dirtyMeshSections
+  if (engineDirty != null) {
+    // the engine's list is per changed cell (only neighbours that touch it), so keep it where it overlaps a real change
+    const neededKeys = new Set(needed.map(section => meshSectionKey(section.sx, section.sy, section.sz)))
+    dirtyMeshSections = []
+    for (let i = 0; i + 2 < engineDirty.length; i += 3) {
+      const section = { sx: engineDirty[i]!, sy: engineDirty[i + 1]!, sz: engineDirty[i + 2]! }
+      if (neededKeys.has(meshSectionKey(section.sx, section.sy, section.sz))) dirtyMeshSections.push(section)
+    }
+  }
   return {
     applied: true,
     lastVersion: result.lastVersion,
     acceptedGeneration: result.acceptedGeneration,
-    dirtyMeshSections:
-      publication.dirtyMeshSections != null
-        ? Array.from({ length: publication.dirtyMeshSections.length / 3 }, (_, i) => ({
-            sx: publication.dirtyMeshSections![i * 3]!,
-            sy: publication.dirtyMeshSections![i * 3 + 1]!,
-            sz: publication.dirtyMeshSections![i * 3 + 2]!
-          }))
-        : dirtyMeshSectionsFromChangedLight(worldSections, { coords: 'world' }),
+    dirtyMeshSections,
     workerMessage: {
       type: 'applyOwnerLightPublication',
       worldGeneration: publication.worldGeneration,
@@ -365,8 +333,11 @@ export class ClientLightOwnerSession {
       onApplied: (result: OwnerPublicationApplyResult) => void
       onFailed?: (reason: string) => void
       onOwnerIdle?: (settledEditGeneration: number) => void
+      /** see `applyOwnerPublicationToRenderer` */
+      keepRepublishedSection?: (key: string) => boolean
     }
   ) {
+    this.keepRepublishedSection = opts.keepRepublishedSection
     this.onApplied = opts.onApplied
     this.onFailed = opts.onFailed
     this.onOwnerIdle = opts.onOwnerIdle
@@ -393,6 +364,7 @@ export class ClientLightOwnerSession {
     return this.failureReason
   }
 
+  private readonly keepRepublishedSection?: (key: string) => boolean
   private readonly onApplied: (result: OwnerPublicationApplyResult) => void
   private readonly onFailed?: (reason: string) => void
   private readonly onOwnerIdle?: (settledEditGeneration: number) => void
@@ -506,7 +478,7 @@ export class ClientLightOwnerSession {
 
   private applyPublication(publication: LightPublication) {
     if (this.lifecycle !== 'ready') return
-    const result = applyOwnerPublicationToRenderer(this.cache, publication, this.gate, 'section-index')
+    const result = applyOwnerPublicationToRenderer(this.cache, publication, this.gate, 'section-index', this.keepRepublishedSection)
     if (!result.applied) return
     this.gate = { acceptedGeneration: result.acceptedGeneration, lastVersion: result.lastVersion }
     raiseRequiredLightRevisions(this.requiredLightBySection, result.dirtyMeshSections, result.lastVersion, result.acceptedGeneration)
