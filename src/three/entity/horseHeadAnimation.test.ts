@@ -130,9 +130,27 @@ test('render frames decay gait when a remote horse stops sending movement update
   updateHorseHeadAnimationFrame(state, HORSE_HEAD_TICK_SECONDS)
   setHorseHeadAnimationPosition(state, { x: 10.1, z: 10 })
   updateHorseHeadAnimationFrame(state, HORSE_HEAD_TICK_SECONDS)
-  updateHorseHeadAnimationFrame(state, HORSE_HEAD_TICK_SECONDS)
-  expect(state.limbSwingAmount).toBeCloseTo(0.096)
-  expect(state.limbSwing).toBeCloseTo(0.256)
+  const afterMove = state.limbSwingAmount
+  for (let i = 0; i < 8; i++) updateHorseHeadAnimationFrame(state, HORSE_HEAD_TICK_SECONDS)
+  expect(afterMove).toBeCloseTo(0.16)
+  expect(state.limbSwingAmount).toBeLessThan(0.01)
+})
+
+test('a mob whose position arrives every third tick swings at an even speed', () => {
+  // A vanilla server sends mob movement every 3 ticks: 0.3 blocks per packet is 0.1 per tick.
+  const state = createHorseHeadAnimationState()
+  let x = 10
+  const amounts: number[] = []
+  for (let tick = 0; tick < 40; tick++) {
+    if (tick % 3 === 0) {
+      x += 0.3
+      setHorseHeadAnimationPosition(state, { x, z: 10 })
+    }
+    updateHorseHeadAnimationFrame(state, HORSE_HEAD_TICK_SECONDS)
+    if (tick >= 15) amounts.push(state.limbSwingAmount)
+  }
+  expect(Math.max(...amounts) - Math.min(...amounts)).toBeLessThan(0.02)
+  expect(amounts.at(-1)).toBeCloseTo(0.4, 1)
 })
 
 test('interpolates the leftover time after a tick at 30 FPS', () => {
