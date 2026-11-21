@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { APPLY_LIGHTMAP_GLSL, DEFAULT_LIGHTMAP_PARAMS, type BlockLightmapParams } from '../../lib/blockEntityLighting'
 import { FOLIAGE_SWAY_GLSL } from './foliageSwayGlsl'
-import { LEGACY_SHADOW_CASTER_FRAGMENT, SUN_SHADOW_FRAGMENT_GLSL, SUN_SHADOW_VERTEX_GLSL } from './sunShadowGlsl'
+import { LEGACY_SHADOW_CASTER_FRAGMENT, LEGACY_SHADOW_NORMAL_GLSL, SUN_SHADOW_FRAGMENT_GLSL, SUN_SHADOW_VERTEX_GLSL } from './sunShadowGlsl'
 import { BLOCK_EMISSION_GLSL } from './blockEmissionGlsl'
 import { COLOR_GRADING_GLSL } from '../colorGrading'
 
@@ -55,6 +55,9 @@ out float vFogDepth;
 
 ${FOLIAGE_SWAY_GLSL}
 ${SUN_SHADOW_VERTEX_GLSL}
+#ifdef SUN_SHADOWS
+out vec3 v_legacyRelPos;
+#endif
 
 void main() {
     vec3 relativePos = modelMatrix[3].xyz + u_originDelta + position - u_cameraOriginFrac;
@@ -70,6 +73,7 @@ void main() {
     gl_Position = projectionMatrix * mvPosition;
 #ifdef SUN_SHADOWS
     writeSunShadowVaryings(relativePos, vec3(0.0));
+    v_legacyRelPos = relativePos;
 #endif
 
     vColor = color;
@@ -138,6 +142,7 @@ void applyFog() {
 
 ${APPLY_LIGHTMAP_GLSL}
 ${SUN_SHADOW_FRAGMENT_GLSL}
+${LEGACY_SHADOW_NORMAL_GLSL}
 ${BLOCK_EMISSION_GLSL}
 ${COLOR_GRADING_GLSL}
 
@@ -145,7 +150,7 @@ void main() {
     vec4 texColor = texture(u_atlas, v_uv);
     float sky = min(v_skyLight, u_skyLevel);
 #ifdef SUN_SHADOWS
-    sky = shadowedSkyLight(sky, 1.0);
+    sky = legacyShadowedSkyLight(sky);
 #endif
     float L = max(v_blockLight, sky);
     float Lm = applyLightmap(L);
@@ -194,6 +199,9 @@ out float vFogDepth;
 
 ${FOLIAGE_SWAY_GLSL}
 ${SUN_SHADOW_VERTEX_GLSL}
+#ifdef SUN_SHADOWS
+out vec3 v_legacyRelPos;
+#endif
 
 void main() {
     vec3 relativePos = a_origin + u_originDelta + position - u_cameraOriginFrac;
@@ -209,6 +217,7 @@ void main() {
     gl_Position = projectionMatrix * mvPosition;
 #ifdef SUN_SHADOWS
     writeSunShadowVaryings(relativePos, vec3(0.0));
+    v_legacyRelPos = relativePos;
 #endif
 
     vColor = color;

@@ -58,7 +58,11 @@ void writeSunShadowVaryings(vec3 relativePos, vec3 normal) {
 #endif
 `
 
-/** Fragment chunk: `float sunShadowAmount(float facingSun)` → 0 lit … 1 fully shadowed. */
+/**
+ * Fragment chunk: `float sunShadowAmount(float facingSun)` → 0 lit … 1 fully shadowed.
+ * `sunShadowAmountAt(normal, facingSun)` also moves the lookup along a normal known only in the fragment shader
+ * (legacy geometry, see LEGACY_SHADOW_NORMAL_GLSL), the same normal offset the cube shader applies per vertex.
+ */
 export const SUN_SHADOW_FRAGMENT_GLSL = /* glsl */ `
 #ifdef SUN_SHADOWS
 uniform highp sampler2DShadow u_shadowMap;
@@ -67,6 +71,9 @@ uniform vec4 u_shadowParams;
 /** x: constant depth bias, y: max slope bias (depth units) */
 uniform vec2 u_shadowBias;
 uniform vec3 u_sunDir;
+// also in the vertex chunk; highp there by default, so spelled out here (a precision mismatch fails to link)
+uniform highp mat4 u_shadowMatrix;
+uniform highp float u_shadowNormalOffset;
 in vec3 v_shadowCoord;
 in float v_shadowDist;
 
@@ -79,11 +86,12 @@ const float SHADOW_FILTER_TEXELS = 2.5;
 const float SHADOW_FILTER_TEXELS = 1.0;
 #endif
 
-float sunShadowAmount(float facingSun) {
-    vec3 coord = v_shadowCoord;
-    // Derivatives before any branch (undefined in non-uniform control flow).
-    vec3 dx = dFdx(coord);
-    vec3 dy = dFdy(coord);
+float sunShadowAmountAt(vec3 normal, float facingSun) {
+    // Derivatives before any branch (undefined in non-uniform control flow). The normal offset is the same over a face, so it
+    // does not change them.
+    vec3 dx = dFdx(v_shadowCoord);
+    vec3 dy = dFdy(v_shadowCoord);
+    vec3 coord = v_shadowCoord + mat3(u_shadowMatrix) * (normal * u_shadowNormalOffset);
 
     float strength = u_shadowParams.x * (1.0 - smoothstep(u_shadowParams.z, u_shadowParams.w, v_shadowDist));
     if (strength <= 0.0) return 0.0;
@@ -123,8 +131,41 @@ float sunShadowAmount(float facingSun) {
     return max(1.0 - lit, 1.0 - facingSun) * strength;
 }
 
+float sunShadowAmount(float facingSun) {
+    return sunShadowAmountAt(vec3(0.0), facingSun);
+}
+
 float shadowedSkyLight(float sky, float facingSun) {
     return sky * mix(1.0, ${SHADOWED_SKY_LIGHT.toFixed(2)}, sunShadowAmount(facingSun));
+}
+
+float shadowedSkyLightAt(float sky, vec3 normal, float facingSun) {
+    return sky * mix(1.0, ${SHADOWED_SKY_LIGHT.toFixed(2)}, sunShadowAmountAt(normal, facingSun));
+}
+#endif
+`
+
+/**
+ * Legacy geometry has no normal attribute in the pooled buffer: the face normal comes from the screen derivatives of the
+ * camera-relative position (exact on a flat quad), turned towards the camera (plants are seen from both sides).
+ * Block faces (axis aligned) then get the cube shader's treatment: the lookup moves along the normal (no acne on lit faces)
+ * and a face turned away from the sun is in its own shadow. Diagonal plant quads keep "facing the sun" so they do not darken
+ * when seen against the light. `v_legacyRelPos` is written by the legacy vertex shaders.
+ */
+export const LEGACY_SHADOW_NORMAL_GLSL = /* glsl */ `
+#ifdef SUN_SHADOWS
+in vec3 v_legacyRelPos;
+
+float legacyShadowedSkyLight(float sky) {
+    vec3 n = cross(dFdx(v_legacyRelPos), dFdy(v_legacyRelPos));
+    float len = length(n);
+    // no branch: the shadow lookup below takes derivatives (a degenerate triangle gets no normal, so no offset and "facing")
+    n = len > 1e-12 ? n / len : vec3(0.0);
+    if (dot(n, v_legacyRelPos) > 0.0) n = -n;
+    float axis = max(abs(n.x), max(abs(n.y), abs(n.z)));
+    float blockFace = step(0.99, axis);
+    float facingSun = mix(1.0, smoothstep(-0.15, 0.15, dot(n, u_sunDir)), blockFace);
+    return shadowedSkyLightAt(sky, n * blockFace, facingSun);
 }
 #endif
 `
