@@ -52,6 +52,13 @@ export const defaultWorldRendererConfig = {
    * server's light). Follows the `clientLighting` option, `?clientLight=0|1` in the page URL overrides it.
    */
   enableClientLight: true,
+  /**
+   * Trust the light a column arrives with (server light) and give it to client light as-is, like the vanilla client: new columns are then
+   * not relit (no recompute, no publication waves, no remesh); client light only works on edits. 1.18+ only (older versions send light
+   * in update_light packets). On by default for performance. Known gap: the singleplayer generator's light is fake (block light 15
+   * everywhere), so singleplayer looks fullbright with this on until the generator computes real light.
+   */
+  trustColumnLight: true,
 
   // Rendering engine settings
   /** Face shading: vanilla Minecraft vs higher-contrast client look */

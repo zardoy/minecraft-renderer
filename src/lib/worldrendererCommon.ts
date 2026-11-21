@@ -53,6 +53,8 @@ import {
 } from '../lighting/owner/clientLightOwner'
 import { shouldDispatchCoveringRemesh, validateMeshResultVersions } from '../lighting/versioning/clientLightVersions'
 import type { FeedChunkPacketPayload } from '../worldView/types'
+import { versionToNumber } from './utils'
+import { parseColumn } from './columnSectionStates'
 
 function mod(x, n) {
   return ((x % n) + n) % n
@@ -1113,15 +1115,25 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         `-> chunk ${JSON.stringify({ x, z, chunkLength: chunk.length, customBlockModelsLength: customBlockModels ? Object.keys(customBlockModels).length : 0 })}`
     )
     this.mesherLogReader?.chunkReceived(x, z, chunk.length)
-    this.cameraCollisionBlockCache.ingestColumn(x, z, chunk)
-    this.rendererLightCache.ingestColumn(x, z, chunk)
+    // parsed once here for every main-thread consumer (each parsed the JSON on its own before)
+    let column: unknown = chunk
+    try {
+      column = parseColumn(this.version, chunk)
+    } catch {}
+    this.cameraCollisionBlockCache.ingestColumn(x, z, column)
+    this.rendererLightCache.ingestColumn(x, z, column)
     this.lightCoordinator.session?.ingestColumn({
       chunkX: x,
       chunkZ: z,
-      chunkJson: chunk,
+      chunkJson: column,
       version: this.version,
       worldMinY: this.worldSizeParams.minY,
-      worldHeight: this.worldSizeParams.worldHeight
+      worldHeight: this.worldSizeParams.worldHeight,
+      // light is part of the chunk packet since 1.18; older versions send it in update_light packets, which reach client light on their own
+      trustedLight:
+        this.worldRendererConfig.trustColumnLight && versionToNumber(this.version) >= versionToNumber('1.18')
+          ? this.rendererLightCache.columnLightForOwner(x, z)
+          : undefined
     })
     const sectionHeight = this.getSectionHeight()
     const CHUNK_SIZE = 16

@@ -60,12 +60,20 @@ type LightChunk = {
 
 export type RendererLightSample = { block: number; sky: number }
 
-export type RendererLightIngestResult = { changed: boolean; revision: number }
+export type RendererLightIngestResult = {
+  changed: boolean
+  revision: number
+  /** World origins of the sections whose light is new or different (only from `ingestPackedSections`). */
+  changedSections?: Array<{ sx: number; sy: number; sz: number }>
+}
 
 /**
  * Main-thread packed block/sky light for entity sampling.
  * Absent sections stay fullbright; present raw-zero gets the project +2 floor.
  */
+/** sky 15, block 0 in every cell: what the mesher uses for a section it has no light for */
+const MESHER_ASSUMED_MISSING_LIGHT = new Uint8Array(RENDERER_LIGHT_BYTES_PER_SECTION).fill(0x0f)
+
 export class RendererLightCache {
   private readonly sections = new Map<string, Uint8Array>()
   private readonly columnHashes = new Map<string, number>()
@@ -138,6 +146,7 @@ export class RendererLightCache {
    */
   ingestPackedSections(sections: Array<{ sx: number; sy: number; sz: number; blockLight: Uint8Array; skyLight?: Uint8Array }>): RendererLightIngestResult {
     const touchedColumns = new Set<string>()
+    const changedSections: Array<{ sx: number; sy: number; sz: number }> = []
     for (const section of sections) {
       const sx = alignSection(section.sx)
       const sy = alignSection(section.sy)
@@ -147,18 +156,27 @@ export class RendererLightCache {
       const key = sectionKey(sx, sy, sz)
       const prev = this.sections.get(key)
       const data = prev ? new Uint8Array(prev) : new Uint8Array(RENDERER_LIGHT_BYTES_PER_SECTION)
+      // A section seen for the first time is compared with what the mesher already assumed for it: no light data meshes as sky 15, block 0.
+      // The client light engine publishes every air section above the terrain once (all sky 15), which is no visible change.
+      const baseline = prev ?? MESHER_ASSUMED_MISSING_LIGHT
+      let differs = false
       for (let ly = 0; ly < 16; ly++) {
         for (let lz = 0; lz < 16; lz++) {
           for (let lx = 0; lx < 16; lx++) {
             const idx = blockIndex(lx, ly, lz)
             const block = unpackNibble(section.blockLight, lx, ly, lz)
             const sky = section.skyLight ? unpackNibble(section.skyLight, lx, ly, lz) : data[idx]! & 0x0f
-            data[idx] = (block << 4) | sky
+            const value = (block << 4) | sky
+            if (baseline[idx] !== value) differs = true
+            data[idx] = value
           }
         }
       }
+      // republishing the same light is common (the client light engine publishes a section again on every step that touches it): nothing to store
+      if (prev && !differs) continue
       this.sections.set(key, data)
       touchedColumns.add(columnKey(sx, sz))
+      if (differs) changedSections.push({ sx, sy, sz })
     }
 
     let revision = 0
@@ -172,7 +190,31 @@ export class RendererLightCache {
       }
       this.columnHashes.set(col, hashBytes(packed))
     }
-    return { changed: touchedColumns.size > 0, revision }
+    return { changed: touchedColumns.size > 0, revision, changedSections }
+  }
+
+  /**
+   * Light of one column as stored here (what the column arrived with), split into packed block and sky nibble arrays (2048 bytes each,
+   * index `y * 256 + z * 16 + x`, low nibble first) for the client light engine. Sections the column has no light for are left out.
+   */
+  columnLightForOwner(chunkX: number, chunkZ: number): Array<{ sy: number; block: Uint8Array; sky: Uint8Array }> {
+    const sx = alignSection(chunkX)
+    const sz = alignSection(chunkZ)
+    const out: Array<{ sy: number; block: Uint8Array; sky: Uint8Array }> = []
+    for (let y = alignSection(this.worldMinY); y < this.worldMaxY; y += 16) {
+      const data = this.sections.get(sectionKey(sx, y, sz))
+      if (!data) continue
+      const block = new Uint8Array(2048)
+      const sky = new Uint8Array(2048)
+      for (let i = 0; i < 4096; i++) {
+        const value = data[i]!
+        const shift = (i & 1) * 4
+        block[i >> 1]! |= (value >> 4) << shift
+        sky[i >> 1]! |= (value & 0x0f) << shift
+      }
+      out.push({ sy: Math.floor(y / 16), block, sky })
+    }
+    return out
   }
 
   ingestColumn(chunkX: number, chunkZ: number, chunkJson: unknown): RendererLightIngestResult {
@@ -183,7 +225,11 @@ export class RendererLightCache {
 
     let chunk: LightChunk
     try {
-      chunk = this.Chunk.fromJson(chunkJson as Parameters<ReturnType<typeof Chunks>['fromJson']>[0]) as unknown as LightChunk
+      // `addColumn` hands over the column already parsed
+      chunk =
+        typeof (chunkJson as Partial<LightChunk> | null)?.getBlockLight === 'function'
+          ? (chunkJson as LightChunk)
+          : (this.Chunk.fromJson(chunkJson as Parameters<ReturnType<typeof Chunks>['fromJson']>[0]) as unknown as LightChunk)
       if (typeof chunk?.getBlockLight !== 'function' || typeof chunk?.getSkyLight !== 'function') {
         throw new Error('invalid chunk light API')
       }

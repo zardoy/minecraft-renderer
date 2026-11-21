@@ -45,7 +45,13 @@ export type PublicationGate = {
   lastVersion: number
 }
 
-export type ApplyPublicationResult = { applied: boolean; lastVersion: number; acceptedGeneration: number }
+export type ApplyPublicationResult = {
+  applied: boolean
+  lastVersion: number
+  acceptedGeneration: number
+  /** World origins of the published sections whose light differs from what the cache held (empty when nothing changed). */
+  changedSections?: Array<{ sx: number; sy: number; sz: number }>
+}
 
 /** Engine ABI uses section indices; RendererLightCache keys are world origins. */
 export function sectionIndexToWorldOrigin(sx: number, sy: number, sz: number) {
@@ -74,8 +80,13 @@ export function applyLightPublication(
       skyLight: section.skyLight
     }
   })
-  cache.ingestPackedSections(sections)
-  return { applied: true, lastVersion: publication.publicationVersion, acceptedGeneration: publication.worldGeneration }
+  const ingest = cache.ingestPackedSections(sections)
+  return {
+    applied: true,
+    lastVersion: publication.publicationVersion,
+    acceptedGeneration: publication.worldGeneration,
+    changedSections: ingest.changedSections ?? []
+  }
 }
 
 /** The client light worker is spawned only when `enableClientLight` is on (default on, the `clientLighting` option). */

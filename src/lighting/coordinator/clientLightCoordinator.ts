@@ -151,7 +151,8 @@ export class ClientLightCoordinator {
       skyLightEnabled: skyLightEnabledFromRendererState(this.host.playerStateReactive),
       onApplied: result => this.onPublication(result),
       onFailed: reason => this.onFailed(reason),
-      onOwnerIdle: settledEditGeneration => this.releaseInteractiveEditsWithoutCoveringPublication(settledEditGeneration)
+      onOwnerIdle: settledEditGeneration => this.releaseInteractiveEditsWithoutCoveringPublication(settledEditGeneration),
+      keepRepublishedSection: key => this.sectionTouchesInteractiveWork(key)
     })
     this.postAcceptFence()
     this.syncTraceConfig()
