@@ -8,6 +8,7 @@ import { AnimatedBlockTextures, createAnimatedBlockTextures } from './blockAnima
 import { BlockEffects } from './blockEffects'
 import { needsBlockEmission, POST_EFFECTS_OFF, PostProcessing, type PostEffectSettings, type PostFrameInfo } from './postProcessing'
 import { sunDirectionFromTime, sunShadowStrength } from './sunShadowMath'
+import { rawLightAtEyes } from './vignetteMath'
 import { sectionPos } from '../lib/simpleUtils'
 import { WorldRendererCommon } from '../lib/worldrendererCommon'
 import { calculateSkyLightSimple } from '../lib/skyLight'
@@ -1564,6 +1565,10 @@ export class WorldRendererThree extends WorldRendererCommon {
     sunDirectionFromTime(this.timeOfTheDay, info.sunDirection)
     const hasSun = cfg.defaultSkybox && cfg.cardinalLight !== 'nether'
     info.sunStrength = hasSun ? sunShadowStrength(info.sunDirection.y) : 0
+    if (cfg.vignette) {
+      const light = this.getLightingDebugInfo(info.cameraWorldPosition.x, info.cameraWorldPosition.y, info.cameraWorldPosition.z)
+      info.eyeLight = rawLightAtEyes(light.block, light.sky, hasSun ? calculateSkyLightSimple(this.timeOfTheDay) : 15)
+    }
     return info
   }
 
