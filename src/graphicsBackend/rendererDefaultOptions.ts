@@ -139,7 +139,7 @@ export type RendererVisualProfileId = 'vanilla' | 'default' | 'maximum'
 
 /**
  * One-click presets of the visual effects. `default` is what a fresh install gets (cheap enough for phones).
- * `maximum` is for desktop GPUs: everything but motion blur, which is a matter of taste and stays a manual toggle.
+ * `maximum` is for desktop GPUs: everything but motion blur and the vignette, which are a matter of taste and stay manual toggles.
  */
 export const RENDERER_VISUAL_PROFILES: Record<RendererVisualProfileId, { label: string; description: string; options: RendererEffectOptions }> = {
   vanilla: {
@@ -176,7 +176,7 @@ export const RENDERER_VISUAL_PROFILES: Record<RendererVisualProfileId, { label: 
   },
   maximum: {
     label: 'Maximum',
-    description: 'Everything on for desktop GPUs (soft shadows, FXAA, bloom, god rays), no motion blur',
+    description: 'Everything on for desktop GPUs (soft shadows, FXAA, bloom, god rays), no motion blur or vignette',
     options: {
       wavingGrass: true,
       colorGrading: 'warm',
@@ -186,7 +186,7 @@ export const RENDERER_VISUAL_PROFILES: Record<RendererVisualProfileId, { label: 
       antialiasing: 'fxaa',
       bloom: true,
       godRays: true,
-      vignette: true,
+      vignette: false,
       motionBlur: false
     }
   }
@@ -379,6 +379,7 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
   },
   vignette: {
     text: 'Vignette',
+    tooltip: 'Darkens the screen edges in dark places like vanilla does: none in daylight, full strength in caves and at night.',
     performance: { level: 'free', note: 'Darkens the screen edges.' }
   },
   motionBlur: {

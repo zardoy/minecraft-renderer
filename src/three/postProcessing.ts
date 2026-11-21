@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js'
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js'
+import { VIGNETTE_MAX_STRENGTH, easeVignette, vignetteTarget } from './vignetteMath'
 import {
   BLOOM_PREFILTER_FRAGMENT,
   BLUR_FRAGMENT,
@@ -39,6 +40,8 @@ export type PostFrameInfo = {
   /** World direction towards the sun and how strongly it shines (0 at night / no sky). */
   sunDirection: THREE.Vector3
   sunStrength: number
+  /** Vanilla's max(block light, sky light - night darkening) at the eyes, 0..15, undefined when not known (see vignetteMath.ts). */
+  eyeLight?: number
 }
 
 export const usesPostProcessing = (s: PostEffectSettings) => s.antialiasing !== 'off' || s.bloom || s.godRays || s.vignette || s.motionBlur
@@ -150,6 +153,7 @@ export class PostProcessing {
   afterWorld(renderer: THREE.WebGLRenderer, frame: PostFrameInfo): void {
     if (!this.active) return
     const s = this.settings
+    if (s.vignette) this.updateVignette(frame.eyeLight)
     const rays = s.godRays && !frame.inWater && frame.sunStrength > 0 ? this.sunScreenPosition(frame) : undefined
     const blur = s.motionBlur ? this.motionBlurMatrix(frame) : undefined
     if (!s.bloom && !rays && !blur) return
@@ -342,13 +346,25 @@ export class PostProcessing {
     return previous.projection.clone().multiply(prevRelative.invert()).multiply(rotation)
   }
 
+  private vignetteLevel: number | undefined
+  private vignetteAt = 0
+
+  /** Vanilla eases the vignette towards "how dark it is here" over seconds; the first value is taken as it is. */
+  private updateVignette(eyeLight: number | undefined): void {
+    const now = performance.now()
+    const target = vignetteTarget(eyeLight)
+    this.vignetteLevel = this.vignetteLevel === undefined ? target : easeVignette(this.vignetteLevel, target, now - this.vignetteAt)
+    this.vignetteAt = now
+  }
+
   private finalMaterial(): PassMaterial {
     const s = this.settings
     const final = this.material('final', FINAL_FRAGMENT, {
       tSource: { value: null },
       aspect: { value: 1 },
-      vignette: { value: 0.35 }
+      vignette: { value: 0 }
     })
+    final.uniforms.vignette!.value = VIGNETTE_MAX_STRENGTH * (this.vignetteLevel ?? 0)
     setDefines(final, { VIGNETTE: s.vignette })
     return final
   }
