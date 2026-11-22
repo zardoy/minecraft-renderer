@@ -40,7 +40,10 @@ export class FrameTimeline {
   private lastTextUpdate = 0
   private visible = true
 
-  constructor (private readonly width = 160, private readonly height = 30) {
+  constructor(
+    private readonly width = 160,
+    private readonly height = 30
+  ) {
     this.maxN = Math.ceil(width / COL_W)
     this.dts = new Float32Array(this.maxN)
     this.cpus = new Float32Array(this.maxN)
@@ -51,7 +54,8 @@ export class FrameTimeline {
     this.canvas.style.cssText = 'display:block;width:100%;height:100%;'
     this.dom.appendChild(this.canvas)
     this.text = document.createElement('div')
-    this.text.style.cssText = 'position:absolute;left:2px;top:1px;font:700 9px/1.1 ui-monospace,Menlo,monospace;color:#e2e8f0;text-shadow:0 0 2px #000;white-space:nowrap;'
+    this.text.style.cssText =
+      'position:absolute;left:2px;top:1px;font:700 9px/1.1 ui-monospace,Menlo,monospace;color:#e2e8f0;text-shadow:0 0 2px #000;white-space:nowrap;'
     this.dom.appendChild(this.text)
 
     const dpr = Math.min(2, globalThis.devicePixelRatio || 1)
@@ -61,7 +65,7 @@ export class FrameTimeline {
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   }
 
-  setVisible (visible: boolean) {
+  setVisible(visible: boolean) {
     if (this.visible === visible) return
     this.visible = visible
     this.dom.style.display = visible ? 'block' : 'none'
@@ -69,7 +73,7 @@ export class FrameTimeline {
     this.lastStart = 0
   }
 
-  begin () {
+  begin() {
     const now = performance.now()
     this.frameStart = now
     if (this.lastStart && this.visible) {
@@ -78,7 +82,7 @@ export class FrameTimeline {
     this.lastStart = now
   }
 
-  end () {
+  end() {
     if (!this.visible || this.count === 0) return
     const cpu = performance.now() - this.frameStart
     const last = (this.head - 1 + this.maxN) % this.maxN
@@ -86,7 +90,7 @@ export class FrameTimeline {
     this.draw()
   }
 
-  private push (dt: number, now: number) {
+  private push(dt: number, now: number) {
     this.dts[this.head] = dt
     this.cpus[this.head] = 0
     this.head = (this.head + 1) % this.maxN
@@ -108,7 +112,7 @@ export class FrameTimeline {
    * Refresh interval = median of the on-time frames (those near the 10th percentile). A plain
    * median is dragged up by sustained jank, a plain minimum is one outlier.
    */
-  private refreshVsync () {
+  private refreshVsync() {
     if (this.count < 20) return
     const sorted = Array.from(this.dts.subarray(0, this.count)).sort((a, b) => a - b)
     const p10 = sorted[Math.floor(sorted.length * 0.1)]!
@@ -117,14 +121,14 @@ export class FrameTimeline {
     this.vsyncMs = Math.min(50, Math.max(4, estimate))
   }
 
-  private color (dt: number) {
+  private color(dt: number) {
     const drops = dt / this.vsyncMs
     if (drops > 3) return RED
     if (drops > 1.5) return YELLOW
     return GREEN
   }
 
-  private updateText (now: number) {
+  private updateText(now: number) {
     while (this.recentWorst.length > 0 && now - this.recentWorst[0]![0] > WORST_WINDOW_MS) this.recentWorst.shift()
     let worst = 0
     for (const [, dt] of this.recentWorst) worst = Math.max(worst, dt)
@@ -132,11 +136,12 @@ export class FrameTimeline {
     const fps = Math.round(this.fpsSmoothed)
     const ratio = fps / hz
     const fpsColor = ratio >= 0.85 ? '#4ade80' : ratio >= 0.5 ? '#facc15' : '#f87171'
-    this.text.innerHTML = `<span style="color:${fpsColor};font-size:11px">${fps}</span>/${hz}Hz` +
+    this.text.innerHTML =
+      `<span style="color:${fpsColor};font-size:11px">${fps}</span>/${hz}Hz` +
       (worst > 0 ? ` <span style="color:${this.color(worst)}">${Math.round(worst)}ms</span>` : '')
   }
 
-  private draw () {
+  private draw() {
     const { ctx, width: w, height: h } = this
     ctx.clearRect(0, 0, w, h)
     const spikeMs = this.vsyncMs * 3
