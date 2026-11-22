@@ -9,7 +9,16 @@ import blockStatesModels from 'mc-assets/dist/blockStatesModels.json'
 import MinecraftData from 'minecraft-data'
 import PrismarineBlockLoader from 'prismarine-block'
 import { Vec3 } from 'vec3'
-import { elemFaces, buildElementRotation, buildRotationMatrix, matmul3, matmulmat3, vecadd3, vecsub3 } from '../../mesher-shared/modelsGeometryCommon'
+import {
+  elemFaces,
+  buildElementRotation,
+  buildRotationMatrix,
+  faceLightCellOffset,
+  matmul3,
+  matmulmat3,
+  vecadd3,
+  vecsub3
+} from '../../mesher-shared/modelsGeometryCommon'
 import type { ExportedWorldGeometry, ExportedSection } from '../../mesher-shared/exportedGeometryTypes'
 import type { MesherGeometryOutput } from '../../mesher-shared/shared'
 import { bakeLegacyVertexColors } from '../../lib/bakeLegacyLight'
@@ -899,20 +908,20 @@ export function renderWasmOutputToGeometry(
               jsNeighborSky: world?.getChannelLightNorm(new Vec3(bx, by, bz).offset(...transformedDirI)).sky
             })
           }
-          const baseChannels = useModelLighting
-            ? world.getChannelLightNorm(new Vec3(bx, by, bz).offset(transformedDirI[0], transformedDirI[1], transformedDirI[2]))
-            : null
+          // block-local corners (0..1), also used for the light cell below
+          const faceVertices = corners.map(pos => {
+            const vertex = [pos[0] ? maxx : minx, pos[1] ? maxy : miny, pos[2] ? maxz : minz]
+            return vecadd3(matmul3(globalMatrix, vecadd3(matmul3(localMatrix, vertex), localShift)), globalShift).map(v => v / 16)
+          })
+          const lightCell = faceLightCellOffset(transformedDirI, faceVertices)
+          const baseChannels = useModelLighting ? world.getChannelLightNorm(new Vec3(bx, by, bz).offset(lightCell[0], lightCell[1], lightCell[2])) : null
 
           const baseIndex = tgtPos.length / 3
           const computedAoValues = [3, 3, 3, 3]
           for (let cornerIdx = 0; cornerIdx < 4; cornerIdx++) {
             const pos = corners[cornerIdx]
 
-            let vertex = [pos[0] ? maxx : minx, pos[1] ? maxy : miny, pos[2] ? maxz : minz]
-
-            vertex = vecadd3(matmul3(localMatrix, vertex), localShift)
-            vertex = vecadd3(matmul3(globalMatrix, vertex), globalShift)
-            vertex = vertex.map(v => v / 16)
+            const vertex = faceVertices[cornerIdx]!
 
             const worldPos = [vertex[0] + (bx & 15) - 8, vertex[1] + (by & 15) - 8, vertex[2] + (bz & 15) - 8]
 
