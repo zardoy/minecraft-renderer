@@ -210,6 +210,7 @@ export async function initVR(worldRenderer: WorldRendererThree, documentRenderer
   renderer.xr.addEventListener('sessionstart', () => {
     user.add(worldRenderer.camera)
     worldRenderer.cameraGroupVr = user
+    worldRenderer.reactiveState.inVrSession = true
     lastXrFrameTime = 0
     const { vrUiSelector } = worldRenderer.worldRendererConfig
     const uiElement = vrUiSelector ? document.querySelector<HTMLElement>(vrUiSelector) : null
@@ -217,6 +218,7 @@ export async function initVR(worldRenderer: WorldRendererThree, documentRenderer
   })
   renderer.xr.addEventListener('sessionend', () => {
     worldRenderer.cameraGroupVr = undefined
+    worldRenderer.reactiveState.inVrSession = false
     user.remove(worldRenderer.camera)
     uiPanel.detach()
   })

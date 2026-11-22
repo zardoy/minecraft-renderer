@@ -94,6 +94,8 @@ export interface RendererReactiveState {
   }
   renderer: string
   preventEscapeMenu: boolean
+  /** An immersive VR session is presenting (the page HUD is on the VR panel, the crosshair has no meaning there). */
+  inVrSession: boolean
 }
 
 // ============================================================================

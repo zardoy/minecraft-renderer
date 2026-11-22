@@ -30,7 +30,8 @@ const makeRendererState = () =>
       intersectMedia: null as null | object
     },
     renderer: '...',
-    preventEscapeMenu: false
+    preventEscapeMenu: false,
+    inVrSession: false
   })
 
 describe('workerSyncOps', () => {

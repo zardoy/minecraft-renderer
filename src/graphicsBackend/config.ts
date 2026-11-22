@@ -173,7 +173,8 @@ export const getDefaultRendererState = (): {
         intersectMedia: null
       },
       renderer: '...',
-      preventEscapeMenu: false
+      preventEscapeMenu: false,
+      inVrSession: false
     }),
     nonReactive: {
       fps: 0,

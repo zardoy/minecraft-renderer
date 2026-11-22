@@ -62,7 +62,8 @@ function createRenderer(workerCount = 2, worldView?: DisplayWorldOptions['worldV
       intersectMedia: null
     },
     renderer: '',
-    preventEscapeMenu: false
+    preventEscapeMenu: false,
+    inVrSession: false
   })
 
   const displayOptions: DisplayWorldOptions = {

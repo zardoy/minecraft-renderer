@@ -60,7 +60,8 @@ function createRenderer() {
       intersectMedia: null
     },
     renderer: '',
-    preventEscapeMenu: false
+    preventEscapeMenu: false,
+    inVrSession: false
   })
 
   const displayOptions = {

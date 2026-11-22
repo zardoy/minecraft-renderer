@@ -67,7 +67,8 @@ function createRenderer(enableOwner = false, workerCount = 2, version = '1.17.1'
       intersectMedia: null
     },
     renderer: '',
-    preventEscapeMenu: false
+    preventEscapeMenu: false,
+    inVrSession: false
   })
 
   const displayOptions: DisplayWorldOptions = {
