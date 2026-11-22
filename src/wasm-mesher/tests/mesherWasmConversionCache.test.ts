@@ -4,7 +4,8 @@ import {
   _peekConversionCache,
   clearConversionCache,
   getOrConvertColumn,
-  invalidateConversion
+  invalidateConversion,
+  patchConversionBlock
 } from '../worker/mesherWasmConversionCache'
 import type { ChunkConversionResult } from '../bridge/convertChunk'
 
@@ -24,6 +25,34 @@ const makeResult = (tag: number): ChunkConversionResult => ({
 describe('mesherWasmConversionCache', () => {
   beforeEach(() => {
     clearConversionCache()
+  })
+
+  test('patches state and count in place and rejects identity drift', () => {
+    const ref = {}
+    const result = { ...makeResult(0), blockStates: new Uint16Array(4096) }
+    getOrConvertColumn(-16, 0, ref, 'v', -64, -48, () => result, ref)
+    expect(patchConversionBlock(-16, 0, ref, -1, -49, 15, 2)).toBe(true)
+    expect(result.blockStates[4095]).toBe(2)
+    expect(result.blockCount).toBe(1)
+    patchConversionBlock(-16, 0, ref, -1, -49, 15, 3)
+    expect(result.blockCount).toBe(1)
+    expect(patchConversionBlock(-16, 0, {}, -1, -49, 15, 0)).toBe(false)
+    patchConversionBlock(-16, 0, ref, -1, -49, 15, 0)
+    expect(result.blockCount).toBe(0)
+    expect(
+      getOrConvertColumn(
+        -16,
+        0,
+        ref,
+        'v',
+        -64,
+        -48,
+        () => {
+          throw new Error('unexpected conversion')
+        },
+        ref
+      ).result
+    ).toBe(result)
   })
 
   test('miss then hit on same chunk ref returns cached result', () => {

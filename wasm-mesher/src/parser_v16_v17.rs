@@ -191,12 +191,20 @@ pub struct ChunkSectionsResult {
 pub struct UpdateLightV17Result {
     pub x: i32,
     pub z: i32,
-    /// `num_sections * 4096`, layout `idx = x + z*16 + y_abs*256` — same as
-    /// `assemble_light_full_column` produces for 1.18+. Default is 0 for
-    /// sections the server omitted.
+    pub trust_edges: bool,
+    /// `num_sections * 4096`, layout `idx = x + z*16 + y_abs*256`.
+    /// Omitted sections are left 0 and are **not** authoritative — use the masks.
     pub sky_light: Vec<u8>,
-    /// Same shape as `sky_light`. Default 0 for omitted sections (no light).
+    /// Same shape as `sky_light`.
     pub block_light: Vec<u8>,
+    pub sky_light_mask: Vec<u32>,
+    pub empty_sky_light_mask: Vec<u32>,
+    pub block_light_mask: Vec<u32>,
+    pub empty_block_light_mask: Vec<u32>,
+    pub sky_below: Option<Vec<u8>>,
+    pub sky_above: Option<Vec<u8>>,
+    pub block_below: Option<Vec<u8>>,
+    pub block_above: Option<Vec<u8>>,
     /// Total bytes consumed from the input packet (including the leading
     /// packet-id varint).
     pub bytes_read: usize,
@@ -230,7 +238,7 @@ pub fn parse_update_light_v17(
 
     let x = r.read_varint()?;
     let z = r.read_varint()?;
-    let _trust_edges = r.read_u8()?;
+    let trust_edges = r.read_u8()? != 0;
 
     let sky_light_mask = common::read_i64_array(&mut r)?;
     let block_light_mask = common::read_i64_array(&mut r)?;
@@ -242,38 +250,35 @@ pub fn parse_update_light_v17(
 
     let bytes_read = r.position();
 
-    let sky_full = common::build_full_column_light(
+    let sky_assembled = common::build_light_with_padding(
         &sky_light_sections,
         &sky_light_mask,
         &empty_sky_light_mask,
         num_sections,
-        // Sections the server omitted entirely (no bit in skyLightMask or
-        // emptySkyLightMask) are typically air above the build limit — they
-        // see full daylight in the vanilla client. prismarine-chunk's
-        // `getSkyLight` returns 0 here, which is what makes those areas
-        // pitch-black; matching the vanilla 15 fixes that.
-        15,
-        // 1.17 wire format: each light section is the raw BitArrayNoSpan byte
-        // buffer — byte i directly holds blocks 2i and 2i+1, with no
-        // long-encoding (the BE byte-reversal that 1.18+ needs would scramble
-        // the X coords inside every Z-row and produce the dark-shadow
-        // artifacts users see under trees and on slopes).
         false,
     )?;
-    let block_full = common::build_full_column_light(
+    let block_assembled = common::build_light_with_padding(
         &block_light_sections,
         &block_light_mask,
         &empty_block_light_mask,
         num_sections,
-        0,
         false,
     )?;
 
     Ok(UpdateLightV17Result {
         x,
         z,
-        sky_light: sky_full,
-        block_light: block_full,
+        trust_edges,
+        sky_light: sky_assembled.world,
+        block_light: block_assembled.world,
+        sky_light_mask: common::i64_mask_to_u32_pairs(&sky_light_mask),
+        empty_sky_light_mask: common::i64_mask_to_u32_pairs(&empty_sky_light_mask),
+        block_light_mask: common::i64_mask_to_u32_pairs(&block_light_mask),
+        empty_block_light_mask: common::i64_mask_to_u32_pairs(&empty_block_light_mask),
+        sky_below: sky_assembled.below,
+        sky_above: sky_assembled.above,
+        block_below: block_assembled.below,
+        block_above: block_assembled.above,
         bytes_read,
     })
 }
@@ -604,5 +609,144 @@ mod tests {
         let too_short = vec![42i32; 10];
         let biomes = expand_biomes_v17(Some(&too_short), NUM_SECTIONS_V17, 5);
         assert!(biomes.iter().all(|&v| v == 5));
+    }
+
+    fn write_varint(out: &mut Vec<u8>, value: i32) {
+        let mut u = value as u32;
+        loop {
+            let mut byte = (u & 0x7f) as u8;
+            u >>= 7;
+            if u != 0 {
+                byte |= 0x80;
+            }
+            out.push(byte);
+            if u == 0 {
+                break;
+            }
+        }
+    }
+
+    fn write_i64_array(out: &mut Vec<u8>, values: &[i64]) {
+        write_varint(out, values.len() as i32);
+        for v in values {
+            out.extend_from_slice(&v.to_be_bytes());
+        }
+    }
+
+    fn write_light_arrays(out: &mut Vec<u8>, sections: &[Vec<u8>]) {
+        write_varint(out, sections.len() as i32);
+        for section in sections {
+            write_varint(out, section.len() as i32);
+            out.extend_from_slice(section);
+        }
+    }
+
+    fn encode_update_light_v17(
+        x: i32,
+        z: i32,
+        trust_edges: bool,
+        sky_mask: &[i64],
+        block_mask: &[i64],
+        empty_sky_mask: &[i64],
+        empty_block_mask: &[i64],
+        sky_sections: &[Vec<u8>],
+        block_sections: &[Vec<u8>],
+    ) -> Vec<u8> {
+        let mut out = Vec::new();
+        write_varint(&mut out, 0x25);
+        write_varint(&mut out, x);
+        write_varint(&mut out, z);
+        out.push(if trust_edges { 1 } else { 0 });
+        write_i64_array(&mut out, sky_mask);
+        write_i64_array(&mut out, block_mask);
+        write_i64_array(&mut out, empty_sky_mask);
+        write_i64_array(&mut out, empty_block_mask);
+        write_light_arrays(&mut out, sky_sections);
+        write_light_arrays(&mut out, block_sections);
+        out
+    }
+
+    fn nibble_section(value: u8) -> Vec<u8> {
+        vec![value | (value << 4); common::LIGHT_SECTION_BUFFER_BYTES]
+    }
+
+    #[test]
+    fn update_light_omitted_sky_is_not_filled_with_15() {
+        let packet = encode_update_light_v17(
+            3,
+            4,
+            true,
+            &[0b100],
+            &[],
+            &[],
+            &[],
+            &[nibble_section(3)],
+            &[],
+        );
+        let result = parse_update_light_v17(&packet, NUM_SECTIONS_V17)
+            .expect("parse synthetic update_light");
+        let omitted = &result.sky_light[0..common::BLOCK_SECTION_VOLUME];
+        assert!(
+            !omitted.iter().all(|&v| v == 15),
+            "omitted sky must not be baked as 15 in the parse result"
+        );
+        assert!(omitted.iter().all(|&v| v == 0), "omitted sky bytes stay 0, not a seed");
+        assert_eq!(result.x, 3);
+        assert_eq!(result.z, 4);
+        assert!(result.trust_edges);
+        assert!(!common::mask_bit_get(&result.sky_light_mask, 1), "world section 0 omitted");
+        assert!(common::mask_bit_get(&result.sky_light_mask, 2), "world section 1 has data");
+        let present = &result.sky_light[common::BLOCK_SECTION_VOLUME..common::BLOCK_SECTION_VOLUME * 2];
+        assert!(present.iter().all(|&v| v == 3));
+    }
+
+    #[test]
+    fn captured_1_17_1_update_light_fixture_parses() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../chunk-packet-fixtures/fixtures/map_chunk/1.17.1/5_0.update_light.bin");
+        let packet = fs::read(&path).unwrap_or_else(|_| panic!("missing fixture {:?}", path));
+        let result = parse_update_light_v17(&packet, NUM_SECTIONS_V17)
+            .expect("parse captured 1.17.1 update_light");
+        assert_eq!(result.x, 7);
+        assert_eq!(result.z, 0);
+        assert!(result.trust_edges);
+        assert!(result.sky_light_mask.iter().all(|&w| w == 0));
+        assert!(result.empty_sky_light_mask.iter().all(|&w| w == 0));
+        assert!(result.block_light_mask.iter().all(|&w| w == 0));
+        assert_eq!(result.empty_block_light_mask[0] & 0x3e, 0x3e);
+        assert!(result.sky_light.iter().all(|&v| v == 0));
+    }
+
+    #[test]
+    fn captured_1_17_1_second_fixture_parses() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../chunk-packet-fixtures/fixtures/map_chunk/1.17.1/7_0.update_light.bin");
+        let packet = fs::read(&path).unwrap_or_else(|_| panic!("missing fixture {:?}", path));
+        let result = parse_update_light_v17(&packet, NUM_SECTIONS_V17)
+            .expect("parse captured 1.17.1 update_light");
+        assert_eq!(result.x, 6);
+        assert_eq!(result.z, 0);
+        assert!(result.trust_edges);
+        assert_eq!(result.empty_block_light_mask[0] & 0x3e, 0x3e);
+    }
+
+    #[test]
+    fn update_light_keeps_padding_section() {
+        let packet = encode_update_light_v17(
+            0,
+            0,
+            false,
+            &[0b1],
+            &[],
+            &[],
+            &[],
+            &[nibble_section(9)],
+            &[],
+        );
+        let result = parse_update_light_v17(&packet, NUM_SECTIONS_V17).unwrap();
+        assert!(common::mask_bit_get(&result.sky_light_mask, 0));
+        let below = result.sky_below.expect("padding below");
+        assert!(below.iter().all(|&v| v == 9));
+        assert!(result.sky_light.iter().all(|&v| v == 0));
     }
 }

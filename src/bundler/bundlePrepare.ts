@@ -3,7 +3,7 @@ import { createRequire } from 'node:module'
 import path from 'node:path'
 
 /** Worker-related basenames inside `minecraft-renderer`/`dist`; skipped if missing. */
-export const MESHER_DIST_FILES = ['mesher.js', 'mesher.js.map', 'mesherWasm.js', 'mesherWasm.js.map'] as const
+export const MESHER_DIST_FILES = ['mesher.js', 'mesher.js.map', 'mesherWasm.js', 'mesherWasm.js.map', 'lightOwnerWorker.js', 'lightOwnerWorker.js.map'] as const
 
 export type BundlePrepareMesherOptions = {
   cwd?: string

@@ -6,7 +6,7 @@
 import { subscribe } from 'valtio/vanilla'
 import type { AppViewer } from './appViewer'
 import type { RendererStorageOptions } from './rendererDefaultOptions'
-import { rendererShaderCubeDebugModeToValue } from './rendererDefaultOptions'
+import { rendererShaderCubeDebugModeToValue, resolveEnableLighting } from './rendererDefaultOptions'
 import type { MenuBackgroundOptions } from '../three/menuBackground/types'
 import type { MenuBackgroundRenderer } from '../three/menuBackground/renderer'
 import { menuBackgroundSpeedToMultiplier } from '../three/menuBackground/config'
@@ -14,6 +14,14 @@ import type { V2CameraId, V2SceneId, MinecraftBlockGroupId } from '../three/menu
 import { setSkinsConfig } from '../lib/utils/skins'
 
 export type { RendererStorageOptions } from './rendererDefaultOptions'
+
+/** `?clientLight=1` / `?clientLight=0` in the page URL forces the client light owner on / off, whatever the setting says (live testing). */
+export function clientLightUrlOverride(search = typeof location === 'undefined' ? '' : location.search): boolean | undefined {
+  const value = new URLSearchParams(search).get('clientLight')
+  if (value === '1') return true
+  if (value === '0') return false
+  return undefined
+}
 
 export interface ApplyRendererOptionsContext {
   isSafari?: boolean
@@ -133,6 +141,9 @@ export function applyRendererOptions(appViewer: AppViewer, o: RendererStorageOpt
   cfg.smartCull = o.rendererSmartCull
   applyMesherWorkersPreset(appViewer, o, wasmActive)
   cfg.renderEntities = o.renderEntities
+  cfg.enableEntityLighting = o.entityLighting
+  cfg.enableClientLight = clientLightUrlOverride() ?? o.clientLighting
+  cfg.animatedTextures = o.animatedTextures
   applyStatsVisible(appViewer, o, ctx)
   applyFpsLimit(appViewer, o, ctx.windowFocused !== false)
 
@@ -153,6 +164,16 @@ export function applyRendererOptions(appViewer: AppViewer, o: RendererStorageOpt
   cfg.smoothLighting = o.smoothLighting
   cfg.shadingTheme = o.vanillaLook ? 'vanilla' : 'high-contrast'
   cfg.starfield = o.starfieldRendering
+  cfg.clouds = o.cloudsRendering
+  cfg.wavingGrass = o.wavingGrass
+  cfg.sunShadows = o.sunShadows
+  cfg.sunShadowsDistance = o.sunShadowsDistance
+  cfg.antialiasing = o.antialiasing
+  cfg.bloom = o.bloom
+  cfg.colorGrading = o.colorGrading
+  cfg.godRays = o.godRays
+  cfg.vignette = o.vignette
+  cfg.motionBlur = o.motionBlur
   cfg.defaultSkybox = o.defaultSkybox
   cfg.fov = o.fov
   cfg.shaderCubeDebugMode = rendererShaderCubeDebugModeToValue(o.rendererShaderCubeDebugMode)
@@ -216,6 +237,6 @@ export function subscribeRendererOptions<T extends RendererStorageOptions>(
 }
 
 /** Call when mineflayer bot is created (lighting depends on protocol features). */
-export function applyRendererEnableLighting(appViewer: AppViewer, newVersionsLighting: boolean, blockStateIdSupported: boolean): void {
-  appViewer.inWorldRenderingConfig.enableLighting = !blockStateIdSupported || newVersionsLighting
+export function applyRendererEnableLighting(appViewer: AppViewer, newVersionsLighting: boolean, blockStateIdSupported: boolean | undefined): void {
+  appViewer.inWorldRenderingConfig.enableLighting = resolveEnableLighting(newVersionsLighting, blockStateIdSupported)
 }

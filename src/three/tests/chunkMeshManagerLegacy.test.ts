@@ -7,6 +7,7 @@ vi.mock('../entity/EntityMesh', () => ({
 
 import { ChunkMeshManager } from '../chunkMeshManager'
 import type { WorldRendererThree } from '../worldRendererThree'
+import { BlockEffects } from '../blockEffects'
 import type { MesherGeometryOutput } from '../../mesher-shared/shared'
 import { renderWasmOutputToGeometry } from '../../wasm-mesher/bridge/render-from-wasm'
 
@@ -119,6 +120,7 @@ function makeInvalidBlendGeometry(): MesherGeometryOutput {
 type ManagerOptions = {
   revealDefer?: boolean
   shaderCubes?: boolean
+  nearReveal?: boolean
   finishedChunks?: Record<string, boolean>
 }
 
@@ -179,6 +181,44 @@ function drainCubeUploads(manager: ChunkMeshManager): void {
   while (gb.hasPendingUploads()) gb.uploadDirtyRange()
 }
 
+test('ChunkMeshManager: a far column is shown only after the nearer loaded column finishes, however long that takes', () => {
+  vi.useFakeTimers()
+  try {
+    const manager = createManager({ nearReveal: true, finishedChunks: { '32,0': true } })
+    const world = (manager as unknown as { worldRenderer: { loadedChunks: Record<string, boolean>; finishedChunks: Record<string, boolean> } }).worldRenderer
+    world.loadedChunks['16,0'] = true
+    const section = new THREE.Object3D()
+    section.visible = false
+    manager.sectionObjects['32,0,0'] = section as (typeof manager.sectionObjects)[string]
+    manager.waitingChunksToDisplay['32,0'] = ['32,0,0']
+
+    manager.finishChunkDisplay('32,0')
+    expect(manager.pendingNearReveal.has('32,0')).toBe(true)
+    expect(section.visible).toBe(false)
+    vi.advanceTimersByTime(60_000)
+    expect(section.visible).toBe(false)
+
+    world.finishedChunks['16,0'] = true
+    manager.finishChunkDisplay('16,0')
+    expect(manager.pendingNearReveal.has('32,0')).toBe(false)
+    expect(section.visible).toBe(true)
+    expect(vi.getTimerCount()).toBe(0)
+  } finally {
+    vi.clearAllTimers()
+    vi.useRealTimers()
+  }
+})
+
+test('ChunkMeshManager: a nearer column the renderer does not have does not hide a finished one', () => {
+  const manager = createManager({ nearReveal: true, finishedChunks: { '32,0': true } })
+  const section = new THREE.Object3D()
+  section.visible = false
+  manager.sectionObjects['32,0,0'] = section as (typeof manager.sectionObjects)[string]
+  manager.waitingChunksToDisplay['32,0'] = ['32,0,0']
+  manager.finishChunkDisplay('32,0')
+  expect(section.visible).toBe(true)
+})
+
 function createManager(opts: ManagerOptions = {}): ChunkMeshManager {
   const scene = new THREE.Scene()
   const material = new THREE.MeshBasicMaterial()
@@ -196,7 +236,11 @@ function createManager(opts: ManagerOptions = {}): ChunkMeshManager {
       removeAndUntrackAll: () => {}
     },
     blockEntities: {},
-    worldRendererConfig: opts.shaderCubes ? { wasmMesher: true } : {},
+    blockEffects: new BlockEffects(),
+    worldRendererConfig: opts.shaderCubes || opts.nearReveal ? { wasmMesher: true } : {},
+    viewerChunkPosition: opts.nearReveal ? { x: 0, z: 0 } : undefined,
+    viewDistance: 9,
+    loadedChunks: opts.nearReveal ? { '32,0': true } : {},
     displayOptions: { inWorldRenderingConfig: {} },
     finishedChunks: opts.finishedChunks ?? (opts.shaderCubes ? { '0,0': true } : {})
   } as unknown as WorldRendererThree

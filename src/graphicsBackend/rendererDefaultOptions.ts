@@ -9,6 +9,24 @@ import {
 import { MENU_BACKGROUND_OPTION_DEFAULTS } from '../three/menuBackground/config'
 import type { RendererGpuPreference } from '../three/menuBackground/gpuPreference'
 
+export type RendererPerformanceLevel = 'free' | 'light' | 'moderate' | 'heavy'
+
+export const RENDERER_PERFORMANCE_LEVEL_LABELS: Record<RendererPerformanceLevel, string> = {
+  free: 'Free',
+  light: 'Light',
+  moderate: 'Moderate',
+  heavy: 'Heavy'
+}
+
+export type RendererOptionPerformance = {
+  /** What it costs when turned on. Also shown while it is off, so the cost is visible before enabling it. */
+  level: RendererPerformanceLevel
+  /** Why it costs that, shown after the level word. Short: it is two lines in a small panel. */
+  note: string
+  /** Cost of a specific choice that differs from `level` (soft sun shadows). Keys are option values. */
+  levelByValue?: Record<string, RendererPerformanceLevel>
+}
+
 export type RendererOptionMeta = {
   possibleValues?: string[] | Array<[string, string]>
   isCustomInput?: boolean
@@ -17,6 +35,8 @@ export type RendererOptionMeta = {
   unit?: string
   text?: string
   tooltip?: string
+  /** What the option costs in performance, for UIs that show it next to the control. */
+  performance?: RendererOptionPerformance
   requiresRestart?: boolean
   requiresChunksReload?: boolean
 }
@@ -45,6 +65,18 @@ export const RENDERER_DEFAULT_OPTIONS = {
   rendererWorldPerformance: 'normal' as 'low-energy' | 'normal' | 'maximum',
   rendererMeshersCountOverride: null as number | null,
   starfieldRendering: true as boolean,
+  cloudsRendering: true as boolean,
+  wavingGrass: true as boolean,
+  /** Animated block textures (water, lava, fire, portals...): off keeps the first frame, basic switches frames, smooth also blends them like vanilla */
+  animatedTextures: 'smooth' as 'off' | 'basic' | 'smooth',
+  sunShadows: 'normal' as 'off' | 'normal' | 'soft',
+  sunShadowsDistance: 64,
+  antialiasing: 'off' as 'off' | 'fxaa',
+  bloom: false as boolean,
+  colorGrading: 'warm' as 'off' | 'warm' | 'cinematic' | 'vivid',
+  godRays: false as boolean,
+  vignette: false as boolean,
+  motionBlur: false as boolean,
   defaultSkybox: true as boolean,
   menuBackgroundMode: MB.mode,
   menuBackgroundMinecraftTextures: MB.minecraftTextures as boolean,
@@ -66,7 +98,9 @@ export const RENDERER_DEFAULT_OPTIONS = {
   backgroundRendering: '20fps' as 'full' | '20fps' | '5fps',
   vanillaLook: false as boolean,
   smoothLighting: true as boolean,
-  newVersionsLighting: false as boolean,
+  newVersionsLighting: true as boolean,
+  clientLighting: true as boolean,
+  entityLighting: true as boolean,
   vrSupport: true as boolean,
   vrPageGameRendering: false as boolean,
   clipWorldBelowY: undefined as number | undefined,
@@ -78,6 +112,8 @@ export const RENDERER_DEFAULT_OPTIONS = {
   dayCycleAndLighting: true as boolean,
   keepChunksDistance: 1,
   gpuPreference: 'default' as RendererGpuPreference,
+  /** WebGL preserveDrawingBuffer: keeps the last frame readable so a screenshot (F2) can copy it; off saves GPU work (memory and a copy per frame on tiled GPUs) */
+  preserveDrawingBuffer: true as boolean,
   fov: 75
 } as const
 
@@ -85,6 +121,99 @@ export type RendererDefaultOptionKey = keyof typeof RENDERER_DEFAULT_OPTIONS
 
 /** App options storage shape for renderer-owned keys. */
 export type RendererStorageOptions = typeof RENDERER_DEFAULT_OPTIONS
+
+/** Visual effect options in the order a live tuning UI lists them. */
+export const RENDERER_EFFECT_OPTION_KEYS = [
+  'wavingGrass',
+  'colorGrading',
+  'vanillaLook',
+  'sunShadows',
+  'sunShadowsDistance',
+  'antialiasing',
+  'bloom',
+  'godRays',
+  'vignette',
+  'motionBlur'
+] as const satisfies readonly RendererDefaultOptionKey[]
+
+export type RendererEffectOptionKey = (typeof RENDERER_EFFECT_OPTION_KEYS)[number]
+export type RendererEffectOptions = Pick<RendererStorageOptions, RendererEffectOptionKey>
+export type RendererVisualProfileId = 'vanilla' | 'default' | 'maximum'
+
+/**
+ * One-click presets of the visual effects. `default` is what a fresh install gets (cheap enough for phones).
+ * `maximum` is for desktop GPUs: everything but motion blur and the vignette, which are a matter of taste and stay manual toggles.
+ */
+export const RENDERER_VISUAL_PROFILES: Record<RendererVisualProfileId, { label: string; description: string; options: RendererEffectOptions }> = {
+  vanilla: {
+    label: 'Vanilla',
+    description: 'All visual effects off, vanilla face shading',
+    options: {
+      wavingGrass: false,
+      colorGrading: 'off',
+      vanillaLook: true,
+      sunShadows: 'off',
+      sunShadowsDistance: 64,
+      antialiasing: 'off',
+      bloom: false,
+      godRays: false,
+      vignette: false,
+      motionBlur: false
+    }
+  },
+  default: {
+    label: 'Default',
+    description: 'Cheap effects: waving grass, warm colours, sun shadows',
+    options: {
+      wavingGrass: RENDERER_DEFAULT_OPTIONS.wavingGrass,
+      colorGrading: RENDERER_DEFAULT_OPTIONS.colorGrading,
+      vanillaLook: RENDERER_DEFAULT_OPTIONS.vanillaLook,
+      sunShadows: RENDERER_DEFAULT_OPTIONS.sunShadows,
+      sunShadowsDistance: RENDERER_DEFAULT_OPTIONS.sunShadowsDistance,
+      antialiasing: RENDERER_DEFAULT_OPTIONS.antialiasing,
+      bloom: RENDERER_DEFAULT_OPTIONS.bloom,
+      godRays: RENDERER_DEFAULT_OPTIONS.godRays,
+      vignette: RENDERER_DEFAULT_OPTIONS.vignette,
+      motionBlur: RENDERER_DEFAULT_OPTIONS.motionBlur
+    }
+  },
+  maximum: {
+    label: 'Maximum',
+    description: 'Everything on for desktop GPUs (soft shadows, FXAA, bloom, god rays), no motion blur or vignette',
+    options: {
+      wavingGrass: true,
+      colorGrading: 'warm',
+      vanillaLook: false,
+      sunShadows: 'soft',
+      sunShadowsDistance: 64,
+      antialiasing: 'fxaa',
+      bloom: true,
+      godRays: true,
+      vignette: false,
+      motionBlur: false
+    }
+  }
+}
+
+/** Cost level of an option for its current value (what turning it on costs while it is off), undefined without a note. */
+export function rendererOptionPerformanceLevel(key: RendererDefaultOptionKey, value: unknown): RendererPerformanceLevel | undefined {
+  const performance = RENDERER_OPTIONS_META[key]?.performance
+  if (!performance) return undefined
+  return performance.levelByValue?.[String(value)] ?? performance.level
+}
+
+/** Footer for UIs that show the `performance` notes: where the numbers come from. */
+export const RENDERER_PERFORMANCE_NOTE = 'Costs measured on an Apple M5. Older GPUs and phones pay more, mostly for shadows and anything full-screen.'
+
+/** The profile the given options match exactly, undefined when they are custom. */
+export function detectVisualProfile(options: Partial<RendererEffectOptions>): RendererVisualProfileId | undefined {
+  for (const [id, profile] of Object.entries(RENDERER_VISUAL_PROFILES) as Array<
+    [RendererVisualProfileId, (typeof RENDERER_VISUAL_PROFILES)[RendererVisualProfileId]]
+  >) {
+    if (RENDERER_EFFECT_OPTION_KEYS.every(key => options[key] === profile.options[key])) return id
+  }
+  return undefined
+}
 
 /**
  * Migrate persisted / legacy option keys into current {@link RENDERER_DEFAULT_OPTIONS} shape.
@@ -122,6 +251,17 @@ export function migrateRendererOptions(saved: Record<string, unknown>): void {
     }
     delete saved[oldKey]
   }
+
+  // Internal one-shot flag from an earlier lighting-default migration. Never a user option.
+  delete saved.migratedNewVersionsLightingDefault
+}
+
+/**
+ * Runtime `enableLighting` from the stored option and protocol.
+ * Pre-1.13 (no blockStateId) always lights. Missing protocol (menu, no bot) must not throw.
+ */
+export function resolveEnableLighting(newVersionsLighting: boolean, blockStateIdSupported: boolean | undefined): boolean {
+  return blockStateIdSupported !== true || newVersionsLighting
 }
 
 /** Settings UI metadata for {@link RENDERER_DEFAULT_OPTIONS} keys. */
@@ -174,6 +314,89 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
   },
   starfieldRendering: {
     text: 'Starfield'
+  },
+  cloudsRendering: {
+    text: 'Clouds'
+  },
+  wavingGrass: {
+    text: 'Waving grass',
+    tooltip: 'Grass, flowers, crops and leaves sway in the wind.',
+    performance: { level: 'free', note: 'Plants move in the vertex shader.' }
+  },
+  sunShadows: {
+    text: 'Sun shadows',
+    tooltip: 'Shadows cast by blocks in daylight. Soft uses a wider, smoother filter (more GPU work).',
+    performance: {
+      level: 'light',
+      levelByValue: { soft: 'moderate' },
+      note: 'Normal +0.3 ms GPU, soft +3 ms (16 lookups per pixel instead of 4). The shadow map is redrawn about 5 times a second.'
+    },
+    possibleValues: [
+      ['off', 'Off'],
+      ['normal', 'Normal'],
+      ['soft', 'Soft']
+    ]
+  },
+  animatedTextures: {
+    text: 'Animated blocks',
+    tooltip:
+      'Animated block textures such as water, lava, fire and portals. Basic switches frames, smooth also blends them like vanilla. Off keeps the first frame of each.',
+    possibleValues: [
+      ['off', 'Off'],
+      ['basic', 'Basic'],
+      ['smooth', 'Smooth']
+    ]
+  },
+  antialiasing: {
+    text: 'Antialiasing',
+    tooltip: 'Smooths jagged block edges (FXAA). Slightly softens textures.',
+    performance: {
+      level: 'light',
+      note: 'One full-screen pass: +0.3 ms at 1080p, about +3 ms at 4K. Slightly softens textures.'
+    },
+    possibleValues: [
+      ['off', 'Off'],
+      ['fxaa', 'FXAA']
+    ]
+  },
+  bloom: {
+    text: 'Bloom',
+    tooltip: 'Glow around light emitting blocks (torches, lava, glowstone...). Several extra passes.',
+    performance: { level: 'moderate', note: 'About 8 extra passes: +0.5 ms at 1080p, about +4 ms at 4K.' }
+  },
+  colorGrading: {
+    text: 'Color grading',
+    tooltip: 'Film-like tone curve and colour look for world blocks (done in the block shaders, no extra cost).',
+    performance: { level: 'free', note: 'A few shader operations per block pixel.' },
+    possibleValues: [
+      ['off', 'Off'],
+      ['warm', 'Warm'],
+      ['cinematic', 'Cinematic'],
+      ['vivid', 'Vivid']
+    ]
+  },
+  godRays: {
+    text: 'God rays',
+    tooltip: 'Light shafts from the sun through gaps in terrain and clouds.',
+    performance: { level: 'light', note: 'Free while the sun is off screen, up to +2 ms with the sun in view.' }
+  },
+  vignette: {
+    text: 'Vignette',
+    tooltip: 'Darkens the screen edges in dark places like vanilla does: none in daylight, full strength in caves and at night.',
+    performance: { level: 'free', note: 'Darkens the screen edges.' }
+  },
+  motionBlur: {
+    text: 'Motion blur',
+    tooltip: 'Blur when the camera moves or turns.',
+    performance: { level: 'light', note: '+0.2 ms while turning at 1080p, about +3 ms at 4K. Free while standing still.' }
+  },
+  sunShadowsDistance: {
+    text: 'Shadow distance',
+    tooltip: 'Blocks around you that receive sun shadows. Larger distances make shadows blurrier.',
+    performance: { level: 'light', note: 'Farther is blurrier, and soft shadows get much slower with it (128 blocks: +12 ms).' },
+    min: 16,
+    max: 128,
+    unit: ' blocks'
   },
   defaultSkybox: {
     text: 'Default skybox'
@@ -236,11 +459,22 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
   },
   vanillaLook: {
     text: 'Vanilla shading',
-    tooltip: 'On: Minecraft-style face shading. Off: higher-contrast client shading.'
+    tooltip: 'On: Minecraft-style face shading. Off: higher-contrast client shading.',
+    performance: { level: 'free', note: 'Only changes how block faces are shaded.' }
   },
   smoothLighting: {},
   newVersionsLighting: {
-    text: 'Lighting in newer versions'
+    text: 'Lighting in newer versions',
+    tooltip: 'Block and sky lighting for 1.13+. Off renders the world fullbright.'
+  },
+  clientLighting: {
+    text: 'Client lighting (1.17+)',
+    tooltip:
+      'Computes block and sky light in the browser, so placed and broken blocks light up at once and sun shadows read correctly. Off uses the light the server sends.'
+  },
+  entityLighting: {
+    text: 'Entity lighting',
+    tooltip: 'Light entities from block and sky light. Requires world lighting to be enabled; off keeps entities fullbright.'
   },
   vrSupport: {
     text: 'VR support',
@@ -280,6 +514,12 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
     unit: '°',
     text: 'FOV'
   },
+  preserveDrawingBuffer: {
+    text: 'Screenshot Buffer (F2)',
+    tooltip:
+      'Keeps the last frame so F2 can save a screenshot. Turning it off saves some GPU work, mostly on older GPUs and phones, but F2 then does nothing. Applies after a reload.',
+    requiresRestart: true
+  },
   gpuPreference: {
     text: 'GPU preference',
     tooltip: 'WebGL power preference. Requires reload / backend restart to apply.',
@@ -302,6 +542,17 @@ export const RENDERER_RENDER_GUI_SECTIONS: ReadonlyArray<{
     keys: [
       'rendererWorldPerformance',
       'starfieldRendering',
+      'cloudsRendering',
+      'wavingGrass',
+      'animatedTextures',
+      'sunShadows',
+      'sunShadowsDistance',
+      'antialiasing',
+      'bloom',
+      'colorGrading',
+      'godRays',
+      'vignette',
+      'motionBlur',
       'defaultSkybox',
       'disableBlockEntityTextures',
       'showChunkBorders',
@@ -309,6 +560,8 @@ export const RENDERER_RENDER_GUI_SECTIONS: ReadonlyArray<{
       'smoothLighting',
       'vanillaLook',
       'newVersionsLighting',
+      'clientLighting',
+      'entityLighting',
       'dayCycleAndLighting',
       'loadPlayerSkins',
       'renderEars',

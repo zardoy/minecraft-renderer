@@ -98,14 +98,31 @@ export function createMcDataPlugin(bundleMcData, rootDir) {
 }
 
 /**
+ * Replaces the `minecraft-data` entry with src/mesher-shared/mcDataWorkerShim.cjs so no version tables are bundled
+ * (only the exact `minecraft-data` import is replaced, `minecraft-data/lib/*` keeps pointing to the real, version independent code).
+ */
+export function createVersionAgnosticMcDataPlugin() {
+  return {
+    name: 'version-agnostic-minecraft-data',
+    setup(build) {
+      build.onResolve({ filter: /^minecraft-data$/ }, () => ({
+        path: path.join(rootDir, 'src/mesher-shared/mcDataWorkerShim.cjs')
+      }))
+    }
+  }
+}
+
+/**
  * Creates base build options for worker builds
  * @param {object} options
  * @param {string} options.entryPoint - Entry point file path
  * @param {string[]} options.bundleMcData - Array of mc-data file names to bundle
  * @param {import('esbuild').BuildOptions} options.esbuildOptions - Custom esbuild options
  * @param {boolean} options.watch - Whether in watch mode
+ * @param {boolean} [options.versionAgnosticMcData] - Replace `minecraft-data` with a shim that reads everything from the
+ *   `mcData` message instead of bundling the version tables of the installed package (bundle then works with any version)
  */
-export function createWorkerBuildOptions({ entryPoint, bundleMcData, watch, esbuildOptions }) {
+export function createWorkerBuildOptions({ entryPoint, bundleMcData, watch, esbuildOptions, versionAgnosticMcData = false }) {
   const BUNDLE_MC_DATA = bundleMcData || [...Object.keys(dynamicMcDataFiles), 'version']
 
   /** @type {import('esbuild').BuildOptions} */
@@ -131,7 +148,13 @@ export function createWorkerBuildOptions({ entryPoint, bundleMcData, watch, esbu
       '.obj': 'text'
     },
     ...esbuildOptions,
-    plugins: [createMcDataPlugin(BUNDLE_MC_DATA, rootDir), createEsbuildDataPlugin(), polyfillNode(), ...(esbuildOptions.plugins ?? [])]
+    plugins: [
+      ...(versionAgnosticMcData ? [createVersionAgnosticMcDataPlugin()] : []),
+      createMcDataPlugin(BUNDLE_MC_DATA, rootDir),
+      createEsbuildDataPlugin(),
+      polyfillNode(),
+      ...(esbuildOptions.plugins ?? [])
+    ]
   }
   return buildOptions
 }

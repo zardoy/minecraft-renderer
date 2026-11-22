@@ -1,0 +1,9 @@
+{
+  "version": "26.1",
+  "protocolVersion": 775,
+  "x": 0,
+  "z": 178,
+  "packetName": "map_chunk",
+  "source": "vanilla client recording",
+  "byteLength": 21666
+}

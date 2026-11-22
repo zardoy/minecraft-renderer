@@ -34,6 +34,7 @@ import { disposeObject } from './threeJsUtils'
 import { getBannerTexture, createBannerMesh, releaseBannerTexture } from './bannerRenderer'
 import { getSignTexture, releaseSignTexture, disposeAllSignTextures } from './signTextureCache'
 import { BlockEntityLightRegistry } from '../lib/blockEntityLightRegistry'
+import { isClientLightTraceEnabled, recordClientLightTraceGpuSample } from '../lighting/debug/clientLightTrace'
 import { SectionOcclusionCull, hsvToRgb } from './occlusion/sectionOcclusionCull'
 import { VISIBILITY_SET_ALL_TRUE } from '../mesher-shared/visibilitySet'
 
@@ -115,19 +116,12 @@ export class ChunkMeshManager {
    */
   readonly waitingChunksToDisplay: Record<string, string[]> = {}
   /**
-   * Chunks whose mesh batch is fully ready but kept invisible by the
-   * WASM near-first reveal gate because at least one nearer column is
-   * not yet finished. Value = enqueue timestamp (ms), used by the
-   * expected-delivery grace window in `isBlockedByNearer`.
+   * Near-first reveal gate (WASM path): chunks whose meshes are all ready but kept invisible because a nearer column the renderer has
+   * is not finished yet, so the world never appears far-first (mesh workers finish columns out of order). Columns the renderer does not
+   * have yet do not block: `WorldView` gives columns out nearest first and has already waited for missing ones. No timeout, like vanilla
+   * (which has no gate and shows what is compiled): a nearer column that never finishes is a bug to fix, not to hide. Value = when parked.
    */
   readonly pendingNearReveal = new Map<string, number>()
-  private readonly nearRevealTimers = new Map<string, ReturnType<typeof setTimeout>>()
-  private readonly nearRevealGraceTimers = new Map<string, ReturnType<typeof setTimeout>>()
-  // Force-flush pending reveal after this many ms (last-resort safety).
-  private static readonly NEAR_REVEAL_TIMEOUT_MS = 5000
-  // Soft window during which the gate also waits for *expected* nearer
-  // columns that have not arrived yet (covers far-worker-beats-near-worker).
-  private static readonly EXPECTED_NEAR_GRACE_MS = 1500
   private poolSize!: number
   private maxPoolSize!: number
   private minPoolSize!: number
@@ -284,6 +278,15 @@ export class ChunkMeshManager {
     if (this.globalLegacyShaderMaterial) setLegacySkyLevel(this.globalLegacyShaderMaterial, value)
     if (this.globalLegacyBlendShaderMaterial) setLegacySkyLevel(this.globalLegacyBlendShaderMaterial, value)
     this.blockEntityLightRegistry.setSkyLevel(value)
+    this.worldRenderer.entityLightController?.setSkyLevel(value)
+  }
+
+  getSkyLevel(): number {
+    return this.blockEntityLightRegistry.getSkyLevel()
+  }
+
+  getLightmapParams(): BlockLightmapParams {
+    return this.blockEntityLightRegistry.getLightmapParams()
   }
 
   setShadingTheme(theme: 'vanilla' | 'high-contrast', cardinalLight: string): void {
@@ -299,11 +302,13 @@ export class ChunkMeshManager {
     if (this.globalLegacyShaderMaterial) setLegacyLightmapParams(this.globalLegacyShaderMaterial, params)
     if (this.globalLegacyBlendShaderMaterial) setLegacyLightmapParams(this.globalLegacyBlendShaderMaterial, params)
     this.blockEntityLightRegistry.setLightmapParams(params)
+    this.worldRenderer.entityLightController?.setLightmapParams(params)
   }
 
   private getLegacyShaderMaterial(): THREE.ShaderMaterial {
     if (!this.legacyShaderMaterial) {
       this.legacyShaderMaterial = createLegacyBlockMaterial()
+      this.worldRenderer.blockEffects.register(this.legacyShaderMaterial, 'legacyBlended')
       this.syncLegacyShaderUniforms()
     }
     return this.legacyShaderMaterial
@@ -312,6 +317,7 @@ export class ChunkMeshManager {
   private getGlobalLegacyShaderMaterial(): THREE.ShaderMaterial {
     if (!this.globalLegacyShaderMaterial) {
       this.globalLegacyShaderMaterial = createGlobalLegacyBlockMaterial()
+      this.worldRenderer.blockEffects.register(this.globalLegacyShaderMaterial, 'legacy')
       this.syncLegacyShaderUniforms()
     }
     return this.globalLegacyShaderMaterial
@@ -328,6 +334,7 @@ export class ChunkMeshManager {
   private getGlobalLegacyBlendShaderMaterial(): THREE.ShaderMaterial {
     if (!this.globalLegacyBlendShaderMaterial) {
       this.globalLegacyBlendShaderMaterial = createGlobalLegacyBlendMaterial()
+      this.worldRenderer.blockEffects.register(this.globalLegacyBlendShaderMaterial, 'legacyBlended')
       this.syncLegacyShaderUniforms()
     }
     return this.globalLegacyBlendShaderMaterial
@@ -631,6 +638,21 @@ export class ChunkMeshManager {
       gb.setVisibleSpans(spans)
     }
 
+    if (isClientLightTraceEnabled()) {
+      const cubeFaces = gb?.getVisibleFaceCount() ?? 0
+      const legacyQuads = (opaqueBuf?.getVisibleQuadCount() ?? 0) + (blendBuf?.getVisibleQuadCount() ?? 0)
+      const drawableFaces = cubeFaces + legacyQuads
+      recordClientLightTraceGpuSample('gpuDrawn', drawableFaces, () => ({
+        phase: 'gpuDrawn',
+        drawableFaces,
+        pendingReplace: !!(gb?.hasPendingReplace() || opaqueBuf?.hasPendingReplace() || blendBuf?.hasPendingReplace()),
+        pendingMove: !!(gb?.getPendingMove() || opaqueBuf?.getPendingMove() || blendBuf?.getPendingMove()),
+        unuploadedRanges:
+          (gb?.getPendingDirtyRanges().length ?? 0) + (opaqueBuf?.getPendingDirtyRanges().length ?? 0) + (blendBuf?.getPendingDirtyRanges().length ?? 0),
+        cullReason: smartCull ? 'frustum+occlusion' : 'frustum'
+      }))
+    }
+
     this.lastBufferStateKey = this.bufferStateKey()
     this.updatePooledLegacyCullState(cameraWorldX, cameraWorldY, cameraWorldZ, applyOcclusionFilter, occlusionVisible)
   }
@@ -722,6 +744,7 @@ export class ChunkMeshManager {
 
   setLegacyCameraOrigin(x: number, y: number, z: number): void {
     const R = this.renderOrigin
+    this.worldRenderer.blockEffects.setRenderOrigin(R)
     setLegacyCameraOrigin(this.getLegacyShaderMaterial(), R, x, y, z)
     setLegacyCameraOrigin(this.getGlobalLegacyShaderMaterial(), R, x, y, z)
     setLegacyCameraOrigin(this.getGlobalLegacyBlendShaderMaterial(), R, x, y, z)
@@ -751,6 +774,7 @@ export class ChunkMeshManager {
     if (!this.isShaderCubesGpuEnabled()) return null
     if (!this.cubeShaderMaterial) {
       this.cubeShaderMaterial = createCubeBlockMaterial()
+      this.worldRenderer.blockEffects.register(this.cubeShaderMaterial, 'cube')
       this.syncCubeShaderUniforms()
       const cfg = this.worldRenderer.worldRendererConfig
       setCubeShadingTheme(this.cubeShaderMaterial, cfg.shadingTheme, cfg.cardinalLight)
@@ -1209,9 +1233,8 @@ export class ChunkMeshManager {
    * Reveal all sections of a chunk that were held invisible by the
    * "Batch Chunks Display" option. Called from `WorldRendererThree.finishChunk`.
    *
-   * For the WASM path: if any nearer column is not yet finished, the
-   * reveal is deferred (parked in `pendingNearReveal`) and re-checked on
-   * the next chunkFinished / player-move / grace-expiry.
+   * For the WASM path: if a nearer column is not finished yet, the reveal is deferred (parked in `pendingNearReveal`) and re-checked on
+   * the next chunkFinished / column removal / player move.
    */
   finishChunkDisplay(chunkKey: string): void {
     const sectionKeys = this.waitingChunksToDisplay[chunkKey]
@@ -1221,10 +1244,8 @@ export class ChunkMeshManager {
       this.tryRevealPending()
       return
     }
-    if (this.isWasmGateActive() && this.isBlockedByNearer(chunkKey, 0)) {
+    if (this.isWasmGateActive() && this.isBlockedByNearer(chunkKey)) {
       this.pendingNearReveal.set(chunkKey, Date.now())
-      this.armNearRevealTimer(chunkKey)
-      this.armExpectedGraceTimer(chunkKey)
       this.tryRevealPending()
       return
     }
@@ -1235,8 +1256,6 @@ export class ChunkMeshManager {
   private flushChunkDisplay(chunkKey: string): void {
     const sectionKeys = this.waitingChunksToDisplay[chunkKey]
     this.pendingNearReveal.delete(chunkKey)
-    this.clearNearRevealTimer(chunkKey)
-    this.clearExpectedGraceTimer(chunkKey)
     if (!sectionKeys) return
     for (const sectionKey of sectionKeys) {
       const sectionObject = this.sectionObjects[sectionKey]
@@ -1248,17 +1267,11 @@ export class ChunkMeshManager {
     this.markCullDirty()
   }
 
-  // Re-check every parked entry; each has its own grace window via `ageMs`.
-  // Single pass is enough — pending entries are already finished, so flushing
-  // one cannot un-block another via this code path (cascading happens via
-  // chunkFinished events and per-pending grace timers).
+  // Re-check every parked entry. One pass is enough: parked chunks are finished, so showing one never unblocks another.
   tryRevealPending(): void {
     if (this.pendingNearReveal.size === 0) return
-    const now = Date.now()
-    for (const [chunkKey, enqueuedAt] of [...this.pendingNearReveal]) {
-      if (!this.isBlockedByNearer(chunkKey, now - enqueuedAt)) {
-        this.flushChunkDisplay(chunkKey)
-      }
+    for (const chunkKey of [...this.pendingNearReveal.keys()]) {
+      if (!this.isBlockedByNearer(chunkKey)) this.flushChunkDisplay(chunkKey)
     }
   }
 
@@ -1266,8 +1279,6 @@ export class ChunkMeshManager {
   // chunks that may have been blocked by it.
   onChunkRemovedFromGate(chunkKey: string): void {
     this.pendingNearReveal.delete(chunkKey)
-    this.clearNearRevealTimer(chunkKey)
-    this.clearExpectedGraceTimer(chunkKey)
     delete this.waitingChunksToDisplay[chunkKey]
     this.tryRevealPending()
   }
@@ -1276,104 +1287,25 @@ export class ChunkMeshManager {
     return !!this.worldRenderer.worldRendererConfig?.wasmMesher
   }
 
-  /**
-   * True if some chunk-grid position strictly closer to the viewer than
-   * `chunkKey` is not yet `finishedChunks=true`.
-   *
-   * Two regimes by `ageMs` (time spent in `pendingNearReveal`):
-   * - Within `EXPECTED_NEAR_GRACE_MS`: nearer columns in the circle that are
-   *   loaded but not finished block (far worker beats near worker).
-   * - After grace: only actually-loaded-but-not-finished columns block,
-   *   so a never-arriving column does not freeze the view.
-   */
-  private isBlockedByNearer(chunkKey: string, ageMs: number): boolean {
+  /** True while a column strictly nearer to the viewer than `chunkKey` is loaded but not finished. */
+  private isBlockedByNearer(chunkKey: string): boolean {
     const viewer = this.worldRenderer.viewerChunkPosition
     if (!viewer) return false
     const ownParts = chunkKey.split(',')
     if (ownParts.length !== 2) return false
-    const ownX = Number(ownParts[0])
-    const ownZ = Number(ownParts[1])
     const playerCx = Math.floor(viewer.x / 16)
     const playerCz = Math.floor(viewer.z / 16)
-    const myDx = (ownX >> 4) - playerCx
-    const myDz = (ownZ >> 4) - playerCz
-    const myDist = myDx * myDx + myDz * myDz
+    const distanceSq = (x: number, z: number) => ((x >> 4) - playerCx) ** 2 + ((z >> 4) - playerCz) ** 2
+    const myDist = distanceSq(Number(ownParts[0]), Number(ownParts[1]))
     if (myDist === 0) return false
-    const finishedChunks = this.worldRenderer.finishedChunks
-    const loadedChunks = this.worldRenderer.loadedChunks
-    const viewDist = this.worldRenderer.viewDistance
-    const inGrace = ageMs < ChunkMeshManager.EXPECTED_NEAR_GRACE_MS && viewDist > 0
-
-    if (inGrace) {
-      const viewDistSq = viewDist * viewDist
-      const limit = Math.min(viewDist, Math.ceil(Math.sqrt(Math.max(0, myDist - 1))))
-      for (let dCx = -limit; dCx <= limit; dCx++) {
-        for (let dCz = -limit; dCz <= limit; dCz++) {
-          const oDistSq = dCx * dCx + dCz * dCz
-          if (oDistSq >= myDist || oDistSq > viewDistSq) continue
-          const ox = (playerCx + dCx) << 4
-          const oz = (playerCz + dCz) << 4
-          const otherKey = `${ox},${oz}`
-          if (otherKey === chunkKey) continue
-          if (!loadedChunks[otherKey]) continue
-          if (!finishedChunks[otherKey]) return true
-        }
-      }
-      return false
-    }
-
+    const { finishedChunks, loadedChunks } = this.worldRenderer
     for (const otherKey in loadedChunks) {
       if (otherKey === chunkKey || finishedChunks[otherKey]) continue
       const parts = otherKey.split(',')
       if (parts.length !== 2) continue
-      const odx = (Number(parts[0]) >> 4) - playerCx
-      const odz = (Number(parts[1]) >> 4) - playerCz
-      if (odx * odx + odz * odz < myDist) return true
+      if (distanceSq(Number(parts[0]), Number(parts[1])) < myDist) return true
     }
     return false
-  }
-
-  private armNearRevealTimer(chunkKey: string): void {
-    if (this.nearRevealTimers.has(chunkKey)) return
-    const timer = setTimeout(() => {
-      this.nearRevealTimers.delete(chunkKey)
-      if (!this.pendingNearReveal.has(chunkKey)) return
-      console.warn(`[chunk-reveal] safety timeout for ${chunkKey} — a nearer pending column never finished, force-revealing`)
-      this.flushChunkDisplay(chunkKey)
-      this.tryRevealPending()
-    }, ChunkMeshManager.NEAR_REVEAL_TIMEOUT_MS)
-    this.nearRevealTimers.set(chunkKey, timer)
-  }
-
-  private clearNearRevealTimer(chunkKey: string): void {
-    const timer = this.nearRevealTimers.get(chunkKey)
-    if (timer) {
-      clearTimeout(timer)
-      this.nearRevealTimers.delete(chunkKey)
-    }
-  }
-
-  /**
-   * Schedule a re-evaluation just after the grace window expires so that
-   * "expected but never arrived" positions stop blocking promptly,
-   * without waiting for the next chunkFinished / player-move event.
-   */
-  private armExpectedGraceTimer(chunkKey: string): void {
-    if (this.nearRevealGraceTimers.has(chunkKey)) return
-    const timer = setTimeout(() => {
-      this.nearRevealGraceTimers.delete(chunkKey)
-      if (!this.pendingNearReveal.has(chunkKey)) return
-      this.tryRevealPending()
-    }, ChunkMeshManager.EXPECTED_NEAR_GRACE_MS + 50)
-    this.nearRevealGraceTimers.set(chunkKey, timer)
-  }
-
-  private clearExpectedGraceTimer(chunkKey: string): void {
-    const timer = this.nearRevealGraceTimers.get(chunkKey)
-    if (timer) {
-      clearTimeout(timer)
-      this.nearRevealGraceTimers.delete(chunkKey)
-    }
   }
 
   cleanupSection(sectionKey: string, opts?: { forRemesh?: boolean }) {
@@ -1810,6 +1742,9 @@ export class ChunkMeshManager {
     this.globalLegacyBuffer = null
     this.globalLegacyBlendBuffer?.dispose()
     this.globalLegacyBlendBuffer = null
+    for (const material of [this.cubeShaderMaterial, this.legacyShaderMaterial, this.globalLegacyShaderMaterial, this.globalLegacyBlendShaderMaterial]) {
+      if (material) this.worldRenderer.blockEffects.unregister(material)
+    }
     this.cubeShaderMaterial?.dispose()
     this.cubeShaderMaterial = null
     this.legacyShaderMaterial?.dispose()
@@ -1818,12 +1753,7 @@ export class ChunkMeshManager {
     this.globalLegacyShaderMaterial = null
     this.globalLegacyBlendShaderMaterial?.dispose()
     this.globalLegacyBlendShaderMaterial = null
-    // Drop any pending near-first reveal state and cancel safety timers.
     this.pendingNearReveal.clear()
-    for (const timer of this.nearRevealTimers.values()) clearTimeout(timer)
-    this.nearRevealTimers.clear()
-    for (const timer of this.nearRevealGraceTimers.values()) clearTimeout(timer)
-    this.nearRevealGraceTimers.clear()
     this.sectionOcclusionCull.clear()
   }
 

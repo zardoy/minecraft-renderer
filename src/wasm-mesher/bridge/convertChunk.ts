@@ -47,6 +47,26 @@ export const getBlockMeta = (version: string): BlockMeta => {
   return meta
 }
 
+const ceilLog2 = (count: number) => (count <= 1 ? 0 : 32 - Math.clz32(count - 1))
+
+const globalPaletteBitsCache = new Map<string, { blocks: number; biomes: number }>()
+
+/**
+ * Bits of the global block state and biome palettes, vanilla's
+ * `Strategy.globalPaletteBitsInMemory`: ceillog2 of the registry size.
+ * map_chunk stores direct (unpaletted) containers with them. The biome count
+ * is minecraft-data's vanilla registry; a server's own biomes can change it.
+ */
+export const getGlobalPaletteBits = (version: string) => {
+  const cached = globalPaletteBitsCache.get(version)
+  if (cached) return cached
+  const mcData = MinecraftData(version)
+  const blockStates = mcData.blocksArray.reduce((max, block) => Math.max(max, block.maxStateId ?? 0), 0) + 1
+  const bits = { blocks: ceilLog2(blockStates), biomes: ceilLog2(mcData.biomesArray.length) }
+  globalPaletteBitsCache.set(version, bits)
+  return bits
+}
+
 export interface ChunkConversionResult {
   blockStates: Uint16Array
   blockLight: Uint8Array

@@ -11,6 +11,7 @@ import {
 import { VERTICES_PER_FACE, computeSectionOriginRel } from './shaders/cubeBlockShader'
 import { computeCameraRelativeUniforms, type RenderOrigin } from './shaders/legacyBlockShader'
 import { packWord2Empty } from '../wasm-mesher/bridge/shaderCubeBridge'
+import { isClientLightTraceEnabled, recordClientLightTrace, recordClientLightTraceGpuSample } from '../lighting/debug/clientLightTrace'
 
 type WebGLRendererInternals = THREE.WebGLRenderer & {
   properties: {
@@ -43,6 +44,18 @@ type PendingReplace = { oldStart: number; oldCount: number }
 export type GlobalBlockBufferShaderData = {
   words: Uint32Array
   count: number
+}
+
+/** Sort by start and merge physically adjacent ranges (never bridges gaps). */
+export function mergeAdjacentSpans(spans: CubeDrawSpan[]): CubeDrawSpan[] {
+  spans.sort((a, b) => a.start - b.start)
+  const merged: CubeDrawSpan[] = []
+  for (const span of spans) {
+    const last = merged.at(-1)
+    if (last && last.start + last.count === span.start) last.count += span.count
+    else merged.push({ ...span })
+  }
+  return merged
 }
 
 /**
@@ -106,21 +119,41 @@ export class GlobalBlockBuffer {
     scene.add(this.mesh)
 
     this.mesh.onAfterRender = (renderer, _scene, _camera, _geometry, material) => {
-      if (this.visibleSpans.length === 0) return
-      const shaderMaterial = material as THREE.ShaderMaterial
-      const gl = renderer.getContext() as WebGL2RenderingContext
-      if (!this.multiDrawCaps) {
-        this.multiDrawCaps = detectMultiDrawCaps(gl)
-        logMultiDrawTierOnce(this.multiDrawCaps.tier, this.debugOverlay)
-      }
-      drawCubeSpans(
-        gl,
-        this.multiDrawCaps,
-        this.visibleSpans,
-        this._drawScratch,
-        this.multiDrawCaps.tier === 'C' ? (g, spans) => this.drawTierCSpans(g, spans, renderer, shaderMaterial) : undefined
-      )
+      this.drawSpans(renderer, material as THREE.ShaderMaterial, this.visibleSpans)
     }
+  }
+
+  /**
+   * Issue draws for `spans` with the program three just bound (call from onAfterRender of a mesh using this geometry).
+   * Used by the main mesh and by extra passes (sun shadows) that render the same buffer with another material.
+   */
+  drawSpans(renderer: THREE.WebGLRenderer, material: THREE.ShaderMaterial, spans: readonly CubeDrawSpan[]): void {
+    if (spans.length === 0) return
+    const gl = renderer.getContext() as WebGL2RenderingContext
+    if (!this.multiDrawCaps) {
+      this.multiDrawCaps = detectMultiDrawCaps(gl)
+      logMultiDrawTierOnce(this.multiDrawCaps.tier, this.debugOverlay)
+    }
+    drawCubeSpans(
+      gl,
+      this.multiDrawCaps,
+      spans,
+      this._drawScratch,
+      this.multiDrawCaps.tier === 'C' ? (g, s) => this.drawTierCSpans(g, s, renderer, material) : undefined
+    )
+  }
+
+  /** Drawable spans of the sections accepted by `include` (fully uploaded ones only), adjacent slots merged. */
+  collectSectionSpans(include: (sectionKey: string) => boolean): CubeDrawSpan[] {
+    const spans: CubeDrawSpan[] = []
+    for (const key of this.sectionSlots.keys()) {
+      if (!include(key)) continue
+      const start = this.getSectionDrawStart(key)
+      const count = this.getSectionDrawCount(key)
+      if (start === undefined || !count) continue
+      spans.push({ start, count })
+    }
+    return mergeAdjacentSpans(spans)
   }
 
   setDebugOverlay(enabled: boolean): void {
@@ -161,9 +194,9 @@ export class GlobalBlockBuffer {
   getSectionDrawStart(sectionKey: string): number | undefined {
     const slot = this.sectionSlots.get(sectionKey)
     if (!slot) return undefined
-    if (this.pendingMove?.key === sectionKey) return this.pendingMove.oldStart
     const replace = this.pendingReplace.get(sectionKey)
     if (replace) return replace.oldStart
+    if (this.pendingMove?.key === sectionKey) return this.pendingMove.oldStart
     if (!this.rangeFullyUploaded(slot.start, slot.start + slot.count - 1)) return undefined
     return slot.start
   }
@@ -171,11 +204,35 @@ export class GlobalBlockBuffer {
   getSectionDrawCount(sectionKey: string): number | undefined {
     const slot = this.sectionSlots.get(sectionKey)
     if (!slot) return undefined
-    if (this.pendingMove?.key === sectionKey) return this.pendingMove.count
     const replace = this.pendingReplace.get(sectionKey)
     if (replace) return replace.oldCount
+    if (this.pendingMove?.key === sectionKey) return this.pendingMove.count
     if (!this.rangeFullyUploaded(slot.start, slot.start + slot.count - 1)) return undefined
     return slot.count
+  }
+
+  getGpuSlotTrace(sectionKey: string):
+    | {
+        displayedStart?: number
+        displayedCount?: number
+        candidateStart: number
+        candidateCount: number
+        pendingReplace: boolean
+        pendingMove: boolean
+        unuploadedRanges: number
+      }
+    | undefined {
+    const slot = this.sectionSlots.get(sectionKey)
+    if (!slot) return undefined
+    return {
+      displayedStart: this.getSectionDrawStart(sectionKey),
+      displayedCount: this.getSectionDrawCount(sectionKey),
+      candidateStart: slot.start,
+      candidateCount: slot.count,
+      pendingReplace: this.pendingReplace.has(sectionKey),
+      pendingMove: this.pendingMove?.key === sectionKey,
+      unuploadedRanges: this.pendingRanges.length
+    }
   }
 
   getUploadEpoch(): number {
@@ -281,6 +338,20 @@ export class GlobalBlockBuffer {
     this.markDirty(slot.start, slot.start + faceCount - 1)
     this.mesh.geometry.instanceCount = this.highWatermark
     this.layoutVersion++
+    if (isClientLightTraceEnabled()) {
+      const gpu = this.getGpuSlotTrace(sectionKey)
+      recordClientLightTrace({
+        phase: 'gpuStaged',
+        sectionKey,
+        displayedStart: gpu?.displayedStart,
+        displayedCount: gpu?.displayedCount,
+        candidateStart: gpu?.candidateStart,
+        candidateCount: gpu?.candidateCount,
+        pendingReplace: gpu?.pendingReplace,
+        pendingMove: gpu?.pendingMove,
+        unuploadedRanges: gpu?.unuploadedRanges
+      })
+    }
   }
 
   getLayoutVersion(): number {
@@ -387,6 +458,20 @@ export class GlobalBlockBuffer {
     this.markDirty(newStart, newStart + section.count - 1)
     this.pendingMove = { key: section.key, oldStart, newStart, count: section.count }
     this.layoutVersion++
+    if (isClientLightTraceEnabled()) {
+      const gpu = this.getGpuSlotTrace(section.key)
+      recordClientLightTrace({
+        phase: 'gpuStaged',
+        sectionKey: section.key,
+        displayedStart: gpu?.displayedStart,
+        displayedCount: gpu?.displayedCount,
+        candidateStart: gpu?.candidateStart,
+        candidateCount: gpu?.candidateCount,
+        pendingReplace: gpu?.pendingReplace,
+        pendingMove: true,
+        unuploadedRanges: gpu?.unuploadedRanges
+      })
+    }
   }
 
   uploadDirtyRange(): void {
@@ -410,6 +495,13 @@ export class GlobalBlockBuffer {
       r.start = offset + count
     }
     this.uploadEpoch++
+    if (isClientLightTraceEnabled()) {
+      recordClientLightTraceGpuSample('gpuUploaded', this.highWatermark, () => ({
+        phase: 'gpuUploaded',
+        unuploadedRanges: this.pendingRanges.length,
+        drawableFaces: this.highWatermark
+      }))
+    }
   }
 
   setCameraOrigin(renderOrigin: RenderOrigin, x: number, y: number, z: number): void {
@@ -607,6 +699,9 @@ export class GlobalBlockBuffer {
   private findMovableSection(maxCount: number): { key: string; start: number; count: number } | undefined {
     const sections: Array<{ key: string; start: number; count: number }> = []
     for (const [key, slot] of this.sectionSlots) {
+      if (this.pendingReplace.has(key)) continue
+      if (this.pendingMove?.key === key) continue
+      if (!this.rangeFullyUploaded(slot.start, slot.start + slot.count - 1)) continue
       sections.push({ key, start: slot.start, count: slot.count })
     }
     if (sections.length === 0) return undefined
@@ -683,11 +778,26 @@ export class GlobalBlockBuffer {
     this.mesh.geometry.instanceCount = this.highWatermark
     this.layoutVersion++
     this.uploadEpoch++
+    if (isClientLightTraceEnabled()) {
+      const gpu = this.getGpuSlotTrace(key)
+      recordClientLightTrace({
+        phase: 'gpuCommitted',
+        sectionKey: key,
+        displayedStart: gpu?.displayedStart,
+        displayedCount: gpu?.displayedCount,
+        candidateStart: gpu?.candidateStart,
+        candidateCount: gpu?.candidateCount,
+        pendingReplace: false,
+        pendingMove: gpu?.pendingMove,
+        unuploadedRanges: gpu?.unuploadedRanges
+      })
+    }
   }
 
   private finalizePendingMove(): void {
     const move = this.pendingMove
     if (!move) return
+    const movedKey = move.key
 
     const { oldStart, count } = move
     this.zeroAndFreeSlot(oldStart, count)
@@ -696,6 +806,20 @@ export class GlobalBlockBuffer {
     this.pendingMove = null
     this.layoutVersion++
     this.uploadEpoch++
+    if (isClientLightTraceEnabled()) {
+      const gpu = this.getGpuSlotTrace(movedKey)
+      recordClientLightTrace({
+        phase: 'gpuCommitted',
+        sectionKey: movedKey,
+        displayedStart: gpu?.displayedStart,
+        displayedCount: gpu?.displayedCount,
+        candidateStart: gpu?.candidateStart,
+        candidateCount: gpu?.candidateCount,
+        pendingReplace: gpu?.pendingReplace,
+        pendingMove: false,
+        unuploadedRanges: gpu?.unuploadedRanges
+      })
+    }
   }
 
   private shrinkHighWatermark(): void {

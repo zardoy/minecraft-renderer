@@ -44,6 +44,17 @@ export function createCubeMultiDrawScratch(): CubeMultiDrawScratch {
   }
 }
 
+/** Grow scratch arrays when culling leaves more disjoint spans than MAX_CUBE_SPANS. */
+function ensureScratchCapacity(scratch: CubeMultiDrawScratch, minLength: number): void {
+  if (scratch.counts.length >= minLength) return
+  let newLen = scratch.counts.length
+  while (newLen < minLength) newLen *= 2
+  scratch.firsts = new Int32Array(newLen)
+  scratch.counts = new Int32Array(newLen)
+  scratch.instanceCounts = new Int32Array(newLen)
+  scratch.baseInstances = new Int32Array(newLen)
+}
+
 export function detectMultiDrawCaps(gl: WebGL2RenderingContext): MultiDrawCaps {
   const tierA = gl.getExtension('WEBGL_multi_draw_instanced_base_vertex_base_instance')
   if (tierA) {
@@ -81,6 +92,7 @@ export function drawCubeSpans(
 
   if (caps.tier === 'A' && caps.ext) {
     const ext = caps.ext as MultiDrawInstancedExt
+    ensureScratchCapacity(scratch, drawCount)
     for (let i = 0; i < drawCount; i++) {
       const span = spans[i]!
       scratch.firsts[i] = 0

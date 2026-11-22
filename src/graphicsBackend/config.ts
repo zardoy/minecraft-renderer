@@ -30,6 +30,11 @@ export const defaultWorldRendererConfig = {
   /** 0=off, 1=holes red, 2=tileIndex, 3=faceId colors, 4=atlas alpha */
   shaderCubeDebugMode: 0,
   mesherWorkers: 1,
+  /**
+   * Animated block textures (water, lava, fire, portals...). `basic` switches frames,
+   * `smooth` also blends frames of animations that request it (command blocks, magma...) like vanilla.
+   */
+  animatedTextures: 'smooth' as 'off' | 'basic' | 'smooth',
   addChunksBatchWaitTime: 200,
   _experimentalSmoothChunkLoading: true,
   _renderByChunks: false,
@@ -42,6 +47,18 @@ export const defaultWorldRendererConfig = {
    * remeshing (change worker). When true, initial chunk meshing is
    * distributed only across workers[0 .. n-2]. */
   dedicatedChangeWorker: false,
+  /**
+   * Client light: a dedicated WASM worker computes block and sky light in the browser (Minecraft 1.17+; older versions keep the
+   * server's light). Follows the `clientLighting` option, `?clientLight=0|1` in the page URL overrides it.
+   */
+  enableClientLight: true,
+  /**
+   * Trust the light a column arrives with (server light) and give it to client light as-is, like the vanilla client: new columns are then
+   * not relit (no recompute, no publication waves, no remesh); client light only works on edits. 1.18+ only (older versions send light
+   * in update_light packets). On by default for performance. Known gap: the singleplayer generator's light is fake (block light 15
+   * everywhere), so singleplayer looks fullbright with this on until the generator computes real light.
+   */
+  trustColumnLight: true,
 
   // Rendering engine settings
   /** Face shading: vanilla Minecraft vs higher-contrast client look */
@@ -51,8 +68,31 @@ export const defaultWorldRendererConfig = {
   dayCycle: true,
   smoothLighting: true,
   enableLighting: true,
+  /** Entity shading is on unless the entity lighting option is turned off. Block lighting stays on enableLighting. */
+  enableEntityLighting: true,
   starfield: true,
   defaultSkybox: true,
+  clouds: true,
+  /** Grass, flowers, crops and leaves sway in the wind (vertex shader only, no remesh to toggle). */
+  wavingGrass: true,
+  /** Sun shadows on chunk geometry: `soft` uses a wider filter. Off at night and outside the overworld. */
+  sunShadows: 'normal' as 'off' | 'normal' | 'soft',
+  /** Blocks around the camera that receive sun shadows (16-128). */
+  sunShadowsDistance: 64,
+  /** Screen-space antialiasing of the world frame (one extra full-screen pass when on). */
+  antialiasing: 'off' as 'off' | 'fxaa',
+  // Post effects (all cost a few full-screen passes when on, nothing when off)
+  /** Glow around light emitting blocks (torches, lava, glowstone...). */
+  bloom: false,
+  /** Colour look of world blocks, done in the block shaders (no extra pass, safe on phones). */
+  colorGrading: 'warm' as 'off' | 'warm' | 'cinematic' | 'vivid',
+  /** Light shafts from the sun through gaps in terrain and clouds. */
+  godRays: false,
+  vignette: false,
+  /** Camera motion blur. */
+  motionBlur: false,
+  /** World Y of the cloud layer (vanilla overworld: 192 since 1.18, 128 before). */
+  cloudHeight: 192,
   renderEntities: true,
   extraBlockRenderers: true,
   foreground: true,

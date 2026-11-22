@@ -87,11 +87,27 @@ export function matmulmat3(a, b) {
   return te
 }
 
+/** Plain row-major product a * b (not the transposed convention of matmulmat3) */
+function mulMat3(a: number[][], b: number[][]) {
+  return a.map((row, i) => row.map((_, j) => row[0] * b[0][j] + row[1] * b[1][j] + row[2] * b[2][j]))
+}
+
+/**
+ * 26.x element rotation: degrees about each axis, `{ origin, x, y, z }` instead of `{ origin, axis, angle }`.
+ * Applied like vanilla's `rotationZYX(z, y, x)`: a vector is rotated about z first, then y, then x.
+ */
+export function buildXyzRotationMatrix({ x = 0, y = 0, z = 0 }: { x?: number; y?: number; z?: number }) {
+  return mulMat3(buildRotationMatrix('x', x), mulMat3(buildRotationMatrix('y', y), buildRotationMatrix('z', z)))
+}
+
 export function buildElementRotation(rotation) {
-  let localMatrix = buildRotationMatrix(rotation.axis, rotation.angle)
+  // elements without an axis use the 26.x x/y/z form (a missing x/y/z is 0, so no rotation at all is the identity)
+  const isAxisAngle = rotation.axis !== undefined
+  let localMatrix = isAxisAngle ? buildRotationMatrix(rotation.axis, rotation.angle) : buildXyzRotationMatrix(rotation)
   let localShift = vecsub3(rotation.origin, matmul3(localMatrix, rotation.origin))
 
-  if (rotation.rescale) {
+  // rescale is only defined for a single axis rotation
+  if (rotation.rescale && isAxisAngle) {
     const FIT_TO_BLOCK_SCALE_MULTIPLIER = 2 - Math.sqrt(2)
     const angleRad = (rotation.angle * Math.PI) / 180
     const scale = Math.abs(Math.sin(angleRad)) * FIT_TO_BLOCK_SCALE_MULTIPLIER

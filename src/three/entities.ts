@@ -8,7 +8,6 @@ import { inferModelType, loadCapeToCanvas, loadEarsToCanvasFromSkin } from 'skin
 import { flat, fromFormattedString } from '@xmcl/text-component'
 import mojangson from 'mojangson'
 import { snakeCase } from 'change-case'
-import { Item } from 'prismarine-item'
 import { isEntityAttackable } from 'mineflayer-mouse/dist/attackableEntity'
 import { Team } from 'mineflayer'
 import PrismarineChatLoader from 'prismarine-chat'
@@ -33,6 +32,7 @@ import { releaseVehiclePassengerPosition } from './entity/vehiclePassengerRender
 import { updateVehiclePassengerPositions as applyVehiclePassengerPositions } from './entity/vehiclePassengerUpdate'
 import { applyNetworkHeadPitch, storeNetworkHeadPitch, storeNetworkHeadYaw } from './entity/networkHeadPitchRendering'
 import { processRemoteBoatPassengerRotations, type RemoteBoatPassengerEntity } from './entity/remoteBoatPassengerRotation'
+import { isClientLightTraceEnabled, recordClientLightTrace } from '../lighting/debug/clientLightTrace'
 import {
   ENTITY_TWEEN_DURATION_MS,
   applyLocalHorseCameraYawLock,
@@ -58,9 +58,11 @@ import {
   type HorseHeadRig
 } from './entity/horseHeadAnimation'
 import { WalkingGeneralSwing } from './entity/animations'
+import { LEG_ANIMATION_USER_DATA_KEY, LEG_RIG_USER_DATA_KEY, applyLegRig, createLegRig, type LegRig } from './entity/legWalkAnimation'
 import { disposeObject, loadNearestFilterTexture, loadTexture, loadThreeJsTextureFromUrl } from './threeJsUtils'
 import { armorModel, armorTextures, elytraTexture } from './entity/armorModels'
 import { WorldRendererThree } from './worldRendererThree'
+import type { EntityLightMeta } from '../lighting/entity/entityLightController'
 import { IndexedData } from 'minecraft-data'
 import { ItemSpecificContextProperties } from '../playerState/types'
 
@@ -144,41 +146,117 @@ function shortestYawRadians(fromYawRad: number, toYawRad: number): number {
   return norm > Math.PI ? norm - TAU_YAW : norm
 }
 
+/** Voice chat presence for a player, drawn as a small speaker glyph before their nametag. */
+export type PlayerVoiceState = 'speaking' | 'muted' | 'idle'
+
+/**
+ * Draws a small speaker glyph centered at the origin of the current transform.
+ * `size` is the glyph's bounding box (both width and height).
+ */
+function drawVoiceStateIcon(ctx: OffscreenCanvasRenderingContext2D, state: PlayerVoiceState, cx: number, cy: number, size: number) {
+  const color = state === 'speaking' ? '#3ddc47' : state === 'muted' ? '#ff5555' : '#cfcfcf'
+
+  ctx.save()
+  ctx.translate(cx, cy)
+  ctx.fillStyle = color
+  ctx.strokeStyle = color
+  ctx.lineWidth = Math.max(1.5, size * 0.09)
+  ctx.lineCap = 'round'
+
+  // Speaker silhouette: a small box with a cone opening to the right
+  const boxWidth = size * 0.22
+  const boxHeight = size * 0.34
+  const coneWidth = size * 0.24
+  const left = -size * 0.44
+
+  ctx.beginPath()
+  ctx.moveTo(left, -boxHeight / 2)
+  ctx.lineTo(left + boxWidth, -boxHeight / 2)
+  ctx.lineTo(left + boxWidth + coneWidth, -size * 0.5)
+  ctx.lineTo(left + boxWidth + coneWidth, size * 0.5)
+  ctx.lineTo(left + boxWidth, boxHeight / 2)
+  ctx.lineTo(left, boxHeight / 2)
+  ctx.closePath()
+  ctx.fill()
+
+  const coneTip = left + boxWidth + coneWidth
+
+  if (state === 'speaking') {
+    ctx.beginPath()
+    ctx.arc(coneTip + size * 0.06, 0, size * 0.16, -Math.PI * 0.32, Math.PI * 0.32)
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.arc(coneTip + size * 0.06, 0, size * 0.28, -Math.PI * 0.28, Math.PI * 0.28)
+    ctx.stroke()
+  }
+
+  if (state === 'muted') {
+    ctx.beginPath()
+    ctx.moveTo(-size * 0.46, -size * 0.46)
+    ctx.lineTo(size * 0.46, size * 0.46)
+    ctx.stroke()
+  }
+
+  ctx.restore()
+}
+
 function getUsernameTexture(
-  { username, nameTagBackgroundColor = 'rgba(0, 0, 0, 0.3)', nameTagTextOpacity = 255 }: any,
+  { username, nameTagBackgroundColor = 'rgba(0, 0, 0, 0.3)', nameTagTextOpacity = 255, voiceState }: any,
   { fontFamily = 'mojangles' }: any,
   version: string
 ) {
-  const canvas = createCanvas(64, 64)
-
+  const measureCanvas = createCanvas(64, 64)
   const PrismarineChat = PrismarineChatLoader(version)
 
-  const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('Could not get 2d context')
+  const measureCtx = measureCanvas.getContext('2d')
+  if (!measureCtx) throw new Error('Could not get 2d context')
 
   const fontSize = 48
   const padding = 5
-  ctx.font = `${fontSize}px ${fontFamily}`
+  measureCtx.font = `${fontSize}px ${fontFamily}`
 
   const plainLines = String(typeof username === 'string' ? username : new PrismarineChat(username).toString()).split('\n')
   let textWidth = 0
   for (const line of plainLines) {
-    const width = ctx.measureText(line).width + padding * 2
+    const width = measureCtx.measureText(line).width + padding * 2
     if (width > textWidth) textWidth = width
   }
 
-  canvas.width = textWidth
-  canvas.height = (fontSize + padding) * plainLines.length
+  const height = (fontSize + padding) * plainLines.length
+
+  // Render the text onto its own transparent canvas so the existing
+  // centered-text layout in renderComponent() is unaffected by compositing it
+  // alongside the icon. The background plate is painted exactly once, on the
+  // final canvas below — painting it here too would double-blend the alpha
+  // under the text relative to the icon area, producing a visible seam.
+  const textCanvas = createCanvas(textWidth, height)
+  const textCtx = textCanvas.getContext('2d')
+  if (!textCtx) throw new Error('Could not get 2d context')
+
+  textCtx.globalAlpha = nameTagTextOpacity / 255
+  const textRendered = renderComponent(username, PrismarineChat, textCanvas, fontSize, 'white', -padding + fontSize)
+  if (!textRendered) return undefined
+  textCtx.globalAlpha = 1
+
+  const iconSize = fontSize * 0.85
+  const iconAreaWidth = voiceState ? iconSize + padding * 2.5 : 0
+
+  // The nametag sprite is anchored (and thus centered above the player) at the
+  // midpoint of this canvas. Mirroring the icon's width as a second, unpainted
+  // margin on the right moves that midpoint to align with the *text's* own
+  // center instead of the icon+text bounding box's center — otherwise the
+  // icon's extra width on the left alone drags the whole sprite's anchor left,
+  // which visually reads as the text drifting right of the player.
+  const canvas = createCanvas(iconAreaWidth * 2 + textWidth, height)
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('Could not get 2d context')
 
   ctx.fillStyle = nameTagBackgroundColor
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
-
-  ctx.globalAlpha = nameTagTextOpacity / 255
-
-  const textRendered = renderComponent(username, PrismarineChat, canvas, fontSize, 'white', -padding + fontSize)
-  if (!textRendered) return undefined
-
-  ctx.globalAlpha = 1
+  ctx.fillRect(0, 0, iconAreaWidth + textWidth, canvas.height)
+  if (voiceState) {
+    drawVoiceStateIcon(ctx, voiceState, iconAreaWidth / 2, canvas.height / 2, iconSize)
+  }
+  ctx.drawImage(textCanvas, iconAreaWidth, 0)
 
   return canvas
 }
@@ -231,6 +309,13 @@ const addNametag = (entity, options: { fontFamily: string }, mesh, version: stri
 
   mesh.add(nameTag)
   return nameTag
+}
+
+/** Player nametags are placed above the skin model and scaled up; text_display/mob nametags are not. */
+function applyPlayerNametagTransform(nametag: THREE.Object3D | undefined, playerObject: { position: THREE.Vector3; scale: THREE.Vector3 }) {
+  if (!nametag) return
+  nametag.position.y = playerObject.position.y + playerObject.scale.y * 16 + 3
+  nametag.scale.multiplyScalar(12)
 }
 
 // todo cleanup
@@ -295,6 +380,8 @@ function getEntityMesh(
   }
   return cube
 }
+
+type EquipmentItem = import('prismarine-entity').Entity['equipment'][number]
 
 export type SceneEntity = THREE.Object3D & {
   playerObject?: PlayerObjectType
@@ -385,15 +472,19 @@ export class Entities {
     }
 
     this.updateEntityEquipment(this.playerEntity, playerData)
+    this.registerEntityLight(this.playerEntity, this.playerEntity.originalEntity)
+    this.invalidateEntityLight(this.playerEntity)
   }
 
   clear() {
+    this.worldRenderer.entityLightController?.clear()
     for (const mesh of Object.values(this.entities)) {
       this.worldRenderer.sceneOrigin.removeAndUntrack(mesh)
       disposeObject(mesh)
     }
     this.entities = {}
     this.currentSkinUrls = {}
+    this.playerVoiceStates = {}
 
     // Clean up player entity
     if (this.playerEntity) {
@@ -507,16 +598,25 @@ export class Entities {
 
       const horseHeadRig = entity.userData[HORSE_HEAD_RIG_USER_DATA_KEY] as HorseHeadRig | undefined
       const horseAnimation = entity.userData[HORSE_HEAD_ANIMATION_USER_DATA_KEY] as HorseHeadAnimationState | undefined
+      let limbAnimation: ReturnType<typeof updateHorseHeadAnimationFrame> | undefined
       if (horseHeadRig && horseAnimation) {
-        const animation = updateHorseHeadAnimationFrame(horseAnimation, dt)
+        limbAnimation = updateHorseHeadAnimationFrame(horseAnimation, dt)
         const pose = calculateHorseHeadPose({
           entityPitch: entity.userData._horseHeadPitch ?? 0,
           headYaw: entity.userData._horseHeadYaw ?? entity.userData._horseBodyYaw ?? 0,
           bodyYaw: entity.userData._horseBodyYaw ?? 0,
-          limbSwing: animation.limbSwing,
-          limbSwingAmount: animation.limbSwingAmount
+          limbSwing: limbAnimation.limbSwing,
+          limbSwingAmount: limbAnimation.limbSwingAmount
         })
         applyHorseHeadPose(horseHeadRig, pose)
+      }
+
+      const legRig = entity.userData[LEG_RIG_USER_DATA_KEY] as LegRig | undefined
+      const legAnimation = entity.userData[LEG_ANIMATION_USER_DATA_KEY] as HorseHeadAnimationState | undefined
+      if (legRig && legAnimation) {
+        // Horses share one state between head and legs, it must only be advanced once per frame.
+        limbAnimation ??= updateHorseHeadAnimationFrame(legAnimation, dt)
+        applyLegRig(legRig, limbAnimation.limbSwing, limbAnimation.limbSwingAmount)
       }
 
       if (!isPlayerEntity && playerObject) {
@@ -556,6 +656,7 @@ export class Entities {
     this.applyRemoteBoatPassengerRotations()
     this.applyLocalThirdPersonPlayerRotation()
     this.updateBoatPaddleAnimations(dt)
+    this.applyEntityLights()
   }
 
   private applyRemoteBoatPassengerRotations() {
@@ -733,6 +834,33 @@ export class Entities {
     if (this.playerEntity?.originalEntity.id === entityId) return this.playerEntity?.playerObject
     const playerObject = this.entities[entityId]?.playerObject
     return playerObject
+  }
+
+  /** Current voice chat presence per entity id, keyed as a string. Absent = no voice indicator. */
+  playerVoiceStates: Record<string, PlayerVoiceState> = {}
+
+  /**
+   * Show or hide the mic glyph on a player's nametag. `state` undefined hides it
+   * (e.g. the player left voice chat, or walked out of proximity range).
+   * Regenerates the nametag texture, so callers should only invoke this on
+   * actual state transitions (speaking start/stop, mute toggle), not per-frame.
+   */
+  setPlayerVoiceState(entityId: string | number, username: string, state: PlayerVoiceState | undefined) {
+    const key = String(entityId)
+    if (state) {
+      this.playerVoiceStates[key] = state
+    } else {
+      delete this.playerVoiceStates[key]
+    }
+
+    const e = this.entities[entityId]
+    const playerObject = e?.playerObject
+    if (!e || !playerObject) return
+    const mesh = e.children.find(c => c.name === 'mesh')
+    if (!mesh) return
+
+    const nametag = addNametag({ username, voiceState: state }, this.entitiesOptions, mesh, this.worldRenderer.version)
+    applyPlayerNametagTransform(nametag, playerObject)
   }
 
   uuidPerSkinUrlsCache = {} as Record<string, { skinUrl?: string; capeUrl?: string }>
@@ -921,6 +1049,7 @@ export class Entities {
     if (!playerObject || !playerObject.playerObject?.animation) return
     const anim = playerObject.playerObject.animation as any
     if (anim.swingArm) {
+      if (isClientLightTraceEnabled()) recordClientLightTrace({ phase: 'inputHand' })
       anim.swingArm()
     }
   }
@@ -933,6 +1062,7 @@ export class Entities {
     if (!anim) return
 
     if (animation === 'oneSwing') {
+      if (isClientLightTraceEnabled()) recordClientLightTrace({ phase: 'inputHand' })
       anim.swingArm()
       return
     }
@@ -1074,6 +1204,8 @@ export class Entities {
       e.userData._rotTween?.stop()
       e.userData[HORSE_HEAD_ANIMATION_USER_DATA_KEY] = undefined
       e.userData[HORSE_HEAD_RIG_USER_DATA_KEY] = undefined
+      e.userData[LEG_ANIMATION_USER_DATA_KEY] = undefined
+      e.userData[LEG_RIG_USER_DATA_KEY] = undefined
       const boatMesh = e.children.find(c => c.name === 'mesh')
       if (boatMesh) disposeBoatWaterPatch(boatMesh)
       if (e.additionalCleanup) e.additionalCleanup()
@@ -1081,10 +1213,12 @@ export class Entities {
         if (c['additionalCleanup']) c['additionalCleanup']()
       })
       this.onRemoveEntity(entity)
+      this.worldRenderer.entityLightController?.unregister(e)
       this.worldRenderer.sceneOrigin.removeAndUntrack(e)
       disposeObject(e)
       // todo dispose textures as well ?
       delete this.entities[entity.id]
+      delete this.playerVoiceStates[String(entity.id)]
       return
     }
     if (!this.isRenderingAllowed()) return
@@ -1156,11 +1290,13 @@ export class Entities {
         mesh = wrapper
 
         if (entity.username) {
-          const nametag = addNametag(entity, { fontFamily: 'mojangles' }, wrapper, this.worldRenderer.version)
-          if (nametag) {
-            nametag.position.y = playerObject.position.y + playerObject.scale.y * 16 + 3
-            nametag.scale.multiplyScalar(12)
-          }
+          const nametag = addNametag(
+            { ...entity, voiceState: this.playerVoiceStates[entity.id] },
+            { fontFamily: 'mojangles' },
+            wrapper,
+            this.worldRenderer.version
+          )
+          applyPlayerNametagTransform(nametag, playerObject)
         }
       } else {
         mesh = getEntityMesh(this.mcData, entity, this.worldRenderer, this.entitiesOptions, { ...overrides, customModel: entity['customModel'] })
@@ -1203,6 +1339,11 @@ export class Entities {
       if (horseHeadRig) {
         e.userData[HORSE_HEAD_RIG_USER_DATA_KEY] = horseHeadRig
         e.userData[HORSE_HEAD_ANIMATION_USER_DATA_KEY] = createHorseHeadAnimationState()
+      }
+      const legRig = isPlayerModel ? undefined : createLegRig(mesh, entity.name)
+      if (legRig) {
+        e.userData[LEG_RIG_USER_DATA_KEY] = legRig
+        e.userData[LEG_ANIMATION_USER_DATA_KEY] = e.userData[HORSE_HEAD_ANIMATION_USER_DATA_KEY] ?? createHorseHeadAnimationState()
       }
     } else {
       mesh = e.children.find(c => c.name === 'mesh')
@@ -1402,6 +1543,12 @@ export class Entities {
     this.updateNameTagVisibility(e)
 
     this.updateEntityPosition(entity, justAdded, overrides)
+    if (justAdded) {
+      this.registerEntityLight(e, entity)
+    } else {
+      this.worldRenderer.entityLightController?.setMeta(e, this.entityLightMeta(entity))
+      this.invalidateEntityLight(e)
+    }
   }
 
   applyEntityRenderHints(e: SceneEntity, entity: SceneEntity['originalEntity']) {
@@ -1480,7 +1627,7 @@ export class Entities {
           })
           .start()
       }
-      const horseAnimation = e.userData[HORSE_HEAD_ANIMATION_USER_DATA_KEY] as HorseHeadAnimationState | undefined
+      const horseAnimation = (e.userData[HORSE_HEAD_ANIMATION_USER_DATA_KEY] ?? e.userData[LEG_ANIMATION_USER_DATA_KEY]) as HorseHeadAnimationState | undefined
       if (!headRotationOnly && horseAnimation && Number.isFinite(entity.position.x) && Number.isFinite(entity.position.z)) {
         setHorseHeadAnimationPosition(horseAnimation, entity.position)
       }
@@ -1645,7 +1792,7 @@ export class Entities {
     return texture
   }
 
-  addItemModel(entityMesh: SceneEntity, hand: 'left' | 'right', item: Item, isPlayer = false) {
+  addItemModel(entityMesh: SceneEntity, hand: 'left' | 'right', item: EquipmentItem, isPlayer = false) {
     const bedrockParentName = `bone_${hand}item`
     const itemName = `custom_item_${hand}`
 
@@ -1698,8 +1845,52 @@ export class Entities {
     }
   }
 
+  onEntityMeshReady(mesh: THREE.Object3D) {
+    this.worldRenderer.entityLightController?.invalidateFromDescendant(mesh)
+  }
+
+  private entityLightSharedMaterials() {
+    return new Set<THREE.Material>([this.worldRenderer.material])
+  }
+
+  private entityLightMeta(entity: SceneEntity['originalEntity']): EntityLightMeta {
+    const localPlayerId = this.playerEntity?.originalEntity.id
+    const useLocalEyeHeight = entity.name === 'player' && localPlayerId !== undefined && entity.id === localPlayerId
+    return {
+      name: entity.name,
+      height: entity.height,
+      eyeHeight: useLocalEyeHeight ? this.worldRenderer.playerStateReactive.eyeHeight : undefined
+    }
+  }
+
+  private registerEntityLight(root: SceneEntity, entity: SceneEntity['originalEntity']) {
+    this.worldRenderer.entityLightController?.register(root, this.entityLightMeta(entity), this.entityLightSharedMaterials())
+  }
+
+  private invalidateEntityLight(root: THREE.Object3D) {
+    this.worldRenderer.entityLightController?.invalidateMaterials(root)
+  }
+
+  private applyEntityLights() {
+    const controller = this.worldRenderer.entityLightController
+    if (!controller) return
+    const shared = this.entityLightSharedMaterials()
+    const apply = (root: SceneEntity | null) => {
+      if (!root) return
+      if (root === this.playerEntity) {
+        controller.setMeta(root, this.entityLightMeta(root.originalEntity))
+      }
+      const worldPos = this.worldRenderer.sceneOrigin.getWorldPosition(root)
+      if (!worldPos) return
+      controller.update(root, worldPos, shared)
+    }
+    for (const entity of Object.values(this.entities)) apply(entity)
+    apply(this.playerEntity)
+  }
+
   handleDamageEvent(entityId, damageAmount) {
-    const entityMesh = this.entities[entityId]?.children.find(c => c.name === 'mesh')
+    const entity = this.entities[entityId]
+    const entityMesh = entity?.children.find(c => c.name === 'mesh')
     if (entityMesh) {
       entityMesh.traverse(child => {
         if (child instanceof THREE.Mesh && child.material.clone) {
@@ -1711,6 +1902,18 @@ export class Entities {
           new TWEEN.Tween(child.material.color).to(originalColor, 500).start()
         }
       })
+    }
+    if (entity) {
+      this.worldRenderer.entityLightController?.markFlash(entity)
+      this.invalidateEntityLight(entity)
+      setTimeout(() => {
+        if (!this.entities[entityId]) return
+        this.worldRenderer.entityLightController?.endFlash(entity)
+        const worldPos = this.worldRenderer.sceneOrigin.getWorldPosition(entity)
+        if (worldPos) {
+          this.worldRenderer.entityLightController?.update(entity, worldPos, this.entityLightSharedMaterials())
+        }
+      }, 500)
     }
   }
 
@@ -1805,7 +2008,7 @@ function getSpecificEntityMetadata<T extends keyof EntityMetadataVersions>(name:
   return getGeneralEntitiesMetadata(entity, mcData) as any
 }
 
-function addArmorModel(worldRenderer: WorldRendererThree, entityMesh: THREE.Object3D, slotType: string, item: Item, layer = 1, overlay = false) {
+function addArmorModel(worldRenderer: WorldRendererThree, entityMesh: THREE.Object3D, slotType: string, item: EquipmentItem, layer = 1, overlay = false) {
   if (!item) {
     removeArmorModel(entityMesh, slotType)
     return

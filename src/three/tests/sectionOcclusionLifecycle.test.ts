@@ -5,6 +5,7 @@ import { proxy } from 'valtio'
 import { Vec3 } from 'vec3'
 import type { MesherGeometryOutput } from '../../mesher-shared/shared'
 import { computeSectionVisibilitySet } from '../../mesher-shared/visGraph'
+import { BlockEffects } from '../blockEffects'
 import { defaultWorldRendererConfig } from '../../graphicsBackend/config'
 import { defaultPerformanceInstabilityFactors } from '../../performanceMonitor'
 import { getInitialPlayerState } from '../../playerState/playerState'
@@ -177,6 +178,7 @@ function createChunkMeshManagerOnly(worldSizeParams = { minY: 0, worldHeight: 25
       removeAndUntrackAll: () => {}
     },
     blockEntities: {},
+    blockEffects: new BlockEffects(),
     worldRendererConfig: {},
     displayOptions: { inWorldRenderingConfig: {} },
     finishedChunks: {},

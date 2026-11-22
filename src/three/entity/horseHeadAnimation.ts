@@ -82,8 +82,17 @@ export function calculateHorseHeadPose(input: HorseHeadPoseInput): HorseHeadPose
   }
 }
 
+/**
+ * Limb speed is the distance moved over this many ticks, divided by them. A vanilla server sends a mob's movement only every
+ * third tick, so measuring one tick at a time sees `0, 0, step` and the legs surge once per packet instead of swinging evenly
+ * (the vanilla client avoids that by interpolating the position over those ticks).
+ */
+export const LIMB_SPEED_WINDOW_TICKS = 3
+
 export type HorseHeadAnimationState = {
   lastPosition?: { x: number; z: number }
+  /** Positions at the last {@link LIMB_SPEED_WINDOW_TICKS} ticks, oldest first. */
+  recentPositions?: Array<{ x: number; z: number }>
   pendingPosition?: { x: number; z: number }
   prevLimbSwing: number
   limbSwing: number
@@ -114,7 +123,10 @@ export function advanceHorseHeadAnimation(state: HorseHeadAnimationState, positi
   state.prevLimbSwing = state.limbSwing
   state.prevLimbSwingAmount = state.limbSwingAmount
 
-  const distance = state.lastPosition == null ? 0 : Math.hypot(position.x - state.lastPosition.x, position.z - state.lastPosition.z)
+  const recent = (state.recentPositions ??= [])
+  const distance = recent.length === 0 ? 0 : Math.hypot(position.x - recent[0].x, position.z - recent[0].z) / recent.length
+  recent.push({ x: position.x, z: position.z })
+  if (recent.length > LIMB_SPEED_WINDOW_TICKS) recent.shift()
   const targetAmount = Math.min(1, distance * 4)
   state.limbSwingAmount += (targetAmount - state.limbSwingAmount) * 0.4
   state.limbSwing += state.limbSwingAmount
