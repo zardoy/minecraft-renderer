@@ -55,7 +55,7 @@ export class FrameTimeline {
     this.dom.appendChild(this.canvas)
     this.text = document.createElement('div')
     this.text.style.cssText =
-      'position:absolute;left:2px;top:1px;font:700 9px/1.1 ui-monospace,Menlo,monospace;color:#e2e8f0;text-shadow:0 0 2px #000;white-space:nowrap;'
+      'position:absolute;left:3px;top:1px;font:700 10px/1 ui-monospace,Menlo,monospace;color:#e2e8f0;text-shadow:0 0 2px #000,0 0 1px #000;white-space:nowrap;'
     this.dom.appendChild(this.text)
 
     const dpr = Math.min(2, globalThis.devicePixelRatio || 1)
@@ -137,7 +137,7 @@ export class FrameTimeline {
     const ratio = fps / hz
     const fpsColor = ratio >= 0.85 ? '#4ade80' : ratio >= 0.5 ? '#facc15' : '#f87171'
     this.text.innerHTML =
-      `<span style="color:${fpsColor};font-size:11px">${fps}</span>/${hz}Hz` +
+      `<span style="color:${fpsColor};font-size:${Math.round(this.height * 0.6)}px">${fps}</span>/${hz}Hz` +
       (worst > 0 ? ` <span style="color:${this.color(worst)}">${Math.round(worst)}ms</span>` : '')
   }
 
