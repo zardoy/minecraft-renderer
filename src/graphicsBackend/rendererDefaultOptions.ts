@@ -111,6 +111,8 @@ export const RENDERER_DEFAULT_OPTIONS = {
   dayCycleAndLighting: true as boolean,
   keepChunksDistance: 1,
   gpuPreference: 'default' as RendererGpuPreference,
+  /** WebGL preserveDrawingBuffer: keeps the last frame readable so a screenshot (F2) can copy it; off saves GPU work (memory and a copy per frame on tiled GPUs) */
+  preserveDrawingBuffer: true as boolean,
   fov: 75
 } as const
 
@@ -506,6 +508,12 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
     max: 110,
     unit: '°',
     text: 'FOV'
+  },
+  preserveDrawingBuffer: {
+    text: 'Screenshot Buffer (F2)',
+    tooltip:
+      'Keeps the last frame so F2 can save a screenshot. Turning it off saves some GPU work, mostly on older GPUs and phones, but F2 then does nothing. Applies after a reload.',
+    requiresRestart: true
   },
   gpuPreference: {
     text: 'GPU preference',

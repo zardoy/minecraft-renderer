@@ -203,10 +203,12 @@ export class DocumentRenderer {
     }
 
     try {
-      const gpuPreference = initOptions.getRendererOptions?.()?.gpuPreference ?? 'default'
+      const rendererOptions = initOptions.getRendererOptions?.()
+      const gpuPreference = rendererOptions?.gpuPreference ?? 'default'
       this.renderer = new THREE.WebGLRenderer({
         canvas: this.canvas as HTMLCanvasElement,
-        preserveDrawingBuffer: true,
+        // only screenshots read the canvas back; without it the browser may discard the frame after compositing (cheaper on tiled mobile GPUs)
+        preserveDrawingBuffer: rendererOptions?.preserveDrawingBuffer ?? true,
         logarithmicDepthBuffer: true,
         powerPreference: gpuPreferenceToWebGLPowerPreference(gpuPreference)
       })
