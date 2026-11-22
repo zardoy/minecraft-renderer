@@ -116,6 +116,9 @@ export const defaultWorldRendererConfig = {
   // VR settings
   vrSupport: true,
   vrPageGameRendering: true,
+  /** Element shown on a panel inside VR sessions (HUD and menus), needs HTML-in-Canvas. Empty = off. */
+  // first match in document order: #game-ui wraps #ui-root when the client provides it
+  vrUiSelector: '#game-ui, #ui-root' as string,
 
   // World settings
   clipWorldBelowY: undefined as undefined | number,

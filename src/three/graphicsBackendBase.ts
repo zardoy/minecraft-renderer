@@ -215,6 +215,12 @@ export const createGraphicsBackendBase = () => {
 
     worldRenderer = new WorldRendererThree(documentRenderer.renderer, initOptions, displayOptions)
 
+    if (!isWebWorker) {
+      const vrWorldRenderer = worldRenderer
+      const vrDocumentRenderer = documentRenderer
+      void import('./world/vr').then(({ initVR }) => initVR(vrWorldRenderer, vrDocumentRenderer)).catch(err => console.error('Failed to init VR', err))
+    }
+
     await worldRenderer.worldReadyPromise
 
     frameTimingCollector = displayOptions.inWorldRenderingConfig.enableDebugOverlay ? new FrameTimingCollector(displayOptions.nonReactiveState) : null
