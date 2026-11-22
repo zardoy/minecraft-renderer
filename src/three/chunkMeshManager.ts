@@ -36,6 +36,7 @@ import { getSignTexture, releaseSignTexture, disposeAllSignTextures } from './si
 import { BlockEntityLightRegistry } from '../lib/blockEntityLightRegistry'
 import { isClientLightTraceEnabled, recordClientLightTraceGpuSample } from '../lighting/debug/clientLightTrace'
 import { SectionOcclusionCull, hsvToRgb } from './occlusion/sectionOcclusionCull'
+import { VISIBILITY_SET_ALL_TRUE } from '../mesher-shared/visibilitySet'
 
 export interface ChunkMeshPool {
   mesh: THREE.Mesh
@@ -166,8 +167,7 @@ export class ChunkMeshManager {
   globalLegacyBlendBuffer: GlobalLegacyBuffer | null = null
   /** Tight world AABBs for shader-cube frustum culling (section centers). */
   private readonly shaderSectionRaycastBoxes = new Map<string, ShaderSectionRaycastEntry>()
-  private readonly sectionOcclusionCull = new SectionOcclusionCull()
-  private _lastOcclusionVisibleKeys = ''
+  private readonly sectionOcclusionCull = new SectionOcclusionCull(() => this.markCullDirty())
   private _lastSmartCullEnabled: boolean | undefined
 
   // Performance tracking
@@ -447,11 +447,53 @@ export class ChunkMeshManager {
     return this.sectionOcclusionCull.isSectionVisible(sectionKey)
   }
 
+  hasRegisteredOcclusionSection(sectionKey: string): boolean {
+    return this.sectionOcclusionCull.hasRegisteredSection(sectionKey)
+  }
+
+  /** Register every section of a loaded column in the occlusion graph (vanilla ViewArea model). */
+  registerColumnOcclusionGrid(x: number, z: number, minY: number, maxY: number, sectionHeight: number): void {
+    for (let y = minY; y < maxY; y += sectionHeight) {
+      const key = `${x},${y},${z}`
+      if (this.sectionOcclusionCull.hasRegisteredSection(key)) continue
+      this.sectionOcclusionCull.registerSection(key, VISIBILITY_SET_ALL_TRUE, sectionHeight)
+    }
+    this.markCullDirty()
+  }
+
+  unregisterColumnOcclusionGrid(x: number, z: number, minY: number, maxY: number, sectionHeight: number): void {
+    for (let y = minY; y < maxY; y += sectionHeight) {
+      const key = `${x},${y},${z}`
+      if (this.sectionObjects[key]) this.releaseSection(key)
+      this.sectionOcclusionCull.unregisterSection(key)
+    }
+    this.markCullDirty()
+  }
+
+  /** Occlusion membership is independent of render geometry (vanilla: ViewArea holds every RenderSection). */
+  registerSectionOcclusion(sectionKey: string, geometryData: MesherGeometryOutput): void {
+    const sectionHeight = this.worldRenderer.getSectionHeight?.() ?? 16
+    this.sectionOcclusionCull.registerSection(sectionKey, geometryData.visibilitySet, sectionHeight)
+    this.markCullDirty()
+  }
+
+  getOcclusionRebuildStats() {
+    return this.sectionOcclusionCull.getLastRebuildStats()
+  }
+
+  isOcclusionRebuildPending(): boolean {
+    return this.sectionOcclusionCull.isRebuildPending()
+  }
+
   /** Invalidate occlusion graph and mark cull dirty when smart-cull enablement changes. */
   notifySmartCullChanged(smartCull: boolean): void {
     if (this._lastSmartCullEnabled === smartCull) return
     this._lastSmartCullEnabled = smartCull
-    this.sectionOcclusionCull.invalidate()
+    if (smartCull) {
+      this.sectionOcclusionCull.onSmartCullEnabled()
+    } else {
+      this.sectionOcclusionCull.onSmartCullDisabled()
+    }
     this.markCullDirty()
   }
 
@@ -474,6 +516,7 @@ export class ChunkMeshManager {
       worldMinY: worldSizeParams.minY,
       worldMaxY: worldSizeParams.minY + worldSizeParams.worldHeight
     })
+    const applyOcclusionFilter = smartCull && !this.sectionOcclusionCull.isRebuildPending()
 
     const visible = this._visibleSectionSpans
     visible.length = 0
@@ -498,7 +541,7 @@ export class ChunkMeshManager {
       }
     }
 
-    if (smartCull) {
+    if (applyOcclusionFilter) {
       for (let i = visible.length - 1; i >= 0; i--) {
         if (!occlusionVisible.has(visible[i]!.key)) {
           visible.splice(i, 1)
@@ -547,7 +590,7 @@ export class ChunkMeshManager {
         if (!inFrustum) {
           return
         }
-        if (smartCull && !occlusionVisible.has(key)) {
+        if (applyOcclusionFilter && !occlusionVisible.has(key)) {
           return
         }
         cubeVisibleKeys.push(key)
@@ -560,13 +603,13 @@ export class ChunkMeshManager {
     }
     cubeVisibleKeys.sort()
 
-    const occlusionFp = smartCull ? [...occlusionVisible].sort().join(',') : 'off'
+    const occlusionFp = smartCull ? String(this.sectionOcclusionCull.getVersion()) : 'off'
     const fingerprint = [
       opaqueKeys.join(','),
       blendKeys.join(','),
       cubeVisibleKeys.join(','),
       occlusionFp,
-      smartCull ? '1' : '0',
+      applyOcclusionFilter ? '1' : '0',
       opaqueBuf?.getLayoutVersion() ?? 0,
       blendBuf?.getLayoutVersion() ?? 0,
       gb?.getLayoutVersion() ?? 0,
@@ -576,12 +619,10 @@ export class ChunkMeshManager {
     ].join('|')
 
     if (fingerprint === this._lastCullFingerprint && !this.hasPendingBufferWork()) {
-      this.updatePooledLegacyCullState(cameraWorldX, cameraWorldY, cameraWorldZ, smartCull, occlusionVisible)
-      this._lastOcclusionVisibleKeys = occlusionFp
+      this.updatePooledLegacyCullState(cameraWorldX, cameraWorldY, cameraWorldZ, applyOcclusionFilter, occlusionVisible)
       return
     }
     this._lastCullFingerprint = fingerprint
-    this._lastOcclusionVisibleKeys = occlusionFp
 
     opaqueBuf?.updateDrawSpans(visible, 'opaque')
     blendBuf?.updateDrawSpans(visible, 'sortedBlend')
@@ -613,7 +654,7 @@ export class ChunkMeshManager {
     }
 
     this.lastBufferStateKey = this.bufferStateKey()
-    this.updatePooledLegacyCullState(cameraWorldX, cameraWorldY, cameraWorldZ, smartCull, occlusionVisible)
+    this.updatePooledLegacyCullState(cameraWorldX, cameraWorldY, cameraWorldZ, applyOcclusionFilter, occlusionVisible)
   }
 
   private static readonly BLEND_RESORT_DISTANCE = 1.0
@@ -1079,7 +1120,7 @@ export class ChunkMeshManager {
     sectionObject.worldY = geometryData.sy
     sectionObject.worldZ = geometryData.sz
     sectionObject.visibilitySet = geometryData.visibilitySet
-    this.sectionOcclusionCull.registerSection(sectionKey, geometryData.visibilitySet, geometryData.sx, geometryData.sy, geometryData.sz)
+    this.registerSectionOcclusion(sectionKey, geometryData)
     // Stamp the section key so modules (e.g. sciFiWorldReveal) can resolve
     // mesh -> section without falling back to sceneOrigin world-position math.
     ;(sectionObject as any).sectionKey = sectionKey
@@ -1302,7 +1343,6 @@ export class ChunkMeshManager {
         this.globalLegacyBlendBuffer?.removeSection(sectionKey)
         this.maybeUnregisterLegacyCullSection(sectionKey)
         this.unregisterShaderSectionRaycastBox(sectionKey)
-        this.sectionOcclusionCull.unregisterSection(sectionKey)
       }
       this.markCullDirty()
       delete sectionObject.deferredLegacyOpaque
@@ -1714,6 +1754,7 @@ export class ChunkMeshManager {
     this.globalLegacyBlendShaderMaterial?.dispose()
     this.globalLegacyBlendShaderMaterial = null
     this.pendingNearReveal.clear()
+    this.sectionOcclusionCull.clear()
   }
 
   // Private helper methods
