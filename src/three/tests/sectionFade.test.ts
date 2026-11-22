@@ -39,8 +39,8 @@ describe('section fade start times', () => {
     const fade = new SectionFade()
     fade.sectionShown('32,64,48', 1000)
     fade.sectionShown('32,80,48', 1000)
-    // a section of the same column that gets its first mesh 3 s later must not fade on its own
-    fade.sectionShown('32,48,48', 4000)
+    // a section of the same column that gets its first mesh while the column is still fading joins it in sync
+    fade.sectionShown('32,48,48', 1400)
     expect(startOf(fade, '32,48,48')).toBe(startOf(fade, '32,64,48'))
     // another column: its own start
     fade.sectionShown('48,64,48', 4000)
@@ -52,6 +52,29 @@ describe('section fade start times', () => {
     expect(startOf(fade, '32,64,48')).toBeGreaterThan(startOf(fade, '32,80,48')!)
   })
 
+  it('a section arriving after its column finished fades on its own (dissolve), or shows fully (futuristic look)', () => {
+    const fade = new SectionFade()
+    fade.durationSec = 0.75
+    fade.sectionShown('32,64,48', 1000)
+    const columnStart = startOf(fade, '32,64,48')!
+    // 0.5 s later: still fading, joins in sync
+    fade.sectionShown('32,80,48', 1500)
+    expect(startOf(fade, '32,80,48')).toBe(columnStart)
+    // 2 s later the column is done: fades on its own, and a section right after joins that new start
+    fade.sectionShown('32,48,48', 3000)
+    expect(startOf(fade, '32,48,48')).toBeCloseTo(columnStart + 2, 5)
+    fade.sectionShown('32,32,48', 3100)
+    expect(startOf(fade, '32,32,48')).toBe(startOf(fade, '32,48,48'))
+    // already shown sections keep their start
+    expect(startOf(fade, '32,64,48')).toBe(columnStart)
+
+    const scifi = new SectionFade()
+    scifi.lateSectionsFadeAlone = false
+    scifi.sectionShown('32,64,48', 1000)
+    scifi.sectionShown('32,48,48', 3000)
+    expect(startOf(scifi, '32,48,48')).toBe(startOf(scifi, '32,64,48'))
+  })
+
   it('a reset clears every start time', () => {
     const fade = new SectionFade()
     fade.sectionShown('0,0,0')
@@ -61,6 +84,23 @@ describe('section fade start times', () => {
 })
 
 describe('BlockEffects section fade switch', () => {
+  it('reports the plain fade left for the fade pass: not in the camera column, not when done, not for the futuristic look', () => {
+    const effects = new BlockEffects()
+    effects.setSectionFade('fade', 0.75)
+    const now = performance.now()
+    effects.sectionFade!.sectionShown('32,64,48', now)
+    // camera 40 blocks away: fading for the whole duration
+    expect(effects.sectionFadeRemaining('32,64,48', 0, 0, now)).toBeCloseTo(0.75, 2)
+    expect(effects.sectionFadeRemaining('32,64,48', 0, 0, now + 500)).toBeCloseTo(0.25, 2)
+    expect(effects.sectionFadeRemaining('32,64,48', 0, 0, now + 800)).toBe(0)
+    // camera in that column (centre 40,56): drawn normally
+    expect(effects.sectionFadeRemaining('32,64,48', 41, 57, now)).toBe(0)
+    // a section never shown
+    expect(effects.sectionFadeRemaining('96,64,48', 0, 0, now)).toBe(0)
+    effects.setSectionFade('scifi', 1.4)
+    expect(effects.sectionFadeRemaining('32,64,48', 0, 0, now)).toBe(0)
+  })
+
   it('only marks sections while on; 0 s turns it off', () => {
     const effects = new BlockEffects()
     effects.setSectionFade('fade', 0)

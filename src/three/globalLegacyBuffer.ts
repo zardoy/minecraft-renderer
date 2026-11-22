@@ -12,7 +12,7 @@ import { computeCameraRelativeUniforms, type RenderOrigin } from './shaders/lega
 import { isClientLightTraceEnabled, recordClientLightTrace, recordClientLightTraceGpuSample } from '../lighting/debug/clientLightTrace'
 
 const VERTS_PER_QUAD = 4
-const INDICES_PER_QUAD = 6
+export const INDICES_PER_QUAD = 6
 const FLOATS_PER_VERT = 3
 const FLOATS_PER_UV_VERT = 2
 const FLOATS_PER_LIGHT_VERT = 1

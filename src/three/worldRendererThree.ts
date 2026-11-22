@@ -1481,6 +1481,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.chunkMeshManager.updateCullDirtyFromCamera(cam, camX, camY, camZ)
     const smartCull = this.isSmartCullEnabled()
     this.chunkMeshManager.notifySmartCullChanged(smartCull)
+    this.chunkMeshManager.markCullDirtyIfFadeEnded()
     if (this.chunkMeshManager.cullDirty) {
       this.chunkMeshManager.updateSectionCullAndSort(cam, this.cameraWorldPos.x, this.cameraWorldPos.y, this.cameraWorldPos.z, smartCull)
       this.chunkMeshManager.clearCullDirty()

@@ -1,8 +1,11 @@
 /**
  * New sections fade in, like vanilla's "Chunk Fade" (Options.chunkSectionFadeInTime, default 0.75 s): every column records
- * when it was first shown, the vertex shader reads that time and the fragment shader dissolves the blocks in with an ordered
- * dither. (Vanilla mixes from the fog colour, `mix(FogColor, color, chunkVisibility)`; with our thinner fog that read as white
- * chunks flashing.) Columns within 16 blocks of the camera are never faded, the full effect starts at 32 (vanilla terrain.vsh).
+ * when it was first shown and the vertex shader reads that time. The opaque sections still fading are taken out of the terrain
+ * pass and drawn after it with blending (ChunkMeshManager's fade pass, SECTION_FADE_SET_ALPHA): a real see-through fade over
+ * whatever is behind. (An ordered dither looked like a dot grid on 1x displays. Vanilla mixes from the fog colour,
+ * `mix(FogColor, color, chunkVisibility)`; with our thinner fog that read as white chunks flashing.) Only the camera's own column is not faded (within 8 blocks, full effect from 16). Vanilla spares everything within
+ * 16 blocks and fades fully from 32 (terrain.vsh), but there chunks near the player already exist; here late chunks (generated or
+ * meshed after the ones around them) are often revealed close to the camera and popped in without any fade.
  *
  * The futuristic reveal is the same timing with another look: cyan block edges first, then the blocks fade in.
  *
@@ -47,8 +50,8 @@ float sectionFadeVisibility(ivec3 section, vec2 columnCenterRel) {
     float start = dot(texel, vec4(equal(ivec4(0, 1, 2, 3), ivec4(sx & 3))));
     if (start <= 0.0) return 1.0;
     float visibility = clamp((u_sectionFadeTime.x - start) / max(u_sectionFadeTime.y, 0.001), 0.0, 1.0);
-    // vanilla: nothing near the camera fades (no popping around the player); here by column, see above
-    return mix(1.0, visibility, clamp((length(columnCenterRel) - 16.0) / 16.0, 0.0, 1.0));
+    // the column the camera is in does not fade (no dissolving blocks around the player), see above
+    return mix(1.0, visibility, clamp((length(columnCenterRel) - 8.0) / 8.0, 0.0, 1.0));
 }
 
 /** section of legacy geometry from its origin relative to the render origin */
@@ -63,13 +66,6 @@ export const SECTION_FADE_FRAGMENT_GLSL = /* glsl */ `
 #ifdef SECTION_FADE
 in float v_sectionFade;
 
-/** 4x4 ordered dither threshold of this pixel, (0, 1) */
-float sectionFadeDither() {
-    ivec2 p = ivec2(gl_FragCoord.xy) & 3;
-    int i = p.x + p.y * 4;
-    const float bayer[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
-    return (bayer[i] + 0.5) / 16.0;
-}
 #ifdef SECTION_FADE_SCIFI
 in vec3 v_sectionFadeLocal;
 const vec3 SECTION_FADE_CYAN = vec3(0.05, 0.92, 0.93);
@@ -89,11 +85,15 @@ void applySectionFade(inout vec4 color) {
     float solid = smoothstep(0.35, 1.0, t);
     vec3 glow = SECTION_FADE_CYAN * (0.35 + 0.9 * line);
     color.rgb = mix(glow, color.rgb, solid) + SECTION_FADE_CYAN * line * 0.6 * (1.0 - solid);
-#else
-    // dissolve: a growing share of the pixels is drawn, the rest shows what is behind (sky, terrain). No colour of its own: fading
-    // from the fog colour like vanilla read as white chunks flashing (our fog is thin, and it is wrong at night / underwater)
-    if (t < sectionFadeDither()) discard;
+#elif defined(SECTION_FADE_SET_ALPHA)
+    // fade pass (opaque geometry of the sections still fading, drawn after the terrain with blending): the block over what is
+    // behind it (sky, terrain), no colour of its own (fading from the fog colour like vanilla read as white chunks flashing)
+    color.a = t;
+#elif defined(SECTION_FADE_MUL_ALPHA)
+    // already blended geometry (water, glass): fades with its own alpha
+    color.a *= t;
 #endif
+    // otherwise (opaque pass of the global buffers): sections that are still fading are drawn by the fade pass, not here
 }
 #endif
 `

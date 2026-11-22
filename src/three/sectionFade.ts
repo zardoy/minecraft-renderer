@@ -18,12 +18,17 @@ export class SectionFade {
   private readonly shown = new Set<string>()
   /**
    * Start time per column ("x,z" in blocks): a column is revealed at once, so every section takes its column's start. A section that
-   * gets its first mesh after the column was revealed joins in sync (or shows fully if the column is done), never fading on its own
-   * (with the futuristic look a late section would show only edges under a finished one: blocks standing on air).
+   * gets its first mesh after the column was revealed joins in sync. If the column is already done it fades on its own
+   * (`lateSectionsFadeAlone`, the plain dissolve), or shows fully: with the futuristic look a late section would show only edges
+   * under a finished one (blocks standing on air).
    */
   private readonly columnStart = new Map<string, number>()
   private readonly epoch = performance.now()
   private minSectionY = 0
+  /** fade duration (seconds), to tell a finished column */
+  durationSec = 0.75
+  /** a section that arrives after its column finished fading fades on its own instead of popping in */
+  lateSectionsFadeAlone = true
 
   constructor() {
     this.data = new Float32Array(TEX_WIDTH * TEX_HEIGHT * 4)
@@ -49,9 +54,11 @@ export class SectionFade {
     this.shown.add(sectionKey)
     const [x, , z] = sectionKey.split(',')
     const column = `${x},${z}`
+    const now = this.now(nowMs)
     let start = this.columnStart.get(column)
-    if (start === undefined) {
-      start = this.now(nowMs)
+    if (start === undefined || (this.lateSectionsFadeAlone && now - start >= this.durationSec)) {
+      // later sections of this column join this new start
+      start = now
       this.columnStart.set(column, start)
     }
     const index = this.componentIndex(sectionKey)
@@ -59,6 +66,12 @@ export class SectionFade {
     this.data[index] = start
     this.texture.addUpdateRange(index, 1)
     this.texture.needsUpdate = true
+  }
+
+  /** Start time of the section (seconds, `now()` scale), 0 when it is not fading / outside the stored range. */
+  startOf(sectionKey: string): number {
+    const index = this.componentIndex(sectionKey)
+    return index === undefined ? 0 : this.data[index]!
   }
 
   /** The section was removed (unloaded, or now empty): when it is shown again it takes its column's start again. */
