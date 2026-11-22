@@ -1967,7 +1967,6 @@ async function processColumnTickInner() {
             geometry.blend?.indices?.buffer,
             geometry.shaderCubes?.words?.buffer
           ].filter(Boolean)
-
         } else {
           geometry = makeEmptyColumnGeometry(sx, sy, sz, sectionHeight, false)
           geometry.visibilitySet = sectionVisibilitySet

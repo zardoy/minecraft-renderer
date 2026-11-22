@@ -1480,7 +1480,6 @@ export class ChunkMeshManager {
     totalBytes += legacyGlobalBytes + legacyBlendGlobalBytes
     positionBytes += legacyGlobalBytes + legacyBlendGlobalBytes
 
-
     const totalMB = (totalBytes / (1024 * 1024)).toFixed(2)
 
     return {
