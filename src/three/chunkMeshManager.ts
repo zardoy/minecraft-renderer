@@ -46,9 +46,7 @@ export interface ChunkMeshPool {
 
 export interface SectionObject extends THREE.Group {
   mesh?: THREE.Mesh<THREE.BufferGeometry, THREE.Material>
-  /** Per-section instanced shader mesh (sci-fi reveal defer only). */
-  /** Shader cube words kept for migration to global buffer after reveal. */
-  /** Section uses a pooled mesh for blend (reveal defer or invariant fallback). */
+  /** Section draws its blend geometry from a pooled mesh (the global blend buffer was full). */
   hasBlendMesh?: boolean
   tilesCount?: number
   blocksCount?: number
@@ -961,9 +959,6 @@ export class ChunkMeshManager {
     sectionObject.worldZ = geometryData.sz
     sectionObject.visibilitySet = geometryData.visibilitySet
     this.registerSectionOcclusion(sectionKey, geometryData)
-    // Stamp the section key so modules (e.g. sciFiWorldReveal) can resolve
-    // mesh -> section without falling back to sceneOrigin world-position math.
-    ;(sectionObject as any).sectionKey = sectionKey
     // Tag the group so `WorldRendererThree.getThirdPersonCamera` raycast can
     // still find chunk meshes — the old `WorldBlockGeometry` set this name
     // unconditionally; the pooling port lost that and only the border-helper
