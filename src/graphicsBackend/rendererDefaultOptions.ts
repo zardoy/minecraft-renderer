@@ -511,7 +511,8 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
   },
   preserveDrawingBuffer: {
     text: 'Screenshot Buffer (F2)',
-    tooltip: 'Keeps the last frame so F2 can save a screenshot. Turning it off saves some GPU work, mostly on older GPUs and phones, but F2 then does nothing. Applies after a reload.',
+    tooltip:
+      'Keeps the last frame so F2 can save a screenshot. Turning it off saves some GPU work, mostly on older GPUs and phones, but F2 then does nothing. Applies after a reload.',
     requiresRestart: true
   },
   gpuPreference: {
