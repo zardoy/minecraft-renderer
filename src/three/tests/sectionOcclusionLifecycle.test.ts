@@ -207,7 +207,8 @@ function createWorldRendererThree(worldSizeParams = { minY: 0, worldHeight: 256 
       intersectMedia: null
     },
     renderer: '',
-    preventEscapeMenu: false
+    preventEscapeMenu: false,
+    inVrSession: false
   })
 
   const displayOptions = {

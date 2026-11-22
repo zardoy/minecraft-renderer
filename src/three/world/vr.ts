@@ -5,6 +5,7 @@ import { buttonMap as standardButtonsMap } from 'contro-max/build/gamepad'
 import * as THREE from 'three'
 import { WorldRendererThree } from '../worldRendererThree'
 import { DocumentRenderer } from '../documentRenderer'
+import { VrUiPanel } from './vrUi'
 
 export async function initVR(worldRenderer: WorldRendererThree, documentRenderer: DocumentRenderer) {
   if (!('xr' in navigator) || !worldRenderer.worldRendererConfig.vrSupport) return
@@ -134,13 +135,13 @@ export async function initVR(worldRenderer: WorldRendererThree, documentRenderer
   })
   controller2.add(hand2)
 
-  controller1.addEventListener('disconnected', () => {
+  controller1.addEventListener('disconnected', event => {
     // don't handle removal of gamepads for now as is don't affect contro-max
-    manageXrInputSource(hand1.xrInputSource, 'left', true)
+    if (event.data) manageXrInputSource(event.data as { gamepad: Gamepad | undefined; handedness?: string }, 'left', true)
     hand1.xrInputSource = undefined
   })
-  controller2.addEventListener('disconnected', () => {
-    manageXrInputSource(hand1.xrInputSource, 'right', true)
+  controller2.addEventListener('disconnected', event => {
+    if (event.data) manageXrInputSource(event.data as { gamepad: Gamepad | undefined; handedness?: string }, 'right', true)
     hand2.xrInputSource = undefined
   })
 
@@ -163,10 +164,15 @@ export async function initVR(worldRenderer: WorldRendererThree, documentRenderer
     ]
   }
 
+  const uiPanel = new VrUiPanel(renderer, user)
+  let lastXrFrameTime = 0
+
   let rotSnapReset = true
   let yawOffset = 0
-  renderer.setAnimationLoop(() => {
+  renderer.setAnimationLoop(time => {
     if (!renderer.xr.isPresenting) return
+    const deltaSeconds = lastXrFrameTime ? Math.min(0.1, (time - lastXrFrameTime) / 1000) : 0
+    lastXrFrameTime = time
     if (hand1.xrInputSource && hand2.xrInputSource) {
       hand1.xAxis = hand1.xrInputSource.gamepad.axes[2]
       hand1.yAxis = hand1.xrInputSource.gamepad.axes[3]
@@ -198,18 +204,29 @@ export async function initVR(worldRenderer: WorldRendererThree, documentRenderer
     // bot.entity.yaw = Math.atan2(-d.x, -d.z)
     // bot.entity.pitch = Math.asin(d.y)
 
+    uiPanel.update(deltaSeconds)
     documentRenderer.frameRender(false)
   })
   renderer.xr.addEventListener('sessionstart', () => {
     user.add(worldRenderer.camera)
     worldRenderer.cameraGroupVr = user
+    worldRenderer.reactiveState.inVrSession = true
+    lastXrFrameTime = 0
+    const { vrUiSelector } = worldRenderer.worldRendererConfig
+    const uiElement = vrUiSelector ? document.querySelector<HTMLElement>(vrUiSelector) : null
+    if (uiElement) uiPanel.attach(uiElement)
   })
   renderer.xr.addEventListener('sessionend', () => {
     worldRenderer.cameraGroupVr = undefined
+    worldRenderer.reactiveState.inVrSession = false
     user.remove(worldRenderer.camera)
+    uiPanel.detach()
   })
 
-  worldRenderer.abortController.signal.addEventListener('abort', disableVr)
+  worldRenderer.abortController.signal.addEventListener('abort', () => {
+    uiPanel.dispose()
+    disableVr()
+  })
 }
 
 const xrStandardRightButtonsMap = [
@@ -226,7 +243,8 @@ const xrStandardLeftButtonsMap = [
   // need to think of a way to support touchpad input
   [3 /* Thumbstick Press */, 'Left Stick'],
   [4 /* A */, 'X'],
-  [5 /* B */, 'Y']
+  // Y opens the pause menu (gamepad Start), the left controller has no other free button
+  [5 /* B */, 'Start']
 ]
 const remapButtons = (rightButtons: any[], leftButtons: any[]) => {
   // return remapped buttons
