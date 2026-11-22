@@ -3,7 +3,7 @@ import { SWAY_PERIOD, SWAY_TIME_PERIOD } from './shaders/foliageSwayGlsl'
 import { COLOR_GRADING_PRESETS, type ColorGradingPreset } from './colorGrading'
 import { SectionFade } from './sectionFade'
 
-/** how new sections appear: vanilla fade from the fog colour, the futuristic edge reveal, or at once */
+/** how new sections appear: dissolving in (like vanilla's chunk fade), the futuristic edge reveal, or at once */
 export type SectionFadeMode = 'off' | 'fade' | 'scifi'
 
 /**
@@ -104,8 +104,7 @@ export class BlockEffects {
     u_sectionFadeTime: { value: new THREE.Vector2(0, 0.75) },
     u_sectionFadeMinY: { value: 0 },
     u_sectionFadeOriginSection: { value: new THREE.Vector3() },
-    u_sectionFadeOriginRem: { value: new THREE.Vector3() },
-    u_sectionFadeColor: { value: new THREE.Color(0.7, 0.8, 1) }
+    u_sectionFadeOriginRem: { value: new THREE.Vector3() }
   }
 
   /** start times of the sections fading in (created when the fade is first turned on) */
@@ -249,11 +248,10 @@ export class BlockEffects {
     this.sectionFade?.sectionForgotten(sectionKey)
   }
 
-  /** Per frame while the fade is on: the clock and the colour new sections fade from (the fog / sky colour). */
-  updateSectionFade(nowMs: number, fadeColor: THREE.Color | undefined): void {
+  /** Per frame while the fade is on: the clock of the fade. */
+  updateSectionFade(nowMs: number): void {
     if (this.sectionFadeMode === 'off' || !this.sectionFade) return
     this.uniforms.u_sectionFadeTime.value.x = this.sectionFade.now(nowMs)
-    if (fadeColor) this.uniforms.u_sectionFadeColor.value.copy(fadeColor)
   }
 
   dispose(): void {

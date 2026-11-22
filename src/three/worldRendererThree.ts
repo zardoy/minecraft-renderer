@@ -1591,9 +1591,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.blockEffects.setSectionFade(scifi ? 'scifi' : 'fade', scifi ? FUTURISTIC_REVEAL_SECONDS : (cfg.chunkFadeMs ?? 0) / 1000)
     if (this.blockEffects.getSectionFadeMode() === 'off') return
     this.blockEffects.setSectionFadeWorldMinY(this.worldSizeParams.minY)
-    const fog = this.realScene.fog as THREE.Fog | null
-    const background = this.realScene.background
-    this.blockEffects.updateSectionFade(nowMs, fog?.color ?? (background instanceof THREE.Color ? background : undefined))
+    this.blockEffects.updateSectionFade(nowMs)
   }
 
   renderHead(position: Vec3, rotation: number, isWall: boolean, blockEntity) {

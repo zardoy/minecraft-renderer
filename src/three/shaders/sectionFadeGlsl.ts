@@ -1,8 +1,8 @@
 /**
- * New sections fade in, like vanilla's "Chunk Fade" (Options.chunkSectionFadeInTime, default 0.75 s): every section records
- * when it was first shown, the vertex shader reads that time and the fragment shader mixes from the fade colour (the fog
- * colour, like vanilla `mix(FogColor, color, chunkVisibility)`) to the block. Sections within 16 blocks of the camera are
- * never faded, the full effect starts at 32 (vanilla terrain.vsh).
+ * New sections fade in, like vanilla's "Chunk Fade" (Options.chunkSectionFadeInTime, default 0.75 s): every column records
+ * when it was first shown, the vertex shader reads that time and the fragment shader dissolves the blocks in with an ordered
+ * dither. (Vanilla mixes from the fog colour, `mix(FogColor, color, chunkVisibility)`; with our thinner fog that read as white
+ * chunks flashing.) Columns within 16 blocks of the camera are never faded, the full effect starts at 32 (vanilla terrain.vsh).
  *
  * The futuristic reveal is the same timing with another look: cyan block edges first, then the blocks fade in.
  *
@@ -61,8 +61,15 @@ ivec3 sectionFadeSectionOf(vec3 originRel) {
 /** Fragment chunk: `applySectionFade(inout vec4 color)` (may discard in the futuristic look). */
 export const SECTION_FADE_FRAGMENT_GLSL = /* glsl */ `
 #ifdef SECTION_FADE
-uniform vec3 u_sectionFadeColor;
 in float v_sectionFade;
+
+/** 4x4 ordered dither threshold of this pixel, (0, 1) */
+float sectionFadeDither() {
+    ivec2 p = ivec2(gl_FragCoord.xy) & 3;
+    int i = p.x + p.y * 4;
+    const float bayer[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+    return (bayer[i] + 0.5) / 16.0;
+}
 #ifdef SECTION_FADE_SCIFI
 in vec3 v_sectionFadeLocal;
 const vec3 SECTION_FADE_CYAN = vec3(0.05, 0.92, 0.93);
@@ -83,7 +90,9 @@ void applySectionFade(inout vec4 color) {
     vec3 glow = SECTION_FADE_CYAN * (0.35 + 0.9 * line);
     color.rgb = mix(glow, color.rgb, solid) + SECTION_FADE_CYAN * line * 0.6 * (1.0 - solid);
 #else
-    color.rgb = mix(u_sectionFadeColor, color.rgb, t);
+    // dissolve: a growing share of the pixels is drawn, the rest shows what is behind (sky, terrain). No colour of its own: fading
+    // from the fog colour like vanilla read as white chunks flashing (our fog is thin, and it is wrong at night / underwater)
+    if (t < sectionFadeDither()) discard;
 #endif
 }
 #endif

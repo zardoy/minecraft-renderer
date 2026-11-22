@@ -86,7 +86,7 @@ export const RENDERER_DEFAULT_OPTIONS = {
   menuBackgroundV2CameraSpeed: MB.v2CameraSpeedPercent,
   menuBackgroundV2BlockSpeed: MB.v2BlockSpeedPercent,
   rendererFuturisticReveal: false as boolean,
-  /** vanilla Chunk Fade: new sections fade in from the fog colour (ms, 0 = off) */
+  /** vanilla Chunk Fade: new chunks dissolve in (ms, 0 = off) */
   chunkFadeMs: 750,
   rendererSmartCull: false as boolean,
   rendererPerfDebugOverlay: false as boolean,
@@ -410,7 +410,7 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
   },
   chunkFadeMs: {
     text: 'Chunk fade',
-    tooltip: 'New chunks fade in from the fog colour, like vanilla. 0 shows them at once. Chunks near you never fade.',
+    tooltip: 'New chunks fade in, like vanilla. 0 shows them at once. Chunks near you never fade.',
     performance: { level: 'free', note: 'One texture read per vertex while on.' },
     min: 0,
     max: 2000,
