@@ -1015,7 +1015,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       worldMinY: this.worldMinYRender,
       worldMaxY: this.worldMaxYRender,
       disableConversionCache: this.worldRendererConfig.disableMesherConversionCache,
-      computeWireframeEdges: this.worldRendererConfig.futuristicReveal === true,
+      // the futuristic reveal is drawn by the block shaders now (sectionFadeGlsl.ts), no wireframe geometry
+      computeWireframeEdges: false,
       shaderCubeBlocks: this.isShaderCubeBlocksEnabled()
     }
   }

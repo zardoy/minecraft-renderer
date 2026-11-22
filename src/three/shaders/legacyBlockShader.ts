@@ -4,6 +4,7 @@ import { FOLIAGE_SWAY_GLSL } from './foliageSwayGlsl'
 import { LEGACY_SHADOW_CASTER_FRAGMENT, LEGACY_SHADOW_NORMAL_GLSL, SUN_SHADOW_FRAGMENT_GLSL, SUN_SHADOW_VERTEX_GLSL } from './sunShadowGlsl'
 import { BLOCK_EMISSION_GLSL } from './blockEmissionGlsl'
 import { COLOR_GRADING_GLSL } from '../colorGrading'
+import { SECTION_FADE_FRAGMENT_GLSL, SECTION_FADE_VERTEX_GLSL } from './sectionFadeGlsl'
 
 export type RenderOrigin = { x: number; y: number; z: number }
 
@@ -55,6 +56,7 @@ out float vFogDepth;
 
 ${FOLIAGE_SWAY_GLSL}
 ${SUN_SHADOW_VERTEX_GLSL}
+${SECTION_FADE_VERTEX_GLSL}
 #ifdef SUN_SHADOWS
 out vec3 v_legacyRelPos;
 #endif
@@ -74,6 +76,12 @@ void main() {
 #ifdef SUN_SHADOWS
     writeSunShadowVaryings(relativePos, vec3(0.0));
     v_legacyRelPos = relativePos;
+#endif
+#ifdef SECTION_FADE
+    v_sectionFade = sectionFadeVisibility(sectionFadeSectionOf(modelMatrix[3].xyz), relativePos);
+#ifdef SECTION_FADE_SCIFI
+    v_sectionFadeLocal = modelMatrix[3].xyz + position + u_sectionFadeOriginRem;
+#endif
 #endif
 
     vColor = color;
@@ -142,6 +150,7 @@ void applyFog() {
 
 ${APPLY_LIGHTMAP_GLSL}
 ${SUN_SHADOW_FRAGMENT_GLSL}
+${SECTION_FADE_FRAGMENT_GLSL}
 ${LEGACY_SHADOW_NORMAL_GLSL}
 ${BLOCK_EMISSION_GLSL}
 ${COLOR_GRADING_GLSL}
@@ -167,6 +176,9 @@ void main() {
 #endif
 #ifdef BLOCK_GRADING
     FragColor.rgb = colorGrade(FragColor.rgb);
+#endif
+#ifdef SECTION_FADE
+    applySectionFade(FragColor);
 #endif
     applyFog();
     writeLogDepth();
@@ -199,6 +211,7 @@ out float vFogDepth;
 
 ${FOLIAGE_SWAY_GLSL}
 ${SUN_SHADOW_VERTEX_GLSL}
+${SECTION_FADE_VERTEX_GLSL}
 #ifdef SUN_SHADOWS
 out vec3 v_legacyRelPos;
 #endif
@@ -218,6 +231,12 @@ void main() {
 #ifdef SUN_SHADOWS
     writeSunShadowVaryings(relativePos, vec3(0.0));
     v_legacyRelPos = relativePos;
+#endif
+#ifdef SECTION_FADE
+    v_sectionFade = sectionFadeVisibility(sectionFadeSectionOf(a_origin), relativePos);
+#ifdef SECTION_FADE_SCIFI
+    v_sectionFadeLocal = a_origin + position + u_sectionFadeOriginRem;
+#endif
 #endif
 
     vColor = color;

@@ -54,6 +54,9 @@ import { formatPerformanceFactorsDebug, PerformanceMonitor } from '../performanc
 
 type SectionKey = string
 
+/** the futuristic reveal: edges first, then the blocks (longer than the plain fade) */
+const FUTURISTIC_REVEAL_SECONDS = 1.4
+
 export class WorldRendererThree extends WorldRendererCommon {
   outputFormat = 'threeJs' as const
 
@@ -514,7 +517,7 @@ export class WorldRendererThree extends WorldRendererCommon {
 
   worldSwitchActions() {
     this.onWorldSwitched.push(() => {
-      this.getModule<{ onWorldSwitched?: () => void }>('futuristicReveal')?.onWorldSwitched?.()
+      this.blockEffects.sectionFade?.reset()
       // clear custom blocks
       this.protocolCustomBlocks.clear()
       // Reset section animations
@@ -632,8 +635,12 @@ export class WorldRendererThree extends WorldRendererCommon {
     }
     this.onReactiveConfigUpdated('shadingTheme', pushShading)
     this.onReactiveConfigUpdated('cardinalLight', pushShading)
+    // set the fade mode right away: block materials then compile with it (switching it later recompiles them once)
     this.onReactiveConfigUpdated('futuristicReveal', () => {
-      this.updateModulesFromConfig()
+      this.syncSectionFade(performance.now())
+    })
+    this.onReactiveConfigUpdated('chunkFadeMs', () => {
+      this.syncSectionFade(performance.now())
     })
     this.onReactiveConfigUpdated(
       'enableLighting',
@@ -1507,6 +1514,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     const postEffects = this.syncPostEffectSettings()
     this.blockEffects.setBlockEmission(needsBlockEmission(postEffects))
     this.blockEffects.setColorGrading(this.worldRendererConfig.colorGrading)
+    this.syncSectionFade(start)
     if (this.postProcessing.begin(this.renderer, postEffects)) {
       this.renderer.render(this.scene, cam)
       this.postProcessing.afterWorld(this.renderer, this.updatePostFrameInfo(cam))
@@ -1591,6 +1599,18 @@ export class WorldRendererThree extends WorldRendererCommon {
       info.eyeLight = rawLightAtEyes(light.block, light.sky, hasSun ? calculateSkyLightSimple(this.timeOfTheDay) : 15)
     }
     return info
+  }
+
+  /** New sections fade in (vanilla chunk fade) or, with the futuristic reveal, show their edges first. See shaders/sectionFadeGlsl.ts. */
+  private syncSectionFade(nowMs: number): void {
+    const cfg = this.worldRendererConfig
+    const scifi = cfg.futuristicReveal === true
+    this.blockEffects.setSectionFade(scifi ? 'scifi' : 'fade', scifi ? FUTURISTIC_REVEAL_SECONDS : (cfg.chunkFadeMs ?? 0) / 1000)
+    if (this.blockEffects.getSectionFadeMode() === 'off') return
+    this.blockEffects.setSectionFadeWorldMinY(this.worldSizeParams.minY)
+    const fog = this.realScene.fog as THREE.Fog | null
+    const background = this.realScene.background
+    this.blockEffects.updateSectionFade(nowMs, fog?.color ?? (background instanceof THREE.Color ? background : undefined))
   }
 
   renderHead(position: Vec3, rotation: number, isWall: boolean, blockEntity) {

@@ -1224,6 +1224,8 @@ export class ChunkMeshManager {
       const list = this.waitingChunksToDisplay[chunkKey] ?? (this.waitingChunksToDisplay[chunkKey] = [])
       if (!list.includes(sectionKey)) list.push(sectionKey)
     }
+    // visible now: it fades in (once per load, remeshes keep it shown); a held section fades when its chunk is revealed
+    if (!sectionObject._waitingForChunkDisplay) this.worldRenderer.blockEffects?.sectionShown(sectionKey)
 
     this.markCullDirty()
     return sectionObject
@@ -1262,6 +1264,7 @@ export class ChunkMeshManager {
       if (!sectionObject) continue
       sectionObject._waitingForChunkDisplay = false
       sectionObject.visible = true
+      this.worldRenderer.blockEffects?.sectionShown(sectionKey)
     }
     delete this.waitingChunksToDisplay[chunkKey]
     this.markCullDirty()
@@ -1309,6 +1312,8 @@ export class ChunkMeshManager {
   }
 
   cleanupSection(sectionKey: string, opts?: { forRemesh?: boolean }) {
+    // unloaded (not a remesh): it fades in again when it comes back
+    if (!opts?.forRemesh) this.worldRenderer.blockEffects?.sectionForgotten(sectionKey)
     // Remove section object from scene
     const sectionObject = this.sectionObjects[sectionKey]
     if (sectionObject) {
