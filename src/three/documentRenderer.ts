@@ -11,6 +11,7 @@
 import * as THREE from 'three'
 import Stats from 'stats.js'
 import StatsGl from 'stats-gl'
+import { FrameTimeline } from '../lib/ui/frameTimeline'
 import * as tween from '@tweenjs/tween.js'
 import type { GraphicsBackendConfig, GraphicsInitOptions } from '../graphicsBackend/types'
 import { gpuPreferenceToWebGLPowerPreference } from '../three/menuBackground/gpuPreference'
@@ -59,7 +60,7 @@ export const isWebWorker = typeof (globalThis as any).WorkerGlobalScope !== 'und
 // ============================================================================
 
 class TopRightStats {
-  private readonly stats: Stats
+  private readonly timeline: FrameTimeline
   private readonly stats2: Stats
   private readonly statsGl: StatsGl
   private total = 0
@@ -69,24 +70,24 @@ class TopRightStats {
     private readonly canvas: HTMLCanvasElement,
     initialStatsVisible = 0
   ) {
-    this.stats = new Stats()
     this.stats2 = new Stats()
     this.statsGl = new StatsGl({ minimal: true })
     this.stats2.showPanel(2)
     this.denseMode = (typeof process !== 'undefined' && process.env?.NODE_ENV === 'production') || (typeof window !== 'undefined' && window.innerHeight < 500)
 
+    this.timeline = new FrameTimeline(160, this.denseMode ? 24 : 30)
     this.initStats()
     this.setVisibility(initialStatsVisible)
   }
 
-  private addStat(dom: HTMLElement, size = 80) {
+  private addStat(dom: HTMLElement, size = 80, keepSize = false) {
     dom.style.position = 'absolute'
-    if (this.denseMode) dom.style.height = '12px'
+    if (this.denseMode && !keepSize) dom.style.height = '12px'
     dom.style.overflow = 'hidden'
     dom.style.left = ''
     dom.style.top = '0'
     dom.style.right = `${this.total}px`
-    dom.style.width = '80px'
+    if (!keepSize) dom.style.width = `${size}px`
     dom.style.zIndex = '1'
     dom.style.opacity = '0.8'
     const hasAppContainer = document.getElementById('corner-indicator-stats')
@@ -101,7 +102,7 @@ class TopRightStats {
   private initStats() {
     const hasRamPanel = this.stats2.dom.children.length === 3
 
-    this.addStat(this.stats.dom)
+    this.addStat(this.timeline.dom, 160, true)
     if (hasRamPanel) {
       this.addStat(this.stats2.dom)
     }
@@ -123,30 +124,30 @@ class TopRightStats {
   setVisibility(level: number) {
     const visible = level > 0
     if (visible) {
-      this.stats.dom.style.display = 'block'
+      this.timeline.setVisible(true)
       this.stats2.dom.style.display = level >= 2 ? 'block' : 'none'
       this.statsGl.container.style.display = level >= 2 ? 'block' : 'none'
     } else {
-      this.stats.dom.style.display = 'none'
+      this.timeline.setVisible(false)
       this.stats2.dom.style.display = 'none'
       this.statsGl.container.style.display = 'none'
     }
   }
 
   markStart() {
-    this.stats.begin()
+    this.timeline.begin()
     this.stats2.begin()
     this.statsGl.begin()
   }
 
   markEnd() {
-    this.stats.end()
+    this.timeline.end()
     this.stats2.end()
     this.statsGl.end()
   }
 
   dispose() {
-    this.stats.dom.remove()
+    this.timeline.dom.remove()
     this.stats2.dom.remove()
     this.statsGl.container.remove()
   }
