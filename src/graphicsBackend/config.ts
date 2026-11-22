@@ -18,7 +18,10 @@ export const defaultWorldRendererConfig = {
   enableDebugOverlay: false,
   debugWasmPerf: false,
   debugModelVariant: undefined as undefined | number[],
+  /** new sections appear with edges first, then fill in (instead of the plain fade) */
   futuristicReveal: false,
+  /** new chunks dissolve in over this long, like vanilla's Chunk Fade (0.75 s); 0 = at once */
+  chunkFadeMs: 750,
 
   /** Master toggle for section occlusion graph (smart / cave cull). Disabled in spectator. */
   smartCull: false,

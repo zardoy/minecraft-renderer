@@ -118,7 +118,6 @@ function makeInvalidBlendGeometry(): MesherGeometryOutput {
 }
 
 type ManagerOptions = {
-  revealDefer?: boolean
   shaderCubes?: boolean
   nearReveal?: boolean
   finishedChunks?: Record<string, boolean>
@@ -222,14 +221,9 @@ test('ChunkMeshManager: a nearer column the renderer does not have does not hide
 function createManager(opts: ManagerOptions = {}): ChunkMeshManager {
   const scene = new THREE.Scene()
   const material = new THREE.MeshBasicMaterial()
-  const revealModule = opts.revealDefer
-    ? {
-        shouldDeferSectionGeometry: () => true
-      }
-    : undefined
   const worldRenderer = {
     shaderCubeBlocksEnabled: () => opts.shaderCubes ?? false,
-    getModule: (name: string) => (name === 'futuristicReveal' ? revealModule : undefined),
+    getModule: () => undefined,
     sceneOrigin: {
       track: () => {},
       removeAndUntrack: () => {},
@@ -294,29 +288,6 @@ test('ChunkMeshManager: hidden section excluded from draw spans', () => {
   while (blendBuf.hasPendingUploads()) blendBuf.uploadDirtyRange()
   manager.updateSectionCullAndSort(camera, 8, 8, 20, false)
   expect(manager.globalLegacyBlendBuffer?.getVisibleIndexSpans().length).toBeGreaterThan(0)
-
-  manager.cleanupSection(key)
-  manager.dispose()
-})
-
-test('ChunkMeshManager: reveal defer blend migrates to global and releases pool', () => {
-  const manager = createManager({ revealDefer: true })
-  const key = '0,0,0'
-  const geo = makeBlendOnlyGeometry()
-
-  manager.updateSection(key, geo)
-
-  expect(manager.sectionObjects[key]?.hasBlendMesh).toBe(true)
-  expect(manager.sectionObjects[key]?.deferredLegacyBlend).toBeDefined()
-  expect(manager.globalLegacyBlendBuffer?.hasSection(key) ?? false).toBe(false)
-  expect(manager.sectionUsesPooledLegacyMesh(key)).toBe(true)
-
-  manager.migrateDeferredLegacyToGlobal(key)
-
-  expect(manager.globalLegacyBlendBuffer?.hasSection(key)).toBe(true)
-  expect(manager.sectionObjects[key]?.hasBlendMesh).toBe(false)
-  expect(manager.sectionObjects[key]?.deferredLegacyBlend).toBeUndefined()
-  expect(manager.sectionUsesPooledLegacyMesh(key)).toBe(false)
 
   manager.cleanupSection(key)
   manager.dispose()

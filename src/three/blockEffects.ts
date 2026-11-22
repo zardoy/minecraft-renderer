@@ -1,6 +1,10 @@
 import * as THREE from 'three'
 import { SWAY_PERIOD, SWAY_TIME_PERIOD } from './shaders/foliageSwayGlsl'
 import { COLOR_GRADING_PRESETS, type ColorGradingPreset } from './colorGrading'
+import { SectionFade } from './sectionFade'
+
+/** how new sections appear: dissolving in (like vanilla's chunk fade), the futuristic edge reveal, or at once */
+export type SectionFadeMode = 'off' | 'fade' | 'scifi'
 
 /**
  * Which block shader family a material belongs to (decides the defines it gets). `legacyBlended` materials draw with
@@ -94,8 +98,18 @@ export class BlockEffects {
     u_gradeFilmic: { value: 0 },
     u_gradeTint: { value: new THREE.Vector3(1, 1, 1) },
     u_gradeShadowTint: { value: new THREE.Vector3() },
-    u_gradeHighlightTint: { value: new THREE.Vector3(1, 1, 1) }
+    u_gradeHighlightTint: { value: new THREE.Vector3(1, 1, 1) },
+    // New sections fading in, see shaders/sectionFadeGlsl.ts
+    u_sectionFadeTex: { value: null as THREE.Texture | null },
+    u_sectionFadeTime: { value: new THREE.Vector2(0, 0.75) },
+    u_sectionFadeMinY: { value: 0 },
+    u_sectionFadeOriginSection: { value: new THREE.Vector3() },
+    u_sectionFadeOriginRem: { value: new THREE.Vector3() }
   }
+
+  /** start times of the sections fading in (created when the fade is first turned on) */
+  sectionFade: SectionFade | null = null
+  private sectionFadeMode: SectionFadeMode = 'off'
 
   private readonly materials = new Map<THREE.ShaderMaterial, BlockMaterialKind>()
   private wavingFoliage = false
@@ -194,11 +208,57 @@ export class BlockEffects {
   /** Must run before the frame is drawn whenever the render origin may have moved (rebase). */
   setRenderOrigin(renderOrigin: { x: number; y: number; z: number }): void {
     this.uniforms.u_swayOriginMod.value.set(swayOriginMod(renderOrigin.x), swayOriginMod(renderOrigin.y), swayOriginMod(renderOrigin.z))
+    const section = (v: number) => Math.floor(v / 16)
+    this.uniforms.u_sectionFadeOriginSection.value.set(section(renderOrigin.x), section(renderOrigin.y), section(renderOrigin.z))
+    this.uniforms.u_sectionFadeOriginRem.value.set(
+      renderOrigin.x - section(renderOrigin.x) * 16,
+      renderOrigin.y - section(renderOrigin.y) * 16,
+      renderOrigin.z - section(renderOrigin.z) * 16
+    )
+  }
+
+  getSectionFadeMode(): SectionFadeMode {
+    return this.sectionFadeMode
+  }
+
+  /** How new sections appear and for how long (seconds; 0 turns the fade off). Recompiles only when the mode changes. */
+  setSectionFade(mode: SectionFadeMode, durationSec: number): void {
+    const effective: SectionFadeMode = durationSec > 0 ? mode : 'off'
+    this.uniforms.u_sectionFadeTime.value.y = durationSec
+    if (effective !== 'off' && !this.sectionFade) {
+      this.sectionFade = new SectionFade()
+      this.uniforms.u_sectionFadeTex.value = this.sectionFade.texture
+    }
+    if (this.sectionFadeMode === effective) return
+    this.sectionFadeMode = effective
+    this.refreshDefines()
+  }
+
+  setSectionFadeWorldMinY(minY: number): void {
+    this.sectionFade?.setMinSectionY(minY)
+    this.uniforms.u_sectionFadeMinY.value = Math.floor(minY / 16)
+  }
+
+  /** A section became visible (first mesh shown, or its chunk revealed): it fades in once per load. */
+  sectionShown(sectionKey: string): void {
+    if (this.sectionFadeMode !== 'off') this.sectionFade?.sectionShown(sectionKey)
+  }
+
+  sectionForgotten(sectionKey: string): void {
+    this.sectionFade?.sectionForgotten(sectionKey)
+  }
+
+  /** Per frame while the fade is on: the clock of the fade. */
+  updateSectionFade(nowMs: number): void {
+    if (this.sectionFadeMode === 'off' || !this.sectionFade) return
+    this.uniforms.u_sectionFadeTime.value.x = this.sectionFade.now(nowMs)
   }
 
   dispose(): void {
     this.tileFlagsTexture?.dispose()
     this.tileFlagsTexture = null
+    this.sectionFade?.dispose()
+    this.sectionFade = null
     this.materials.clear()
   }
 
@@ -222,6 +282,9 @@ export class BlockEffects {
     set('SUN_SHADOWS', this.sunShadows !== 'off')
     set('SUN_SHADOWS_SOFT', this.sunShadows === 'soft')
     set('BLOCK_EMISSION', this.blockEmission && kind !== 'legacyBlended')
+    set('SECTION_FADE', this.sectionFadeMode !== 'off')
+    // the edge reveal discards fragments: not on blended geometry (water, glass), which only fades
+    set('SECTION_FADE_SCIFI', this.sectionFadeMode === 'scifi' && kind !== 'legacyBlended')
     material.defines = defines
   }
 }

@@ -138,6 +138,7 @@ export function applyRendererOptions(appViewer: AppViewer, o: RendererStorageOpt
 
   cfg.showChunkBorders = o.showChunkBorders
   cfg.futuristicReveal = o.rendererFuturisticReveal
+  cfg.chunkFadeMs = o.chunkFadeMs
   cfg.smartCull = o.rendererSmartCull
   applyMesherWorkersPreset(appViewer, o, wasmActive)
   cfg.renderEntities = o.renderEntities

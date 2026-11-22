@@ -54,6 +54,9 @@ import { formatPerformanceFactorsDebug, PerformanceMonitor } from '../performanc
 
 type SectionKey = string
 
+/** the futuristic reveal: edges first, then the blocks (longer than the plain fade) */
+const FUTURISTIC_REVEAL_SECONDS = 1.4
+
 export class WorldRendererThree extends WorldRendererCommon {
   outputFormat = 'threeJs' as const
 
@@ -126,7 +129,6 @@ export class WorldRendererThree extends WorldRendererCommon {
   cursorBlock: CursorBlock
   onRender: Array<(deltaTime: number) => void> = []
   private lastRenderTime = 0
-  private lastSciFiTickMs = 0
   private animatedFov = 0
   private lastFovAnimTime = 0
   private static readonly FOV_TRANSITION_MS = 200
@@ -514,7 +516,7 @@ export class WorldRendererThree extends WorldRendererCommon {
 
   worldSwitchActions() {
     this.onWorldSwitched.push(() => {
-      this.getModule<{ onWorldSwitched?: () => void }>('futuristicReveal')?.onWorldSwitched?.()
+      this.blockEffects.sectionFade?.reset()
       // clear custom blocks
       this.protocolCustomBlocks.clear()
       // Reset section animations
@@ -632,8 +634,12 @@ export class WorldRendererThree extends WorldRendererCommon {
     }
     this.onReactiveConfigUpdated('shadingTheme', pushShading)
     this.onReactiveConfigUpdated('cardinalLight', pushShading)
+    // set the fade mode right away: block materials then compile with it (switching it later recompiles them once)
     this.onReactiveConfigUpdated('futuristicReveal', () => {
-      this.updateModulesFromConfig()
+      this.syncSectionFade(performance.now())
+    })
+    this.onReactiveConfigUpdated('chunkFadeMs', () => {
+      this.syncSectionFade(performance.now())
     })
     this.onReactiveConfigUpdated(
       'enableLighting',
@@ -932,7 +938,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     const renderOrder = 500 - chunkDistance
 
     // Cubes in globalBlockBuffer may leave sectionObj.mesh unset.
-    const drawable = sectionObj.mesh ?? sectionObj.shaderMesh ?? sectionObj.children.find(child => child.name === 'mesh' || child.name === 'shaderMesh')
+    const drawable = sectionObj.mesh ?? sectionObj.children.find(child => child.name === 'mesh')
     if (drawable) {
       drawable.renderOrder = renderOrder
     }
@@ -957,7 +963,6 @@ export class WorldRendererThree extends WorldRendererCommon {
     // "Batch Chunks Display" (`_renderByChunks`) option. No-op when the
     // option is off — `waitingChunksToDisplay` is empty in that case.
     this.chunkMeshManager.finishChunkDisplay(chunkKey)
-    this.getModule<{ onChunkFinished?: () => void }>('futuristicReveal')?.onChunkFinished?.()
   }
 
   private applyPendingSectionUpdates() {
@@ -1018,13 +1023,8 @@ export class WorldRendererThree extends WorldRendererCommon {
         continue
       }
 
-      const sectionObject = this.chunkMeshManager.updateSection(update.key, update.geometry)
+      this.chunkMeshManager.updateSection(update.key, update.geometry)
       this.updatePosDataChunk(update.key)
-      if (sectionObject) {
-        this.getModule<{ onSectionMeshed?: (key: string, geometry: MesherGeometryOutput, section: typeof sectionObject) => void }>(
-          'futuristicReveal'
-        )?.onSectionMeshed?.(update.key, update.geometry, sectionObject)
-      }
     }
   }
 
@@ -1080,13 +1080,8 @@ export class WorldRendererThree extends WorldRendererCommon {
         this.chunkMeshManager.registerSectionOcclusion(data.key, data.geometry)
         return
       }
-      const sectionObject = this.chunkMeshManager.updateSection(data.key, data.geometry)
+      this.chunkMeshManager.updateSection(data.key, data.geometry)
       this.updatePosDataChunk(data.key)
-      if (sectionObject) {
-        this.getModule<{ onSectionMeshed?: (key: string, geometry: MesherGeometryOutput, section: typeof sectionObject) => void }>(
-          'futuristicReveal'
-        )?.onSectionMeshed?.(data.key, data.geometry, sectionObject)
-      }
     }
   }
 
@@ -1445,12 +1440,7 @@ export class WorldRendererThree extends WorldRendererCommon {
       this.cameraGroupVr instanceof THREE.Group
         ? (this.cameraGroupVr.children.find(child => child instanceof THREE.PerspectiveCamera) as THREE.PerspectiveCamera)
         : this.camera
-    // Flush buffered section geometry before reveal tick (calls onSectionMeshed synchronously in handleWorkerMessage).
     this.applyPendingSectionUpdates()
-    const sciFiNow = performance.now()
-    const sciFiDeltaMs = sciFiNow - this.lastSciFiTickMs
-    this.lastSciFiTickMs = sciFiNow
-    this.getModule<{ tick?: (deltaMs: number, now?: number) => void }>('futuristicReveal')?.tick?.(sciFiDeltaMs, sciFiNow)
     const camX = this.cameraWorldPos.x
     const camY = this.cameraWorldPos.y
     const camZ = this.cameraWorldPos.z
@@ -1507,6 +1497,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     const postEffects = this.syncPostEffectSettings()
     this.blockEffects.setBlockEmission(needsBlockEmission(postEffects))
     this.blockEffects.setColorGrading(this.worldRendererConfig.colorGrading)
+    this.syncSectionFade(start)
     if (this.postProcessing.begin(this.renderer, postEffects)) {
       this.renderer.render(this.scene, cam)
       this.postProcessing.afterWorld(this.renderer, this.updatePostFrameInfo(cam))
@@ -1591,6 +1582,16 @@ export class WorldRendererThree extends WorldRendererCommon {
       info.eyeLight = rawLightAtEyes(light.block, light.sky, hasSun ? calculateSkyLightSimple(this.timeOfTheDay) : 15)
     }
     return info
+  }
+
+  /** New sections fade in (vanilla chunk fade) or, with the futuristic reveal, show their edges first. See shaders/sectionFadeGlsl.ts. */
+  private syncSectionFade(nowMs: number): void {
+    const cfg = this.worldRendererConfig
+    const scifi = cfg.futuristicReveal === true
+    this.blockEffects.setSectionFade(scifi ? 'scifi' : 'fade', scifi ? FUTURISTIC_REVEAL_SECONDS : (cfg.chunkFadeMs ?? 0) / 1000)
+    if (this.blockEffects.getSectionFadeMode() === 'off') return
+    this.blockEffects.setSectionFadeWorldMinY(this.worldSizeParams.minY)
+    this.blockEffects.updateSectionFade(nowMs)
   }
 
   renderHead(position: Vec3, rotation: number, isWall: boolean, blockEntity) {
@@ -1704,6 +1705,8 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.clearPendingSectionUpdatesForChunk(x, z)
     this.chunkMeshManager.unregisterColumnOcclusionGrid(x, z, this.worldMinYRender, this.worldMaxYRender, this.getSectionHeight())
     this.chunkMeshManager.onChunkRemovedFromGate(`${x},${z}`)
+    // when the column comes back it fades in again
+    this.blockEffects.sectionFade?.columnForgotten(x, z)
   }
 
   override updateViewerPosition(pos: Vec3) {

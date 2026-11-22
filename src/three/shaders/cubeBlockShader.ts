@@ -4,6 +4,7 @@ import { FOLIAGE_SWAY_GLSL } from './foliageSwayGlsl'
 import { CUBE_SHADOW_CASTER_FRAGMENT, SUN_SHADOW_FRAGMENT_GLSL, SUN_SHADOW_VERTEX_GLSL } from './sunShadowGlsl'
 import { BLOCK_EMISSION_GLSL } from './blockEmissionGlsl'
 import { COLOR_GRADING_GLSL } from '../colorGrading'
+import { SECTION_FADE_FRAGMENT_GLSL, SECTION_FADE_VERTEX_GLSL } from './sectionFadeGlsl'
 
 export type { BlockLightmapParams }
 
@@ -117,6 +118,7 @@ out float vFogDepth;
 
 ${FOLIAGE_SWAY_GLSL}
 ${SUN_SHADOW_VERTEX_GLSL}
+${SECTION_FADE_VERTEX_GLSL}
 
 #ifdef SUN_SHADOWS
 const vec3 SHADOW_FACE_NORMAL[6] = vec3[6](
@@ -249,6 +251,12 @@ ${faceUvGlsl}
 #ifdef SUN_SHADOWS
     writeSunShadowVaryings(relativePos, SHADOW_FACE_NORMAL[faceId]);
 #endif
+#ifdef SECTION_FADE
+    v_sectionFade = sectionFadeVisibility(ivec3(sX, sY, sZ), relativePos.xz - (facePos + blockLocal).xz + 8.0);
+#ifdef SECTION_FADE_SCIFI
+    v_sectionFadeLocal = facePos + blockLocal;
+#endif
+#endif
 
 #ifdef USE_LOGARITHMIC_DEPTH_BUFFER
     // Mirrors three.js logdepthbuf_vertex chunk (EXT path: fragment writes gl_FragDepth).
@@ -325,6 +333,7 @@ void applyFog() {
 
 ${APPLY_LIGHTMAP_GLSL}
 ${SUN_SHADOW_FRAGMENT_GLSL}
+${SECTION_FADE_FRAGMENT_GLSL}
 ${BLOCK_EMISSION_GLSL}
 ${COLOR_GRADING_GLSL}
 
@@ -408,6 +417,9 @@ void main() {
 #endif
 #ifdef BLOCK_GRADING
     FragColor.rgb = colorGrade(FragColor.rgb);
+#endif
+#ifdef SECTION_FADE
+    applySectionFade(FragColor);
 #endif
     applyFog();
     writeLogDepth();
