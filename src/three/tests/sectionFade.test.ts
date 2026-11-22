@@ -30,8 +30,26 @@ describe('section fade start times', () => {
     fade.sectionShown('32,64,48', 5000)
     expect(startOf(fade, '32,64,48')).toBe(first)
     fade.sectionForgotten('32,64,48')
+    fade.columnForgotten(32, 48)
     fade.sectionShown('32,64,48', 5000)
     expect(startOf(fade, '32,64,48')).toBeGreaterThan(first)
+  })
+
+  it('a column is revealed at once: a section shown later takes the column start, an unloaded column starts over', () => {
+    const fade = new SectionFade()
+    fade.sectionShown('32,64,48', 1000)
+    fade.sectionShown('32,80,48', 1000)
+    // a section of the same column that gets its first mesh 3 s later must not fade on its own
+    fade.sectionShown('32,48,48', 4000)
+    expect(startOf(fade, '32,48,48')).toBe(startOf(fade, '32,64,48'))
+    // another column: its own start
+    fade.sectionShown('48,64,48', 4000)
+    expect(startOf(fade, '48,64,48')).toBeGreaterThan(startOf(fade, '32,64,48')!)
+    // column unloaded and loaded again: fades again
+    fade.sectionForgotten('32,64,48')
+    fade.columnForgotten(32, 48)
+    fade.sectionShown('32,64,48', 9000)
+    expect(startOf(fade, '32,64,48')).toBeGreaterThan(startOf(fade, '32,80,48')!)
   })
 
   it('a reset clears every start time', () => {

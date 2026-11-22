@@ -14,8 +14,14 @@ const TEX_HEIGHT = SECTION_FADE_RING * SECTION_FADE_Y
 export class SectionFade {
   readonly texture: THREE.DataTexture
   private readonly data: Float32Array
-  /** sections that started fading during this load (key -> section coordinates) */
+  /** sections whose start time is written for this load */
   private readonly shown = new Set<string>()
+  /**
+   * Start time per column ("x,z" in blocks): a column is revealed at once, so every section takes its column's start. A section that
+   * gets its first mesh after the column was revealed joins in sync (or shows fully if the column is done), never fading on its own
+   * (with the futuristic look a late section would show only edges under a finished one: blocks standing on air).
+   */
+  private readonly columnStart = new Map<string, number>()
   private readonly epoch = performance.now()
   private minSectionY = 0
 
@@ -37,25 +43,38 @@ export class SectionFade {
     this.minSectionY = Math.floor(minY / 16)
   }
 
-  /** The section with world origin key "x,y,z" (blocks) became visible: it fades in from now, once per load. */
+  /** The section with world origin key "x,y,z" (blocks) became visible: it fades in with its column, once per load. */
   sectionShown(sectionKey: string, nowMs = performance.now()): void {
     if (this.shown.has(sectionKey)) return
     this.shown.add(sectionKey)
+    const [x, , z] = sectionKey.split(',')
+    const column = `${x},${z}`
+    let start = this.columnStart.get(column)
+    if (start === undefined) {
+      start = this.now(nowMs)
+      this.columnStart.set(column, start)
+    }
     const index = this.componentIndex(sectionKey)
     if (index === undefined) return
-    this.data[index] = this.now(nowMs)
+    this.data[index] = start
     this.texture.addUpdateRange(index, 1)
     this.texture.needsUpdate = true
   }
 
-  /** The section was unloaded: the next time it is shown it fades in again. */
+  /** The section was removed (unloaded, or now empty): when it is shown again it takes its column's start again. */
   sectionForgotten(sectionKey: string): void {
     this.shown.delete(sectionKey)
+  }
+
+  /** The column was unloaded: when it comes back it fades in again. */
+  columnForgotten(chunkX: number, chunkZ: number): void {
+    this.columnStart.delete(`${chunkX},${chunkZ}`)
   }
 
   /** world switch: nothing is faded any more */
   reset(): void {
     this.shown.clear()
+    this.columnStart.clear()
     this.data.fill(0)
     // whole texture: pending single-texel ranges would limit the upload to them
     this.texture.clearUpdateRanges()

@@ -252,7 +252,7 @@ ${faceUvGlsl}
     writeSunShadowVaryings(relativePos, SHADOW_FACE_NORMAL[faceId]);
 #endif
 #ifdef SECTION_FADE
-    v_sectionFade = sectionFadeVisibility(ivec3(sX, sY, sZ), relativePos);
+    v_sectionFade = sectionFadeVisibility(ivec3(sX, sY, sZ), relativePos.xz - (facePos + blockLocal).xz + 8.0);
 #ifdef SECTION_FADE_SCIFI
     v_sectionFadeLocal = facePos + blockLocal;
 #endif

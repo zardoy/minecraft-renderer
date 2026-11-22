@@ -16,7 +16,7 @@ export const SECTION_FADE_RING = 64
 /** section rows along y (a 512-block world); sections above are not faded */
 export const SECTION_FADE_Y = 32
 
-/** Vertex chunk: `float sectionFadeVisibility(ivec3 section, vec3 relativePos)`, 0 = just shown, 1 = fully visible. */
+/** Vertex chunk: `float sectionFadeVisibility(ivec3 section, vec2 columnCenterRel)`, 0 = just shown, 1 = fully visible. */
 export const SECTION_FADE_VERTEX_GLSL = /* glsl */ `
 #ifdef SECTION_FADE
 uniform highp sampler2D u_sectionFadeTex;
@@ -33,7 +33,12 @@ out float v_sectionFade;
 out vec3 v_sectionFadeLocal;
 #endif
 
-float sectionFadeVisibility(ivec3 section, vec3 relativePos) {
+/**
+ * @param columnCenterRel horizontal position of the column's centre relative to the camera. The whole column uses it, so a column is
+ *   always at one stage: with the per-vertex distance of vanilla, flying above terrain showed the near top of a column finished while
+ *   its farther lower sections were still fading (fog-coloured or edges only: blocks on air)
+ */
+float sectionFadeVisibility(ivec3 section, vec2 columnCenterRel) {
     int sy = section.y - u_sectionFadeMinY;
     if (sy < 0 || sy >= ${SECTION_FADE_Y}) return 1.0;
     int sx = section.x & ${SECTION_FADE_RING - 1};
@@ -42,8 +47,8 @@ float sectionFadeVisibility(ivec3 section, vec3 relativePos) {
     float start = dot(texel, vec4(equal(ivec4(0, 1, 2, 3), ivec4(sx & 3))));
     if (start <= 0.0) return 1.0;
     float visibility = clamp((u_sectionFadeTime.x - start) / max(u_sectionFadeTime.y, 0.001), 0.0, 1.0);
-    // vanilla: nothing near the camera fades (no popping around the player)
-    return mix(1.0, visibility, clamp((length(relativePos) - 16.0) / 16.0, 0.0, 1.0));
+    // vanilla: nothing near the camera fades (no popping around the player); here by column, see above
+    return mix(1.0, visibility, clamp((length(columnCenterRel) - 16.0) / 16.0, 0.0, 1.0));
 }
 
 /** section of legacy geometry from its origin relative to the render origin */

@@ -1968,20 +1968,6 @@ async function processColumnTickInner() {
             geometry.shaderCubes?.words?.buffer
           ].filter(Boolean)
 
-          if (exported.geometry.indices.length > 0 && config.computeWireframeEdges) {
-            try {
-              const wireframeF32 =
-                geometry.indices instanceof Uint32Array
-                  ? wasm!.computeWireframeEdges(geometry.positions as Float32Array, geometry.indices)
-                  : wasm!.computeWireframeEdgesU16(geometry.positions as Float32Array, geometry.indices as Uint16Array)
-              if (wireframeF32.length > 0) {
-                geometry.wireframePositions = wireframeF32
-                transferable.push(wireframeF32.buffer)
-              }
-            } catch (err) {
-              // Fall through — sciFiWorldReveal will fall back to main-thread computation
-            }
-          }
         } else {
           geometry = makeEmptyColumnGeometry(sx, sy, sz, sectionHeight, false)
           geometry.visibilitySet = sectionVisibilitySet

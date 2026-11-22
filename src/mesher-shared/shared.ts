@@ -19,7 +19,6 @@ export const defaultMesherConfig = {
   clipWorldBelowY: undefined as undefined | number,
   disableBlockEntityTextures: false,
   disableConversionCache: false,
-  computeWireframeEdges: false,
   /** Pack eligible full-cube faces as GPU-instanced shader words during WASM post-processing. */
   shaderCubeBlocks: false
 }
@@ -74,7 +73,6 @@ export type MesherGeometryOutput = {
   // isFull: boolean
   hadErrors: boolean
   blocksCount: number
-  wireframePositions?: Float32Array
   customBlockModels?: CustomBlockModels
   /** GPU-instanced full-cube faces packed by the mesher; consumed by ChunkMeshManager. */
   shaderCubes?: {

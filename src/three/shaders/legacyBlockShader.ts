@@ -78,7 +78,7 @@ void main() {
     v_legacyRelPos = relativePos;
 #endif
 #ifdef SECTION_FADE
-    v_sectionFade = sectionFadeVisibility(sectionFadeSectionOf(modelMatrix[3].xyz), relativePos);
+    v_sectionFade = sectionFadeVisibility(sectionFadeSectionOf(modelMatrix[3].xyz), relativePos.xz - position.xz);
 #ifdef SECTION_FADE_SCIFI
     v_sectionFadeLocal = modelMatrix[3].xyz + position + u_sectionFadeOriginRem;
 #endif
@@ -233,7 +233,7 @@ void main() {
     v_legacyRelPos = relativePos;
 #endif
 #ifdef SECTION_FADE
-    v_sectionFade = sectionFadeVisibility(sectionFadeSectionOf(a_origin), relativePos);
+    v_sectionFade = sectionFadeVisibility(sectionFadeSectionOf(a_origin), relativePos.xz - position.xz);
 #ifdef SECTION_FADE_SCIFI
     v_sectionFadeLocal = a_origin + position + u_sectionFadeOriginRem;
 #endif
