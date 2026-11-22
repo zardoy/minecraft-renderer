@@ -88,7 +88,7 @@ export const RENDERER_DEFAULT_OPTIONS = {
   rendererFuturisticReveal: false as boolean,
   /** vanilla Chunk Fade: new chunks dissolve in (ms, 0 = off) */
   chunkFadeMs: 750,
-  rendererSmartCull: false as boolean,
+  rendererSmartCull: true as boolean,
   rendererPerfDebugOverlay: false as boolean,
   disableBlockEntityTextures: false as boolean,
   rendererMesher: 'wasm' as RendererMesherPipeline,
