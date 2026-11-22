@@ -46,7 +46,7 @@ export function sectionIntersectsFrustum(
 
 /**
  * Per-frame frustum cull + back-to-front renderOrder for one legacy section.
- * Used for pooled per-section meshes (reveal defer + invariant fallback).
+ * Used for pooled per-section meshes (fallback when a global buffer is full).
  */
 export function updateLegacySectionCullState(
   mesh: THREE.Mesh,
