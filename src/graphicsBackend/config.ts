@@ -24,7 +24,7 @@ export const defaultWorldRendererConfig = {
   chunkFadeMs: 750,
 
   /** Master toggle for section occlusion graph (smart / cave cull). Disabled in spectator. */
-  smartCull: false,
+  smartCull: true,
 
   // Performance settings
   wasmMesher: true,
