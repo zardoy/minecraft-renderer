@@ -3,7 +3,17 @@ import worldBlockProvider, { WorldBlockProvider } from 'mc-assets/dist/worldBloc
 import moreBlockDataGeneratedJson from '../lib/moreBlockDataGenerated.json'
 import { BlockType } from '../playground/shared'
 import { World, BlockModelPartsResolved, WorldBlock as Block, WorldBlock, worldColumnKey } from './world'
-import { BlockElement, buildElementRotation, buildRotationMatrix, elemFaces, matmul3, matmulmat3, vecadd3, vecsub3 } from './modelsGeometryCommon'
+import {
+  BlockElement,
+  buildElementRotation,
+  buildRotationMatrix,
+  elemFaces,
+  faceLightCellOffset,
+  matmul3,
+  matmulmat3,
+  vecadd3,
+  vecsub3
+} from './modelsGeometryCommon'
 import { getSideShading } from './vertexShading'
 import { INVISIBLE_BLOCKS } from './worldConstants'
 import { MesherGeometryOutput, HighestBlockInfo } from './shared'
@@ -351,16 +361,19 @@ function renderElement(
     const aos: number[] = []
     const neighborPos = position.plus(new Vec3(...dir))
     const { smoothLighting, shadingTheme, cardinalLight } = world.config
-    const baseChannels = world.getChannelLightNorm(neighborPos)
+    // block-local corners (0..1); the light cell depends on whether the face lies on the block boundary (see faceLightCellOffset)
+    const faceVertices = needTiles
+      ? null
+      : corners.map(pos => {
+          const vertex = [pos[0] ? maxx : minx, pos[1] ? maxy : miny, pos[2] ? maxz : minz]
+          return vecadd3(matmul3(globalMatrix, vecadd3(matmul3(localMatrix, vertex), localShift)), globalShift).map(v => v / 16)
+        })
+    const lightCell = faceVertices ? faceLightCellOffset(worldDir as [number, number, number], faceVertices) : null
+    const baseChannels = world.getChannelLightNorm(lightCell ? position.offset(lightCell[0], lightCell[1], lightCell[2]) : neighborPos)
     const faceDir = dir as [number, number, number]
-    for (const pos of corners) {
-      let vertex = [pos[0] ? maxx : minx, pos[1] ? maxy : miny, pos[2] ? maxz : minz]
-
+    for (const [cornerIndex, pos] of corners.entries()) {
       if (!needTiles) {
-        // 10%
-        vertex = vecadd3(matmul3(localMatrix, vertex), localShift)
-        vertex = vecadd3(matmul3(globalMatrix, vertex), globalShift)
-        vertex = vertex.map(v => v / 16)
+        const vertex = faceVertices![cornerIndex]!
 
         const worldPos = [vertex[0] + (cursor.x & 15) - 8, vertex[1] + (cursor.y & 15) - 8, vertex[2] + (cursor.z & 15) - 8]
 

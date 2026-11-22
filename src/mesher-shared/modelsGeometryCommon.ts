@@ -193,3 +193,30 @@ export const elemFaces = {
     ]
   }
 }
+
+/** How far a vertex may be from the block boundary and still count as on it (block units). */
+const FACE_ON_BOUNDARY_EPS = 1e-4
+
+/**
+ * The cell a model face takes its flat light from, as an offset from the block. Like vanilla (ModelBlockRenderer, shape
+ * flag 0), the neighbour in the face direction only when the face lies on the block boundary in that direction; an inset
+ * or diagonal face (cross plants, slab tops, rotated elements) uses the block's own cell. Reading the neighbour for those
+ * made the quad of a plant whose face direction points into a solid block take that block's light (0): one half dark.
+ *
+ * @param dir face direction after the block rotation, rounded to integers
+ * @param vertices the face's corners in block-local coordinates (0..1)
+ */
+export function faceLightCellOffset(dir: readonly [number, number, number], vertices: ReadonlyArray<ArrayLike<number>>): [number, number, number] {
+  let axis = -1
+  for (let i = 0; i < 3; i++) {
+    if (dir[i] === 0) continue
+    if (axis !== -1) return [0, 0, 0] // not axis aligned: never on the boundary
+    axis = i
+  }
+  if (axis === -1) return [0, 0, 0]
+  const boundary = dir[axis]! > 0 ? 1 : 0
+  for (const vertex of vertices) {
+    if (Math.abs(vertex[axis]! - boundary) > FACE_ON_BOUNDARY_EPS) return [0, 0, 0]
+  }
+  return [dir[0], dir[1], dir[2]]
+}
