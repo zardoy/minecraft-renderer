@@ -8,9 +8,10 @@ export type SectionFadeMode = 'off' | 'fade' | 'scifi'
 
 /**
  * Which block shader family a material belongs to (decides the defines it gets). `legacyBlended` materials draw with
- * alpha blending, so their alpha output must stay the real texture alpha (no emission encoding).
+ * alpha blending, so their alpha output must stay the real texture alpha (no emission encoding). `cubeFade` / `legacyFade` draw the
+ * sections that are still fading in, blended over the terrain (see ChunkMeshManager's fade pass): their alpha is the fade.
  */
-export type BlockMaterialKind = 'cube' | 'legacy' | 'legacyBlended'
+export type BlockMaterialKind = 'cube' | 'legacy' | 'legacyBlended' | 'cubeFade' | 'legacyFade'
 
 export type SunShadowsMode = 'off' | 'normal' | 'soft'
 
@@ -229,6 +230,10 @@ export class BlockEffects {
       this.sectionFade = new SectionFade()
       this.uniforms.u_sectionFadeTex.value = this.sectionFade.texture
     }
+    if (this.sectionFade) {
+      this.sectionFade.durationSec = durationSec
+      this.sectionFade.lateSectionsFadeAlone = mode !== 'scifi'
+    }
     if (this.sectionFadeMode === effective) return
     this.sectionFadeMode = effective
     this.refreshDefines()
@@ -237,6 +242,24 @@ export class BlockEffects {
   setSectionFadeWorldMinY(minY: number): void {
     this.sectionFade?.setMinSectionY(minY)
     this.uniforms.u_sectionFadeMinY.value = Math.floor(minY / 16)
+  }
+
+  /**
+   * Seconds left of the section's plain fade (0 = drawn normally): mirrors the shader's `sectionFadeVisibility` (start time and
+   * the camera's own column), so the fade pass gets exactly the sections the shader would fade. Not for the futuristic look.
+   */
+  sectionFadeRemaining(sectionKey: string, cameraWorldX: number, cameraWorldZ: number, nowMs = performance.now()): number {
+    if (this.sectionFadeMode !== 'fade' || !this.sectionFade) return 0
+    const start = this.sectionFade.startOf(sectionKey)
+    if (start <= 0) return 0
+    const remaining = start + this.uniforms.u_sectionFadeTime.value.y - this.sectionFade.now(nowMs)
+    if (remaining <= 0) return 0
+    const comma = sectionKey.indexOf(',')
+    const x = Number(sectionKey.slice(0, comma))
+    const z = Number(sectionKey.slice(sectionKey.lastIndexOf(',') + 1))
+    // like the shader: the camera's own column (within 8 blocks of its centre) never fades
+    if (Math.hypot(x + 8 - cameraWorldX, z + 8 - cameraWorldZ) <= 8) return 0
+    return remaining
   }
 
   /** A section became visible (first mesh shown, or its chunk revealed): it fades in once per load. */
@@ -281,10 +304,14 @@ export class BlockEffects {
     set('BLOCK_GRADING', this.colorGrading !== 'off')
     set('SUN_SHADOWS', this.sunShadows !== 'off')
     set('SUN_SHADOWS_SOFT', this.sunShadows === 'soft')
-    set('BLOCK_EMISSION', this.blockEmission && kind !== 'legacyBlended')
+    const fadePass = kind === 'cubeFade' || kind === 'legacyFade'
+    set('BLOCK_EMISSION', this.blockEmission && kind !== 'legacyBlended' && !fadePass)
     set('SECTION_FADE', this.sectionFadeMode !== 'off')
     // the edge reveal discards fragments: not on blended geometry (water, glass), which only fades
     set('SECTION_FADE_SCIFI', this.sectionFadeMode === 'scifi' && kind !== 'legacyBlended')
+    const plainFade = this.sectionFadeMode === 'fade'
+    set('SECTION_FADE_SET_ALPHA', plainFade && fadePass)
+    set('SECTION_FADE_MUL_ALPHA', this.sectionFadeMode !== 'off' && kind === 'legacyBlended')
     material.defines = defines
   }
 }

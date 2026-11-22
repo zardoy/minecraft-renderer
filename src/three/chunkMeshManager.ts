@@ -24,7 +24,7 @@ import {
 import { sectionIntersectsFrustum, setupLegacySectionMatrix, updateLegacySectionCullState } from './legacySectionCull'
 import { GlobalBlockBuffer } from './globalBlockBuffer'
 import { buildVisibleCubeSpans } from './cubeDrawSpans'
-import { GlobalLegacyBuffer, type LegacySectionGeometry } from './globalLegacyBuffer'
+import { GlobalLegacyBuffer, type LegacySectionGeometry, type VisibleSectionSpan } from './globalLegacyBuffer'
 import { computeShaderSectionRaycastAabb, type ShaderSectionRaycastEntry } from './sectionRaycastAabb'
 import { getMesh } from './entity/EntityMesh'
 import type { WorldRendererThree } from './worldRendererThree'
@@ -35,6 +35,7 @@ import { getSignTexture, releaseSignTexture, disposeAllSignTextures } from './si
 import { BlockEntityLightRegistry } from '../lib/blockEntityLightRegistry'
 import { isClientLightTraceEnabled, recordClientLightTraceGpuSample } from '../lighting/debug/clientLightTrace'
 import { SectionOcclusionCull, hsvToRgb } from './occlusion/sectionOcclusionCull'
+import { SectionFadePass } from './sectionFadePass'
 import { VISIBILITY_SET_ALL_TRUE } from '../mesher-shared/visibilitySet'
 
 export interface ChunkMeshPool {
@@ -149,6 +150,10 @@ export class ChunkMeshManager {
   private _cullCamInitialized = false
   /** Visible blend section keys from last cull pass — used by per-quad blend sort. */
   private _visibleBlendKeys: string[] = []
+  /** Opaque geometry of the sections still fading in, drawn blended after the terrain (created on first use). */
+  private sectionFadePass: SectionFadePass | null = null
+  /** performance.now() when the first of the fading sections finishes: the cull runs again then to hand it back to the terrain pass */
+  private _fadeRecheckAtMs = Infinity
   private readonly _lastBlendSortPos = new THREE.Vector3()
   private _lastBlendSortLayoutVersion = -1
   private _blendSortPosInitialized = false
@@ -544,9 +549,29 @@ export class ChunkMeshManager {
     const blendBuf = this.globalLegacyBlendBuffer
     const gb = this.globalBlockBuffer
 
+    // sections still fading in (plain chunk fade) leave the opaque terrain pass for the blended fade pass
+    const effects = this.worldRenderer.blockEffects
+    const fadeNowMs = performance.now()
+    let minFadeLeft = Infinity
+    const isFading = (key: string): boolean => {
+      const left = effects?.sectionFadeRemaining(key, cameraWorldX, cameraWorldZ, fadeNowMs) ?? 0
+      if (left <= 0) return false
+      if (left < minFadeLeft) minFadeLeft = left
+      return true
+    }
+    const legacyFading: VisibleSectionSpan[] = []
+    const cubeFading: VisibleSectionSpan[] = []
+
     const opaqueKeys: string[] = []
+    const opaqueVisible: VisibleSectionSpan[] = []
     for (const entry of visible) {
-      if (opaqueBuf?.hasSection(entry.key)) opaqueKeys.push(entry.key)
+      if (!opaqueBuf?.hasSection(entry.key)) continue
+      if (isFading(entry.key)) {
+        legacyFading.push(entry)
+      } else {
+        opaqueKeys.push(entry.key)
+        opaqueVisible.push(entry)
+      }
     }
     opaqueKeys.sort()
 
@@ -566,7 +591,7 @@ export class ChunkMeshManager {
         if (!entry) {
           return
         }
-        const { visible: inFrustum } = sectionIntersectsFrustum(
+        const { visible: inFrustum, distSq } = sectionIntersectsFrustum(
           entry.sectionCenterX,
           entry.sectionCenterY,
           entry.sectionCenterZ,
@@ -585,6 +610,10 @@ export class ChunkMeshManager {
           return
         }
         cubeVisibleKeys.push(key)
+        if (isFading(key)) {
+          cubeFading.push({ key, distSq })
+          return
+        }
         const drawStart = gb.getSectionDrawStart(key)
         const drawCount = gb.getSectionDrawCount(key)
         if (drawStart !== undefined && drawCount !== undefined) {
@@ -593,6 +622,7 @@ export class ChunkMeshManager {
       })
     }
     cubeVisibleKeys.sort()
+    this._fadeRecheckAtMs = minFadeLeft === Infinity ? Infinity : fadeNowMs + minFadeLeft * 1000
 
     const occlusionFp = smartCull ? String(this.sectionOcclusionCull.getVersion()) : 'off'
     const fingerprint = [
@@ -606,7 +636,9 @@ export class ChunkMeshManager {
       gb?.getLayoutVersion() ?? 0,
       opaqueBuf?.getUploadEpoch() ?? 0,
       blendBuf?.getUploadEpoch() ?? 0,
-      gb?.getUploadEpoch() ?? 0
+      gb?.getUploadEpoch() ?? 0,
+      legacyFading.map(e => e.key).join(','),
+      cubeFading.map(e => e.key).join(',')
     ].join('|')
 
     if (fingerprint === this._lastCullFingerprint && !this.hasPendingBufferWork()) {
@@ -615,7 +647,7 @@ export class ChunkMeshManager {
     }
     this._lastCullFingerprint = fingerprint
 
-    opaqueBuf?.updateDrawSpans(visible, 'opaque')
+    opaqueBuf?.updateDrawSpans(opaqueVisible, 'opaque')
     blendBuf?.updateDrawSpans(visible, 'sortedBlend')
 
     if (gb) {
@@ -627,6 +659,13 @@ export class ChunkMeshManager {
         gb.getPendingDirtyRanges()
       )
       gb.setVisibleSpans(spans)
+    }
+
+    if (legacyFading.length > 0 || cubeFading.length > 0) {
+      this.sectionFadePass ??= effects ? new SectionFadePass(this.scene, effects) : null
+      this.sectionFadePass?.update(gb, cubeFading, opaqueBuf, legacyFading)
+    } else {
+      this.sectionFadePass?.clear()
     }
 
     if (isClientLightTraceEnabled()) {
@@ -699,6 +738,11 @@ export class ChunkMeshManager {
 
   markCullDirty(): void {
     this.cullDirty = true
+  }
+
+  /** Per frame: a section finished fading in, the cull moves it back to the terrain pass. */
+  markCullDirtyIfFadeEnded(nowMs = performance.now()): void {
+    if (nowMs >= this._fadeRecheckAtMs) this.markCullDirty()
   }
 
   hasPendingBufferWork(): boolean {
@@ -1513,6 +1557,9 @@ export class ChunkMeshManager {
     this.chunkBoxMaterial.dispose()
     this.shaderSectionRaycastBoxes.clear()
     this.lastBufferStateKey = ''
+    this.sectionFadePass?.dispose()
+    this.sectionFadePass = null
+    this._fadeRecheckAtMs = Infinity
     this.globalBlockBuffer?.dispose()
     this.globalBlockBuffer = null
     this.globalLegacyBuffer?.dispose()
