@@ -1339,8 +1339,14 @@ const handleMessage = async (data: any) => {
 
       break
     }
-    // Note: getCustomBlockModel not implemented in WASM version
-    // as it requires World class functionality
+    case 'getCustomBlockModel': {
+      // same answer as the JS mesher worker (debug: which model a server put on a position)
+      const pos = new Vec3(data.pos.x, data.pos.y, data.pos.z)
+      const chunkKey = `${Math.floor(pos.x / 16) * 16},${Math.floor(pos.z / 16) * 16}`
+      const customBlockModel = world?.customBlockModels.get(chunkKey)?.[`${pos.x},${pos.y},${pos.z}`]
+      postMessage({ type: 'customBlockModel', chunkKey: world ? chunkKey : '', customBlockModel })
+      break
+    }
   }
 }
 

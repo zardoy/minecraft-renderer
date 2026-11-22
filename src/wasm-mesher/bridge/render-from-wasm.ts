@@ -21,6 +21,7 @@ import { faceIsCulled } from '../../mesher-shared/faceOcclusion'
 import { foliageSwayBase, foliageSwayLevel, tagFoliageUv } from '../../mesher-shared/foliageSway'
 import { buildShaderCubesFromWords, getShaderCubeResources, tryBuildShaderCubeInstances } from './shaderCubeBridge'
 import { appendGeometryIndices } from './geometryIndices'
+import { getBlockPosKey } from '../../lib/simpleUtils'
 import { getSideShading, vertexLightFromAo } from '../../mesher-shared/vertexShading'
 import tintsJson from 'minecraft-data/minecraft-data/data/pc/1.16.2/tints.json'
 
@@ -224,6 +225,16 @@ function smoothChannelLightAt(
 }
 
 /**
+ * Model a server put on this position (`minecraft-web-client:blockmodels`, stored per column in `world.customBlockModels`).
+ * The Rust side only decides which blocks and faces are visible; the model is chosen here, the same way `World.getBlock`
+ * applies it for the JS mesher (the block keeps its state, its name becomes the model).
+ */
+export function blockModelOverrideAt(world: World | undefined, x: number, y: number, z: number): string | undefined {
+  if (!world || world.customBlockModels.size === 0) return undefined
+  return world.customBlockModels.get(`${Math.floor(x / 16) * 16},${Math.floor(z / 16) * 16}`)?.[getBlockPosKey({ x, y, z })]
+}
+
+/**
  * Get or create cached block model with precomputed matrices
  */
 function getCachedBlockModel(
@@ -232,7 +243,8 @@ function getCachedBlockModel(
   blockProvider: WorldBlockProvider,
   PrismarineBlock: any,
   world?: World,
-  blockPos?: { x: number; y: number; z: number }
+  blockPos?: { x: number; y: number; z: number },
+  modelOverride?: string
 ): CachedBlockModel | null {
   const usePreflat = !!(world?.preflat && blockPos)
   let blockName: string
@@ -247,7 +259,8 @@ function getCachedBlockModel(
     blockProps = blockObj.getProperties()
   }
 
-  const cacheKey = usePreflat ? `${version}:${blockStateId}:${blockName}:${JSON.stringify(blockProps)}` : `${version}:${blockStateId}`
+  let cacheKey = usePreflat ? `${version}:${blockStateId}:${blockName}:${JSON.stringify(blockProps)}` : `${version}:${blockStateId}`
+  if (modelOverride) cacheKey += `:override:${modelOverride}`
   if (!(globalThis as any).__wasmBlockModelCache) {
     ;(globalThis as any).__wasmBlockModelCache = new Map()
   }
@@ -263,8 +276,14 @@ function getCachedBlockModel(
       blockName = blockObj.name
       blockProps = blockObj.getProperties()
     }
+    // like the JS mesher: the overridden block keeps its properties (e.g. facing) and resolves the named model, falling back to it
+    // when the pack's blockstate has no variant for those properties
+    if (modelOverride) blockName = modelOverride
 
-    const models = blockProvider.getAllResolvedModels0_1({ name: blockName, properties: blockProps as Record<string, string | number | boolean> }, false)
+    const models = blockProvider.getAllResolvedModels0_1(
+      { name: blockName, properties: blockProps as Record<string, string | number | boolean> },
+      !!modelOverride
+    )
 
     if (!models || models.length === 0) return null
 
@@ -631,12 +650,14 @@ export function renderWasmOutputToGeometry(
       }
     }
 
-    const cachedModel = getCachedBlockModel(blockStateId, version, blockProvider, PrismarineBlock, world, { x: bx, y: by, z: bz })
+    const modelOverride = blockModelOverrideAt(world, bx, by, bz)
+    const cachedModel = getCachedBlockModel(blockStateId, version, blockProvider, PrismarineBlock, world, { x: bx, y: by, z: bz }, modelOverride)
     if (!cachedModel) continue
 
     const neighborStateIdCache = new Map<string, number | null>()
 
-    if (shaderResources) {
+    // an overridden block is built from its model below: shader cubes take the texture of the block state, not of the model
+    if (shaderResources && !modelOverride) {
       const modelVars = cachedModel.models[0]
       const model = modelVars?.[0]
       const element = model?.elements?.[0]
