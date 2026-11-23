@@ -75,7 +75,7 @@ class TopRightStats {
     this.stats2.showPanel(2)
     this.denseMode = (typeof process !== 'undefined' && process.env?.NODE_ENV === 'production') || (typeof window !== 'undefined' && window.innerHeight < 500)
 
-    this.timeline = new FrameTimeline(160, this.denseMode ? 24 : 30)
+    this.timeline = new FrameTimeline(128, this.denseMode ? 24 : 30)
     this.initStats()
     this.setVisibility(initialStatsVisible)
   }
@@ -84,6 +84,8 @@ class TopRightStats {
     dom.style.position = 'absolute'
     if (this.denseMode && !keepSize) dom.style.height = '12px'
     dom.style.overflow = 'hidden'
+    // Stats overlays must never eat clicks meant for the game/UI underneath.
+    dom.style.pointerEvents = 'none'
     dom.style.left = ''
     dom.style.top = '0'
     dom.style.right = `${this.total}px`
@@ -102,13 +104,14 @@ class TopRightStats {
   private initStats() {
     const hasRamPanel = this.stats2.dom.children.length === 3
 
-    this.addStat(this.timeline.dom, 160, true)
+    this.addStat(this.timeline.dom, 128, true)
     if (hasRamPanel) {
       this.addStat(this.stats2.dom)
     }
 
     this.statsGl.init(this.canvas)
     this.statsGl.container.style.display = 'flex'
+    this.statsGl.container.style.pointerEvents = 'none'
     this.statsGl.container.style.justifyContent = 'flex-end'
 
     let i = 0
