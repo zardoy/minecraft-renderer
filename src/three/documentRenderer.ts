@@ -75,7 +75,7 @@ class TopRightStats {
     this.stats2.showPanel(2)
     this.denseMode = (typeof process !== 'undefined' && process.env?.NODE_ENV === 'production') || (typeof window !== 'undefined' && window.innerHeight < 500)
 
-    this.timeline = new FrameTimeline(160, this.denseMode ? 19 : 24)
+    this.timeline = new FrameTimeline(128, this.denseMode ? 24 : 30)
     this.initStats()
     this.setVisibility(initialStatsVisible)
   }
@@ -104,7 +104,7 @@ class TopRightStats {
   private initStats() {
     const hasRamPanel = this.stats2.dom.children.length === 3
 
-    this.addStat(this.timeline.dom, 160, true)
+    this.addStat(this.timeline.dom, 128, true)
     if (hasRamPanel) {
       this.addStat(this.stats2.dom)
     }
