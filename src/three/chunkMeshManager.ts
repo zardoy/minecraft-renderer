@@ -1806,6 +1806,14 @@ export class ChunkMeshManager {
   }
 }
 
+/**
+ * How far (blocks) the sign text plane floats in front of the board's face. It has to be clear of the depth noise between the text
+ * mesh and the block shaders (both write the logarithmic depth, and the values differ by a position dependent amount): with 0.0001
+ * the text was hidden by its own board at about a third of the player positions (measured over 60 random positions near a sign: 19
+ * with hidden text, up to all 6 signs at once; 0 with 0.0011). 0.004 is about 1/16 of a texel: not visible, even at grazing angles.
+ */
+const SIGN_TEXT_DEPTH_GAP = 0.004
+
 class SignHeadsRenderer {
   constructor(public worldRendererThree: WorldRendererThree) {}
 
@@ -1863,9 +1871,9 @@ class SignHeadsRenderer {
     const thickness = (isHanging ? 2 : 1.5) / 16
     const wallSpacing = 0.25 / 16
     if (isWall && !isHanging) {
-      mesh.position.set(0, 0, -0.5 + thickness + wallSpacing + 0.0001)
+      mesh.position.set(0, 0, -0.5 + thickness + wallSpacing + SIGN_TEXT_DEPTH_GAP)
     } else {
-      mesh.position.set(0, 0, thickness / 2 + 0.0001)
+      mesh.position.set(0, 0, thickness / 2 + SIGN_TEXT_DEPTH_GAP)
     }
 
     const group = new THREE.Group() as THREE.Group & { signTexture?: THREE.Texture }
