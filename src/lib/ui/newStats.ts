@@ -10,6 +10,53 @@ let lastY = 40
 /** Class for advanced stats pane; host app should set z-index (see integrating app global CSS). */
 export const MC_RENDERER_DEBUG_OVERLAY_CLASS = 'mc-renderer-debug-overlay'
 
+const STACK_CLASS = 'mc-renderer-debug-stack'
+const STACK_STYLE_ID = 'mc-renderer-debug-stack-style'
+/** Viewport width below which the advanced stats stack in one column (they are separate fixed panes beside each other otherwise). */
+const NARROW_STACK_PX = 520
+
+/**
+ * Advanced stats panes live in one wrapper. On wide screens it is `display: contents`: nothing changes, every pane keeps its own fixed
+ * position. On narrow screens (phones) the wrapper becomes the fixed column and the panes stack in it, below the host's top button
+ * row (`--mc-renderer-debug-top`, default 44px) instead of overlapping it and each other. The wrapper has the overlay class as well,
+ * so the host's z-index rules for that class (and its "under modals" variant) apply to the whole column.
+ */
+const getDebugStack = () => {
+  let stack = document.querySelector<HTMLDivElement>(`.${STACK_CLASS}`)
+  if (stack) return stack
+  if (!document.getElementById(STACK_STYLE_ID)) {
+    const style = document.createElement('style')
+    style.id = STACK_STYLE_ID
+    style.textContent = `
+.${STACK_CLASS} { display: contents; }
+@media (max-width: ${NARROW_STACK_PX - 1}px) {
+  .${STACK_CLASS} {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+    position: fixed;
+    top: var(--mc-renderer-debug-top, 44px);
+    right: 0;
+    max-width: 100vw;
+    pointer-events: none;
+  }
+  .${STACK_CLASS} > .${MC_RENDERER_DEBUG_OVERLAY_CLASS} {
+    position: static !important;
+    top: auto !important;
+    right: auto !important;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+}`
+    document.head.appendChild(style)
+  }
+  stack = document.createElement('div')
+  stack.className = `${STACK_CLASS} ${MC_RENDERER_DEBUG_OVERLAY_CLASS}`
+  document.body.appendChild(stack)
+  return stack
+}
+
 export const addNewStat = (id: string, width = 80, x = rightOffset, y = lastY, opts?: { className?: string }) => {
   if (isWebWorker) return { updateText() {}, setVisibility() {} }
 
@@ -29,7 +76,7 @@ export const addNewStat = (id: string, width = 80, x = rightOffset, y = lastY, o
     pane.style.zIndex = '100'
   }
   pane.style.pointerEvents = 'none'
-  document.body.appendChild(pane)
+  ;(opts?.className === MC_RENDERER_DEBUG_OVERLAY_CLASS ? getDebugStack() : document.body).appendChild(pane)
   stats[id] = pane
   if (y === undefined && x === rightOffset) {
     // otherwise it's a custom position

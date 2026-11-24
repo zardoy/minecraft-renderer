@@ -11,6 +11,8 @@
  */
 
 const COL_W = 1
+/** strips narrower than this drop the "/120Hz" part of the text */
+const COMPACT_WIDTH_PX = 110
 const WORST_WINDOW_MS = 5000
 const VSYNC_RESAMPLE_FRAMES = 30
 
@@ -24,10 +26,10 @@ export class FrameTimeline {
   private readonly canvas: HTMLCanvasElement
   private readonly ctx: CanvasRenderingContext2D
   private readonly text: HTMLDivElement
-  private readonly maxN: number
+  private maxN: number
   /** Frame-to-frame interval (ms) and CPU time spent in the frame (ms), ring buffers. */
-  private readonly dts: Float32Array
-  private readonly cpus: Float32Array
+  private dts: Float32Array
+  private cpus: Float32Array
   private head = 0
   private count = 0
   private lastStart = 0
@@ -41,15 +43,15 @@ export class FrameTimeline {
   private visible = true
 
   constructor(
-    private readonly width = 160,
-    private readonly height = 30
+    private width = 160,
+    private height = 30
   ) {
     this.maxN = Math.ceil(width / COL_W)
     this.dts = new Float32Array(this.maxN)
     this.cpus = new Float32Array(this.maxN)
 
     this.dom = document.createElement('div')
-    this.dom.style.cssText = `position:relative;width:${width}px;height:${height}px;pointer-events:none;background:rgba(2,6,23,0.6);`
+    this.dom.style.cssText = `position:relative;width:${width}px;height:${height}px;pointer-events:none;overflow:hidden;background:rgba(2,6,23,0.6);`
     this.canvas = document.createElement('canvas')
     this.canvas.style.cssText = 'display:block;width:100%;height:100%;'
     this.dom.appendChild(this.canvas)
@@ -62,6 +64,25 @@ export class FrameTimeline {
     this.canvas.width = Math.round(width * dpr)
     this.canvas.height = Math.round(height * dpr)
     this.ctx = this.canvas.getContext('2d')!
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  }
+
+  /** New size (narrow screens get a shorter strip). Drops the recorded history: its columns were drawn for the old width. */
+  resize(width: number, height: number) {
+    if (width === this.width && height === this.height) return
+    this.width = width
+    this.height = height
+    this.maxN = Math.ceil(width / COL_W)
+    this.dts = new Float32Array(this.maxN)
+    this.cpus = new Float32Array(this.maxN)
+    this.head = 0
+    this.count = 0
+    this.dom.style.width = `${width}px`
+    this.dom.style.height = `${height}px`
+    const dpr = Math.min(2, globalThis.devicePixelRatio || 1)
+    // assigning the canvas size resets the 2d context state
+    this.canvas.width = Math.round(width * dpr)
+    this.canvas.height = Math.round(height * dpr)
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   }
 
@@ -136,8 +157,10 @@ export class FrameTimeline {
     const fps = Math.round(this.fpsSmoothed)
     const ratio = fps / hz
     const fpsColor = ratio >= 0.85 ? '#4ade80' : ratio >= 0.5 ? '#facc15' : '#f87171'
+    // a narrow strip (phones) has no room for the refresh rate: the colour already scores the FPS against it
+    const hzText = this.width < COMPACT_WIDTH_PX ? '' : `/${hz}Hz`
     this.text.innerHTML =
-      `<span style="color:${fpsColor};font-size:${Math.round(this.height * 0.6)}px">${fps}</span>/${hz}Hz` +
+      `<span style="color:${fpsColor};font-size:${Math.round(this.height * 0.6)}px">${fps}</span>${hzText}` +
       (worst > 0 ? ` <span style="color:${this.color(worst)}">${Math.round(worst)}ms</span>` : '')
   }
 
