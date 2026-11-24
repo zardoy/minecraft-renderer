@@ -59,8 +59,21 @@ export const isWebWorker = typeof (globalThis as any).WorkerGlobalScope !== 'und
 // TopRightStats - Performance stats display
 // ============================================================================
 
+/** Below this viewport width (phones in portrait) the stats strip is shorter: the top corner is shared with the game's own buttons. */
+const NARROW_VIEWPORT_PX = 520
+const timelineSize = (denseMode: boolean) => {
+  if (typeof window !== 'undefined' && window.innerWidth < NARROW_VIEWPORT_PX) return { width: 96, height: 24 }
+  return { width: 128, height: denseMode ? 24 : 30 }
+}
+
 class TopRightStats {
   private readonly timeline: FrameTimeline
+  private readonly onResize = () => {
+    const { width, height } = timelineSize(this.denseMode)
+    this.timeline.resize(width, height)
+    // the memory panel sits left of the strip
+    this.stats2.dom.style.right = `${width}px`
+  }
   private readonly stats2: Stats
   private readonly statsGl: StatsGl
   private total = 0
@@ -75,9 +88,11 @@ class TopRightStats {
     this.stats2.showPanel(2)
     this.denseMode = (typeof process !== 'undefined' && process.env?.NODE_ENV === 'production') || (typeof window !== 'undefined' && window.innerHeight < 500)
 
-    this.timeline = new FrameTimeline(128, this.denseMode ? 24 : 30)
-    this.initStats()
+    const size = timelineSize(this.denseMode)
+    this.timeline = new FrameTimeline(size.width, size.height)
+    this.initStats(size.width)
     this.setVisibility(initialStatsVisible)
+    window.addEventListener('resize', this.onResize)
   }
 
   private addStat(dom: HTMLElement, size = 80, keepSize = false) {
@@ -101,10 +116,10 @@ class TopRightStats {
     this.total += size
   }
 
-  private initStats() {
+  private initStats(timelineWidth: number) {
     const hasRamPanel = this.stats2.dom.children.length === 3
 
-    this.addStat(this.timeline.dom, 128, true)
+    this.addStat(this.timeline.dom, timelineWidth, true)
     if (hasRamPanel) {
       this.addStat(this.stats2.dom)
     }
@@ -150,6 +165,7 @@ class TopRightStats {
   }
 
   dispose() {
+    window.removeEventListener('resize', this.onResize)
     this.timeline.dom.remove()
     this.stats2.dom.remove()
     this.statsGl.container.remove()
