@@ -77,6 +77,7 @@ class TopRightStats {
   private readonly stats2: Stats
   private readonly statsGl: StatsGl
   private total = 0
+  private level = 0
   private readonly denseMode: boolean
 
   constructor(
@@ -140,6 +141,7 @@ class TopRightStats {
   }
 
   setVisibility(level: number) {
+    this.level = level
     const visible = level > 0
     if (visible) {
       this.timeline.setVisible(true)
@@ -154,14 +156,22 @@ class TopRightStats {
 
   markStart() {
     this.timeline.begin()
+    // the other two panels only show in the advanced level: skip their per-frame work otherwise
+    if (this.level < 2) return
     this.stats2.begin()
     this.statsGl.begin()
   }
 
   markEnd() {
     this.timeline.end()
+    if (this.level < 2) return
     this.stats2.end()
     this.statsGl.end()
+    // stats-gl adds two performance marks and a measure every frame and never clears them:
+    // the browser keeps all of them (~650k entries per hour of play, tens of MB, it was a big part of long-session memory growth)
+    performance.clearMarks('cpu-started')
+    performance.clearMarks('cpu-finished')
+    performance.clearMeasures('cpu-duration')
   }
 
   dispose() {
