@@ -239,7 +239,10 @@ export class DocumentRenderer {
         canvas: this.canvas as HTMLCanvasElement,
         // only screenshots read the canvas back; without it the browser may discard the frame after compositing (cheaper on tiled mobile GPUs)
         preserveDrawingBuffer: rendererOptions?.preserveDrawingBuffer ?? true,
-        logarithmicDepthBuffer: true,
+        // Plain depth. A logarithmic depth buffer writes gl_FragDepth in every fragment, which turns off early depth rejection and the hidden-surface
+        // removal of tiled mobile GPUs: on a Mali-G57 it cost about 2/3 of the frame rate (7 -> 19 FPS at spawn). Near 0.1 / far 1000 with
+        // 24-bit depth is precise enough for the view distances used (about 2 cm at 200 blocks).
+        logarithmicDepthBuffer: false,
         powerPreference: gpuPreferenceToWebGLPowerPreference(gpuPreference)
       })
     } catch (err: any) {
