@@ -1,17 +1,21 @@
 import * as THREE from 'three'
+import { LineMaterial, LineSegmentsGeometry, Wireframe } from 'three-stdlib'
 
 /**
  * Compiles ahead of time the shader variants of things that show up later in the world: dropped items, items held by mobs and
- * players, item frames (see itemMesh.ts). Without it the first such object that comes into view compiles its programs inside that
- * frame: 45-97 ms frames on an iPhone 14 Pro while looking around. three.js caches programs by their parameters, so one hidden
+ * players, item frames (see itemMesh.ts), the block highlight outline (cursorBlock.ts). Without it the first such object that
+ * comes into view compiles its programs inside that frame: 45-97 ms frames on an iPhone 14 Pro while looking around. three.js caches programs by their parameters, so one hidden
  * object per material variant is enough. Variants also depend on the scene (fog, shadow map, tone mapping), so the compile runs
- * again when that changes; `compileAsync` uses KHR_parallel_shader_compile where the browser has it.
+ * again when that changes; `compileAsync` uses KHR_parallel_shader_compile where the browser has it. The materials stay alive, so
+ * their programs are not released (and compiled again) when the last real user disposes its material: the outline replaces its
+ * LineMaterial on every colour / game mode change.
  */
 export class ShaderWarmup {
   private lastSignature = ''
   private readonly group = new THREE.Group()
   private readonly texture = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1)
   private readonly geometry = new THREE.BoxGeometry(1, 1, 0)
+  private readonly lineGeometry = new LineSegmentsGeometry().setPositions([0, 0, 0, 1, 1, 1])
   private readonly materials: THREE.Material[]
 
   constructor() {
@@ -35,6 +39,10 @@ export class ShaderWarmup {
     const spriteMaterial = new THREE.SpriteMaterial({ map: this.texture, transparent: true, alphaTest: 0.1 })
     this.materials.push(spriteMaterial)
     this.group.add(new THREE.Sprite(spriteMaterial))
+    // the block highlight outline (cursorBlock.ts): 96 ms frame on the iPhone when it compiled mid-game
+    const lineMaterial = new LineMaterial({ color: 0x00_00_00, linewidth: 2 })
+    this.materials.push(lineMaterial)
+    this.group.add(new Wireframe(this.lineGeometry, lineMaterial))
   }
 
   /** Once per frame before rendering the scene: compiles when the scene state the variants depend on changed (and the first time). */
@@ -49,6 +57,7 @@ export class ShaderWarmup {
   dispose() {
     for (const material of this.materials) material.dispose()
     this.geometry.dispose()
+    this.lineGeometry.dispose()
     this.texture.dispose()
   }
 }
