@@ -142,7 +142,9 @@ export type WorldRendererConfig = typeof defaultWorldRendererConfig
 export const defaultGraphicsBackendConfig: GraphicsBackendConfig = {
   fpsLimit: undefined,
   sceneBackground: 'lightblue',
-  timeoutRendering: false
+  timeoutRendering: false,
+  maxPixelRatio: 2,
+  adaptiveResolution: true
 }
 
 /**
