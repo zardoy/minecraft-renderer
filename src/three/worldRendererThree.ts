@@ -51,6 +51,7 @@ import { raycastVoxelSolid } from './thirdPersonVoxelRaycast'
 import type { RendererModuleManifest, RegisteredModule, RendererModuleController } from './rendererModuleSystem'
 import { BUILTIN_MODULES } from './modules/index'
 import { formatPerformanceFactorsDebug, PerformanceMonitor } from '../performanceMonitor'
+import { ShaderWarmup } from './shaderWarmup'
 
 type SectionKey = string
 
@@ -111,6 +112,8 @@ export class WorldRendererThree extends WorldRendererCommon {
   get realScene() {
     return this.scene
   }
+  /** item / entity shader variants compiled before they first come into view */
+  shaderWarmup = new ShaderWarmup()
   ambientLight = new THREE.AmbientLight(0xcc_cc_cc, WorldRendererThree.LEGACY_TO_PHYSICAL_LIGHT)
   directionalLight = new THREE.DirectionalLight(0xff_ff_ff, 0.5 * WorldRendererThree.LEGACY_TO_PHYSICAL_LIGHT)
   entities = new Entities(this, (globalThis as any).mcData)
@@ -1499,6 +1502,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.blockEffects.setBlockEmission(needsBlockEmission(postEffects))
     this.blockEffects.setColorGrading(this.worldRendererConfig.colorGrading)
     this.syncSectionFade(start)
+    this.shaderWarmup.update(this.renderer, this.scene, cam)
     if (this.postProcessing.begin(this.renderer, postEffects)) {
       this.renderer.render(this.scene, cam)
       this.postProcessing.afterWorld(this.renderer, this.updatePostFrameInfo(cam))
@@ -1747,6 +1751,7 @@ export class WorldRendererThree extends WorldRendererCommon {
     this.disposeModules()
     this.blockEffects.dispose()
     this.postProcessing.dispose()
+    this.shaderWarmup.dispose()
     this.fireworksLegacy.destroy()
     super.destroy()
     this.skyboxRenderer.dispose()
