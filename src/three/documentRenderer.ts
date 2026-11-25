@@ -422,8 +422,9 @@ export class DocumentRenderer {
 
       this.frameRender(sizeChanged)
 
-      // a frame limit or timer rendering paces the frames on purpose: that is not GPU load
-      if (this.config.adaptiveResolution && frameInterval > 0 && !this.config.fpsLimit && !this.config.timeoutRendering) {
+      // a frame limit or timer rendering paces the frames on purpose, and a hidden page gets throttled frames: that is not GPU load
+      const pageHidden = typeof document !== 'undefined' && document.hidden
+      if (this.config.adaptiveResolution && frameInterval > 0 && !this.config.fpsLimit && !this.config.timeoutRendering && !pageHidden) {
         if (this.adaptiveResolution.onFrame(frameStart, frameInterval, performance.now() - frameStart, this.basePixelRatio())) {
           this.updatePixelRatio()
         }
