@@ -8,6 +8,7 @@ import {
 } from '../three/menuBackground/v2Meta'
 import { MENU_BACKGROUND_OPTION_DEFAULTS } from '../three/menuBackground/config'
 import type { RendererGpuPreference } from '../three/menuBackground/gpuPreference'
+import { detectGpuRenderer, isWeakMobileGpu, weakGpuDefaults } from './gpuTier'
 
 export type RendererPerformanceLevel = 'free' | 'light' | 'moderate' | 'heavy'
 
@@ -59,6 +60,8 @@ export function rendererShaderCubeDebugModeToValue(mode: RendererShaderCubeDebug
 }
 
 const MB = MENU_BACKGROUND_OPTION_DEFAULTS
+/** shadows and color grading start off on low and mid-range mobile GPUs (Mali-G57 class), see gpuTier.ts */
+const GPU_DEFAULTS = weakGpuDefaults(isWeakMobileGpu(detectGpuRenderer()))
 
 /** Default values for options owned by minecraft-renderer (spread into app `defaultOptions`). */
 export const RENDERER_DEFAULT_OPTIONS = {
@@ -69,11 +72,11 @@ export const RENDERER_DEFAULT_OPTIONS = {
   wavingGrass: true as boolean,
   /** Animated block textures (water, lava, fire, portals...): off keeps the first frame, basic switches frames, smooth also blends them like vanilla */
   animatedTextures: 'smooth' as 'off' | 'basic' | 'smooth',
-  sunShadows: 'normal' as 'off' | 'normal' | 'soft',
+  sunShadows: GPU_DEFAULTS.sunShadows,
   sunShadowsDistance: 64,
   antialiasing: 'off' as 'off' | 'fxaa',
   bloom: false as boolean,
-  colorGrading: 'warm' as 'off' | 'warm' | 'cinematic' | 'vivid',
+  colorGrading: GPU_DEFAULTS.colorGrading,
   godRays: false as boolean,
   vignette: false as boolean,
   motionBlur: false as boolean,
@@ -165,7 +168,10 @@ export const RENDERER_VISUAL_PROFILES: Record<RendererVisualProfileId, { label: 
   },
   default: {
     label: 'Default',
-    description: 'Cheap effects: waving grass, warm colours, sun shadows',
+    description:
+      GPU_DEFAULTS.sunShadows === 'off'
+        ? 'Cheap effects for this GPU: waving grass (shadows and colour grading cost too much here)'
+        : 'Cheap effects: waving grass, warm colours, sun shadows',
     options: {
       wavingGrass: RENDERER_DEFAULT_OPTIONS.wavingGrass,
       colorGrading: RENDERER_DEFAULT_OPTIONS.colorGrading,
