@@ -40,9 +40,11 @@ describe('WorldView.columnUnloadedByServer', () => {
 
   it('a column sent again is no longer pending removal', async () => {
     const { view, unloads } = createView()
+    view.world.getColumnAt = (() => ({ toJson: () => '{}', minY: 0, worldHeight: 256 })) as never
     view.loadedChunks['128,0'] = true
     view.columnUnloadedByServer({ x: 128, z: 0 })
-    view.columnArrived({ x: 128, z: 0 })
+    // the client's chunkColumnLoad for a column still drawn
+    await view.loadChunk({ x: 128, z: 0 }, false, 'sent again')
 
     await view.updatePosition(new Vec3(-8, 64, 8))
 

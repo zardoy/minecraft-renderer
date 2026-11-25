@@ -264,7 +264,6 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
    */
   columnArrived(pos: { x: number; z: number }): void {
     const key = `${pos.x},${pos.z}`
-    this.serverUnloadedColumns.delete(key)
     this.columnQueue.arrived(key, Date.now())
     if (this.loadedChunks[key]) {
       void this.emitColumn(pos, false, 'sent again')
@@ -374,6 +373,8 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
       )
         return false
       if (column) {
+        // the server has it again (`chunkColumnLoad` of a column still drawn comes here through `loadChunk`)
+        this.serverUnloadedColumns.delete(key)
         const chunk = column.toJson()
         const worldConfig: WorldSizeParams = {
           minY: column.minY ?? 0,
