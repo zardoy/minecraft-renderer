@@ -146,6 +146,10 @@ export class CursorBlock {
     }
     if (this.interactionLines !== null) {
       this.worldRenderer.sceneOrigin.removeAndUntrack(this.interactionLines.mesh)
+      // each highlight builds its own line geometries: free them, or every block looked at stays on the GPU
+      for (const child of this.interactionLines.mesh.children) {
+        ;(child as Wireframe).geometry?.dispose()
+      }
       this.interactionLines = null
     }
     if (blockPos === null) {
@@ -157,7 +161,10 @@ export class CursorBlock {
       const position = new Vec3(_position.x, _position.y, _position.z)
       const scale = [1.0001 * width, 1.0001 * height, 1.0001 * depth] as const
       const geometry = new THREE.BoxGeometry(...scale)
-      const lines = new LineSegmentsGeometry().fromEdgesGeometry(new THREE.EdgesGeometry(geometry))
+      const edges = new THREE.EdgesGeometry(geometry)
+      const lines = new LineSegmentsGeometry().fromEdgesGeometry(edges)
+      geometry.dispose()
+      edges.dispose()
       const wireframe = new Wireframe(lines, this.cursorLineMaterial)
       wireframe.position.set(position.x, position.y, position.z)
       wireframe.computeLineDistances()
