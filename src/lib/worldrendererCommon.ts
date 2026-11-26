@@ -60,6 +60,9 @@ function mod(x, n) {
   return ((x % n) + n) % n
 }
 
+/** Main-thread time one task may spend adding queued columns before it yields (the rest continues in the next task). */
+const ADD_COLUMNS_SLICE_MS = 6
+
 export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any> {
   worldReadyResolvers = Promise.withResolvers<void>()
   worldReadyPromise = this.worldReadyResolvers.promise
@@ -181,7 +184,12 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
   // Geometry throttle: first dirty per section is instant, subsequent within window are grouped
   private sectionDirtyCount = new Map<string, number>()
-  private sectionDirtyTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  /**
+   * End of each section's throttle window (Date.now() ms). Every window is GEOMETRY_THROTTLE_DELAY long, so insertion order is deadline
+   * order and one timer serves them all: a timer per section cost a large part of each column load (5 sections dirty per section loaded).
+   */
+  private sectionDirtyDeadlines = new Map<string, number>()
+  private sectionDirtyFlushTimer: ReturnType<typeof setTimeout> | undefined
   private sectionDirtyPendingArgs = new Map<string, { pos: Vec3; value: boolean; useChangeWorker: boolean; urgent?: boolean }>()
   private sectionDirtyLightMeta = new Map<string, { lightPublicationVersion: number; worldGeneration?: number }>()
   private static readonly GEOMETRY_THROTTLE_THRESHOLD = 1
@@ -520,10 +528,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.queueAwaited = false
     this.messageQueue = []
     this.isProcessingQueue = false
-    for (const timer of this.sectionDirtyTimers.values()) {
-      clearTimeout(timer)
-    }
-    this.sectionDirtyTimers.clear()
+    this.clearSectionDirtyWindows()
     this.sectionDirtyCount.clear()
     this.sectionDirtyPendingArgs.clear()
     this.sectionDirtyLightMeta.clear()
@@ -748,7 +753,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     }
     if (data.type === 'sectionFinished') {
       // on after load & unload section
-      this.logWorkerWork(`<- ${data.workerIndex} sectionFinished ${data.key} ${JSON.stringify({ processTime: data.processTime })}`)
+      this.logWorkerWork(() => `<- ${data.workerIndex} sectionFinished ${data.key} ${JSON.stringify({ processTime: data.processTime })}`)
       const rejectedFinish = this.lightCoordinator.consumeRejectedFinish(data.key)
       if (!this.sectionsWaiting.has(data.key)) {
         console.debug(`sectionFinished for non-outstanding section ${data.key} (viewDistance=${this.viewDistance})`)
@@ -1174,10 +1179,9 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       this.heightmapDebounceTimers.delete(debounceKey)
     }
     // Cancel any pending geometry throttle timers for sections in this chunk
-    for (const [key, timer] of this.sectionDirtyTimers) {
+    for (const key of this.sectionDirtyDeadlines.keys()) {
       if (key.startsWith(`${x},`) && key.endsWith(`,${z}`)) {
-        clearTimeout(timer)
-        this.sectionDirtyTimers.delete(key)
+        this.sectionDirtyDeadlines.delete(key)
         this.sectionDirtyCount.delete(key)
         this.sectionDirtyPendingArgs.delete(key)
         this.sectionDirtyLightMeta.delete(key)
@@ -1279,10 +1283,32 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       signal
     )
 
-    let currentLoadChunkBatch = null as {
-      timeout
-      data
-    } | null
+    /**
+     * Columns waiting to be added, in arrival order. They are collected for `addChunksBatchWaitTime`, then added in slices of about
+     * ADD_COLUMNS_SLICE_MS: adding a whole batch in one task (parse, light caches, mesher messages) took 14-16 ms on an iPhone 14 Pro.
+     */
+    const pendingColumns = [] as Array<{ args: Parameters<WorldRendererCommon['addColumn']>; incarnation: number }>
+    let addColumnsTimer: ReturnType<typeof setTimeout> | undefined
+    const addPendingColumns = () => {
+      addColumnsTimer = undefined
+      const start = performance.now()
+      while (pendingColumns.length > 0) {
+        const { args, incarnation } = pendingColumns.shift()!
+        const key = `${args[0]},${args[1]}`
+        // a block update of this column waits until its last queued copy is added
+        if (!pendingColumns.some(p => p.args[0] === args[0] && p.args[1] === args[1])) this.queuedChunks.delete(key)
+        if (this.columnIncarnationFor(key) === incarnation) this.addColumn(...args)
+        if (pendingColumns.length > 0 && performance.now() - start >= ADD_COLUMNS_SLICE_MS) {
+          addColumnsTimer = setTimeout(addPendingColumns, 0)
+          return
+        }
+      }
+      for (const fn of this.queuedFunctions) {
+        fn()
+      }
+      this.queuedFunctions = []
+    }
+    signal.addEventListener('abort', () => clearTimeout(addColumnsTimer))
     bindAbortableListener(
       worldEmitter,
       'loadChunk',
@@ -1291,28 +1317,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         this.cameraCollisionBlockCache.setWorldBounds(worldConfig.minY, worldConfig.worldHeight)
         this.rendererLightCache.setWorldBounds(worldConfig.minY, worldConfig.worldHeight)
         this.queuedChunks.add(`${x},${z}`)
-        const args = [x, z, chunk, isLightUpdate]
-        const incarnation = this.columnIncarnationFor(`${x},${z}`)
-        if (!currentLoadChunkBatch) {
-          // add a setting to use debounce instead
-          currentLoadChunkBatch = {
-            data: [],
-            timeout: setTimeout(() => {
-              for (const { args, incarnation } of currentLoadChunkBatch!.data) {
-                const key = `${args[0]},${args[1]}`
-                this.queuedChunks.delete(key)
-                if (this.columnIncarnationFor(key) !== incarnation) continue
-                this.addColumn(...(args as Parameters<typeof this.addColumn>))
-              }
-              for (const fn of this.queuedFunctions) {
-                fn()
-              }
-              this.queuedFunctions = []
-              currentLoadChunkBatch = null
-            }, this.worldRendererConfig.addChunksBatchWaitTime)
-          }
-        }
-        currentLoadChunkBatch.data.push({ args, incarnation })
+        pendingColumns.push({ args: [x, z, chunk, isLightUpdate], incarnation: this.columnIncarnationFor(`${x},${z}`) })
+        addColumnsTimer ??= setTimeout(addPendingColumns, this.worldRendererConfig.addChunksBatchWaitTime)
       },
       signal
     )
@@ -1647,9 +1653,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
 
     if (this.lightCoordinator.nextDirtyLightMeta.lightPublicationVersion != null || this.lightCoordinator.nextDirtyUrgent) {
       this._dispatchDirtyImmediate(pos, value, useChangeWorker)
-      const pendingTimer = this.sectionDirtyTimers.get(key)
-      if (pendingTimer) clearTimeout(pendingTimer)
-      this.sectionDirtyTimers.delete(key)
+      this.sectionDirtyDeadlines.delete(key)
       this.sectionDirtyCount.delete(key)
       this.sectionDirtyPendingArgs.delete(key)
       return
@@ -1663,20 +1667,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       this._dispatchDirtyImmediate(pos, value, useChangeWorker)
 
       // Schedule trailing dispatch after throttle window
-      if (!this.sectionDirtyTimers.has(key)) {
-        this.sectionDirtyTimers.set(
-          key,
-          setTimeout(() => {
-            const args = this.sectionDirtyPendingArgs.get(key)
-            this.sectionDirtyCount.delete(key)
-            this.sectionDirtyTimers.delete(key)
-            this.sectionDirtyPendingArgs.delete(key)
-            if (args) {
-              this.dispatchPendingDirty(args)
-            }
-          }, WorldRendererCommon.GEOMETRY_THROTTLE_DELAY)
-        )
-      }
+      this.openSectionDirtyWindow(key)
     } else {
       // Subsequent requests — throttle: store latest args, existing timer will dispatch
       this.sectionDirtyPendingArgs.set(key, {
@@ -1686,21 +1677,38 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         urgent: this.lightCoordinator.nextDirtyUrgent || this.sectionDirtyPendingArgs.get(key)?.urgent
       })
 
-      if (!this.sectionDirtyTimers.has(key)) {
-        this.sectionDirtyTimers.set(
-          key,
-          setTimeout(() => {
-            const args = this.sectionDirtyPendingArgs.get(key)
-            this.sectionDirtyCount.delete(key)
-            this.sectionDirtyTimers.delete(key)
-            this.sectionDirtyPendingArgs.delete(key)
-            if (args) {
-              this.dispatchPendingDirty(args)
-            }
-          }, WorldRendererCommon.GEOMETRY_THROTTLE_DELAY)
-        )
-      }
+      this.openSectionDirtyWindow(key)
     }
+  }
+
+  /** Starts the section's throttle window unless one is open: when it ends, the latest throttled request is dispatched. */
+  private openSectionDirtyWindow(key: string) {
+    if (this.sectionDirtyDeadlines.has(key)) return
+    this.sectionDirtyDeadlines.set(key, Date.now() + WorldRendererCommon.GEOMETRY_THROTTLE_DELAY)
+    this.sectionDirtyFlushTimer ??= setTimeout(() => this.flushSectionDirtyWindows(), WorldRendererCommon.GEOMETRY_THROTTLE_DELAY)
+  }
+
+  private flushSectionDirtyWindows() {
+    this.sectionDirtyFlushTimer = undefined
+    const now = Date.now()
+    for (const [key, deadline] of this.sectionDirtyDeadlines) {
+      // 1 ms of slack: a timer can fire within the same millisecond tick as its deadline
+      if (deadline - now > 1) {
+        this.sectionDirtyFlushTimer = setTimeout(() => this.flushSectionDirtyWindows(), deadline - now)
+        return
+      }
+      this.sectionDirtyDeadlines.delete(key)
+      const args = this.sectionDirtyPendingArgs.get(key)
+      this.sectionDirtyCount.delete(key)
+      this.sectionDirtyPendingArgs.delete(key)
+      if (args) this.dispatchPendingDirty(args)
+    }
+  }
+
+  private clearSectionDirtyWindows() {
+    clearTimeout(this.sectionDirtyFlushTimer)
+    this.sectionDirtyFlushTimer = undefined
+    this.sectionDirtyDeadlines.clear()
   }
 
   private dispatchPendingDirty(args: { pos: Vec3; value: boolean; useChangeWorker: boolean; urgent?: boolean }) {
@@ -1776,6 +1784,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         const worker = this.workers[Number(workerIndex)]
         const messages = this.toWorkerMessagesQueue[workerIndex]
         worker.postMessage(messages)
+        if (!this.mesherLogger.active) continue
         for (const message of messages) {
           this.logWorkerWork(
             `-> ${workerIndex} dispatchMessages ${message.type} ${JSON.stringify({ x: message.x, y: message.y, z: message.z, value: message.value })}`
@@ -1837,10 +1846,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.heightmapDebounceTimers.clear()
 
     // Cancel all pending geometry throttle timers
-    for (const timer of this.sectionDirtyTimers.values()) {
-      clearTimeout(timer)
-    }
-    this.sectionDirtyTimers.clear()
+    this.clearSectionDirtyWindows()
     this.sectionDirtyCount.clear()
     this.sectionDirtyPendingArgs.clear()
     this.sectionDirtyLightMeta.clear()
