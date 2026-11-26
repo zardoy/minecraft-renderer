@@ -134,6 +134,11 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
   private loadedAllWaiters: Array<() => void> = []
   private columnUnloadEpoch = new Map<string, number>()
   private geometryReload?: Promise<void>
+  /**
+   * Columns the server unloaded that the renderer still shows, with their chunk distance (Chebyshev) from the player at that moment. See
+   * `columnUnloadedByServer`.
+   */
+  private readonly serverUnloadedColumns = new Map<ChunkPosKey, number>()
   /** Columns queued by `queueLightRemesh`, reloaded at most once per frame. */
   private pendingLightRemesh = new Set<ChunkPosKey>()
   private lightRemeshFlush?: { cancel: () => void }
@@ -368,6 +373,8 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
       )
         return false
       if (column) {
+        // the server has it again (`chunkColumnLoad` of a column still drawn comes here through `loadChunk`)
+        this.serverUnloadedColumns.delete(key)
         const chunk = column.toJson()
         const worldConfig: WorldSizeParams = {
           minY: column.minY ?? 0,
@@ -439,6 +446,7 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
   }
 
   private async runColumnGeometryReload(): Promise<void> {
+    this.dropServerUnloadedColumns()
     const coords = this.loadedColumnsNearestFirst()
     for (const [x, z] of coords) this.emit('unloadChunk', { x, z, preserveClientLight: true })
     for (const [x, z] of coords) {
@@ -461,6 +469,8 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
    * Re-fetch and re-emit every loaded chunk (e.g. after mesher workers are recreated).
    */
   async reloadLoadedChunks(): Promise<void> {
+    // the world has no data for them any more, they could not be meshed again
+    this.dropServerUnloadedColumns()
     for (const [x, z] of this.loadedColumnsNearestFirst()) {
       await this.loadChunk({ x, z }, false, 'mesher-reconfigure')
     }
@@ -485,10 +495,43 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
   }
 
   /**
+   * The server unloaded this column (it left the server's view distance). While it is within `keepChunksDistance` beyond the view distance
+   * the renderer keeps showing it, until the player moves farther from it than when it was unloaded. Without this, stepping back and forth
+   * over a chunk border unloaded a whole row of columns at the far edge and faded it in again a moment later, when the server sent it again
+   * (the renderer drops a column at once, so the row blinked). A column sent again is updated in place (`columnArrived`, no fade).
+   */
+  columnUnloadedByServer(pos: { x: number; z: number }): void {
+    const key = `${pos.x},${pos.z}`
+    const distance = this.chunkDistanceFromPlayer(pos.x, pos.z)
+    if (this.keepChunksDistance > 0 && this.loadedChunks[key] && distance > 0 && distance <= this.viewDistance + this.keepChunksDistance) {
+      this.serverUnloadedColumns.set(key, distance)
+      // its data is gone from the world: a queued light reload would find nothing
+      this.pendingLightRemesh.delete(key)
+      return
+    }
+    this.unloadChunk(pos)
+  }
+
+  /** Chebyshev distance in chunks between the column at block `x`, `z` and the player's chunk. */
+  private chunkDistanceFromPlayer(x: number, z: number): number {
+    const [playerX, playerZ] = chunkPos(this.lastPos)
+    return Math.max(Math.abs(Math.floor(x / 16) - playerX), Math.abs(Math.floor(z / 16) - playerZ))
+  }
+
+  private dropServerUnloadedColumns(onlyFartherThanAtUnload = false): void {
+    for (const [key, distanceAtUnload] of [...this.serverUnloadedColumns]) {
+      const [x, z] = key.split(',').map(Number) as [number, number]
+      if (onlyFartherThanAtUnload && this.chunkDistanceFromPlayer(x, z) <= distanceAtUnload) continue
+      this.unloadChunk({ x, z })
+    }
+  }
+
+  /**
    * Unload a specific chunk.
    */
   unloadChunk(pos: { x: number; z: number }): void {
     const key = `${pos.x},${pos.z}`
+    this.serverUnloadedColumns.delete(key)
     this.columnUnloadEpoch.set(key, (this.columnUnloadEpoch.get(key) ?? 0) + 1)
     this.pendingLightRemesh.delete(key)
     this.emit('unloadChunk', { x: pos.x, z: pos.z })
@@ -577,6 +620,8 @@ export class WorldView extends (EventEmitter as new () => TypedEmitter<WorldView
       }
 
       this.lastPos.update(pos)
+      // columns the server already unloaded go once the player moves away from them (a forced update drops them all)
+      this.dropServerUnloadedColumns(!force)
       // new columns in view, nearest first from here
       void this.recenter(botX, botZ)
     } else {
