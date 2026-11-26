@@ -100,6 +100,8 @@ export const RENDERER_DEFAULT_OPTIONS = {
   renderEntities: true as boolean,
   renderDebug: 'basic' as 'none' | 'basic' | 'advanced',
   frameLimit: false as number | false,
+  /** canvas pixel ratio: auto = at most 2x and lowered while the GPU can't keep up (phones report 3x) */
+  renderResolution: 'auto' as 'auto' | 'native' | '2x' | '1.5x' | '1x',
   backgroundRendering: '20fps' as 'full' | '20fps' | '5fps',
   vanillaLook: false as boolean,
   smoothLighting: true as boolean,
@@ -467,6 +469,19 @@ export const RENDERER_OPTIONS_META: Partial<Record<RendererDefaultOptionKey, Ren
     text: 'Frame limit',
     tooltip: 'false = VSync / unlimited when focused'
   },
+  renderResolution: {
+    text: 'Render resolution',
+    tooltip:
+      'Pixels drawn per screen point. Auto draws at most 2x and lowers the resolution while the GPU cannot keep 50 FPS, then raises it back. Native uses the full screen density (3x on many phones: about twice the GPU work of 2x).',
+    possibleValues: [
+      ['auto', 'Auto'],
+      ['native', 'Native'],
+      ['2x', '2x'],
+      ['1.5x', '1.5x'],
+      ['1x', '1x']
+    ],
+    performance: { level: 'light', note: 'GPU work grows with the pixel count.', levelByValue: { native: 'heavy', '1x': 'free' } }
+  },
   backgroundRendering: {
     text: 'Background FPS limit',
     possibleValues: [
@@ -595,7 +610,7 @@ export const RENDERER_RENDER_GUI_SECTIONS: ReadonlyArray<{
   },
   {
     title: 'Frame pacing',
-    keys: ['frameLimit', 'backgroundRendering', 'renderDebug', 'gpuPreference']
+    keys: ['renderResolution', 'frameLimit', 'backgroundRendering', 'renderDebug', 'gpuPreference']
   },
   {
     title: 'VR',

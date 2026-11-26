@@ -17,6 +17,7 @@ import type { GraphicsBackendConfig, GraphicsInitOptions } from '../graphicsBack
 import { gpuPreferenceToWebGLPowerPreference } from '../three/menuBackground/gpuPreference'
 import { WorldRendererConfig } from '../graphicsBackend'
 import { releaseWebGLRenderer } from '../lib/webglLifecycle'
+import { AdaptiveResolution } from './adaptiveResolution'
 
 // ============================================================================
 // Types (co-located with implementation)
@@ -202,6 +203,10 @@ export class DocumentRenderer {
 
   private renderedFps = 0
   private fpsInterval: any
+  private readonly adaptiveResolution = new AdaptiveResolution()
+  private externalDevicePixelRatio: number | undefined
+  private pixelRatioDirty = false
+  private lastFrameStart = 0
   private readonly stats: TopRightStats | undefined
   private paused = false
   disconnected = false
@@ -295,14 +300,29 @@ export class DocumentRenderer {
     window.addEventListener('resize', handleResize, { passive: true })
   }
 
-  updatePixelRatio(): void {
-    if (typeof window === 'undefined') return
+  /** pixel ratio at full resolution: the device ratio after the `maxPixelRatio` cap */
+  basePixelRatio(): number {
+    // WebGL1 has issues with high pixel ratio
+    if (!this.renderer.capabilities.isWebGL2) return 1
+    let pixelRatio = this.externalDevicePixelRatio ?? (typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1)
+    const cap = this.config.maxPixelRatio
+    if (cap && cap > 0) pixelRatio = Math.min(pixelRatio, cap)
+    return pixelRatio
+  }
 
-    let pixelRatio = window.devicePixelRatio || 1
-    if (!this.renderer.capabilities.isWebGL2) {
-      pixelRatio = 1 // WebGL1 has issues with high pixel ratio
-    }
+  /** current canvas pixel ratio / the full one: below 1 while adaptive resolution has lowered it */
+  get resolutionScale(): number {
+    return this.adaptiveResolution.scale
+  }
+
+  updatePixelRatio(): void {
+    if (typeof window === 'undefined' && this.externalDevicePixelRatio === undefined) return
+    if (!this.config.adaptiveResolution && this.adaptiveResolution.scale !== 1) this.adaptiveResolution.reset()
+    const pixelRatio = Math.round(this.basePixelRatio() * this.adaptiveResolution.scale * 100) / 100
+    if (pixelRatio === this.renderer.getPixelRatio()) return
     this.renderer.setPixelRatio(pixelRatio)
+    // the render targets that follow the canvas size (post processing, shadows of the screen) get the sizeChanged frame
+    this.pixelRatioDirty = true
   }
 
   sizeUpdated(): void {
@@ -321,7 +341,8 @@ export class DocumentRenderer {
   updateSizeExternal(newWidth: number, newHeight: number, pixelRatio: number): void {
     this.currentWidth = newWidth
     this.currentHeight = newHeight
-    this.renderer.setPixelRatio(pixelRatio)
+    this.externalDevicePixelRatio = pixelRatio
+    this.updatePixelRatio()
     this.sizeUpdated()
   }
 
@@ -356,6 +377,8 @@ export class DocumentRenderer {
         this.nonReactiveState.fps = this.renderedFps
       }
       this.renderedFps = 0
+      // follows the resolution option and devicePixelRatio changes (browser zoom, another monitor)
+      this.updatePixelRatio()
     }, 1000)
   }
 
@@ -373,6 +396,7 @@ export class DocumentRenderer {
       }
 
       if (this.paused || (this.renderer.xr.isPresenting && !this.inWorldRenderingConfig?.vrPageGameRendering)) {
+        this.lastFrameStart = 0
         return
       }
 
@@ -389,6 +413,10 @@ export class DocumentRenderer {
         this.lastRenderTime = now - (elapsed % fpsInterval)
       }
 
+      const frameStart = performance.now()
+      const frameInterval = this.lastFrameStart ? frameStart - this.lastFrameStart : 0
+      this.lastFrameStart = frameStart
+
       let sizeChanged = false
 
       // Only update canvas size if a resize event occurred
@@ -397,14 +425,23 @@ export class DocumentRenderer {
         this.pendingResize = false
       }
 
-      if (this.previousCanvasWidth !== this.currentWidth || this.previousCanvasHeight !== this.currentHeight) {
+      if (this.pixelRatioDirty || this.previousCanvasWidth !== this.currentWidth || this.previousCanvasHeight !== this.currentHeight) {
         this.previousCanvasWidth = this.currentWidth
         this.previousCanvasHeight = this.currentHeight
+        this.pixelRatioDirty = false
         this.sizeUpdated()
         sizeChanged = true
       }
 
       this.frameRender(sizeChanged)
+
+      // a frame limit or timer rendering paces the frames on purpose, and a hidden page gets throttled frames: that is not GPU load
+      const pageHidden = typeof document !== 'undefined' && document.hidden
+      if (this.config.adaptiveResolution && frameInterval > 0 && !this.config.fpsLimit && !this.config.timeoutRendering && !pageHidden) {
+        if (this.adaptiveResolution.onFrame(frameStart, frameInterval, performance.now() - frameStart, this.basePixelRatio())) {
+          this.updatePixelRatio()
+        }
+      }
 
       // Update stats visibility each frame (main thread only)
       if (this.config.statsVisible !== undefined) {

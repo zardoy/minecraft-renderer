@@ -42,6 +42,10 @@ export interface GraphicsBackendConfig {
   statsVisible?: number
   sceneBackground: string
   timeoutRendering?: boolean
+  /** cap of the canvas pixel ratio (0 / undefined = the device ratio): phones report 3, and every pixel costs GPU time */
+  maxPixelRatio?: number
+  /** lower the pixel ratio while the GPU can't keep 50+ FPS, raise it back when it can (see three/adaptiveResolution.ts) */
+  adaptiveResolution?: boolean
   /** Default options when `startMenuBackground()` is called without arguments */
   menuBackground?: MenuBackgroundOptions
 }

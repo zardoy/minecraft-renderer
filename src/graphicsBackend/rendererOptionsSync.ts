@@ -120,6 +120,20 @@ function applyFpsLimit(appViewer: AppViewer, o: RendererStorageOptions, windowFo
   }
 }
 
+const RENDER_RESOLUTION_MODES: Record<RendererStorageOptions['renderResolution'], { maxPixelRatio: number; adaptive: boolean }> = {
+  auto: { maxPixelRatio: 2, adaptive: true },
+  native: { maxPixelRatio: 0, adaptive: false },
+  '2x': { maxPixelRatio: 2, adaptive: false },
+  '1.5x': { maxPixelRatio: 1.5, adaptive: false },
+  '1x': { maxPixelRatio: 1, adaptive: false }
+}
+
+function applyRenderResolution(appViewer: AppViewer, o: RendererStorageOptions): void {
+  const mode = RENDER_RESOLUTION_MODES[o.renderResolution] ?? RENDER_RESOLUTION_MODES.auto
+  appViewer.config.maxPixelRatio = mode.maxPixelRatio
+  appViewer.config.adaptiveResolution = mode.adaptive
+}
+
 function applyStatsVisible(appViewer: AppViewer, o: RendererStorageOptions, ctx: ApplyRendererOptionsContext): void {
   const { renderDebug } = o
   if (renderDebug === 'none' || ctx.isCypress) {
@@ -147,6 +161,7 @@ export function applyRendererOptions(appViewer: AppViewer, o: RendererStorageOpt
   cfg.animatedTextures = o.animatedTextures
   applyStatsVisible(appViewer, o, ctx)
   applyFpsLimit(appViewer, o, ctx.windowFocused !== false)
+  applyRenderResolution(appViewer, o)
 
   cfg.vrSupport = o.vrSupport
   cfg.vrPageGameRendering = o.vrPageGameRendering
