@@ -630,12 +630,16 @@ export class Entities {
       })
 
       if (!isPlayerEntity && botPos && entity.position) {
-        const dx = entity.position.x - botPos.x
-        const dy = entity.position.y - botPos.y
-        const dz = entity.position.z - botPos.z
+        // `entity.position` is a scene position (relative to the floating scene origin), the viewer position and the occlusion grid are in world coordinates:
+        // with the origin away from (0, 0, 0) every entity was checked against the wrong section and was hidden (thrown pearls, arrows, mobs)
+        const { sceneOrigin } = this.worldRenderer
+        const world = sceneOrigin.getWorldPosition(entity) ?? { x: sceneOrigin.toWorldX(entity.position.x), y: sceneOrigin.toWorldY(entity.position.y), z: sceneOrigin.toWorldZ(entity.position.z) }
+        const dx = world.x - botPos.x
+        const dy = world.y - botPos.y
+        const dz = world.z - botPos.z
         const distanceSquared = dx * dx + dy * dy + dz * dz
 
-        const occlusionVisible = this.worldRenderer.isPositionOcclusionVisible(entity.position.x, entity.position.y, entity.position.z)
+        const occlusionVisible = this.worldRenderer.isPositionOcclusionVisible(world.x, world.y, world.z)
 
         entity.visible = !!((distanceSquared < VISIBLE_DISTANCE || this.worldRenderer.shouldObjectVisible(entity)) && occlusionVisible)
 
