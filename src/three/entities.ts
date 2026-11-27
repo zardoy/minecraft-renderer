@@ -633,7 +633,11 @@ export class Entities {
         // `entity.position` is a scene position (relative to the floating scene origin), the viewer position and the occlusion grid are in world coordinates:
         // with the origin away from (0, 0, 0) every entity was checked against the wrong section and was hidden (thrown pearls, arrows, mobs)
         const { sceneOrigin } = this.worldRenderer
-        const world = sceneOrigin.getWorldPosition(entity) ?? { x: sceneOrigin.toWorldX(entity.position.x), y: sceneOrigin.toWorldY(entity.position.y), z: sceneOrigin.toWorldZ(entity.position.z) }
+        const world = sceneOrigin.getWorldPosition(entity) ?? {
+          x: sceneOrigin.toWorldX(entity.position.x),
+          y: sceneOrigin.toWorldY(entity.position.y),
+          z: sceneOrigin.toWorldZ(entity.position.z)
+        }
         const dx = world.x - botPos.x
         const dy = world.y - botPos.y
         const dz = world.z - botPos.z
