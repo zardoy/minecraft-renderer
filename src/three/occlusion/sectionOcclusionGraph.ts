@@ -109,26 +109,12 @@ export function occlusionSectionRecordsEqual(a: OcclusionSectionRecord, b: Occlu
   )
 }
 
-function isInViewDistance(
-  camX: number,
-  camY: number,
-  camZ: number,
-  secX: number,
-  secY: number,
-  secZ: number,
-  viewDistance: number,
-  sectionHeight: number
-): boolean {
-  const camChunkX = Math.floor(camX / 16)
-  const camChunkZ = Math.floor(camZ / 16)
-  const secChunkX = Math.floor(secX / 16)
-  const secChunkZ = Math.floor(secZ / 16)
-  if (Math.abs(secChunkX - camChunkX) > viewDistance || Math.abs(secChunkZ - camChunkZ) > viewDistance) {
-    return false
-  }
-  const camSecY = Math.floor(camY / sectionHeight)
-  const secSecY = Math.floor(secY / sectionHeight)
-  return Math.abs(secSecY - camSecY) <= viewDistance
+/**
+ * Horizontal only, like vanilla (its ViewArea holds every section of the columns in range). A vertical limit hid the whole
+ * ground while flying more than `viewDistance` section rows above it.
+ */
+function isInViewDistance(camX: number, camZ: number, secX: number, secZ: number, viewDistance: number): boolean {
+  return Math.abs(Math.floor(secX / 16) - Math.floor(camX / 16)) <= viewDistance && Math.abs(Math.floor(secZ / 16) - Math.floor(camZ / 16)) <= viewDistance
 }
 
 export class SectionOcclusionGraph {
@@ -222,7 +208,7 @@ export class SectionOcclusionGraph {
         const neighborSectionKey = record.neighborKeys[dirIndex]!
         if (!this.sections.has(neighborSectionKey)) continue
         const neighbor = this.sections.get(neighborSectionKey)!
-        if (!isInViewDistance(cam.x, cam.y, cam.z, neighbor.sectionX, neighbor.sectionY, neighbor.sectionZ, params.viewDistance, params.sectionHeight)) {
+        if (!isInViewDistance(cam.x, cam.z, neighbor.sectionX, neighbor.sectionZ, params.viewDistance)) {
           continue
         }
 
@@ -284,7 +270,7 @@ export class SectionOcclusionGraph {
         const key = sectionKeyFromWorld((camChunkX + dx) * 16, surfaceY, (camChunkZ + dz) * 16)
         if (!this.sections.has(key)) continue
         const neighbor = this.sections.get(key)!
-        if (!isInViewDistance(cam.x, cam.y, cam.z, neighbor.sectionX, neighbor.sectionY, neighbor.sectionZ, params.viewDistance, params.sectionHeight)) {
+        if (!isInViewDistance(cam.x, cam.z, neighbor.sectionX, neighbor.sectionZ, params.viewDistance)) {
           continue
         }
 
