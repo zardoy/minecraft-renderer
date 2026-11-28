@@ -45,6 +45,11 @@ export function isWeakMobileGpu(renderer: string | undefined): boolean {
 export function weakGpuDefaults(weak: boolean) {
   return {
     sunShadows: (weak ? 'off' : 'normal') as 'off' | 'normal' | 'soft',
-    colorGrading: (weak ? 'off' : 'warm') as 'off' | 'warm' | 'cinematic' | 'vivid'
+    colorGrading: (weak ? 'off' : 'warm') as 'off' | 'warm' | 'cinematic' | 'vivid',
+    /**
+     * One mesher worker instead of two: on a Mali-G57 phone (8 cores) the second worker competed with the main thread, a 20 s walk over
+     * chunk borders ran at 21-28 FPS with 62-71 frames over 50 ms, with one worker 29-36 FPS and 28
+     */
+    rendererWorldPerformance: (weak ? 'low-energy' : 'normal') as 'low-energy' | 'normal' | 'maximum'
   }
 }
