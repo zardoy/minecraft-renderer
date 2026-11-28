@@ -120,6 +120,40 @@ describe('selectReadySectionUpdates', () => {
     expect(flushes).toEqual([{ key: '0,64,0', reason: 'deadline', missingBlockChangeNeighbors: ['16,64,0'] }])
   })
 
+  it('a group of block-change results waits only for block-changed neighbours, not for chunk-load re-meshes around it', () => {
+    const query = (blockChangeUpdate: boolean) =>
+      selectReadySectionUpdates({
+        pendingKeys: ['0,64,0'],
+        startedAt: () => 1000,
+        now: 1010,
+        maxBufferMs: MAX_BUFFER_MS,
+        sectionHeight: SECTION_HEIGHT,
+        // a visible neighbour re-meshed because a new chunk arrived next to it
+        isOutstanding: key => key === '16,64,0',
+        hasSectionObject: () => true,
+        isBlockChanged: () => false,
+        isBlockChangeUpdate: () => blockChangeUpdate
+      })
+    expect(query(true)).toEqual(['0,64,0'])
+    // any other buffered remesh keeps waiting for it as before
+    expect(query(false)).toEqual([])
+  })
+
+  it('a group of block-change results still waits for a neighbour re-meshed for the same change', () => {
+    const ready = selectReadySectionUpdates({
+      pendingKeys: ['0,64,0'],
+      startedAt: () => 1000,
+      now: 1010,
+      maxBufferMs: MAX_BUFFER_MS,
+      sectionHeight: SECTION_HEIGHT,
+      isOutstanding: key => key === '16,64,0',
+      hasSectionObject: () => true,
+      isBlockChanged: key => key === '16,64,0',
+      isBlockChangeUpdate: () => true
+    })
+    expect(ready).toEqual([])
+  })
+
   it('releases a staggered group in one batch when the deadline expires', () => {
     const scene: Scene = {
       pending: new Map([

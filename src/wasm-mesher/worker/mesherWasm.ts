@@ -1977,11 +1977,12 @@ async function processColumnTickInner() {
           geometry.banners = banners
         }
         const versionMeta = takeGeometryVersionMeta(key, sx, sz, usedLightColumns)
-        postMessage({ type: 'geometry', key, geometry, workerIndex, ...versionMeta }, transferable)
+        // urgent (block change): the main thread handles it ahead of queued chunk-load results
+        postMessage({ type: 'geometry', key, geometry, workerIndex, ...versionMeta, ...(selectedUrgent.has(key) ? { urgent: true } : {}) }, transferable)
       } else if (hadError) {
         const errorGeometry = makeEmptyColumnGeometry(sx, sy, sz, sectionHeight, true)
         const versionMeta = takeGeometryVersionMeta(key, sx, sz, usedLightColumns)
-        postMessage({ type: 'geometry', key, geometry: errorGeometry, workerIndex, ...versionMeta })
+        postMessage({ type: 'geometry', key, geometry: errorGeometry, workerIndex, ...versionMeta, ...(selectedUrgent.has(key) ? { urgent: true } : {}) })
       }
       // No targetChunk and no error: skip geometry message (mirrors
       // legacy behavior for sections whose chunk has been unloaded
@@ -2009,6 +2010,7 @@ async function processColumnTickInner() {
           type: 'sectionFinished',
           key,
           workerIndex,
+          ...(selectedUrgent.has(key) ? { urgent: true } : {}),
           processTime: !attributed ? processTime : 0,
           pre: !attributed ? prePhase : 0,
           wasm: !attributed ? wasmPhase : 0,
