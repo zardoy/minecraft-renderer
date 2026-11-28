@@ -36,6 +36,12 @@ export type PendingFlushQuery = {
    * hole until it arrives. The deadline still applies: a short hole is better than the broken block staying drawn.
    */
   isBlockChanged?: (key: string) => boolean
+  /**
+   * Buffered result comes from a block change (the worker marks those `urgent`). A group made only of such results waits only for
+   * block-changed neighbours: the other re-meshes around it (new chunks arriving next to it) are not part of the edit, and waiting for them
+   * held a placed block for up to the deadline while chunks loaded (~350-750 ms on a Windows RTX 2060 PC).
+   */
+  isBlockChangeUpdate?: (key: string) => boolean
 }
 
 export function faceNeighborKeys(key: string, sectionHeight: number): string[] {
@@ -102,7 +108,9 @@ export function selectReadySectionFlushes(query: PendingFlushQuery): ReadySectio
     }
     const expired = now - oldestStart >= maxBufferMs
 
-    // neighbours the group still waits for: a visible one being re-meshed, or any one re-meshed for a block change
+    // neighbours the group still waits for: a visible one being re-meshed, or any one re-meshed for a block change. A group of block-change
+    // results waits only for the latter.
+    const blockChangeGroup = query.isBlockChangeUpdate !== undefined && group.every(key => query.isBlockChangeUpdate!(key))
     let waitingOnNeighbor = false
     const missingBlockChange: string[] = []
     for (const key of group) {
@@ -111,7 +119,7 @@ export function selectReadySectionFlushes(query: PendingFlushQuery): ReadySectio
         const neighborOutstanding = query.isTopologyOutstanding ? query.isTopologyOutstanding(neighbor) : query.isOutstanding(neighbor)
         if (!neighborOutstanding) continue
         const blockChanged = query.isBlockChanged?.(neighbor) ?? false
-        if (blockChanged || query.hasSectionObject(neighbor)) waitingOnNeighbor = true
+        if (blockChanged || (!blockChangeGroup && query.hasSectionObject(neighbor))) waitingOnNeighbor = true
         if (blockChanged && expired) missingBlockChange.push(neighbor)
       }
       // only the deadline flush needs the full list

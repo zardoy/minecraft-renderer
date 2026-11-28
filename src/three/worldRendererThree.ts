@@ -153,7 +153,7 @@ export class WorldRendererThree extends WorldRendererCommon {
    */
   camera!: THREE.PerspectiveCamera
   renderTimeAvg = 0
-  private pendingSectionUpdates = new Map<string, { geometry: MesherGeometryOutput; key: string; type: string }>()
+  private pendingSectionUpdates = new Map<string, { geometry: MesherGeometryOutput; key: string; type: string; urgent?: boolean }>()
   /**
    * Per-section buffering timestamps for `applyPendingSectionUpdates`.
    * Each section gets its own deadline so a continuous stream of updates
@@ -988,7 +988,8 @@ export class WorldRendererThree extends WorldRendererCommon {
           }
         : {}),
       hasSectionObject: key => !!this.sectionObjects[key],
-      isBlockChanged: key => this.blockChangedSections.has(key)
+      isBlockChanged: key => this.blockChangedSections.has(key),
+      isBlockChangeUpdate: key => !!this.pendingSectionUpdates.get(key)?.urgent
     })
 
     if (ready.length === 0) return

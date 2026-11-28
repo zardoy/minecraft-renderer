@@ -8,6 +8,7 @@ import { proxy, subscribe } from 'valtio'
 import type { ResourcesManagerTransferred } from '../resourcesManager/resourcesManager'
 import { dynamicMcDataFiles } from './buildSharedConfig.mjs'
 import { getMesherVersionTables } from './mesherMcDataSupply'
+import { MesherResultQueue } from './mesherResultQueue'
 import { DisplayWorldOptions, GraphicsInitOptions, RendererReactiveState, SoundSystem, UpdateCameraOptions } from '../graphicsBackend/types'
 import {
   HighestBlockInfo,
@@ -130,7 +131,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   onRenderDistanceChanged?: (viewDistance: number) => void
   chunksLength = 0
   allChunksFinished = false
-  messageQueue: any[] = []
+  messageQueue = new MesherResultQueue()
   isProcessingQueue = false
   ONMESSAGE_TIME_LIMIT = 30 // ms
 
@@ -389,7 +390,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     return initMesherWorker(
       data => {
         if (Array.isArray(data)) {
-          this.messageQueue.push(...data)
+          for (const message of data) this.messageQueue.push(message)
         } else {
           this.messageQueue.push(data)
         }
@@ -531,7 +532,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.columnLoadLog.clear()
     this.toWorkerMessagesQueue = {}
     this.queueAwaited = false
-    this.messageQueue = []
+    this.messageQueue.clear()
     this.isProcessingQueue = false
     this.clearSectionDirtyWindows()
     this.sectionDirtyCount.clear()
@@ -663,6 +664,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     if (this.isProcessingQueue || this.messageQueue.length === 0) return
     this.logWorkerWork(`# ${source} processing queue`)
     if (
+      // a block change result goes in now, not after waiting for a frame
+      this.messageQueue.urgentLength === 0 &&
       this.lastRendered &&
       performance.now() - this.lastRendered > this.ONMESSAGE_TIME_LIMIT &&
       this.worldRendererConfig._experimentalSmoothChunkLoading &&
@@ -1702,7 +1705,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     return {
       throttled: this.sectionDirtyPendingArgs.has(key),
       inFlight: this.sectionsWaiting.get(key) ?? 0,
-      queuedOnMain: this.messageQueue.filter(m => m?.key === key).length,
+      queuedOnMain: this.messageQueue.countKey(key),
       mainQueueLength: this.messageQueue.length
     }
   }
