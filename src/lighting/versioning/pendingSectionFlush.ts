@@ -30,6 +30,12 @@ export type PendingFlushQuery = {
   isTopologyOutstanding?: (key: string) => boolean
   /** Section currently has geometry on screen (an air section has none). */
   hasSectionObject: (key: string) => boolean
+  /**
+   * Section is being re-meshed for a block change. Such a neighbour is waited on even without geometry on screen: a fully solid section next
+   * to a broken block gets its first mesh (the stone behind it), and installing the broken block's section alone shows the sky through the
+   * hole until it arrives. The deadline still applies: a short hole is better than the broken block staying drawn.
+   */
+  isBlockChanged?: (key: string) => boolean
 }
 
 export function faceNeighborKeys(key: string, sectionHeight: number): string[] {
@@ -73,6 +79,8 @@ export type PendingFlushReason = 'group-complete' | 'deadline'
 export type ReadySectionFlush = {
   key: string
   reason: PendingFlushReason
+  /** deadline flush that left block-changed neighbours behind (a visible hole until they arrive): not expected, worth logging */
+  missingBlockChangeNeighbors?: string[]
 }
 
 /**
@@ -94,24 +102,25 @@ export function selectReadySectionFlushes(query: PendingFlushQuery): ReadySectio
     }
     const expired = now - oldestStart >= maxBufferMs
 
+    // neighbours the group still waits for: a visible one being re-meshed, or any one re-meshed for a block change
     let waitingOnNeighbor = false
-    if (!expired) {
-      for (const key of group) {
-        for (const neighbor of faceNeighborKeys(key, sectionHeight)) {
-          if (members.has(neighbor)) continue
-          const neighborOutstanding = query.isTopologyOutstanding ? query.isTopologyOutstanding(neighbor) : query.isOutstanding(neighbor)
-          if (neighborOutstanding && query.hasSectionObject(neighbor)) {
-            waitingOnNeighbor = true
-            break
-          }
-        }
-        if (waitingOnNeighbor) break
+    const missingBlockChange: string[] = []
+    for (const key of group) {
+      for (const neighbor of faceNeighborKeys(key, sectionHeight)) {
+        if (members.has(neighbor)) continue
+        const neighborOutstanding = query.isTopologyOutstanding ? query.isTopologyOutstanding(neighbor) : query.isOutstanding(neighbor)
+        if (!neighborOutstanding) continue
+        const blockChanged = query.isBlockChanged?.(neighbor) ?? false
+        if (blockChanged || query.hasSectionObject(neighbor)) waitingOnNeighbor = true
+        if (blockChanged && expired) missingBlockChange.push(neighbor)
       }
+      // only the deadline flush needs the full list
+      if (waitingOnNeighbor && !expired) break
     }
 
-    if (waitingOnNeighbor) continue
+    if (waitingOnNeighbor && !expired) continue
     const reason: PendingFlushReason = expired ? 'deadline' : 'group-complete'
-    for (const key of group) ready.push({ key, reason })
+    for (const key of group) ready.push(missingBlockChange.length > 0 ? { key, reason, missingBlockChangeNeighbors: missingBlockChange } : { key, reason })
   }
 
   return ready

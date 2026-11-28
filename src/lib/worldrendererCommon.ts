@@ -192,6 +192,11 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   private sectionDirtyFlushTimer: ReturnType<typeof setTimeout> | undefined
   private sectionDirtyPendingArgs = new Map<string, { pos: Vec3; value: boolean; useChangeWorker: boolean; urgent?: boolean }>()
   private sectionDirtyLightMeta = new Map<string, { lightPublicationVersion: number; worldGeneration?: number }>()
+  /**
+   * Sections made dirty by a block change since their last mesh. A section that gets its first mesh this way (e.g. the solid stone behind
+   * a broken block) shows at once: fading it in like newly loaded terrain showed the sky through the hole for the fade time.
+   */
+  readonly blockChangedSections = new Set<string>()
   private static readonly GEOMETRY_THROTTLE_THRESHOLD = 1
   private static readonly GEOMETRY_THROTTLE_DELAY = 100 // ms
 
@@ -532,6 +537,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.sectionDirtyCount.clear()
     this.sectionDirtyPendingArgs.clear()
     this.sectionDirtyLightMeta.clear()
+    this.blockChangedSections.clear()
     this.lightCoordinator.clearPendingMesherState()
     this.reactiveState.world.mesherWork = false
   }
@@ -762,6 +768,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       this.sectionsWaiting.set(data.key, this.sectionsWaiting.get(data.key)! - 1)
       if (this.sectionsWaiting.get(data.key) === 0) {
         this.sectionsWaiting.delete(data.key)
+        // nothing in flight any more (an empty result never reaches the mesh manager, which clears it otherwise)
+        this.blockChangedSections.delete(data.key)
         if (!rejectedFinish) {
           this.lightCoordinator.forgetCovering(data.key)
           this.finishedSections[data.key] = true
@@ -1186,6 +1194,9 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         this.sectionDirtyPendingArgs.delete(key)
         this.sectionDirtyLightMeta.delete(key)
       }
+    }
+    for (const key of this.blockChangedSections) {
+      if (key.startsWith(`${x},`) && key.endsWith(`,${z}`)) this.blockChangedSections.delete(key)
     }
     for (let i = 0; i < this.workers.length; i++) {
       this.toWorkerMessagesQueue[i] ??= []
@@ -1638,6 +1649,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     const CHUNK_SIZE = 16
     const sectionHeight = this.getSectionHeight()
     const key = `${Math.floor(pos.x / CHUNK_SIZE) * CHUNK_SIZE},${Math.floor(pos.y / sectionHeight) * sectionHeight},${Math.floor(pos.z / CHUNK_SIZE) * CHUNK_SIZE}`
+    // useChangeWorker is set only for block changes
+    if (useChangeWorker) this.blockChangedSections.add(key)
 
     this.sectionDirtyLightMeta ??= new Map()
     if (this.lightCoordinator.nextDirtyLightMeta.lightPublicationVersion != null) {
@@ -1678,6 +1691,19 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       })
 
       this.openSectionDirtyWindow(key)
+    }
+  }
+
+  /**
+   * Where a section's remesh is in the pipeline, for logs about a late one: held by the main-thread dirty throttle, requested from a worker
+   * (count of requests in flight), results already back but still queued on the main thread, and the queue length.
+   */
+  describeSectionPipeline(key: string) {
+    return {
+      throttled: this.sectionDirtyPendingArgs.has(key),
+      inFlight: this.sectionsWaiting.get(key) ?? 0,
+      queuedOnMain: this.messageQueue.filter(m => m?.key === key).length,
+      mainQueueLength: this.messageQueue.length
     }
   }
 
@@ -1850,6 +1876,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.sectionDirtyCount.clear()
     this.sectionDirtyPendingArgs.clear()
     this.sectionDirtyLightMeta.clear()
+    this.blockChangedSections.clear()
 
     setClientLightTraceConfigListener(undefined)
     // Stop all workers

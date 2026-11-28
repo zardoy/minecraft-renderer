@@ -1103,8 +1103,13 @@ export class ChunkMeshManager {
       const list = this.waitingChunksToDisplay[chunkKey] ?? (this.waitingChunksToDisplay[chunkKey] = [])
       if (!list.includes(sectionKey)) list.push(sectionKey)
     }
-    // visible now: it fades in (once per load, remeshes keep it shown); a held section fades when its chunk is revealed
-    if (!sectionObject._waitingForChunkDisplay) this.worldRenderer.blockEffects?.sectionShown(sectionKey)
+    // visible now: it fades in (once per load, remeshes keep it shown); a held section fades when its chunk is revealed. A first mesh caused
+    // by a block change shows at once (the stone behind a broken block must not fade in over the sky).
+    const fromBlockChange = this.worldRenderer.blockChangedSections?.delete(sectionKey) ?? false
+    if (!sectionObject._waitingForChunkDisplay) {
+      if (fromBlockChange) this.worldRenderer.blockEffects?.sectionShownWithoutFade(sectionKey)
+      else this.worldRenderer.blockEffects?.sectionShown(sectionKey)
+    }
 
     this.markCullDirty()
     return sectionObject

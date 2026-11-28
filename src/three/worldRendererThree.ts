@@ -987,10 +987,20 @@ export class WorldRendererThree extends WorldRendererCommon {
             isTopologyOutstanding: (key: string) => this.lightCoordinator.pendingTopologyBySection.has(key) && !this.pendingSectionUpdates.has(key)
           }
         : {}),
-      hasSectionObject: key => !!this.sectionObjects[key]
+      hasSectionObject: key => !!this.sectionObjects[key],
+      isBlockChanged: key => this.blockChangedSections.has(key)
     })
 
     if (ready.length === 0) return
+
+    // a block change installed without its neighbour: the hole shows the sky until that neighbour arrives (slow worker / busy main thread)
+    const late = ready.find(item => item.missingBlockChangeNeighbors)
+    if (late) {
+      console.warn(
+        `[renderer] block change at ${late.key} installed after ${WorldRendererThree.MAX_SECTION_UPDATE_BUFFER_MS} ms without its neighbour(s), a hole may show until they arrive:`,
+        Object.fromEntries(late.missingBlockChangeNeighbors!.map(key => [key, this.describeSectionPipeline(key)]))
+      )
+    }
 
     for (const { key, reason } of ready) {
       const update = this.pendingSectionUpdates.get(key)!

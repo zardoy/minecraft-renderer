@@ -35,6 +35,16 @@ describe('section fade start times', () => {
     expect(startOf(fade, '32,64,48')).toBeGreaterThan(first)
   })
 
+  it('a section shown by a block change (first mesh behind a broken block) is drawn fully at once, a later remesh does not fade it', () => {
+    const fade = new SectionFade()
+    fade.sectionShown('32,64,48', 1000)
+    // the column finished fading long ago; the solid section below had no mesh until a block next to it was broken
+    fade.sectionShownWithoutFade('32,48,48')
+    expect(startOf(fade, '32,48,48')).toBe(0)
+    fade.sectionShown('32,48,48', 60_000)
+    expect(startOf(fade, '32,48,48')).toBe(0)
+  })
+
   it('a column is revealed at once: a section shown later takes the column start, an unloaded column starts over', () => {
     const fade = new SectionFade()
     fade.sectionShown('32,64,48', 1000)

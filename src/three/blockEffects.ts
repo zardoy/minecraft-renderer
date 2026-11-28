@@ -267,6 +267,11 @@ export class BlockEffects {
     if (this.sectionFadeMode !== 'off') this.sectionFade?.sectionShown(sectionKey)
   }
 
+  /** A section became visible because of a block change: shown fully at once, never faded. */
+  sectionShownWithoutFade(sectionKey: string): void {
+    this.sectionFade?.sectionShownWithoutFade(sectionKey)
+  }
+
   sectionForgotten(sectionKey: string): void {
     this.sectionFade?.sectionForgotten(sectionKey)
   }

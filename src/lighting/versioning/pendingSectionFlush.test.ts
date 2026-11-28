@@ -86,6 +86,40 @@ describe('selectReadySectionUpdates', () => {
   // buffered at staggered times (they come back on different worker ticks).
   // Releasing the earliest one alone shows the neighbour's still-culled faces
   // as a hole, so the whole group must go out in the same frame.
+  it('waits on a block-changed neighbour without geometry (solid stone behind a broken block gets its first mesh)', () => {
+    const pending = new Map([['0,64,0', 1000]])
+    const query = (now: number, outstanding: Set<string>) =>
+      selectReadySectionUpdates({
+        pendingKeys: pending.keys(),
+        startedAt: key => pending.get(key),
+        now,
+        maxBufferMs: MAX_BUFFER_MS,
+        sectionHeight: SECTION_HEIGHT,
+        isOutstanding: key => outstanding.has(key),
+        hasSectionObject: () => false,
+        isBlockChanged: key => key === '16,64,0'
+      })
+    expect(query(1010, new Set(['16,64,0']))).toEqual([])
+    // the neighbour's first mesh arrived (installed on arrival): the held section follows in the same frame
+    expect(query(1020, new Set())).toEqual(['0,64,0'])
+    // never longer than the buffer deadline
+    expect(query(1000 + MAX_BUFFER_MS, new Set(['16,64,0']))).toEqual(['0,64,0'])
+  })
+
+  it('reports block-changed neighbours still missing when the deadline flushes the group (a hole shows, worth a log)', () => {
+    const flushes = selectReadySectionFlushes({
+      pendingKeys: ['0,64,0'],
+      startedAt: () => 1000,
+      now: 1000 + MAX_BUFFER_MS,
+      maxBufferMs: MAX_BUFFER_MS,
+      sectionHeight: SECTION_HEIGHT,
+      isOutstanding: key => key === '16,64,0' || key === '0,80,0',
+      hasSectionObject: key => key === '0,80,0',
+      isBlockChanged: key => key === '16,64,0'
+    })
+    expect(flushes).toEqual([{ key: '0,64,0', reason: 'deadline', missingBlockChangeNeighbors: ['16,64,0'] }])
+  })
+
   it('releases a staggered group in one batch when the deadline expires', () => {
     const scene: Scene = {
       pending: new Map([
