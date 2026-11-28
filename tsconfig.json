@@ -2,7 +2,9 @@
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
-    "moduleResolution": "Node",
+    // "Bundler" so package `exports` subpaths resolve (three/webgpu, three/tsl).
+    // rsbuild/vitest already resolve this way at build time.
+    "moduleResolution": "Bundler",
     "lib": ["ES2024", "DOM", "DOM.Iterable", "WebWorker"],
     "strict": true,
     "skipLibCheck": true,
