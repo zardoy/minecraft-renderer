@@ -768,6 +768,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       this.sectionsWaiting.set(data.key, this.sectionsWaiting.get(data.key)! - 1)
       if (this.sectionsWaiting.get(data.key) === 0) {
         this.sectionsWaiting.delete(data.key)
+        // nothing in flight any more (an empty result never reaches the mesh manager, which clears it otherwise)
+        this.blockChangedSections.delete(data.key)
         if (!rejectedFinish) {
           this.lightCoordinator.forgetCovering(data.key)
           this.finishedSections[data.key] = true
@@ -1689,6 +1691,19 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
       })
 
       this.openSectionDirtyWindow(key)
+    }
+  }
+
+  /**
+   * Where a section's remesh is in the pipeline, for logs about a late one: held by the main-thread dirty throttle, requested from a worker
+   * (count of requests in flight), results already back but still queued on the main thread, and the queue length.
+   */
+  describeSectionPipeline(key: string) {
+    return {
+      throttled: this.sectionDirtyPendingArgs.has(key),
+      inFlight: this.sectionsWaiting.get(key) ?? 0,
+      queuedOnMain: this.messageQueue.filter(m => m?.key === key).length,
+      mainQueueLength: this.messageQueue.length
     }
   }
 
