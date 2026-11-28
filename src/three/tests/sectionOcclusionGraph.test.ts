@@ -116,3 +116,14 @@ test('version counter increments on rebuild', () => {
   runUpdate(graph)
   expect(graph.getVersion()).toBe(2)
 })
+
+test('flying far above the ground (more than viewDistance section rows) still reaches the ground sections', () => {
+  const graph = new SectionOcclusionGraph()
+  for (let y = 0; y < 256; y += 16) reg(graph, `0,${y},0`)
+  // ground: one solid-topped section at y=64 and open air above it up to the camera at y=224
+  const visible = runUpdate(graph, { cameraWorldY: 232 })
+  expect(visible.has('0,224,0')).toBe(true)
+  expect(visible.has('0,128,0')).toBe(true)
+  expect(visible.has('0,64,0')).toBe(true)
+  expect(visible.has('0,0,0')).toBe(true)
+})
