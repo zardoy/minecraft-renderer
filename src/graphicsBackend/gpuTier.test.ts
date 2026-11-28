@@ -36,8 +36,8 @@ describe('isWeakMobileGpu', () => {
 })
 
 describe('weakGpuDefaults', () => {
-  it('turns shadows and color grading off only for weak GPUs', () => {
-    expect(weakGpuDefaults(true)).toEqual({ sunShadows: 'off', colorGrading: 'off' })
-    expect(weakGpuDefaults(false)).toEqual({ sunShadows: 'normal', colorGrading: 'warm' })
+  it('turns shadows and color grading off and uses one mesher worker only for weak GPUs', () => {
+    expect(weakGpuDefaults(true)).toEqual({ sunShadows: 'off', colorGrading: 'off', rendererWorldPerformance: 'low-energy' })
+    expect(weakGpuDefaults(false)).toEqual({ sunShadows: 'normal', colorGrading: 'warm', rendererWorldPerformance: 'normal' })
   })
 })

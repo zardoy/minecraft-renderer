@@ -65,7 +65,8 @@ const GPU_DEFAULTS = weakGpuDefaults(isWeakMobileGpu(detectGpuRenderer()))
 
 /** Default values for options owned by minecraft-renderer (spread into app `defaultOptions`). */
 export const RENDERER_DEFAULT_OPTIONS = {
-  rendererWorldPerformance: 'normal' as 'low-energy' | 'normal' | 'maximum',
+  /** one mesher worker on weak mobile GPUs (see gpuTier) */
+  rendererWorldPerformance: GPU_DEFAULTS.rendererWorldPerformance,
   rendererMeshersCountOverride: null as number | null,
   starfieldRendering: true as boolean,
   cloudsRendering: true as boolean,
