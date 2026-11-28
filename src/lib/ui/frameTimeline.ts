@@ -56,8 +56,10 @@ export class FrameTimeline {
     this.canvas.style.cssText = 'display:block;width:100%;height:100%;'
     this.dom.appendChild(this.canvas)
     this.text = document.createElement('div')
+    // a dark backing and a solid outline: the yellow and red numbers sat on bars of the same colours and were hard to read
     this.text.style.cssText =
-      'position:absolute;left:3px;top:1px;font:700 10px/1 ui-monospace,Menlo,monospace;color:#e2e8f0;text-shadow:0 0 2px #000,0 0 1px #000;white-space:nowrap;'
+      'position:absolute;left:1px;top:1px;padding:1px 3px;border-radius:2px;background:rgba(2,6,23,0.72);font:700 10px/1 ui-monospace,Menlo,monospace;color:#e2e8f0;' +
+      'text-shadow:1px 0 0 #000,-1px 0 0 #000,0 1px 0 #000,0 -1px 0 #000;white-space:nowrap;'
     this.dom.appendChild(this.text)
 
     const dpr = Math.min(2, globalThis.devicePixelRatio || 1)
