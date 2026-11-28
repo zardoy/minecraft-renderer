@@ -206,6 +206,8 @@ export class DocumentRenderer {
   private readonly adaptiveResolution = new AdaptiveResolution()
   private externalDevicePixelRatio: number | undefined
   private pixelRatioDirty = false
+  /** pixel ratio to apply in the next `sizeUpdated` (see `updatePixelRatio`) */
+  private pendingPixelRatio: number | undefined
   private lastFrameStart = 0
   private readonly stats: TopRightStats | undefined
   private paused = false
@@ -319,13 +321,20 @@ export class DocumentRenderer {
     if (typeof window === 'undefined' && this.externalDevicePixelRatio === undefined) return
     if (!this.config.adaptiveResolution && this.adaptiveResolution.scale !== 1) this.adaptiveResolution.reset()
     const pixelRatio = Math.round(this.basePixelRatio() * this.adaptiveResolution.scale * 100) / 100
-    if (pixelRatio === this.renderer.getPixelRatio()) return
-    this.renderer.setPixelRatio(pixelRatio)
+    if (pixelRatio === (this.pendingPixelRatio ?? this.renderer.getPixelRatio())) return
+    // Applied by the next frame right before it renders. Setting it here resized the canvas at once, which clears it: called after a frame
+    // was drawn (adaptive resolution, the 1 s timer), the browser showed that cleared canvas, a frame of page background (gray flash).
+    this.pendingPixelRatio = pixelRatio
     // the render targets that follow the canvas size (post processing, shadows of the screen) get the sizeChanged frame
     this.pixelRatioDirty = true
   }
 
   sizeUpdated(): void {
+    if (this.pendingPixelRatio !== undefined) {
+      // setPixelRatio resizes the canvas too; setSize below then keeps it
+      if (this.pendingPixelRatio !== this.renderer.getPixelRatio()) this.renderer.setPixelRatio(this.pendingPixelRatio)
+      this.pendingPixelRatio = undefined
+    }
     this.renderer.setSize(this.currentWidth, this.currentHeight, false)
   }
 
