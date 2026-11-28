@@ -1465,6 +1465,22 @@ async function processColumnTickInner() {
   for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
     const group = groups[groupIndex]!
     const { x, z, sections } = group
+    // Mesh only the Y range of the requested sections (the rest of the column data still feeds culling, AO and light at its edges):
+    // a block change asks for one or two sections, and meshing + splitting the whole 384-block column cost 45-105 ms per change on a
+    // Windows RTX 2060 PC (wasm 17-32 ms, post 26-70 ms). A column load asks for every section, so it still meshes the full column.
+    let slabStart = worldMaxY
+    let slabEnd = worldMinY
+    for (const section of sections) {
+      slabStart = Math.min(slabStart, section.y)
+      slabEnd = Math.max(slabEnd, section.y + sectionHeight)
+    }
+    slabStart = Math.max(worldMinY, slabStart)
+    slabEnd = Math.min(worldMaxY, slabEnd)
+    const isSlab = slabEnd > slabStart && slabEnd - slabStart < columnHeight
+    const meshY = isSlab ? slabStart : worldMinY
+    const meshHeight = isSlab ? slabEnd - slabStart : columnHeight
+    /** the two-step path meshed only the slab (the fused raw-packet paths always mesh the full column) */
+    let meshedSlab = false
     const targetChunk = world.getColumn(x, z)
 
     let exportedMap: Map<string, { exported: import('../../three/worldGeometryExport').ExportedSection; blocksCount: number }> | null = null
@@ -1712,9 +1728,9 @@ async function processColumnTickInner() {
             t1 = performance.now()
             wasmResult = wasm.generate_geometry(
               x,
-              worldMinY,
+              meshY,
               z,
-              columnHeight,
+              meshHeight,
               worldMinY,
               worldMaxY,
               worldMinY,
@@ -1731,7 +1747,8 @@ async function processColumnTickInner() {
               config?.smoothLighting !== false,
               config?.skyLight ?? 15
             )
-            columnMeshPath = 'two_step_single'
+            meshedSlab = isSlab
+            columnMeshPath = isSlab ? 'two_step_single_slab' : 'two_step_single'
           } else {
             const tBuildStart = performance.now()
             const perChunkLen = conversions[0].blockStates.length
@@ -1756,9 +1773,9 @@ async function processColumnTickInner() {
             t1 = performance.now()
             wasmResult = (wasm as any).generate_geometry_multi(
               x,
-              worldMinY,
+              meshY,
               z,
-              columnHeight,
+              meshHeight,
               worldMinY,
               worldMaxY,
               worldMinY,
@@ -1777,7 +1794,8 @@ async function processColumnTickInner() {
               config?.smoothLighting !== false,
               config?.skyLight ?? 15
             )
-            columnMeshPath = 'two_step_multi'
+            meshedSlab = isSlab
+            columnMeshPath = isSlab ? 'two_step_multi_slab' : 'two_step_multi'
           }
         }
 
@@ -1803,8 +1821,11 @@ async function processColumnTickInner() {
         // a `'heightmap'` message every column tick. Key shape matches the
         // legacy `handleGetHeightmap` contract: `${chunkX>>4},${chunkZ>>4}`.
         const heightmapKey = `${x >> 4},${z >> 4}`
-        const wasmHeightmap = extractColumnHeightmap(wasmResult)
-        if (wasmHeightmap) {
+        // a slab mesh only saw its own Y range: its heightmap is partial (block changes re-request the column heightmap on their own)
+        const wasmHeightmap = meshedSlab ? null : extractColumnHeightmap(wasmResult)
+        if (meshedSlab) {
+          // nothing to push
+        } else if (wasmHeightmap) {
           postMessage({ type: 'heightmap', key: heightmapKey, heightmap: wasmHeightmap }, [wasmHeightmap.buffer])
         } else {
           console.warn(`[WASM Mesher] heightmap extraction returned null for column ${x},${z}, falling back to JS computeHeightmap`)

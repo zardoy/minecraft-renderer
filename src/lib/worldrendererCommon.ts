@@ -198,6 +198,12 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
    * a broken block) shows at once: fading it in like newly loaded terrain showed the sky through the hole for the fade time.
    */
   readonly blockChangedSections = new Set<string>()
+  /**
+   * State last applied per block position, for recent changes only (bounded). The server confirming a block the client already placed or
+   * broke sets the same state again a few ms later; re-meshing for it doubled the work of every placement. Cleared for a column when its
+   * data is replaced or unloaded.
+   */
+  private readonly recentBlockStates = new Map<string, number>()
   private static readonly GEOMETRY_THROTTLE_THRESHOLD = 1
   private static readonly GEOMETRY_THROTTLE_DELAY = 100 // ms
 
@@ -539,6 +545,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.sectionDirtyPendingArgs.clear()
     this.sectionDirtyLightMeta.clear()
     this.blockChangedSections.clear()
+    this.recentBlockStates.clear()
     this.lightCoordinator.clearPendingMesherState()
     this.reactiveState.world.mesherWork = false
   }
@@ -1093,6 +1100,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   }
 
   addColumn(x: number, z: number, chunk: any, isLightUpdate: boolean) {
+    this.forgetRecentBlockStates(x, z)
     if (!this.active) return
     if (this.workers.length === 0) throw new Error('workers not initialized yet')
     this.initialChunksLoad = false
@@ -1180,6 +1188,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   }
 
   removeColumn(x, z, opts?: { preserveClientLight?: boolean }) {
+    this.forgetRecentBlockStates(x, z)
     delete this.loadedChunks[`${x},${z}`]
     this.columnLoadLog.delete(`${x},${z}`)
     // Cancel any pending heightmap debounce for this chunk
@@ -1483,6 +1492,13 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   }
 
   setBlockStateIdInner(pos: Vec3, stateId: number | undefined, needAoRecalculation = true) {
+    if (stateId !== undefined) {
+      const posKey = `${pos.x},${pos.y},${pos.z}`
+      if (this.recentBlockStates.get(posKey) === stateId) return
+      this.recentBlockStates.delete(posKey)
+      this.recentBlockStates.set(posKey, stateId)
+      if (this.recentBlockStates.size > 512) this.recentBlockStates.delete(this.recentBlockStates.keys().next().value!)
+    }
     const CHUNK_SIZE = 16
     const chunkKey = `${Math.floor(pos.x / CHUNK_SIZE) * CHUNK_SIZE},${Math.floor(pos.z / CHUNK_SIZE) * CHUNK_SIZE}`
     const blockPosKey = `${pos.x},${pos.y},${pos.z}`
@@ -1697,6 +1713,15 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     }
   }
 
+  /** the column's blocks were replaced (new chunk data) or unloaded: a later change to the same state must be applied again */
+  private forgetRecentBlockStates(columnX: number, columnZ: number) {
+    if (this.recentBlockStates.size === 0) return
+    for (const key of this.recentBlockStates.keys()) {
+      const [bx, , bz] = key.split(',').map(Number)
+      if (Math.floor(bx! / 16) * 16 === columnX && Math.floor(bz! / 16) * 16 === columnZ) this.recentBlockStates.delete(key)
+    }
+  }
+
   /**
    * Where a section's remesh is in the pipeline, for logs about a late one: held by the main-thread dirty throttle, requested from a worker
    * (count of requests in flight), results already back but still queued on the main thread, and the queue length.
@@ -1880,6 +1905,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.sectionDirtyPendingArgs.clear()
     this.sectionDirtyLightMeta.clear()
     this.blockChangedSections.clear()
+    this.recentBlockStates.clear()
 
     setClientLightTraceConfigListener(undefined)
     // Stop all workers
