@@ -4,6 +4,7 @@ import moonPhasesPng from 'mc-assets/dist/other-textures/latest/environment/moon
 import type { WorldRendererThree } from '../worldRendererThree'
 import type { RendererModuleController, RendererModuleManifest } from '../rendererModuleSystem'
 import { vanillaCelestialAngle } from '../../lib/skyLight'
+import { loadThreeJsTextureFromUrlSync } from '../threeJsUtils'
 
 // Vanilla geometry: sun quad ±30 and moon quad ±20, both 100 blocks from the camera.
 const DISTANCE = 100
@@ -13,8 +14,10 @@ const MOON_SIZE = 40
 const MOON_COLS = 4
 const MOON_ROWS = 2
 
-const loadPixelTexture = (url: string, onLoad?: (tex: THREE.Texture) => void): THREE.Texture => {
-  const tex = new THREE.TextureLoader().load(url, onLoad)
+// not TextureLoader: it needs `document`, which the off-thread renderer's worker does not have
+const loadPixelTexture = (url: string): THREE.Texture => {
+  const { texture: tex, promise } = loadThreeJsTextureFromUrlSync(url)
+  void promise.catch(err => console.error('[sun-moon] texture failed to load', url, err))
   tex.colorSpace = THREE.SRGBColorSpace
   tex.magFilter = THREE.NearestFilter
   tex.minFilter = THREE.NearestFilter

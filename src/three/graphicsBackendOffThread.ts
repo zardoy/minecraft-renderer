@@ -7,7 +7,8 @@ import { addNewStat, MC_RENDERER_DEBUG_OVERLAY_CLASS } from '../lib/ui/newStats'
 import type { MenuBackgroundOptions } from './menuBackground/types'
 import { MENU_BACKGROUND_MC_VERSION } from './menuBackground/shared'
 import { createGraphicsBackendBase, type ThreeJsBackendMethods } from './graphicsBackendBase'
-import { addCanvasForWorker } from './documentRenderer'
+import { addCanvasForWorker, timelineSize, WORKER_FRAME_TIMES } from './documentRenderer'
+import { FrameTimeline } from '../lib/ui/frameTimeline'
 import type { WorldView } from '../worldView'
 
 function initThreeWorker(onGotMessage: (data: any) => void) {
@@ -37,7 +38,13 @@ export const createGraphicsBackendOffThread: GraphicsBackendLoader = async initO
   const workerSideChannel = {
     onMessage: (_data: unknown) => {}
   }
+  let frameTimeline: FrameTimeline | undefined
+  let stopFrameTimeline = () => {}
   const worker = initThreeWorker(data => {
+    if (data?.type === WORKER_FRAME_TIMES) {
+      frameTimeline?.addFrames(data.frames)
+      return
+    }
     workerSideChannel.onMessage(data)
   })
   type WorkerType = ReturnType<ReturnType<typeof createGraphicsBackendBase>['workerProxy']>
@@ -127,12 +134,38 @@ export const createGraphicsBackendOffThread: GraphicsBackendLoader = async initO
       }
       proxy.updateSizeExternal(canvas.size.width, canvas.size.height, window.devicePixelRatio || 1)
 
-      const fpsStat = addNewStat('fps')
-      setInterval(() => {
-        const { fps, avgRenderTime, worstRenderTime } = options.nonReactiveState
-        fpsStat.updateText(`FPS: ${fps.toFixed(0)} (${avgRenderTime.toFixed(0)}ms/${worstRenderTime.toFixed(0)}ms)`)
+      // the same FPS bar as the main-thread renderer, fed with the frames the render worker measures; a thin outline marks it as off-thread
+      stopFrameTimeline()
+      const denseMode = process.env.NODE_ENV === 'production' || window.innerHeight < 500
+      const { width, height } = timelineSize(denseMode)
+      frameTimeline = new FrameTimeline(width, height)
+      const statsContainer = document.getElementById('corner-indicator-stats')
+      Object.assign(frameTimeline.dom.style, {
+        position: statsContainer ? 'relative' : 'absolute',
+        top: '0',
+        right: '0',
+        zIndex: '1',
+        opacity: '0.8',
+        outline: '1px solid rgba(96, 165, 250, 0.9)',
+        outlineOffset: '-1px'
+      })
+      frameTimeline.dom.title = 'Frames of the off-thread renderer (render worker)'
+      ;(statsContainer ?? document.body).appendChild(frameTimeline.dom)
+      const onResize = () => {
+        const size = timelineSize(denseMode)
+        frameTimeline?.resize(size.width, size.height)
+      }
+      window.addEventListener('resize', onResize)
+      const visibilityTimer = setInterval(() => {
+        frameTimeline?.setVisible((initOptions.config.statsVisible ?? 0) > 0)
         options.nonReactiveState.fps = 0
-      }, 1000)
+      }, 200)
+      stopFrameTimeline = () => {
+        clearInterval(visibilityTimer)
+        window.removeEventListener('resize', onResize)
+        frameTimeline?.dom.remove()
+        frameTimeline = undefined
+      }
 
       const chunksStat = addNewStat('downloaded-chunks', 100, 140, 20, {
         className: MC_RENDERER_DEBUG_OVERLAY_CLASS
@@ -146,6 +179,7 @@ export const createGraphicsBackendOffThread: GraphicsBackendLoader = async initO
       }, 200)
     },
     disconnect() {
+      stopFrameTimeline()
       canvas.destroy()
       proxy.disconnect()
       worker.terminate()

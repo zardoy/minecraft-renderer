@@ -56,8 +56,10 @@ export class FrameTimeline {
     this.canvas.style.cssText = 'display:block;width:100%;height:100%;'
     this.dom.appendChild(this.canvas)
     this.text = document.createElement('div')
+    // a dark backing and a solid outline: the yellow and red numbers sat on bars of the same colours and were hard to read
     this.text.style.cssText =
-      'position:absolute;left:3px;top:1px;font:700 10px/1 ui-monospace,Menlo,monospace;color:#e2e8f0;text-shadow:0 0 2px #000,0 0 1px #000;white-space:nowrap;'
+      'position:absolute;left:1px;top:1px;padding:1px 3px;border-radius:2px;background:rgba(2,6,23,0.72);font:700 10px/1 ui-monospace,Menlo,monospace;color:#e2e8f0;' +
+      'text-shadow:1px 0 0 #000,-1px 0 0 #000,0 1px 0 #000,0 -1px 0 #000;white-space:nowrap;'
     this.dom.appendChild(this.text)
 
     const dpr = Math.min(2, globalThis.devicePixelRatio || 1)
@@ -109,6 +111,20 @@ export class FrameTimeline {
     const last = (this.head - 1 + this.maxN) % this.maxN
     this.cpus[last] = cpu
     this.draw()
+  }
+
+  /**
+   * Frames measured in another thread (the off-thread renderer's worker sends them in batches): pairs of frame interval and CPU time
+   * (ms), oldest first.
+   */
+  addFrames(frames: ArrayLike<number>) {
+    if (!this.visible) return
+    const now = performance.now()
+    for (let i = 0; i + 1 < frames.length; i += 2) {
+      this.push(frames[i]!, now)
+      this.cpus[(this.head - 1 + this.maxN) % this.maxN] = frames[i + 1]!
+    }
+    if (this.count > 0) this.draw()
   }
 
   private push(dt: number, now: number) {

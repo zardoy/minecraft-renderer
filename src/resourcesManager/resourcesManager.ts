@@ -209,13 +209,9 @@ export class ResourcesManager extends (EventEmitter as new () => TypedEmitter<Re
       const oldEmit = this.emit.bind(this) as any
       this.emit = ((eventName: keyof ResourceManagerEvents, ...args: any[]) => {
         oldEmit(eventName, ...args)
-        worker.postMessage({
-          class: ResourcesManager.restorerName,
-          type: 'event',
-          eventName,
-          args: sanitizeWorkerEventArgs(args)
-        })
-        // todo handle assetsInventoryReady
+        // the new resources go first: the worker's listeners of the event (the world sends the atlas layout to its mesher workers)
+        // read them at once. In the other order the meshers kept the previous atlas layout while the material had the new atlas image,
+        // so every block showed another block's texture
         if (eventName === 'assetsTexturesUpdated' || eventName === 'assetsInventoryReady') {
           const currentResources = this.enrichTransferSnapshot(this.currentResources?.prepareForTransfer())
           worker.postMessage({
@@ -224,6 +220,12 @@ export class ResourcesManager extends (EventEmitter as new () => TypedEmitter<Re
             currentResources
           })
         }
+        worker.postMessage({
+          class: ResourcesManager.restorerName,
+          type: 'event',
+          eventName,
+          args: sanitizeWorkerEventArgs(args)
+        })
       }) as any
     }
     return {

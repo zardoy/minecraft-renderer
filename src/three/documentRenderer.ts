@@ -62,9 +62,47 @@ export const isWebWorker = typeof (globalThis as any).WorkerGlobalScope !== 'und
 
 /** Below this viewport width (phones in portrait) the stats strip is shorter: the top corner is shared with the game's own buttons. */
 const NARROW_VIEWPORT_PX = 520
-const timelineSize = (denseMode: boolean) => {
+export const timelineSize = (denseMode: boolean) => {
   if (typeof window !== 'undefined' && window.innerWidth < NARROW_VIEWPORT_PX) return { width: 96, height: 24 }
   return { width: 128, height: denseMode ? 24 : 30 }
+}
+
+/** Message type of the frame batches the off-thread renderer's worker posts to the page (see `WorkerFrameReporter`). */
+export const WORKER_FRAME_TIMES = 'workerFrameTimes'
+
+/**
+ * The off-thread renderer has no DOM for the FPS bar: the worker records each frame's interval and CPU time and posts them to the page
+ * about every 100 ms, where the same bar draws them (graphicsBackendOffThread).
+ */
+class WorkerFrameReporter {
+  private frames: number[] = []
+  private lastStart = 0
+  private frameStart = 0
+  private lastFlush = 0
+
+  begin() {
+    const now = performance.now()
+    this.frameStart = now
+    if (this.lastStart) this.frames.push(now - this.lastStart, 0)
+    this.lastStart = now
+  }
+
+  end() {
+    const now = performance.now()
+    if (this.frames.length > 0) this.frames[this.frames.length - 1] = now - this.frameStart
+    if (now - this.lastFlush < 100 || this.frames.length === 0) return
+    this.lastFlush = now
+    const batch = Float32Array.from(this.frames)
+    this.frames = []
+    // eslint-disable-next-line no-restricted-globals
+    ;(self as unknown as Worker).postMessage({ type: WORKER_FRAME_TIMES, frames: batch }, [batch.buffer])
+  }
+
+  /** stats were hidden: the gap must not read as one long frame */
+  reset() {
+    this.lastStart = 0
+    this.frames = []
+  }
 }
 
 class TopRightStats {
@@ -210,6 +248,7 @@ export class DocumentRenderer {
   private pendingPixelRatio: number | undefined
   private lastFrameStart = 0
   private readonly stats: TopRightStats | undefined
+  private readonly workerFrames = isWebWorker ? new WorkerFrameReporter() : undefined
   private paused = false
   disconnected = false
 
@@ -464,6 +503,9 @@ export class DocumentRenderer {
   frameRender(sizeChanged: boolean): void {
     this.preRender()
     this.stats?.markStart()
+    const reportFrames = this.workerFrames && (this.config.statsVisible ?? 0) > 0
+    if (reportFrames) this.workerFrames!.begin()
+    else this.workerFrames?.reset()
     tween.update()
 
     if (!(globalThis as any).freezeRender) {
@@ -476,6 +518,7 @@ export class DocumentRenderer {
 
     this.renderedFps++
     this.stats?.markEnd()
+    if (reportFrames) this.workerFrames!.end()
     this.postRender()
   }
 

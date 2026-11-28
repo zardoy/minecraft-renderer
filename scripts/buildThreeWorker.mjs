@@ -43,6 +43,9 @@ const buildOptions = createWorkerBuildOptions({
             },
             args => {
               if (/steve\.png$/.test(args.path)) return
+              // small textures the world needs (sun, moon, clouds, entity textures: about 50 KB in all) are inlined; only the big atlases,
+              // which come from the main thread with the resources, stay empty
+              if (/\/other-textures\/.*\.png$/.test(args.path)) return
               if (/itemDefinitions\.json$/.test(args.path)) return
               if (/itemsAtlases\.json$/.test(args.path)) return
               if (/blocksAtlases\.json$/.test(args.path)) return
