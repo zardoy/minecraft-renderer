@@ -111,6 +111,20 @@ export class FrameTimeline {
     this.draw()
   }
 
+  /**
+   * Frames measured in another thread (the off-thread renderer's worker sends them in batches): pairs of frame interval and CPU time
+   * (ms), oldest first.
+   */
+  addFrames(frames: ArrayLike<number>) {
+    if (!this.visible) return
+    const now = performance.now()
+    for (let i = 0; i + 1 < frames.length; i += 2) {
+      this.push(frames[i]!, now)
+      this.cpus[(this.head - 1 + this.maxN) % this.maxN] = frames[i + 1]!
+    }
+    if (this.count > 0) this.draw()
+  }
+
   private push(dt: number, now: number) {
     this.dts[this.head] = dt
     this.cpus[this.head] = 0

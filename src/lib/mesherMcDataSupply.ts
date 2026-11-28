@@ -27,8 +27,13 @@ export const getMesherVersionTables = (mcDataFull: IndexedData): MesherVersionTa
   let features = featuresCache.get(mcDataFull)
   if (!features) {
     features = {}
-    // bedrock features are not used by the mesher
-    if (mcDataFull.type === 'pc') {
+    const sentTable = (mcDataFull as { features?: unknown }).features ?? (globalThis as { mcData?: { features?: unknown } }).mcData?.features
+    if (typeof mcDataFull.supportFeature !== 'function' && sentTable && typeof sentTable === 'object' && !Array.isArray(sentTable)) {
+      // off-thread renderer: mcData reached this worker as plain data (no supportFeature), with the table the main thread computed.
+      // Without it the meshers got no features and read block states the wrong way (every block showed another block's model)
+      features = sentTable as Record<string, unknown>
+    } else if (mcDataFull.type === 'pc') {
+      // bedrock features are not used by the mesher
       for (const { name } of pcFeatures as Array<{ name: string }>) {
         features[name] = mcDataFull.supportFeature(name as any)
       }
