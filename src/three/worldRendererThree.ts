@@ -987,7 +987,8 @@ export class WorldRendererThree extends WorldRendererCommon {
             isTopologyOutstanding: (key: string) => this.lightCoordinator.pendingTopologyBySection.has(key) && !this.pendingSectionUpdates.has(key)
           }
         : {}),
-      hasSectionObject: key => !!this.sectionObjects[key]
+      hasSectionObject: key => !!this.sectionObjects[key],
+      mayGainGeometry: key => this.blockChangedSections.has(key)
     })
 
     if (ready.length === 0) return

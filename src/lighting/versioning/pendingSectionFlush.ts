@@ -30,6 +30,11 @@ export type PendingFlushQuery = {
   isTopologyOutstanding?: (key: string) => boolean
   /** Section currently has geometry on screen (an air section has none). */
   hasSectionObject: (key: string) => boolean
+  /**
+   * Section has no geometry on screen but may get its first mesh from the change being installed: a fully solid section next to a broken
+   * block (the stone behind it). Waited on like a visible neighbour, or the hole shows the sky until that first mesh arrives.
+   */
+  mayGainGeometry?: (key: string) => boolean
 }
 
 export function faceNeighborKeys(key: string, sectionHeight: number): string[] {
@@ -100,7 +105,7 @@ export function selectReadySectionFlushes(query: PendingFlushQuery): ReadySectio
         for (const neighbor of faceNeighborKeys(key, sectionHeight)) {
           if (members.has(neighbor)) continue
           const neighborOutstanding = query.isTopologyOutstanding ? query.isTopologyOutstanding(neighbor) : query.isOutstanding(neighbor)
-          if (neighborOutstanding && query.hasSectionObject(neighbor)) {
+          if (neighborOutstanding && (query.hasSectionObject(neighbor) || query.mayGainGeometry?.(neighbor))) {
             waitingOnNeighbor = true
             break
           }
