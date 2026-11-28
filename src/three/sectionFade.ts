@@ -68,6 +68,16 @@ export class SectionFade {
     this.texture.needsUpdate = true
   }
 
+  /** The section became visible without a fade (a block change gave it its first mesh): drawn fully, a remesh keeps it that way. */
+  sectionShownWithoutFade(sectionKey: string): void {
+    this.shown.add(sectionKey)
+    const index = this.componentIndex(sectionKey)
+    if (index === undefined || this.data[index] === 0) return
+    this.data[index] = 0
+    this.texture.addUpdateRange(index, 1)
+    this.texture.needsUpdate = true
+  }
+
   /** Start time of the section (seconds, `now()` scale), 0 when it is not fading / outside the stored range. */
   startOf(sectionKey: string): number {
     const index = this.componentIndex(sectionKey)

@@ -192,6 +192,11 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
   private sectionDirtyFlushTimer: ReturnType<typeof setTimeout> | undefined
   private sectionDirtyPendingArgs = new Map<string, { pos: Vec3; value: boolean; useChangeWorker: boolean; urgent?: boolean }>()
   private sectionDirtyLightMeta = new Map<string, { lightPublicationVersion: number; worldGeneration?: number }>()
+  /**
+   * Sections made dirty by a block change since their last mesh. A section that gets its first mesh this way (e.g. the solid stone behind
+   * a broken block) shows at once: fading it in like newly loaded terrain showed the sky through the hole for the fade time.
+   */
+  readonly blockChangedSections = new Set<string>()
   private static readonly GEOMETRY_THROTTLE_THRESHOLD = 1
   private static readonly GEOMETRY_THROTTLE_DELAY = 100 // ms
 
@@ -532,6 +537,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.sectionDirtyCount.clear()
     this.sectionDirtyPendingArgs.clear()
     this.sectionDirtyLightMeta.clear()
+    this.blockChangedSections.clear()
     this.lightCoordinator.clearPendingMesherState()
     this.reactiveState.world.mesherWork = false
   }
@@ -1187,6 +1193,9 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
         this.sectionDirtyLightMeta.delete(key)
       }
     }
+    for (const key of this.blockChangedSections) {
+      if (key.startsWith(`${x},`) && key.endsWith(`,${z}`)) this.blockChangedSections.delete(key)
+    }
     for (let i = 0; i < this.workers.length; i++) {
       this.toWorkerMessagesQueue[i] ??= []
       this.toWorkerMessagesQueue[i].push({ type: 'unloadChunk', x, z })
@@ -1638,6 +1647,8 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     const CHUNK_SIZE = 16
     const sectionHeight = this.getSectionHeight()
     const key = `${Math.floor(pos.x / CHUNK_SIZE) * CHUNK_SIZE},${Math.floor(pos.y / sectionHeight) * sectionHeight},${Math.floor(pos.z / CHUNK_SIZE) * CHUNK_SIZE}`
+    // useChangeWorker is set only for block changes
+    if (useChangeWorker) this.blockChangedSections.add(key)
 
     this.sectionDirtyLightMeta ??= new Map()
     if (this.lightCoordinator.nextDirtyLightMeta.lightPublicationVersion != null) {
@@ -1850,6 +1861,7 @@ export abstract class WorldRendererCommon<WorkerSend = any, WorkerReceive = any>
     this.sectionDirtyCount.clear()
     this.sectionDirtyPendingArgs.clear()
     this.sectionDirtyLightMeta.clear()
+    this.blockChangedSections.clear()
 
     setClientLightTraceConfigListener(undefined)
     // Stop all workers
