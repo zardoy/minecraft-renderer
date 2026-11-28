@@ -14,10 +14,9 @@ import {
   ItemModel
 } from 'deepslate'
 import { AssetsParser } from 'mc-assets/dist/assetsParser'
-import { getLoadedImage, versionToNumber } from 'mc-assets/dist/utils'
+import { versionToNumber } from 'mc-assets/dist/utils'
 import { BlockModel as BlockModelMcAssets, AtlasParser } from 'mc-assets'
 import { getLoadedBlockstatesStore, getLoadedModelsStore } from 'mc-assets/dist/stores'
-import { makeTextureAtlas } from 'mc-assets/dist/atlasCreator'
 import { proxy, ref } from 'valtio'
 import { getItemDefinition } from 'mc-assets/dist/itemDefinitions'
 import { AppViewer } from '../graphicsBackend/appViewer'
@@ -117,19 +116,39 @@ export const getNonFullBlocksModels = (appViewer: AppViewer, resources = appView
 // })
 
 const RENDER_SIZE = 64
+/** Main-thread time the icon loop may take before it lets the browser draw a frame (the game may already be running). */
+const ICON_SLICE_MS = 8
 
-const generateItemsGui = async (
+/** Every icon is drawn into its own tile of one shared WebGL canvas, which is read back once as the atlas image. */
+type IconTarget = {
+  gl: WebGL2RenderingContext
+  /** atlas side in pixels (power of two) */
+  size: number
+  tilesPerRow: number
+  /** top-left of each drawn icon in atlas pixels (y down), by name */
+  tiles: Record<string, { x: number; y: number; tileIndex: number }>
+  nextTile: number
+  sliceStart: number
+}
+
+const yieldToBrowser = async () =>
+  new Promise<void>(resolve => {
+    setTimeout(resolve, 0)
+  })
+
+const renderIconsIntoAtlas = async (
   appViewer: AppViewer,
+  target: IconTarget,
   models: Record<string, BlockModelMcAssets>,
-  isItems = false,
-  resourceSnapshot = appViewer.resourcesManager.currentResources!
+  isItems: boolean,
+  currentResources: NonNullable<AppViewer['resourcesManager']['currentResources']>,
+  isCurrent: () => boolean
 ) => {
-  const currentResources = resourceSnapshot
-  const imgBitmap = isItems ? currentResources!.itemsAtlasImage : currentResources!.blocksAtlasImage
+  const { gl } = target
+  const imgBitmap = isItems ? currentResources.itemsAtlasImage : currentResources.blocksAtlasImage
   const canvasTemp = document.createElement('canvas')
   canvasTemp.width = imgBitmap.width
   canvasTemp.height = imgBitmap.height
-  canvasTemp.style.imageRendering = 'pixelated'
   const ctx = canvasTemp.getContext('2d')!
   ctx.imageSmoothingEnabled = false
   ctx.drawImage(imgBitmap, 0, 0)
@@ -152,7 +171,6 @@ const generateItemsGui = async (
 
   let textureWasRequested = false
   let modelData: any
-  let currentModelName: string | undefined
   const resources: ItemRendererResources = {
     getBlockModel(id) {
       if (id.equals(PREVIEW_ID)) {
@@ -173,16 +191,10 @@ const generateItemsGui = async (
       return new Map()
     },
     getItemModel(id) {
-      // const isSpecial = currentModelName === 'shield' || currentModelName === 'conduit' || currentModelName === 'trident'
-      const isSpecial = false
       if (id.equals(PREVIEW_ID)) {
         return ItemModel.fromJson({
-          type: isSpecial ? 'minecraft:special' : 'minecraft:model',
-          model: isSpecial
-            ? {
-                type: currentModelName
-              }
-            : PREVIEW_ID.toString(),
+          type: 'minecraft:model',
+          model: PREVIEW_ID.toString(),
           base: PREVIEW_ID.toString(),
           tints: modelData?.tints
         })
@@ -191,102 +203,66 @@ const generateItemsGui = async (
     }
   }
 
-  const canvas = document.createElement('canvas')
-  canvas.width = RENDER_SIZE
-  canvas.height = RENDER_SIZE
-  const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true })
-  if (!gl) {
-    throw new Error('Cannot get WebGL2 context')
-  }
-
-  try {
-    function resetGLContext(gl) {
-      gl.clearColor(0, 0, 0, 0)
-      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT)
-    }
-
-    // const includeOnly = ['powered_repeater', 'wooden_door']
-    const includeOnly = [] as string[]
-
-    const images: Record<string, HTMLImageElement> = {}
-    const item = new ItemStack(
-      PREVIEW_ID,
-      1,
-      new Map(
-        Object.entries({
-          'minecraft:item_model': new NbtString(PREVIEW_ID.toString())
-        })
-      )
+  const item = new ItemStack(
+    PREVIEW_ID,
+    1,
+    new Map(
+      Object.entries({
+        'minecraft:item_model': new NbtString(PREVIEW_ID.toString())
+      })
     )
-    const renderer = new ItemRenderer(gl, item, resources, { display_context: 'gui' })
-    const missingTextures = new Set()
-    for (const [modelName, model] of Object.entries(models)) {
-      textureWasRequested = false
-      if (includeOnly.length && !includeOnly.includes(modelName)) continue
-
-      const patchMissingTextures = () => {
-        for (const element of model.elements ?? []) {
-          for (const [faceName, face] of Object.entries(element.faces)) {
-            if (face.texture.startsWith('#')) {
-              missingTextures.add(`${modelName} ${faceName}: ${face.texture}`)
-              face.texture = 'block/unknown'
-            }
-          }
+  )
+  const renderer = new ItemRenderer(gl, item, resources, { display_context: 'gui' })
+  const missingTextures = new Set()
+  gl.enable(gl.SCISSOR_TEST)
+  gl.clearColor(0, 0, 0, 0)
+  for (const [modelName, model] of Object.entries(models)) {
+    if (!model) continue
+    if (performance.now() - target.sliceStart > ICON_SLICE_MS) {
+      // eslint-disable-next-line no-await-in-loop
+      await yieldToBrowser()
+      if (!isCurrent()) return
+      target.sliceStart = performance.now()
+    }
+    for (const element of model.elements ?? []) {
+      for (const [faceName, face] of Object.entries(element.faces)) {
+        if (face.texture.startsWith('#')) {
+          missingTextures.add(`${modelName} ${faceName}: ${face.texture}`)
+          face.texture = 'block/unknown'
         }
       }
-      patchMissingTextures()
-      // TODO eggs
-
-      modelData = model
-      currentModelName = modelName
-      resetGLContext(gl)
-      if (!modelData) continue
-      renderer.setItem(item, { display_context: 'gui' })
-      renderer.drawItem()
-      if (!textureWasRequested) continue
-      const url = canvas.toDataURL()
-      // eslint-disable-next-line no-await-in-loop
-      const img = await getLoadedImage(url)
-      images[modelName] = img
     }
 
-    if (missingTextures.size) {
-      console.warn(`[guiRenderer] Missing textures in ${[...missingTextures].join(', ')}`)
-    }
+    const tileIndex = target.nextTile
+    const x = (tileIndex % target.tilesPerRow) * RENDER_SIZE
+    const y = Math.floor(tileIndex / target.tilesPerRow) * RENDER_SIZE
+    // GL's origin is the bottom left, the atlas image's the top left
+    const glY = target.size - y - RENDER_SIZE
+    gl.viewport(x, glY, RENDER_SIZE, RENDER_SIZE)
+    gl.scissor(x, glY, RENDER_SIZE, RENDER_SIZE)
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT)
 
-    return images
-  } finally {
-    loseWebGLContext(gl)
-    canvas.remove()
+    textureWasRequested = false
+    modelData = model
+    renderer.setItem(item, { display_context: 'gui' })
+    renderer.drawItem()
+    // nothing textured was drawn: the tile is cleared and reused by the next icon
+    if (!textureWasRequested) continue
+    target.tiles[modelName] = { x, y, tileIndex }
+    target.nextTile++
+  }
+  gl.disable(gl.SCISSOR_TEST)
+
+  if (missingTextures.size) {
+    console.warn(`[guiRenderer] Missing textures in ${[...missingTextures].join(', ')}`)
   }
 }
 
 /**
- * @mainThread
+ * GUI icons of blocks and items that are not plain cubes (rendered with deepslate). All icons go into one WebGL canvas, one 64 px
+ * tile each, and the canvas becomes the atlas image with a single read-back. Before, each icon was encoded to a PNG data URL and
+ * decoded again: about 7 s on a Mali-G57 phone, while the player was already in the world.
  */
-const generateAtlas = async (images: Record<string, HTMLImageElement>) => {
-  const atlas = makeTextureAtlas({
-    input: Object.keys(images),
-    tileSize: RENDER_SIZE,
-    getLoadedImage(name) {
-      return {
-        image: images[name]
-      }
-    }
-  })
-
-  // const atlasParser = new AtlasParser({ latest: atlas.json }, atlas.canvas.toDataURL())
-  // const a = document.createElement('a')
-  // a.href = await atlasParser.createDebugImage(true)
-  // a.download = 'blocks_atlas.png'
-  // a.click()
-
-  return {
-    json: atlas.json,
-    image: await createImageBitmap(atlas.canvas)
-  }
-}
-
 export const generateGuiAtlas = async (appViewer: AppViewer) => {
   const resourcesManager = appViewer.resourcesManager
   const resources = resourcesManager.currentResources
@@ -295,16 +271,36 @@ export const generateGuiAtlas = async (appViewer: AppViewer) => {
   const isCurrent = () => isCurrentResourceGeneration(resourcesManager, resources, resourcesGeneration)
   const { blockModelsResolved, itemsModelsResolved } = getNonFullBlocksModels(appViewer, resources)
 
-  // Generate blocks atlas
-  console.time('generate blocks gui atlas')
-  const blockImages = await generateItemsGui(appViewer, blockModelsResolved, false, resources)
-  console.timeEnd('generate blocks gui atlas')
-  if (!isCurrent()) return
-  console.time('generate items gui atlas')
-  const itemImages = await generateItemsGui(appViewer, itemsModelsResolved, true, resources)
-  console.timeEnd('generate items gui atlas')
-  if (!isCurrent()) return
-  const guiAtlas = await generateAtlas({ ...blockImages, ...itemImages })
-  publishGuiAtlas(resourcesManager, resources, resourcesGeneration, guiAtlas)
-  // await generateAtlas(blockImages)
+  // upper bound: icons that end up untextured are not kept
+  const maxIcons = Object.keys(blockModelsResolved).length + Object.keys(itemsModelsResolved).length
+  const tilesPerRow = 2 ** Math.ceil(Math.log2(Math.max(1, Math.ceil(Math.sqrt(maxIcons)))))
+  const size = tilesPerRow * RENDER_SIZE
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true })
+  if (!gl) throw new Error('Cannot get WebGL2 context')
+  const target: IconTarget = { gl, size, tilesPerRow, tiles: {}, nextTile: 0, sliceStart: performance.now() }
+
+  try {
+    console.time('generate gui atlas')
+    await renderIconsIntoAtlas(appViewer, target, blockModelsResolved, false, resources, isCurrent)
+    if (!isCurrent()) return
+    await renderIconsIntoAtlas(appViewer, target, itemsModelsResolved, true, resources, isCurrent)
+    if (!isCurrent()) return
+    const image = await createImageBitmap(canvas)
+    console.timeEnd('generate gui atlas')
+
+    const textures: Record<string, { u: number; v: number; tileIndex: number }> = {}
+    for (const [name, { x, y, tileIndex }] of Object.entries(target.tiles)) {
+      // same key rule as mc-assets' makeTextureAtlas (a trailing ".ext" is dropped)
+      const cleanName = name.split('.').slice(0, -1).join('.') || name
+      textures[cleanName] = { u: x / size, v: y / size, tileIndex }
+    }
+    const json = { suSv: RENDER_SIZE / size, tileSize: RENDER_SIZE, width: size, height: size, textures }
+    publishGuiAtlas(resourcesManager, resources, resourcesGeneration, { json, image })
+  } finally {
+    loseWebGLContext(gl)
+    canvas.remove()
+  }
 }
